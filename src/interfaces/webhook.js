@@ -30,20 +30,16 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
     const chatId = env.TELEGRAM_CHAT_ID.trim();
 
     try {
-      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: safeText,
-          parse_mode: 'HTML'
-        })
+      // IMPORTANT: Use axios here (NOT native fetch).
+      // axios.defaults.httpsAgent is set to IPv4 in app.js which fixes
+      // the 'socket disconnected before TLS' bug in Hugging Face Docker.
+      await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        chat_id: chatId,
+        text: safeText,
+        parse_mode: 'HTML'
       });
-      if (!response.ok) {
-        console.error('[TELEGRAM] Failed to send message:', await response.text());
-      }
     } catch (e) {
-      console.error('[TELEGRAM] Network Error:', e.message);
+      console.error('[TELEGRAM] Failed to send message:', e.message);
     }
   };
 
