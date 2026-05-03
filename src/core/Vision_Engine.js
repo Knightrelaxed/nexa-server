@@ -47,7 +47,7 @@ async function processTelegramImage(fileId, caption = '') {
 
   const { mimeType, data } = await downloadTelegramImageAsBase64(fileId);
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' }); // Best multimodal intelligence
 
   const prompt = `Anda adalah N.E.X.A, asisten pintar. 
 Tuan Faqih mengirimkan sebuah gambar.

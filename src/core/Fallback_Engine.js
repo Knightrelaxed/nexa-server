@@ -14,22 +14,22 @@ const backupGenAI = env.GEMINI_API_KEY_BACKUP ? new GoogleGenerativeAI(env.GEMIN
  * @param {boolean} jsonMode (true = force JSON response, false = free text)
  */
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Gemini Primary
+  // Tier 1: Gemini Primary (2.5 Flash — best intelligence)
   if (primaryGenAI) {
     try {
-      return await callGemini(primaryGenAI, prompt, systemInstruction, temperature, jsonMode);
+      return await callGemini(primaryGenAI, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Primary Gemini failed:', e.message);
+      console.warn('[FALLBACK] Primary Gemini 2.5 failed:', e.message);
     }
   }
 
-  // Tier 2: Gemini Backup
+  // Tier 2: Gemini Backup (2.0 Flash — stable fallback)
   if (backupGenAI) {
     try {
-      console.log('[FALLBACK] Using Backup Gemini...');
-      return await callGemini(backupGenAI, prompt, systemInstruction, temperature, jsonMode);
+      console.log('[FALLBACK] Using Backup Gemini 2.0...');
+      return await callGemini(backupGenAI, 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Backup Gemini failed:', e.message);
+      console.warn('[FALLBACK] Backup Gemini 2.0 failed:', e.message);
     }
   }
 
@@ -57,13 +57,13 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 /**
  * Internal wrapper for Gemini GenAI Call
  */
-async function callGemini(client, prompt, systemInstruction, temperature, jsonMode = true) {
+async function callGemini(client, modelName, prompt, systemInstruction, temperature, jsonMode = true) {
   const generationConfig = { temperature };
   if (jsonMode) {
     generationConfig.responseMimeType = 'application/json';
   }
   const model = client.getGenerativeModel({ 
-    model: 'gemini-2.0-flash',  // Stable production Flash model
+    model: modelName,
     systemInstruction: systemInstruction,
     generationConfig
   });
