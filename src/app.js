@@ -1,6 +1,15 @@
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
+const axios = require('axios');
+const https = require('https');
+
+// ============================================================
+// FIX: HUGGING FACE NETWORK TLS BUG
+// Force IPv4 for all Axios requests to prevent 'socket disconnected'
+// ============================================================
+axios.defaults.httpsAgent = new https.Agent({ family: 4 });
+
 const env = require('./config/env');
 
 const app = express();
