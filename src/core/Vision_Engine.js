@@ -1,31 +1,98 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
 const env = require('../config/env');
+const { NEXA_PERSONALITY } = require('../config/personality');
 
-// Initialize Gemini Client specifically for Vision (Primary only for now to save complexity)
-const genAI = env.GEMINI_API_KEY_PRIMARY ? new GoogleGenerativeAI(env.GEMINI_API_KEY_PRIMARY) : null;
+// Primary: Gemini 2.5 Flash (best multimodal)
+// Fallback: Gemini 2.0 Flash
+const primaryGenAI = env.GEMINI_API_KEY_PRIMARY ? new GoogleGenerativeAI(env.GEMINI_API_KEY_PRIMARY) : null;
+const backupGenAI = env.GEMINI_API_KEY_BACKUP ? new GoogleGenerativeAI(env.GEMINI_API_KEY_BACKUP) : null;
+
+// ============================================================
+// UNIVERSAL IMAGE INTERPRETER — System Prompt
+// This prompt is the "cognitive bridge" between the visual world
+// and the text-based AI Router. It MUST produce output that
+// AI Router can cleanly parse into the correct intent.
+// ============================================================
+const VISION_SYSTEM_PROMPT = `
+${NEXA_PERSONALITY}
+
+[MODUL PENGLIHATAN — Universal Image Interpreter]
+Anda baru saja menerima SEBUAH GAMBAR dari Tuan Faqih melalui Telegram.
+${
+  // Caption will be injected dynamically in the function
+  ''
+}
+
+TUGAS UTAMA ANDA:
+Analisis gambar ini dan hasilkan satu blok teks instruksi yang kaya, akurat, dan dapat diproses oleh sistem AI Router N.E.X.A. Teks ini akan menjadi "jembatan" antara gambar dan aksi sistem.
+
+KATEGORIKAN gambar ini ke salah satu kategori berikut berdasarkan isinya, lalu ekstrak data yang relevan:
+
+1. STRUK / NOTA / FAKTUR / KWITANSI
+   → Ekstrak: nama toko/merchant, total nominal, tanggal, daftar item & harga
+   → Contoh output: "Tuan Faqih mengirimkan struk belanja dari Indomaret tanggal 3 Mei 2026. Total pengeluaran Rp 47.500. Item: Aqua 600ml Rp 4.000, Roti Tawar Rp 15.000, dll. Ini adalah pengeluaran pribadi, tolong catat."
+
+2. KARTU NAMA / KONTAK
+   → Ekstrak: nama, nomor HP, email, perusahaan/jabatan, alamat
+   → Contoh output: "Tuan Faqih mengirimkan kartu nama atas nama Dr. Budi Santoso, Dosen UGM, HP: 0812-3456-7890, email: budi@ugm.ac.id. Tolong simpan data kontak ini."
+
+3. POSTER / UNDANGAN / PAMFLET ACARA
+   → Ekstrak: nama acara, tanggal, waktu, lokasi, penyelenggara
+   → Contoh output: "Tuan Faqih mengirimkan poster acara Seminar Diplomasi UGM pada Sabtu, 10 Mei 2026 pukul 09:00 di Gedung Pascasarjana UGM. Tolong masukkan ke kalender."
+
+4. TANGKAPAN LAYAR (Screenshot) — Teks/Percakapan/Website
+   → Baca SEMUA teks yang terlihat. Pahami konteksnya.
+   → Contoh output: "Tuan Faqih mengirimkan screenshot percakapan WhatsApp yang berisi rencana meeting besok jam 2 siang. Tuan Faqih meminta [sesuai caption]."
+
+5. PAPAN TULIS / CATATAN TANGAN / STICKY NOTE / DOKUMEN
+   → Baca teks, interpretasikan isi, perhatikan konteks
+   → Contoh output: "Tuan Faqih mengirimkan foto catatan tangan berisi daftar target minggu ini: 1) Selesaikan paper, 2) Hubungi Prof X, 3) Latihan debat. Tolong simpan ini."
+
+6. FOTO PRODUK / BARANG
+   → Deskripsikan produk, harga (jika terlihat), kondisi
+   → Contoh output: "Tuan Faqih mengirimkan foto produk laptop Asus VivoBook seharga Rp 8.000.000. Tuan Faqih meminta [sesuai caption]."
+
+7. FOTO ALAM / ORANG / MOMEN PERSONAL
+   → Deskripsikan dengan natural, gunakan kepribadian N.E.X.A
+   → Contoh output: "Tuan Faqih mengirimkan foto [deskripsi]. Caption-nya: [caption]. Tuan Faqih sepertinya ingin [interpretasi konteks]."
+
+8. RESEP / MENU MAKANAN
+   → Ekstrak nama makanan, bahan-bahan, langkah
+   → Contoh output: "Tuan Faqih mengirimkan resep Nasi Goreng Spesial. Bahan: telur, nasi, kecap, dll. Tolong simpan resep ini."
+
+9. KODE QR / BARCODE
+   → Jika bisa dibaca, ekstrak kontennya
+   → Contoh output: "Tuan Faqih mengirimkan QR code yang berisi link: https://.... Tuan Faqih meminta [sesuai caption]."
+
+10. LAPORAN / TABEL / DATA (foto dokumen berisi tabel angka)
+    → Baca dan ekstrak struktur tabelnya
+    → Contoh output: "Tuan Faqih mengirimkan foto tabel laporan keuangan organisasi berisi data pengeluaran bulan April. Tolong buatkan spreadsheet baru dari data ini."
+
+ATURAN KELUARAN:
+- Tulis dalam Bahasa Indonesia yang natural
+- SELALU sertakan "Tuan Faqih" sebagai subjek
+- SELALU akhiri dengan interpretasi maksud Tuan Faqih (berdasarkan caption + konteks gambar)
+- Output harus berupa SATU paragraf naratif kaya informasi (bukan poin-poin bullet)
+- Jika ada caption, instruksi caption HARUS dimasukkan ke dalam narasi output
+`;
 
 /**
  * Download image from Telegram and convert to Base64
- * @param {string} fileId 
- * @returns {Promise<{mimeType: string, data: string}>}
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-  // 1. Get file path from Telegram
   const fileRes = await axios.get(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`);
   if (!fileRes.data.ok) throw new Error('Failed to get file info from Telegram');
   
   const filePath = fileRes.data.result.file_path;
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-  // 2. Download file as arraybuffer
   const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
   const buffer = Buffer.from(response.data, 'binary');
   const base64Data = buffer.toString('base64');
 
-  // Determine mime type from extension
   const ext = filePath.split('.').pop().toLowerCase();
   let mimeType = 'image/jpeg';
   if (ext === 'png') mimeType = 'image/png';
@@ -35,41 +102,71 @@ async function downloadTelegramImageAsBase64(fileId) {
 }
 
 /**
- * Process an image using Gemini Vision to extract text/data/intent
- * @param {string} fileId Telegram file_id
- * @param {string} caption Optional caption sent with the image
- * @returns {Promise<string>} Detailed textual description or extracted data
+ * Internal Vision call with a specific Gemini client and model
  */
-async function processTelegramImage(fileId, caption = '') {
-  if (!genAI) {
-    throw new Error('Gemini API Key is not configured. Vision capabilities are disabled.');
-  }
+async function callGeminiVision(client, modelName, imageData, caption) {
+  const captionContext = caption
+    ? `\n[CAPTION/INSTRUKSI DARI TUAN FAQIH]: "${caption}"\nGunakan caption ini sebagai petunjuk utama apa yang Tuan Faqih inginkan dari gambar ini.`
+    : '\n[TIDAK ADA CAPTION]: Tuan Faqih tidak memberikan instruksi teks. Analisis gambar dan interpretasikan konteksnya secara cerdas.';
 
-  const { mimeType, data } = await downloadTelegramImageAsBase64(fileId);
-
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' }); // Best multimodal intelligence
-
-  const prompt = `Anda adalah N.E.X.A, asisten pintar. 
-Tuan Faqih mengirimkan sebuah gambar.
-${caption ? `Beliau juga memberikan instruksi/caption berikut: "${caption}"` : 'Beliau tidak memberikan teks tambahan.'}
-
-Tugas Anda:
-1. Analisis gambar ini secara detail.
-2. Jika ini nota/struk/faktur, ekstrak semua data (nama toko, total, tanggal, daftar barang) menjadi teks terstruktur.
-3. Jika ini gambar lain, deskripsikan isi gambar tersebut dengan sangat jelas.
-4. Gabungkan instruksi dari Tuan Faqih dengan hasil analisis Anda untuk membentuk SATU pesan instruksi teks lengkap yang akan diproses oleh sistem N.E.X.A selanjutnya.
-
-Contoh output yang diharapkan: "Tuan Faqih mengirimkan nota belanja dari Toko ABC sebesar Rp 50.000 untuk pembelian kopi dan meminta untuk dicatat. Tolong proses ini."`;
+  const model = client.getGenerativeModel({
+    model: modelName,
+    systemInstruction: VISION_SYSTEM_PROMPT + captionContext,
+    generationConfig: { temperature: 0.4 } // Moderate — enough creativity to describe, enough precision to extract
+  });
 
   const imagePart = {
     inlineData: {
-      data: data,
-      mimeType: mimeType
+      data: imageData.data,
+      mimeType: imageData.mimeType
     }
   };
 
-  const result = await model.generateContent([prompt, imagePart]);
+  const result = await model.generateContent([
+    'Analisis gambar ini sekarang dan hasilkan teks instruksi lengkap sesuai sistem prompt.',
+    imagePart
+  ]);
   return result.response.text();
+}
+
+/**
+ * Process an image with FULL multi-purpose Vision intelligence.
+ * Handles: receipts, business cards, event posters, screenshots,
+ * handwritten notes, product photos, casual photos, menus, QR codes,
+ * tables/reports, and anything else — all routed to correct intent.
+ *
+ * @param {string} fileId Telegram file_id
+ * @param {string} caption Optional caption from user
+ * @returns {Promise<string>} Rich textual description ready for AI_Router
+ */
+async function processTelegramImage(fileId, caption = '') {
+  // Tier 1: Primary (2.5 Flash — best multimodal model)
+  if (primaryGenAI) {
+    try {
+      console.log('[VISION] Processing image with Gemini 2.5 Flash...');
+      const imageData = await downloadTelegramImageAsBase64(fileId);
+      const result = await callGeminiVision(primaryGenAI, 'gemini-2.5-flash', imageData, caption);
+      console.log('[VISION] Primary vision success. Output length:', result.length);
+      return result;
+    } catch (e) {
+      console.warn('[VISION] Primary Gemini 2.5 vision failed:', e.message);
+    }
+  }
+
+  // Tier 2: Backup (2.0 Flash)
+  if (backupGenAI) {
+    try {
+      console.log('[VISION] Falling back to Gemini 2.0 Flash for vision...');
+      const imageData = await downloadTelegramImageAsBase64(fileId);
+      const result = await callGeminiVision(backupGenAI, 'gemini-2.0-flash', imageData, caption);
+      console.log('[VISION] Backup vision success. Output length:', result.length);
+      return result;
+    } catch (e) {
+      console.warn('[VISION] Backup Gemini 2.0 vision failed:', e.message);
+    }
+  }
+
+  throw new Error('All Vision AI tiers failed. Check Gemini API keys.');
 }
 
 module.exports = {
