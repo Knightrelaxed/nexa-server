@@ -1,3 +1,13 @@
+// ============================================================
+// CRITICAL FIX — MUST BE FIRST LINE BEFORE ANY REQUIRE()
+// Node 20 on Hugging Face Docker prefers IPv6 DNS by default.
+// api.telegram.org IPv6 routes fail on HF free tier.
+// This line forces ALL DNS lookups in this process to return
+// IPv4 addresses first, fixing TLS socket disconnect errors.
+// ============================================================
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');
@@ -9,6 +19,7 @@ const https = require('https');
 // Force IPv4 for all Axios requests to prevent 'socket disconnected'
 // ============================================================
 axios.defaults.httpsAgent = new https.Agent({ family: 4 });
+
 
 const env = require('./config/env');
 
