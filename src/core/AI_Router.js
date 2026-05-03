@@ -77,8 +77,8 @@ async function routeUserMessage(textInput) {
   // 1. Load personal facts (from cache — zero overhead after first call)
   const personalFacts = await loadPersonalFactsWithCache();
 
-  // 2. Contextual Retrieval (last 7 chat exchanges)
-  const memories = await supabaseMemories.getRecentMemories(7);
+  // 2. Contextual Retrieval (last 10 chat exchanges)
+  const memories = await supabaseMemories.getRecentMemories(10);
   const contextStr = memories.length > 0
     ? memories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n')
     : '[Tidak ada riwayat obrolan sebelumnya]';

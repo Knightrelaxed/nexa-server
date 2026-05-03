@@ -37,7 +37,7 @@ N.E.X.A dirancang agar tidak pernah mati meskipun Google atau OpenAI sedang *dow
 
 Memori N.E.X.A ditangani oleh Supabase. Jika Supabase down, N.E.X.A akan mengaktifkan *Silent Fail Strategy* — dia akan tetap membalas, tapi tanpa konteks masa lalu.
 
-- **Memori Jangka Pendek (7 chat terakhir):** Tabel `nexa_chat_memories`.
+- **Memori Jangka Pendek (10 chat terakhir):** Tabel `nexa_chat_memories`.
 - **Fakta Personal Jangka Panjang:** Tabel `nexa_2nd_brain` (`type = 'PERSONAL_FACT'`).
   - *Performa:* Fakta personal **di-cache ke dalam RAM server** (`AI_Router.js`). Tidak ada query database tambahan per pesan.
   - *Invalidation:* Jika Anda menyimpan fakta personal baru, cache otomatis dibersihkan dan difetch ulang pada chat berikutnya.
