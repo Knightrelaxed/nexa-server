@@ -1,3 +1,12 @@
+---
+title: NEXA Core Server
+emoji: 🤖
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+app_port: 7860
+---
 # N.E.X.A — Neural Extension Assistant for Intelligence
 > Chief of Staff AI — Immortality Protocol v3.0 | Hugging Face Docker Space
 
