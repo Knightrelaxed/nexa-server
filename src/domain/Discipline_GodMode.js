@@ -3,58 +3,73 @@ const env = require('../config/env');
 const security = require('../utils/security');
 
 /**
- * Trigger God Mode Escalation to Android Device (Tasker)
+ * Trigger God Mode Escalation to Android Device via Telegram Intercept
  * 
- * PRIMARY CHANNEL: Telegram notification → Tasker AutoNotification Intercept
- * Server kirim "🔴 GOD MODE AKTIF" via Telegram → Tasker mencegat → eksekusi punishment
+ * ARCHITECTURE (Immortality Protocol v3.0):
+ * Server cannot push directly to Android (HP behind NAT/CGNAT = no public IP).
+ * Instead: Server → sends "🔴 GOD MODE AKTIF" Telegram message
+ *         → Tasker intercepts the notification → Tasker executes system actions
  * 
- * SECONDARY CHANNEL (optional): Direct HTTP POST ke TASKER_WEBHOOK_URL
- * Membutuhkan AutoRemote atau layanan sejenis. Boleh dikosongkan.
+ * TASKER_WEBHOOK_URL is kept as an OPTIONAL direct-push fallback
+ * (e.g. if user later configures AutoRemote or ngrok tunnel)
  * 
  * @param {number} level - Escalation level (e.g. 3)
  * @param {object} metadata - Details about violation
  */
 async function triggerGodMode(level = 3, metadata = {}) {
-  console.log(`[DISCIPLINE] Triggering God Mode (Level ${level})...`);
-  let telegramSent = false;
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
+    console.warn('[DISCIPLINE] Telegram credentials not configured. God Mode cannot be delivered.');
+    return false;
+  }
+
+  const timestamp = new Date().toISOString();
+  const violationInfo = metadata.violation_app
+    ? `App: ${metadata.violation_app}`
+    : metadata.source || 'Manual trigger';
 
   // ============================================================
-  // JALUR 1 (UTAMA): Telegram Notification → Tasker Intercept
-  // Tasker profile: AutoNotification Intercept → teks "🔴 GOD MODE AKTIF"
+  // PRIMARY: Kirim pesan ke Telegram — Tasker mencegat notifikasi ini
+  // Tasker Profile #4 (God Mode Executor) mendeteksi teks "🔴 GOD MODE AKTIF"
+  // dan mengeksekusi: matikan WiFi + Data + kunci layar + Go Home
   // ============================================================
-  if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-    const violationApp = metadata.violation_app || metadata.source || 'Aplikasi Hiburan';
-    const godModeText = `🔴 GOD MODE AKTIF\n\nTuan Faqih,\nBatas screen-time untuk ${violationApp} telah terlampaui.\nKoneksi internet dimatikan sekarang.\n\n— N.E.X.A Discipline System`;
+  const godModeMessage = `🔴 GOD MODE AKTIF
 
+Tuan Faqih,
+Batas screen-time terlampaui.
+Koneksi internet dimatikan.
+
+Pelanggaran: ${violationInfo}
+Level: ${level}
+Waktu: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
+
+-N.E.X.A`;
+
+  try {
     await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       chat_id: env.TELEGRAM_CHAT_ID,
-      text: godModeText
-    }).then(() => {
-      telegramSent = true;
-      console.log('[DISCIPLINE] God Mode Telegram alert sent. Tasker Intercept will execute.');
-    }).catch(e => {
-      console.error('[DISCIPLINE] Failed to send Telegram God Mode alert:', e.message);
+      text: godModeMessage
+      // NO parse_mode — plain text for reliable Tasker text filter matching
     });
-  } else {
-    console.warn('[DISCIPLINE] Telegram not configured — cannot trigger God Mode via Telegram Intercept.');
+    console.log(`[DISCIPLINE] God Mode (Level ${level}) delivered via Telegram. Tasker will intercept and execute.`);
+  } catch (telegramErr) {
+    console.error('[DISCIPLINE] Failed to send God Mode via Telegram:', telegramErr.message);
+    return false;
   }
 
   // ============================================================
-  // JALUR 2 (OPSIONAL): Direct Webhook ke Tasker via TASKER_WEBHOOK_URL
-  // Membutuhkan AutoRemote atau URL publik di HP. Boleh dikosongkan.
+  // OPTIONAL FALLBACK: Direct HTTP push to Tasker (AutoRemote/ngrok)
+  // Only runs if TASKER_WEBHOOK_URL is configured — safe to leave empty
   // ============================================================
   if (env.TASKER_WEBHOOK_URL) {
-    const timestamp = new Date().toISOString();
     const signature = security.generateTaskerSignature(timestamp, level);
-
     const payload = {
       auth: {
         bearer_token: env.NEXA_GODMODE_SECRET,
-        timestamp
+        timestamp: timestamp
       },
       command: {
         type: 'GOD_MODE_ESCALATION',
-        level,
+        level: level,
         actions: [
           { action: 'DISABLE_WIFI', params: { duration_minutes: 30 } },
           { action: 'DISABLE_MOBILE_DATA', params: { duration_minutes: 30 } },
@@ -64,24 +79,23 @@ async function triggerGodMode(level = 3, metadata = {}) {
       },
       metadata
     };
-
     try {
-      const response = await axios.post(env.TASKER_WEBHOOK_URL, payload, {
+      await axios.post(env.TASKER_WEBHOOK_URL, payload, {
         headers: {
           'Authorization': `Bearer ${env.NEXA_GODMODE_SECRET}`,
           'Content-Type': 'application/json',
           'X-NEXA-Signature': signature
-        }
+        },
+        timeout: 5000
       });
-      console.log('[DISCIPLINE] Direct Tasker webhook executed.', response.status);
-    } catch (err) {
-      console.error('[DISCIPLINE] Direct Tasker webhook failed (non-fatal):', err.message);
+      console.log('[DISCIPLINE] God Mode also delivered via direct Tasker URL (bonus).');
+    } catch (directErr) {
+      // Direct push failure is non-fatal — Telegram intercept already handles it
+      console.warn('[DISCIPLINE] Direct Tasker push failed (non-fatal):', directErr.message);
     }
-  } else {
-    console.log('[DISCIPLINE] TASKER_WEBHOOK_URL not set — using Telegram Intercept only (normal).');
   }
 
-  return telegramSent;
+  return true;
 }
 
 module.exports = { triggerGodMode };
