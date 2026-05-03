@@ -40,25 +40,55 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
   const message = req.body?.message;
   if (!message) return;
 
-  // Helper: send message back to Tuan Faqih via Telegram (with 4000 char safety)
-  const sendToTelegram = async (text) => {
-    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
+  // Helper: send message back to Tuan Faqih via Telegram
+  // Uses raw https.request (NOT axios/fetch) for maximum socket-level control.
+  // This is necessary for Hugging Face Docker which blocks high-level HTTP clients.
+  const sendToTelegram = (text) => new Promise((resolve) => {
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return resolve();
     const safeText = String(text).substring(0, 4000);
     const botToken = env.TELEGRAM_BOT_TOKEN.trim();
     const chatId = env.TELEGRAM_CHAT_ID.trim();
+    const body = JSON.stringify({ chat_id: chatId, text: safeText, parse_mode: 'HTML' });
 
-    try {
-      // Use dedicated telegramAxios instance with custom IPv4 + keepAlive TLS agent
-      // This bypasses the Hugging Face Docker outbound TLS socket drop bug
-      await telegramAxios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        chat_id: chatId,
-        text: safeText,
-        parse_mode: 'HTML'
+    const options = {
+      hostname: 'api.telegram.org',
+      port: 443,
+      path: `/bot${botToken}/sendMessage`,
+      method: 'POST',
+      family: 4,                   // Force IPv4 at DNS resolution level
+      rejectUnauthorized: false,   // Bypass HF Docker TLS proxy interception
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          console.error('[TELEGRAM] API error:', res.statusCode, data);
+        }
+        resolve();
       });
-    } catch (e) {
-      console.error('[TELEGRAM] Failed to send message:', e.message);
-    }
-  };
+    });
+
+    req.setTimeout(15000, () => {
+      console.error('[TELEGRAM] Request timed out — destroying socket.');
+      req.destroy();
+      resolve(); // Don't reject, just log and continue
+    });
+
+    req.on('error', (e) => {
+      console.error('[TELEGRAM] https.request error:', e.message);
+      resolve(); // Don't reject, just log and continue
+    });
+
+    req.write(body);
+    req.end();
+  });
+
 
   // Helper: escape dynamic/untrusted strings before embedding in HTML parse_mode messages
   // Prevents Telegram rejecting the message with 400 Bad Request
