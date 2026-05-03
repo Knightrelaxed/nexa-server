@@ -20,7 +20,12 @@ async function handleCalendarIntent(extractedData) {
         if (found.length > 0) targetEventId = found[0].id;
       }
       if (!targetEventId) {
-        return { status: 'FAILED', message: `Tidak bisa memperbarui jadwal karena event tidak ditemukan. Coba sebutkan judul acaranya lebih spesifik.` };
+        return { status: 'FAILED', message: 'Tidak bisa memperbarui jadwal karena event tidak ditemukan. Coba sebutkan judul acaranya lebih spesifik.' };
+      }
+      // Guard: only update time if both start AND end are provided by AI.
+      // Prevents sending undefined to Google API if user only wants to update the title.
+      if (!start || !end) {
+        return { status: 'FAILED', message: 'Untuk memperbarui jadwal, sebutkan juga waktu mulai dan selesai yang baru.' };
       }
       await googleWorkspace.updateCalendarEvent(targetEventId, summary, start, end, description || '');
       return { status: 'SUCCESS', message: `Jadwal '${summary}' berhasil diperbarui di kalender.` };

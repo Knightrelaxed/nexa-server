@@ -10,6 +10,7 @@ const godMode = require('../domain/Discipline_GodMode');
 const voiceEngine = require('../core/Voice_Engine');
 const visionEngine = require('../core/Vision_Engine');
 const spreadsheetManager = require('../domain/Spreadsheet_Manager');
+const supabaseMemories = require('../infrastructure/Supabase_Memories');
 
 // ============================================================
 // TELEGRAM WEBHOOK (Telegram → N.E.X.A Server)
