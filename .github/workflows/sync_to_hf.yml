@@ -17,7 +17,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           # GANTI INI JIKA USERNAME/NAMA SPACE BERBEDA:
-          HF_USERNAME: Knightrelaxed
+          HF_USERNAME: dazat-knight
           HF_SPACE_NAME: nexa-server
         run: |
           git push --force https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME main
