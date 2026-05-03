@@ -66,5 +66,27 @@ if (require.main === module) {
   });
 }
 
+// ============================================================
+// GLOBAL SAFETY NET — Last line of defense
+// Catches any Promise rejection or synchronous exception that
+// escaped all domain-level try-catch blocks.
+// IMPORTANT: We LOG only — never call process.exit() so the
+// server stays alive and continues serving requests.
+// ============================================================
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[SAFETY NET] Unhandled Promise Rejection:');
+  console.error('  Promise:', promise);
+  console.error('  Reason:', reason instanceof Error ? reason.message : reason);
+  // Server stays alive — no process.exit()
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[SAFETY NET] Uncaught Exception — server continues running:');
+  console.error('  Error:', error.message);
+  console.error('  Stack:', error.stack);
+  // Server stays alive — no process.exit()
+});
+
 module.exports = app;
+
 
