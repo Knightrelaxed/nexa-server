@@ -2,55 +2,77 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
 const env = require('../config/env');
 
-// Initialize Gemini Clients
+// ============================================================
+// MULTI-KEY GEMINI INITIALIZATION
+// Each key belongs to a DIFFERENT Google project, giving each
+// its own independent quota pool. When one key is exhausted,
+// the next key still has full quota available.
+// ============================================================
 const primaryGenAI = env.GEMINI_API_KEY_PRIMARY ? new GoogleGenerativeAI(env.GEMINI_API_KEY_PRIMARY) : null;
 const backupGenAI = env.GEMINI_API_KEY_BACKUP ? new GoogleGenerativeAI(env.GEMINI_API_KEY_BACKUP) : null;
+const tertiaryGenAI = env.GEMINI_API_KEY_TERTIARY ? new GoogleGenerativeAI(env.GEMINI_API_KEY_TERTIARY) : null;
 
 /**
- * Execute AI Prompt with Multi-Tier Fallback
+ * Execute AI Prompt with Multi-Tier Fallback (5 Layers)
+ * 
+ * Tier 1: Gemini 2.5 Flash — PRIMARY key (best intelligence)
+ * Tier 2: Gemini 2.5 Flash — BACKUP key (same model, different quota pool)
+ * Tier 3: Gemini 2.0 Flash — TERTIARY key (stable fallback model)
+ * Tier 4: Llama 3.1 via OpenRouter (independent provider)
+ * Tier 5: Dumb Mode (static response — server stays alive)
+ * 
  * @param {string} prompt 
  * @param {string} systemInstruction 
  * @param {number} temperature (low for discipline/routing, high for briefing)
  * @param {boolean} jsonMode (true = force JSON response, false = free text)
  */
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Gemini Primary (2.5 Flash — best intelligence)
+  // Tier 1: Gemini 2.5 Flash — PRIMARY KEY (best intelligence)
   if (primaryGenAI) {
     try {
       return await callGemini(primaryGenAI, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Primary Gemini 2.5 failed:', e.message);
+      console.warn('[FALLBACK] Tier 1 (Gemini 2.5 PRIMARY) failed:', e.message);
     }
   }
 
-  // Tier 2: Gemini Backup (2.0 Flash — stable fallback)
+  // Tier 2: Gemini 2.5 Flash — BACKUP KEY (same model, fresh quota pool)
   if (backupGenAI) {
     try {
-      console.log('[FALLBACK] Using Backup Gemini 2.0...');
-      return await callGemini(backupGenAI, 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode);
+      console.log('[FALLBACK] Switching to Tier 2 (Gemini 2.5 BACKUP key)...');
+      return await callGemini(backupGenAI, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Backup Gemini 2.0 failed:', e.message);
+      console.warn('[FALLBACK] Tier 2 (Gemini 2.5 BACKUP) failed:', e.message);
     }
   }
 
-  // Tier 3: Meta Llama 3.1 via OpenRouter
+  // Tier 3: Gemini 2.0 Flash — TERTIARY KEY (stable fallback model + fresh quota)
+  if (tertiaryGenAI) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 3 (Gemini 2.0 TERTIARY key)...');
+      return await callGemini(tertiaryGenAI, 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) {
+      console.warn('[FALLBACK] Tier 3 (Gemini 2.0 TERTIARY) failed:', e.message);
+    }
+  }
+
+  // Tier 4: Meta Llama 3.1 via OpenRouter (completely independent provider)
   if (env.OPENROUTER_API_KEY) {
     try {
-      console.log('[FALLBACK] Using OpenRouter Llama 3.1...');
+      console.log('[FALLBACK] Switching to Tier 4 (OpenRouter Llama 3.1)...');
       return await callOpenRouter(prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] OpenRouter Llama failed:', e.message);
+      console.warn('[FALLBACK] Tier 4 (OpenRouter Llama) failed:', e.message);
     }
   }
 
-  // Tier 4: Dumb Mode
-  console.error('[FALLBACK] All AI layers exhausted. Entering Dumb Mode.');
-  // Return proper key so webhook.js can send it back to user
+  // Tier 5: Dumb Mode — ALL AI layers exhausted
+  console.error('[FALLBACK] ⚠️ All 4 AI layers exhausted. Entering Dumb Mode.');
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,
     god_mode_trigger: false,
-    reply_message: 'Tuan, sistem otak saya sedang kelebihan beban atau koneksi terputus. Coba lagi dalam beberapa menit.'
+    reply_message: 'Tuan, seluruh jalur otak saya sedang kehabisan kuota atau terputus. Sistem akan pulih otomatis dalam beberapa menit. Coba lagi sebentar lagi.'
   });
 }
 
