@@ -12,8 +12,8 @@ module.exports = {
   WEATHER_API_KEY: process.env.WEATHER_API_KEY,
   NEWS_API_KEY: process.env.NEWS_API_KEY,
   NEXA_GODMODE_SECRET: process.env.NEXA_GODMODE_SECRET,
-  TASKER_WEBHOOK_URL: process.env.TASKER_WEBHOOK_URL,
-  GOOGLE_SERVICE_ACCOUNT_EMAIL: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+  NTFY_TOPIC: process.env.NTFY_TOPIC, // Required for God Mode execution via ntfy.sh
+  TASKER_WEBHOOK_URL: process.env.TASKER_WEBHOOK_URL, // Optional direct push fallback
   GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
   GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID,
   GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID,

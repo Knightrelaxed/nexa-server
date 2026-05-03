@@ -22,7 +22,7 @@ Dokumen ini adalah panduan lengkap untuk melakukan *setup* aplikasi **Tasker** d
 | 1 | Sensor Keuangan Livin' | Notifikasi Livin' by Mandiri | Kirim data transaksi ke N.E.X.A |
 | 2 | Buffer Fallback Keuangan | Sensor Keuangan gagal POST | Kirim via Telegram sebagai backup |
 | 3 | Sensor Screen-Time | Buka TikTok/Instagram >30 menit | Trigger God Mode |
-| 4 | God Mode Executor | Notifikasi Telegram "🔴 GOD MODE AKTIF" | Matikan WiFi, Data, Kunci Layar |
+| 4 | God Mode Executor | Event ntfy pesan masuk | Matikan WiFi, Data, Kunci Layar |
 | 5 | Alarm Dismissed Briefing | Alarm HP dimatikan | Request Morning Briefing ke N.E.X.A |
 | 6 | Watchdog (Lapisan 3) | Setiap 2 jam | Cek kesehatan server, alert jika mati |
 
@@ -134,36 +134,41 @@ Buat Task: `Monitor Screen Time NEXA`
 
 ---
 
-## 4. 🔴 GOD MODE EXECUTOR (Algojo Disiplin)
+## 4. 🔴 GOD MODE EXECUTOR (Algojo Disiplin via ntfy.sh)
 
-Mencegat pesan rahasia dari N.E.X.A di Telegram dan mengeksekusi intervensi sistem Android secara paksa.
+Menerima push instan dari N.E.X.A via ntfy.sh dan mengeksekusi intervensi sistem Android secara paksa.
 
-**Arsitektur:**
+**Arsitektur (Immortality Protocol v3.0 - Direct Push):**
 ```
-Server HF Space → Kirim "🔴 GOD MODE AKTIF" via Telegram API
-→ Notifikasi Telegram muncul di HP
-→ Tasker mencegat teks tersebut
+Server HF Space → POST ke https://ntfy.sh/<NTFY_TOPIC>
+→ Aplikasi ntfy di HP menerima pesan secara instan (lewat Google FCM)
+→ Tasker Event mendeteksi pesan ntfy
 → Tasker matikan WiFi + Data + Kunci Layar
 ```
 
-### A. Membuat Profile
-1. Buat Profile `+` → **Event** → **Plugin** → **AutoNotification** → **Intercept**
-2. **Apps:** Pilih **Telegram**
-3. **Title Filter:** Nama bot N.E.X.A Anda
-4. **Text Filter:** `🔴 GOD MODE AKTIF`
-5. Simpan
+### A. Persiapan Aplikasi ntfy
+1. Install aplikasi **ntfy** dari Google Play Store.
+2. Buka aplikasi, tap tanda `+` di kanan bawah (Subscribe to topic).
+3. Masukkan topic rahasia Anda (sama persis dengan `NTFY_TOPIC` di `.env`, contoh: `nexa_godmode_faqih_x9k3m2`).
+4. Tap tombol Subscribe. (Pastikan aplikasi ntfy berjalan dan tidak dibunuh oleh battery saver Android).
 
-### B. Membuat Task (Eksekusi Paksa)
+### B. Membuat Profile
+1. Buat Profile `+` → **Event** → **Plugin** → **ntfy** → **Message received**
+2. Klik ikon pensil (Configuration).
+3. Biarkan kosong atau isi filter Topic sesuai `NTFY_TOPIC` Anda agar spesifik.
+4. Simpan.
+
+### C. Membuat Task (Eksekusi Paksa)
 Buat Task: `Eksekusi God Mode NEXA`
 
 1. **Net → WiFi** → Set: `Off`
-2. **Net → Mobile Data** → Set: `Off` *(Butuh izin ADB `WRITE_SECURE_SETTINGS` — sudah diberikan)*
+2. **Net → Mobile Data** → Set: `Off` *(Butuh izin ADB `WRITE_SECURE_SETTINGS` — jika belum, Tasker akan memberi tahu)*
 3. **App → Go Home** (Paksa kembali ke layar utama)
 4. **Display → System Lock** (Kunci layar instan)
-5. **AutoNotification → Cancel** (Hapus notifikasi Telegram agar bersih)
+5. **Tasker → Flash** → Text: `GOD MODE EXECUTED. WAKTUMU BERHARGA!`
 
-### C. Prompt Tasker AI Agent
-> **"Buat Profile AutoNotification Intercept untuk mencegat notifikasi dari aplikasi Telegram yang teksnya mengandung '🔴 GOD MODE AKTIF'. Jika terpicu, jalankan Task secara berurutan: matikan WiFi, matikan Mobile Data, jalankan aksi Go Home (kembali ke layar utama), jalankan aksi System Lock (kunci layar), lalu batalkan notifikasi Telegram tersebut."**
+### D. Prompt Tasker AI Agent
+> **"Buat Profile Event menggunakan Plugin ntfy (Message received). Jika terpicu, jalankan Task secara berurutan: matikan WiFi, matikan Mobile Data, jalankan aksi Go Home (kembali ke layar utama), jalankan aksi System Lock (kunci layar), lalu tampilkan pesan Flash 'GOD MODE EXECUTED. WAKTUMU BERHARGA!'."**
 
 ---
 

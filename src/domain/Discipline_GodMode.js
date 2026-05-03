@@ -3,62 +3,65 @@ const env = require('../config/env');
 const security = require('../utils/security');
 
 /**
- * Trigger God Mode Escalation to Android Device via Telegram Intercept
+ * Trigger God Mode Escalation to Android Device via ntfy.sh
  * 
  * ARCHITECTURE (Immortality Protocol v3.0):
  * Server cannot push directly to Android (HP behind NAT/CGNAT = no public IP).
- * Instead: Server → sends "🔴 GOD MODE AKTIF" Telegram message
- *         → Tasker intercepts the notification → Tasker executes system actions
+ * Instead: Server → POST https://ntfy.sh/<secret-topic>
+ *         → ntfy app intercepts instantly via FCM
+ *         → Tasker Event: ntfy message received → Tasker executes system actions
  * 
- * TASKER_WEBHOOK_URL is kept as an OPTIONAL direct-push fallback
- * (e.g. if user later configures AutoRemote or ngrok tunnel)
+ * This guarantees sub-second latency and bypasses Telegram delays or DND modes.
  * 
  * @param {number} level - Escalation level (e.g. 3)
  * @param {object} metadata - Details about violation
  */
 async function triggerGodMode(level = 3, metadata = {}) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
-    console.warn('[DISCIPLINE] Telegram credentials not configured. God Mode cannot be delivered.');
-    return false;
-  }
-
   const timestamp = new Date().toISOString();
   const violationInfo = metadata.violation_app
     ? `App: ${metadata.violation_app}`
     : metadata.source || 'Manual trigger';
 
   // ============================================================
-  // PRIMARY: Kirim pesan ke Telegram — Tasker mencegat notifikasi ini
-  // Tasker Profile #4 (God Mode Executor) mendeteksi teks "🔴 GOD MODE AKTIF"
-  // dan mengeksekusi: matikan WiFi + Data + kunci layar + Go Home
+  // PRIMARY: ntfy.sh direct push (Instant, DND-proof)
   // ============================================================
-  const godModeMessage = `🔴 GOD MODE AKTIF
-
-Tuan Faqih,
-Batas screen-time terlampaui.
-Koneksi internet dimatikan.
-
-Pelanggaran: ${violationInfo}
-Level: ${level}
-Waktu: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
-
--N.E.X.A`;
-
-  try {
-    await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: env.TELEGRAM_CHAT_ID,
-      text: godModeMessage
-      // NO parse_mode — plain text for reliable Tasker text filter matching
-    });
-    console.log(`[DISCIPLINE] God Mode (Level ${level}) delivered via Telegram. Tasker will intercept and execute.`);
-  } catch (telegramErr) {
-    console.error('[DISCIPLINE] Failed to send God Mode via Telegram:', telegramErr.message);
-    return false;
+  if (env.NTFY_TOPIC) {
+    const godModeMessage = `Tuan Faqih,\nBatas screen-time terlampaui.\nKoneksi internet dimatikan.\n\nPelanggaran: ${violationInfo}\nLevel: ${level}`;
+    try {
+      await axios.post(`https://ntfy.sh/${env.NTFY_TOPIC}`, godModeMessage, {
+        headers: {
+          'Title': '🔴 GOD MODE AKTIF',
+          'Priority': 'urgent',
+          'Tags': 'warning,skull'
+        }
+      });
+      console.log(`[DISCIPLINE] God Mode (Level ${level}) delivered via ntfy.sh instantly.`);
+    } catch (ntfyErr) {
+      console.error('[DISCIPLINE] Failed to send God Mode via ntfy.sh:', ntfyErr.message);
+    }
+  } else {
+    console.warn('[DISCIPLINE] NTFY_TOPIC not configured. Primary God Mode push disabled.');
   }
 
   // ============================================================
-  // OPTIONAL FALLBACK: Direct HTTP push to Tasker (AutoRemote/ngrok)
-  // Only runs if TASKER_WEBHOOK_URL is configured — safe to leave empty
+  // SECONDARY: Send message back to Telegram as an alert/audit log
+  // ============================================================
+  if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+    const telegramMessage = `🔴 <b>GOD MODE AKTIF</b>\n\nTuan Faqih,\nBatas screen-time terlampaui.\nKoneksi internet dimatikan.\n\nPelanggaran: ${violationInfo}\nLevel: ${level}\nWaktu: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}`;
+    try {
+      await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: env.TELEGRAM_CHAT_ID,
+        text: telegramMessage,
+        parse_mode: 'HTML'
+      });
+    } catch (telegramErr) {
+      console.error('[DISCIPLINE] Failed to send God Mode audit to Telegram:', telegramErr.message);
+    }
+  }
+
+  // ============================================================
+  // TERTIARY (FALLBACK): Direct HTTP push to Tasker (AutoRemote/ngrok)
+  // Only runs if TASKER_WEBHOOK_URL is configured
   // ============================================================
   if (env.TASKER_WEBHOOK_URL) {
     const signature = security.generateTaskerSignature(timestamp, level);
@@ -88,10 +91,9 @@ Waktu: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
         },
         timeout: 5000
       });
-      console.log('[DISCIPLINE] God Mode also delivered via direct Tasker URL (bonus).');
+      console.log('[DISCIPLINE] God Mode delivered via direct Tasker URL.');
     } catch (directErr) {
-      // Direct push failure is non-fatal — Telegram intercept already handles it
-      console.warn('[DISCIPLINE] Direct Tasker push failed (non-fatal):', directErr.message);
+      console.warn('[DISCIPLINE] Direct Tasker push failed:', directErr.message);
     }
   }
 

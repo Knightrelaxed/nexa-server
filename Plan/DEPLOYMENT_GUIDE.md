@@ -83,7 +83,8 @@ Klik **"New secret"** dan masukkan satu per satu **semua variabel** dari file `.
 | `NEWS_API_KEY` | API Key NewsData.io |
 | `OPENROUTER_API_KEY` | API Key OpenRouter |
 | `NEXA_GODMODE_SECRET` | Secret key God Mode |
-| `TASKER_WEBHOOK_URL` | Kosongkan dulu, isi nanti dari Tasker |
+| `NTFY_TOPIC` | Topic unik untuk push notifikasi ntfy.sh (contoh: `nexa_godmode_faqih_x9k3m2`) |
+| `TASKER_WEBHOOK_URL` | Kosongkan dulu (opsional) |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Email service account |
 | `GOOGLE_PRIVATE_KEY` | Private key (copy SELURUHNYA termasuk `-----BEGIN...-----END-----`) |
 | `GOOGLE_SHEET_ID` | ID Google Sheet |
@@ -185,7 +186,18 @@ Buat **Profile** baru di Tasker:
 
 ---
 
-## FASE 7: Setup Tasker Buffer Fallback (Lapisan 4 — Black Box)
+## FASE 7: Setup ntfy.sh (Direct Push God Mode)
+
+Agar N.E.X.A bisa mengeksekusi God Mode secara instan (bypass Telegram delay dan DND mode), kita menggunakan layanan push ntfy.sh.
+
+1. Install aplikasi **ntfy** dari Google Play Store di Android Anda.
+2. Buka aplikasi, klik tanda `+` (Subscribe to topic).
+3. Masukkan topic yang sama persis dengan yang Anda tulis di variabel `NTFY_TOPIC` di HF Secrets (contoh: `nexa_godmode_faqih_x9k3m2`).
+4. Pastikan notifikasi aplikasi ntfy diizinkan dan tidak dibatasi oleh Battery Saver (Unrestricted).
+
+---
+
+## FASE 8: Setup Tasker Buffer Fallback (Lapisan 4 — Black Box)
 
 Ini dikonfigurasi di **Task yang sudah ada** untuk menangkap notifikasi Livin'.
 
@@ -205,7 +217,7 @@ Body: {"chat_id": "<CHAT_ID>", "text": "[BUFFER] %nominal | %merchant | %TIMES"}
 
 ---
 
-## FASE 8: Final End-to-End Testing
+## FASE 9: Final End-to-End Testing
 
 | Test | Cara | Hasil yang Diharapkan |
 |---|---|---|
