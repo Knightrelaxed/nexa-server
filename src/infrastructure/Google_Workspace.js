@@ -219,6 +219,136 @@ async function createIdeaDoc(title, content) {
   return `https://docs.google.com/document/d/${documentId}`;
 }
 
+/**
+ * GENERIC SPREADSHEET MANAGEMENT
+ */
+
+/**
+ * Find a spreadsheet by title in the user's Drive.
+ */
+async function findSpreadsheetByTitle(title) {
+  const { drive } = getClients();
+  // Ensure we only look for exact name match and spreadsheet mime type
+  // Also only look in the 2nd brain folder if configured, to avoid messing with other files.
+  let query = `name = '${title.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`;
+  if (env.GOOGLE_DRIVE_FOLDER_ID) {
+    query += ` and '${env.GOOGLE_DRIVE_FOLDER_ID}' in parents`;
+  }
+
+  const response = await drive.files.list({
+    q: query,
+    fields: 'files(id, name)'
+  });
+
+  if (response.data.files && response.data.files.length > 0) {
+    return response.data.files[0].id;
+  }
+  return null;
+}
+
+/**
+ * Create a new spreadsheet with the given title and headers.
+ * @returns {string} The spreadsheet URL
+ */
+async function createGenericSpreadsheet(title, headers) {
+  const { sheets, drive } = getClients();
+
+  // 1. Create the spreadsheet
+  const response = await sheets.spreadsheets.create({
+    requestBody: {
+      properties: {
+        title: title
+      }
+    }
+  });
+  
+  const spreadsheetId = response.data.spreadsheetId;
+
+  // 2. Add headers to row 1
+  if (headers && headers.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'A1',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [headers]
+      }
+    });
+  }
+
+  // 3. Move to 2nd brain folder
+  if (env.GOOGLE_DRIVE_FOLDER_ID) {
+    try {
+      const file = await drive.files.get({
+        fileId: spreadsheetId,
+        fields: 'parents'
+      });
+      const previousParents = (file.data.parents || []).join(',');
+
+      await drive.files.update({
+        fileId: spreadsheetId,
+        addParents: env.GOOGLE_DRIVE_FOLDER_ID,
+        removeParents: previousParents,
+        fields: 'id, parents'
+      });
+    } catch (err) {
+      console.error('[DRIVE] Failed to move spreadsheet to shared folder:', err.message);
+    }
+  }
+
+  return { id: spreadsheetId, url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}` };
+}
+
+/**
+ * Get headers from the first row of a spreadsheet.
+ */
+async function getSpreadsheetHeaders(spreadsheetId) {
+  const { sheets } = getClients();
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: '1:1' // First row
+    });
+    if (response.data.values && response.data.values.length > 0) {
+      return response.data.values[0];
+    }
+  } catch (err) {
+    console.error('[SHEETS] Failed to get headers:', err.message);
+  }
+  return [];
+}
+
+/**
+ * Append a generic row to a spreadsheet.
+ */
+async function appendGenericRow(spreadsheetId, values) {
+  const { sheets } = getClients();
+  const response = await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: 'A:Z', // Append to any available column
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: [values]
+    }
+  });
+  return response.data;
+}
+
+/**
+ * Delete (trash) a spreadsheet.
+ */
+async function deleteGenericSpreadsheet(fileId) {
+  const { drive } = getClients();
+  await drive.files.update({
+    fileId,
+    requestBody: {
+      trashed: true
+    }
+  });
+  return true;
+}
+
 module.exports = {
   appendFinanceRow,
   getFinanceSummary,
@@ -227,7 +357,12 @@ module.exports = {
   findEventByTitle,
   deleteCalendarEvent,
   getTodaysEvents,
-  createIdeaDoc
+  createIdeaDoc,
+  findSpreadsheetByTitle,
+  createGenericSpreadsheet,
+  getSpreadsheetHeaders,
+  appendGenericRow,
+  deleteGenericSpreadsheet
   // Note: raw clients (sheets, calendar, docs, drive) not exported.
   // Use the functions above. Clients are lazy-initialized via getClients().
 };

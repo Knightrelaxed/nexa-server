@@ -7,6 +7,8 @@ const aiRouter = require('../core/AI_Router');
 const financeEngine = require('../domain/Finance_Engine');
 const godMode = require('../domain/Discipline_GodMode');
 const voiceEngine = require('../core/Voice_Engine');
+const visionEngine = require('../core/Vision_Engine');
+const spreadsheetManager = require('../domain/Spreadsheet_Manager');
 
 // ============================================================
 // TELEGRAM WEBHOOK (Telegram → N.E.X.A Server)
@@ -106,6 +108,25 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
     }
   }
 
+  // ============================================================
+  // IMAGE / VISION PROCESSING
+  // ============================================================
+  if (message.photo && message.photo.length > 0) {
+    try {
+      console.log('[TELEGRAM] Photo received. Processing via Gemini Vision...');
+      // Telegram sends multiple sizes, the last one is the largest
+      const largestPhoto = message.photo[message.photo.length - 1];
+      textInput = await visionEngine.processTelegramImage(largestPhoto.file_id, message.caption || '');
+      console.log('[VISION] Image analysis result:', textInput);
+    } catch (e) {
+      console.error('[VISION] Image processing failed:', e.message);
+      await sendToTelegram('⚠️ Maaf Tuan, sistem penglihatan (Vision) sedang terganggu.');
+      return;
+    }
+  } else if (message.caption && !textInput) {
+    textInput = message.caption; // fallback if it's a document/video without explicit support
+  }
+
   if (!textInput || textInput.trim() === '') return;
 
   console.log('[TELEGRAM] Received message:', textInput.substring(0, 100));
@@ -171,6 +192,15 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
             domainReply = `✅ Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;
           }
           console.log('[2ND_BRAIN] Idea successfully saved to Supabase and Google Docs.');
+        }
+        break;
+
+      case 'SPREADSHEET':
+        if (routingData.extracted_data) {
+          const result = await spreadsheetManager.processSpreadsheetIntent(routingData.extracted_data);
+          if (result && result.message) {
+            domainReply = result.message;
+          }
         }
         break;
     }

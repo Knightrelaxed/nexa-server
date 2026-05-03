@@ -14,13 +14,14 @@ Jika instruksi Tuan Faqih tidak detail atau kekurangan data esensial (contoh: "c
 
 Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 {
-  "intent": "FINANCE" | "CALENDAR" | "DISCIPLINE" | "2ND_BRAIN" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
+  "intent": "FINANCE" | "CALENDAR" | "DISCIPLINE" | "2ND_BRAIN" | "SPREADSHEET" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
   "extracted_data": {
      // FINANCE: { nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO) }
      // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string, end: string }
      // 2ND_BRAIN: { title: string, content: string }
      // DEVICE_CONTROL: { action: "ALARM"|"FLASHLIGHT"|"VOLUME"|"LOCK", params: apa saja }
      // RESEARCH / INTELLIGENCE: { query: "kata kunci", target_source: "web/news/scholarship" }
+     // SPREADSHEET: { action: "CREATE_OR_APPEND"|"DELETE", table_name: string, data: { "Kolom1": "Nilai1", "Kolom2": "Nilai2" } }
      // Jika intent kustom: { ...buat struktur data JSON relevan berdasarkan logika Anda... }
   },
   "reply_message": "Respon natural, profesional, dan loyal sebagai asisten cerdas untuk membalas pengguna",
