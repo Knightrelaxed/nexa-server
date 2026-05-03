@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const https = require('https');
 const env = require('../config/env');
 const security = require('../utils/security');
 const aiRouter = require('../core/AI_Router');
@@ -24,52 +23,29 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
   if (!message) return;
 
   // Helper: send message back to Tuan Faqih via Telegram (with 4000 char safety)
-  // Uses Node.js built-in https.request (most low-level, IPv4-forced)
-  const sendToTelegram = (text) => new Promise((resolve) => {
-    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return resolve();
+  const sendToTelegram = async (text) => {
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
     const safeText = String(text).substring(0, 4000);
     const botToken = env.TELEGRAM_BOT_TOKEN.trim();
     const chatId = env.TELEGRAM_CHAT_ID.trim();
-    const body = JSON.stringify({ chat_id: chatId, text: safeText, parse_mode: 'HTML' });
 
-    const options = {
-      hostname: 'api.telegram.org',
-      port: 443,
-      path: `/bot${botToken}/sendMessage`,
-      method: 'POST',
-      family: 4, // Force IPv4 — critical for Hugging Face Docker containers
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => {
-        if (res.statusCode !== 200) {
-          console.error('[TELEGRAM] API Error:', res.statusCode, data);
-        }
-        resolve();
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: safeText,
+          parse_mode: 'HTML'
+        })
       });
-    });
-
-    req.on('error', (e) => {
-      console.error('[TELEGRAM] https.request Error:', e.code, e.message);
-      resolve();
-    });
-
-    req.setTimeout(10000, () => {
-      console.error('[TELEGRAM] Request timed out after 10s');
-      req.destroy();
-      resolve();
-    });
-
-    req.write(body);
-    req.end();
-  });
-
+      if (!response.ok) {
+        console.error('[TELEGRAM] Failed to send message:', await response.text());
+      }
+    } catch (e) {
+      console.error('[TELEGRAM] Network Error:', e.message);
+    }
+  };
 
   // Helper: escape dynamic/untrusted strings before embedding in HTML parse_mode messages
   // Prevents Telegram rejecting the message with 400 Bad Request
