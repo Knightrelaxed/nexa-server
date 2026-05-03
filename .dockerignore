@@ -1,0 +1,44 @@
+# ============================================================
+# .dockerignore — Excludes files from Docker build context
+# SECURITY CRITICAL: .env must NEVER enter the Docker image
+# ============================================================
+
+# Dependencies (will be installed fresh via npm ci)
+node_modules/
+npm-debug.log*
+
+# Environment secrets — NEVER include in image
+# All secrets are injected via HF Space "Variables and Secrets"
+.env
+.env.*
+!.env.example
+
+# Version control
+.git/
+.gitignore
+
+# Development/planning documents (not needed at runtime)
+Plan/
+*.md
+!README.md
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Test files
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Database files (runtime data should not be in image)
+database/
+
+# IDE files
+.vscode/
+.idea/

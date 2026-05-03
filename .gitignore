@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Environment secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+
+# Google Service Account JSON key — CRITICAL: never push to GitHub
+*.json
+!package.json
+!package-lock.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/

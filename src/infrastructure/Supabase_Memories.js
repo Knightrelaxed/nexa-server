@@ -1,0 +1,105 @@
+const { createClient } = require('@supabase/supabase-js');
+const env = require('../config/env');
+
+// Initialize only if URL and KEY are provided to avoid crashing on empty .env
+const supabase = (env.SUPABASE_URL && env.SUPABASE_KEY) 
+  ? createClient(env.SUPABASE_URL, env.SUPABASE_KEY)
+  : null;
+
+/**
+ * Save user chat memory for Contextual Retrieval
+ */
+async function saveChatMemory(role, content) {
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from('nexa_chat_memories')
+    .insert([{ role, content, created_at: new Date().toISOString() }]);
+
+  if (error) console.error('[SUPABASE] Error saving chat memory:', error.message);
+  return data;
+}
+
+/**
+ * Get last N chat memories for state awareness
+ */
+async function getRecentMemories(limit = 10) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('nexa_chat_memories')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('[SUPABASE] Error fetching memories:', error.message);
+    return [];
+  }
+  return data.reverse();
+}
+
+/**
+ * Check if a financial transaction is a duplicate using Composite Key
+ * @param {string} compositeKey - e.g. "50000_Kopi Kenangan"
+ * @param {Date} transactionTime 
+ */
+async function isDuplicateTransaction(compositeKey, transactionTime) {
+  if (!supabase) return false;
+  
+  const timeMinus10 = new Date(transactionTime.getTime() - 10 * 60000).toISOString();
+  const timePlus10 = new Date(transactionTime.getTime() + 10 * 60000).toISOString();
+
+  const { data, error } = await supabase
+    .from('nexa_finance_dedup')
+    .select('id')
+    .eq('composite_key', compositeKey)
+    .gte('transaction_time', timeMinus10)
+    .lte('transaction_time', timePlus10);
+
+  if (error) {
+    console.error('[SUPABASE] Error checking duplicate:', error.message);
+    return false; 
+  }
+
+  return data && data.length > 0;
+}
+
+/**
+ * Log a new transaction key to prevent future duplicates
+ */
+async function logTransactionKey(compositeKey, transactionTime, source) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('nexa_finance_dedup')
+    .insert([{ 
+      composite_key: compositeKey, 
+      transaction_time: transactionTime.toISOString(),
+      source 
+    }]);
+
+  if (error) console.error('[SUPABASE] Error logging transaction key:', error.message);
+}
+
+/**
+ * Save idea to 2nd Brain Vault
+ */
+async function saveIdeaToVault(ideaContent) {
+  if (!supabase) return;
+  const { data, error } = await supabase
+    .from('nexa_2nd_brain')
+    .insert([{ content: ideaContent, created_at: new Date().toISOString() }]);
+
+  if (error) {
+    console.error('[SUPABASE] Error saving idea:', error.message);
+    throw error;
+  }
+  return data;
+}
+
+module.exports = {
+  supabase,
+  saveChatMemory,
+  getRecentMemories,
+  isDuplicateTransaction,
+  logTransactionKey,
+  saveIdeaToVault
+};
