@@ -26,11 +26,25 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
   const sendToTelegram = async (text) => {
     if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
     const safeText = String(text).substring(0, 4000);
-    await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: env.TELEGRAM_CHAT_ID,
-      text: safeText,
-      parse_mode: 'HTML'
-    }).catch(e => console.error('[TELEGRAM] Failed to send message:', e.message));
+    const botToken = env.TELEGRAM_BOT_TOKEN.trim();
+    const chatId = env.TELEGRAM_CHAT_ID.trim();
+    
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: safeText,
+          parse_mode: 'HTML'
+        })
+      });
+      if (!response.ok) {
+        console.error('[TELEGRAM] Failed to send message:', await response.text());
+      }
+    } catch (e) {
+      console.error('[TELEGRAM] Network Error:', e.message);
+    }
   };
 
   // Helper: escape dynamic/untrusted strings before embedding in HTML parse_mode messages
