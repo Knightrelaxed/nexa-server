@@ -4,6 +4,7 @@ const axios = require('axios');
 const env = require('../config/env');
 const security = require('../utils/security');
 const aiRouter = require('../core/AI_Router');
+const { invalidatePersonalFactsCache } = aiRouter;
 const financeEngine = require('../domain/Finance_Engine');
 const godMode = require('../domain/Discipline_GodMode');
 const voiceEngine = require('../core/Voice_Engine');
@@ -179,19 +180,33 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
 
       case '2ND_BRAIN':
         if (routingData.extracted_data && routingData.extracted_data.content) {
-          const supabaseMemories = require('../infrastructure/Supabase_Memories');
-          await supabaseMemories.saveIdeaToVault(routingData.extracted_data.content).catch(e => console.error(e));
+          const factType = routingData.extracted_data.type || 'IDEA'; // 'PERSONAL_FACT' or 'IDEA'
+
+          // Save to Supabase vault with correct type
+          await supabaseMemories.saveIdeaToVault(
+            routingData.extracted_data.content,
+            factType
+          ).catch(e => console.error('[2ND_BRAIN] Supabase vault save error:', e));
+
+          // If it's a PERSONAL_FACT, invalidate cache immediately so
+          // the very next message already knows this fact
+          if (factType === 'PERSONAL_FACT') {
+            invalidatePersonalFactsCache();
+            console.log('[2ND_BRAIN] PERSONAL_FACT saved — cache invalidated.');
+          }
 
           const googleWorkspace = require('../infrastructure/Google_Workspace');
           const docUrl = await googleWorkspace.createIdeaDoc(
-            routingData.extracted_data.title || 'Ideation N.E.X.A',
+            routingData.extracted_data.title || (factType === 'PERSONAL_FACT' ? 'Fakta Personal — N.E.X.A' : 'Ideation N.E.X.A'),
             routingData.extracted_data.content
-          ).catch(e => { console.error(e); return null; });
+          ).catch(e => { console.error('[2ND_BRAIN] Google Doc error:', e); return null; });
 
           if (docUrl) {
-            domainReply = `✅ Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;
+            domainReply = factType === 'PERSONAL_FACT'
+              ? `✅ Fakta personal tersimpan dan akan selalu saya ingat, Tuan.\n📄 Arsip: ${docUrl}`
+              : `✅ Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;
           }
-          console.log('[2ND_BRAIN] Idea successfully saved to Supabase and Google Docs.');
+          console.log(`[2ND_BRAIN] Saved as ${factType} to Supabase and Google Docs.`);
         }
         break;
 

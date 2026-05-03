@@ -80,13 +80,15 @@ async function logTransactionKey(compositeKey, transactionTime, source) {
 }
 
 /**
- * Save idea to 2nd Brain Vault
+ * Save idea or personal fact to 2nd Brain Vault
+ * @param {string} ideaContent
+ * @param {'IDEA'|'PERSONAL_FACT'} type
  */
-async function saveIdeaToVault(ideaContent) {
+async function saveIdeaToVault(ideaContent, type = 'IDEA') {
   if (!supabase) return;
   const { data, error } = await supabase
     .from('nexa_2nd_brain')
-    .insert([{ content: ideaContent, created_at: new Date().toISOString() }]);
+    .insert([{ content: ideaContent, type, created_at: new Date().toISOString() }]);
 
   if (error) {
     console.error('[SUPABASE] Error saving idea:', error.message);
@@ -95,11 +97,32 @@ async function saveIdeaToVault(ideaContent) {
   return data;
 }
 
+/**
+ * Fetch all PERSONAL_FACT entries from the vault.
+ * Used by AI_Router to inject long-term personal context.
+ * @returns {Promise<string[]>} Array of fact strings
+ */
+async function getPersonalFacts() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('nexa_2nd_brain')
+    .select('content')
+    .eq('type', 'PERSONAL_FACT')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[SUPABASE] Error fetching personal facts:', error.message);
+    return [];
+  }
+  return (data || []).map(row => row.content);
+}
+
 module.exports = {
   supabase,
   saveChatMemory,
   getRecentMemories,
   isDuplicateTransaction,
   logTransactionKey,
-  saveIdeaToVault
+  saveIdeaToVault,
+  getPersonalFacts
 };
