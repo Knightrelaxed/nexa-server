@@ -2,6 +2,8 @@ const env = require('../config/env');
 const { NEXA_PERSONALITY } = require('../config/personality');
 const axios = require('axios');
 const https = require('https');
+const util = require('util');
+const exec = util.promisify(require('child_process').exec);
 
 // Create a dedicated IPv4 agent to bypass Hugging Face network bugs
 const ipv4Agent = new https.Agent({
@@ -82,33 +84,31 @@ ATURAN KELUARAN:
 `;
 
 /**
- * Download image from Telegram and convert to Base64 using Axios
+ * Download image from Telegram and convert to Base64 using system curl
+ * Bypasses ALL Node.js TLS drop bugs on Hugging Face.
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-  console.log('[VISION] Getting file info from Telegram...');
-  const fileRes = await axios.get(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`, { httpsAgent: ipv4Agent });
-  if (!fileRes.data.ok) throw new Error('Failed to get file info from Telegram');
+  console.log('[VISION] Getting file info from Telegram via system curl...');
+  const fileInfoUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
   
-  const filePath = fileRes.data.result.file_path;
+  const { stdout: infoStr } = await exec(`curl -sL --ipv4 "${fileInfoUrl}"`);
+  const fileData = JSON.parse(infoStr);
+  if (!fileData.ok) throw new Error('Failed to get file info from Telegram');
+  
+  const filePath = fileData.result.file_path;
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-  console.log('[VISION] Downloading actual file data from Telegram...');
-  const response = await axios.get(fileUrl, { 
-    responseType: 'arraybuffer',
-    httpsAgent: ipv4Agent 
-  });
-  
-  const buffer = Buffer.from(response.data, 'binary');
-  const base64Data = buffer.toString('base64');
+  console.log('[VISION] Downloading actual file data from Telegram via system curl...');
+  const { stdout: base64Data } = await exec(`curl -sL --ipv4 "${fileUrl}" | base64 -w 0`, { maxBuffer: 15 * 1024 * 1024 });
 
   const ext = filePath.split('.').pop().toLowerCase();
   let mimeType = 'image/jpeg';
   if (ext === 'png') mimeType = 'image/png';
   if (ext === 'webp') mimeType = 'image/webp';
 
-  return { mimeType, data: base64Data };
+  return { mimeType, data: base64Data.trim() };
 }
 
 /**
