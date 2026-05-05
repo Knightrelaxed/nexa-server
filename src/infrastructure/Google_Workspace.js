@@ -172,42 +172,52 @@ async function getTodaysEvents() {
 }
 
 /**
- * Create a new Google Doc for 2nd Brain Ideation
+ * Append an idea/fact to the single Master 2nd Brain Google Doc.
+ * Instead of creating a new Doc per idea (blocked by Drive storage quota),
+ * we append a timestamped entry to one pre-existing document.
+ * 
+ * @param {string} title - The title/heading of the idea
+ * @param {string} content - The body content
+ * @param {string} type - 'IDEA' or 'PERSONAL_FACT'
+ * @returns {string} URL to the master document
  */
-async function createIdeaDoc(title, content) {
-  const { docs, drive } = getClients();
-  
-  // 1. Create document directly in the user's shared folder via Drive API
-  // This bypasses the Google Docs API '403 The caller does not have permission' bug for fresh Service Accounts
-  const fileMetadata = {
-    name: title,
-    mimeType: 'application/vnd.google-apps.document'
-  };
-  
-  if (env.GOOGLE_DRIVE_FOLDER_ID) {
-    fileMetadata.parents = [env.GOOGLE_DRIVE_FOLDER_ID];
+async function appendToIdeaDoc(title, content, type = 'IDEA') {
+  const { docs } = getClients();
+
+  const documentId = env.GOOGLE_DOCS_IDEA_ID;
+  if (!documentId) {
+    throw new Error('[2ND_BRAIN] GOOGLE_DOCS_IDEA_ID not configured. Create a Google Doc, share it with the Service Account, and add the Doc ID to Secrets.');
   }
-  
-  const file = await drive.files.create({
-    requestBody: fileMetadata,
-    fields: 'id'
+
+  // Build a formatted entry with timestamp and divider
+  const timestamp = new Date().toLocaleString('id-ID', { 
+    timeZone: 'Asia/Jakarta', 
+    dateStyle: 'full', 
+    timeStyle: 'short' 
   });
+  const typeLabel = type === 'PERSONAL_FACT' ? '📌 FAKTA PERSONAL' : '💡 IDE';
   
-  const documentId = file.data.id;
-  
-  // 2. Insert the actual content into the document using Docs API
+  const entry = `\n\n═══════════════════════════════════════\n${typeLabel} — ${timestamp}\n\n📋 ${title}\n\n${content}\n═══════════════════════════════════════\n`;
+
+  // Get current document length to know where to append
+  const doc = await docs.documents.get({ documentId });
+  const endIndex = doc.data.body.content.reduce((max, element) => {
+    return Math.max(max, element.endIndex || 0);
+  }, 0);
+
+  // Append at the very end of the document
   await docs.documents.batchUpdate({
     documentId,
     requestBody: {
       requests: [{
         insertText: {
-          location: { index: 1 },
-          text: content
+          location: { index: endIndex - 1 }, // Insert before the final newline
+          text: entry
         }
       }]
     }
   });
-  
+
   return `https://docs.google.com/document/d/${documentId}`;
 }
 
@@ -349,7 +359,7 @@ module.exports = {
   findEventByTitle,
   deleteCalendarEvent,
   getTodaysEvents,
-  createIdeaDoc,
+  appendToIdeaDoc,
   findSpreadsheetByTitle,
   createGenericSpreadsheet,
   getSpreadsheetHeaders,

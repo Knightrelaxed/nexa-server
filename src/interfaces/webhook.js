@@ -262,9 +262,10 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
           }
 
           const googleWorkspace = require('../infrastructure/Google_Workspace');
-          const docUrl = await googleWorkspace.createIdeaDoc(
+          const docUrl = await googleWorkspace.appendToIdeaDoc(
             routingData.extracted_data.title || (factType === 'PERSONAL_FACT' ? 'Fakta Personal — N.E.X.A' : 'Ideation N.E.X.A'),
-            routingData.extracted_data.content
+            routingData.extracted_data.content,
+            factType
           ).catch(e => { console.error('[2ND_BRAIN] Google Doc error:', e); return null; });
 
           if (docUrl) {
