@@ -1,5 +1,3 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const axios = require('axios');
 const env = require('../config/env');
 const { NEXA_PERSONALITY } = require('../config/personality');
 
@@ -78,19 +76,25 @@ ATURAN KELUARAN:
 `;
 
 /**
- * Download image from Telegram and convert to Base64
+ * Download image from Telegram and convert to Base64 using native fetch
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-  const fileRes = await axios.get(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`);
-  if (!fileRes.data.ok) throw new Error('Failed to get file info from Telegram');
+  console.log('[VISION] Getting file info from Telegram...');
+  const fileRes = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`);
+  const fileData = await fileRes.json();
+  if (!fileData.ok) throw new Error('Failed to get file info from Telegram');
   
-  const filePath = fileRes.data.result.file_path;
+  const filePath = fileData.result.file_path;
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-  const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
-  const buffer = Buffer.from(response.data, 'binary');
+  console.log('[VISION] Downloading actual file data from Telegram...');
+  const response = await fetch(fileUrl);
+  if (!response.ok) throw new Error(`Telegram file download failed: ${response.status}`);
+  
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
   const base64Data = buffer.toString('base64');
 
   const ext = filePath.split('.').pop().toLowerCase();
@@ -102,8 +106,7 @@ async function downloadTelegramImageAsBase64(fileId) {
 }
 
 /**
- * Internal Vision call with a specific Gemini client and model, using Axios REST directly.
- * Bypasses the Node.js native fetch TLS socket hangup bug with large Base64 uploads.
+ * Internal Vision call with a specific Gemini client and model, using native fetch directly.
  */
 async function callGeminiVision(apiKey, modelName, imageData, caption) {
   const captionContext = caption
@@ -125,17 +128,23 @@ async function callGeminiVision(apiKey, modelName, imageData, caption) {
     generationConfig: { temperature: 0.4 }
   };
 
-  const response = await axios.post(url, payload, {
+  const response = await fetch(url, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity
+    body: JSON.stringify(payload)
   });
 
-  if (!response.data.candidates || response.data.candidates.length === 0) {
+  const responseData = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Gemini API Error: ${responseData.error?.message || response.statusText}`);
+  }
+
+  if (!responseData.candidates || responseData.candidates.length === 0) {
     throw new Error('Gemini API returned no candidates.');
   }
 
-  return response.data.candidates[0].content.parts[0].text;
+  return responseData.candidates[0].content.parts[0].text;
 }
 
 /**
