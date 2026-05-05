@@ -15,11 +15,12 @@ const tertiaryGenAI = env.GEMINI_API_KEY_TERTIARY ? new GoogleGenerativeAI(env.G
 /**
  * Execute AI Prompt with Multi-Tier Fallback (5 Layers)
  * 
- * Tier 1: Gemini 2.5 Flash — PRIMARY key (20 RPD)
- * Tier 2: Gemini 2.0 Flash Lite — BACKUP key (1,500 RPD)
- * Tier 3: Gemini 2.0 Flash Lite — TERTIARY key (1,500 RPD)
- * Tier 4: Llama 3.1 via OpenRouter (independent provider)
- * Tier 5: Dumb Mode (static response — server stays alive)
+ * Tier 1: Gemini 2.5 Flash — PRIMARY key (20 RPD limit, but smart)
+ * Tier 2: Groq — Llama 3.3 70B Versatile (Generous Free Quota, Super Fast)
+ * Tier 3: Gemini 2.0 Flash Lite — BACKUP key (Often blocked limit 0, but fallback)
+ * Tier 4: Gemini 2.0 Flash Lite — TERTIARY key (Often blocked limit 0)
+ * Tier 5: Llama 3.1 via OpenRouter (independent provider, currently 402 out of credits)
+ * Tier 6: Dumb Mode (static response)
  * 
  * @param {string} prompt 
  * @param {string} systemInstruction 
@@ -36,43 +37,53 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }
   }
 
-  // Tier 2: Gemini 2.0 Flash Lite — BACKUP KEY (stable model, high quota)
+  // Tier 2: Groq Llama 3.3 70B (Generous Free Tier, Extremely Fast)
+  if (env.GROQ_API_KEY) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 2 (Groq Llama 3.3 70B)...');
+      return await callGroq(prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) {
+      console.warn('[FALLBACK] Tier 2 (Groq) failed:', e.message);
+    }
+  }
+
+  // Tier 3: Gemini 2.0 Flash Lite — BACKUP KEY
   if (backupGenAI) {
     try {
-      console.log('[FALLBACK] Switching to Tier 2 (Gemini 2.0 Lite BACKUP key)...');
+      console.log('[FALLBACK] Switching to Tier 3 (Gemini 2.0 Lite BACKUP key)...');
       return await callGemini(backupGenAI, 'gemini-2.0-flash-lite', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Tier 2 (Gemini 2.0 Lite BACKUP) failed:', e.message);
+      console.warn('[FALLBACK] Tier 3 (Gemini 2.0 Lite BACKUP) failed:', e.message);
     }
   }
 
-  // Tier 3: Gemini 2.0 Flash Lite — TERTIARY KEY (1,500 RPD)
+  // Tier 4: Gemini 2.0 Flash Lite — TERTIARY KEY
   if (tertiaryGenAI) {
     try {
-      console.log('[FALLBACK] Switching to Tier 3 (Gemini 2.0 Lite TERTIARY key)...');
+      console.log('[FALLBACK] Switching to Tier 4 (Gemini 2.0 Lite TERTIARY key)...');
       return await callGemini(tertiaryGenAI, 'gemini-2.0-flash-lite', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Tier 3 (Gemini 2.0 Lite TERTIARY) failed:', e.message);
+      console.warn('[FALLBACK] Tier 4 (Gemini 2.0 Lite TERTIARY) failed:', e.message);
     }
   }
 
-  // Tier 4: Meta Llama 3.1 via OpenRouter (completely independent provider)
+  // Tier 5: Meta Llama 3.1 via OpenRouter
   if (env.OPENROUTER_API_KEY) {
     try {
-      console.log('[FALLBACK] Switching to Tier 4 (OpenRouter Llama 3.1)...');
+      console.log('[FALLBACK] Switching to Tier 5 (OpenRouter Llama 3.1)...');
       return await callOpenRouter(prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Tier 4 (OpenRouter Llama) failed:', e.message);
+      console.warn('[FALLBACK] Tier 5 (OpenRouter Llama) failed:', e.message);
     }
   }
 
-  // Tier 5: Dumb Mode — ALL AI layers exhausted
-  console.error('[FALLBACK] ⚠️ All 4 AI layers exhausted. Entering Dumb Mode.');
+  // Tier 6: Dumb Mode — ALL AI layers exhausted
+  console.error('[FALLBACK] ⚠️ All AI layers exhausted. Entering Dumb Mode.');
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,
     god_mode_trigger: false,
-    reply_message: 'Tuan, seluruh jalur otak saya sedang kehabisan kuota atau terputus. Sistem akan pulih otomatis dalam beberapa menit. Coba lagi sebentar lagi.'
+    reply_message: 'Tuan, Google memblokir akses saya, OpenRouter kehabisan kredit, dan Groq sedang offline. Sistem akan pulih otomatis. Coba lagi nanti.'
   });
 }
 
@@ -112,6 +123,31 @@ async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode =
   const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', requestBody, {
     headers: {
       'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  return response.data.choices[0].message.content;
+}
+
+/**
+ * Internal wrapper for Groq (Llama 3.3 70B Versatile)
+ */
+async function callGroq(prompt, systemInstruction, temperature, jsonMode = true) {
+  const requestBody = {
+    model: 'llama-3.3-70b-versatile',
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: prompt }
+    ],
+    temperature
+  };
+  if (jsonMode) {
+    requestBody.response_format = { type: 'json_object' };
+  }
+  const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', requestBody, {
+    headers: {
+      'Authorization': `Bearer ${env.GROQ_API_KEY}`,
       'Content-Type': 'application/json'
     }
   });
