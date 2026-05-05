@@ -177,13 +177,25 @@ async function getTodaysEvents() {
 async function createIdeaDoc(title, content) {
   const { docs, drive } = getClients();
   
-  // Create document
-  const doc = await docs.documents.create({
-    requestBody: { title }
-  });
-  const documentId = doc.data.documentId;
+  // 1. Create document directly in the user's shared folder via Drive API
+  // This bypasses the Google Docs API '403 The caller does not have permission' bug for fresh Service Accounts
+  const fileMetadata = {
+    name: title,
+    mimeType: 'application/vnd.google-apps.document'
+  };
   
-  // Insert content
+  if (env.GOOGLE_DRIVE_FOLDER_ID) {
+    fileMetadata.parents = [env.GOOGLE_DRIVE_FOLDER_ID];
+  }
+  
+  const file = await drive.files.create({
+    requestBody: fileMetadata,
+    fields: 'id'
+  });
+  
+  const documentId = file.data.id;
+  
+  // 2. Insert the actual content into the document using Docs API
   await docs.documents.batchUpdate({
     documentId,
     requestBody: {
@@ -195,27 +207,6 @@ async function createIdeaDoc(title, content) {
       }]
     }
   });
-
-  // Move to user's shared folder if GOOGLE_DRIVE_FOLDER_ID is set
-  if (env.GOOGLE_DRIVE_FOLDER_ID) {
-    try {
-      const file = await drive.files.get({
-        fileId: documentId,
-        fields: 'parents'
-      });
-      const previousParents = (file.data.parents || []).join(',');
-
-      await drive.files.update({
-        fileId: documentId,
-        addParents: env.GOOGLE_DRIVE_FOLDER_ID,
-        removeParents: previousParents,
-        fields: 'id, parents'
-      });
-      console.log(`[DRIVE] Document moved to shared folder: ${env.GOOGLE_DRIVE_FOLDER_ID}`);
-    } catch (err) {
-      console.error('[DRIVE] Failed to move document to shared folder:', err.message);
-    }
-  }
   
   return `https://docs.google.com/document/d/${documentId}`;
 }
