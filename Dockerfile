@@ -10,6 +10,14 @@ FROM node:20-slim
 # Set working directory inside the container
 WORKDIR /app
 
+# Install system dependencies required for network operations
+# node:20-slim strips curl, wget, and full CA certificates — causing TLS failures
+# to api.telegram.org. We MUST restore them for Vision Engine image downloads.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 # Copy dependency manifests FIRST (leverages Docker layer caching)
 # This layer is only rebuilt if package.json changes, not on every code change
 COPY package.json package-lock.json ./

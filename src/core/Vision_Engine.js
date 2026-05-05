@@ -5,12 +5,8 @@ const https = require('https');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 
-// Create a dedicated IPv4 agent to bypass Hugging Face network bugs
-const ipv4Agent = new https.Agent({
-  family: 4,
-  keepAlive: true,
-  keepAliveMsecs: 10000
-});
+// IPv4 agent for Gemini API calls via Axios
+const ipv4Agent = new https.Agent({ family: 4, keepAlive: true });
 
 // Keys will be read directly from env during processing
 
@@ -83,82 +79,36 @@ ATURAN KELUARAN:
 - Jika ada caption, instruksi caption HARUS dimasukkan ke dalam narasi output
 `;
 
-const TELEGRAM_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Accept': '*/*'
-};
-
-function httpsGetJson(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { family: 4, headers: TELEGRAM_HEADERS }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); } catch(e) { reject(e); }
-      });
-    }).on('error', reject);
-  });
-}
-
-function httpsGetBase64(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { family: 4, headers: TELEGRAM_HEADERS }, (res) => {
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
-    }).on('error', reject);
-  });
-}
-
 /**
- * Fallback to wget if Node.js HTTPS stack fails
- */
-async function wgetDownload(url, isJson = false) {
-  try {
-    const { stdout } = await exec(`wget -qO- --header="User-Agent: Mozilla/5.0" "${url}"`, { maxBuffer: 15 * 1024 * 1024 });
-    return isJson ? JSON.parse(stdout) : Buffer.from(stdout, 'binary').toString('base64');
-  } catch (err) {
-    throw new Error(`wget fallback failed: ${err.message}`);
-  }
-}
-
-/**
- * Download image from Telegram and convert to Base64 using pure Node.js HTTPS or wget
+ * Download image from Telegram using system cURL (installed via Dockerfile).
+ * cURL uses its own OpenSSL TLS stack, completely bypassing Node.js TLS bugs.
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
+  console.log('[VISION] Getting file info from Telegram via cURL...');
   const fileInfoUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
-  let fileData;
-
-  try {
-    console.log('[VISION] Getting file info from Telegram via pure https...');
-    fileData = await httpsGetJson(fileInfoUrl);
-  } catch (err) {
-    console.warn(`[VISION] Pure https failed (${err.message}), falling back to wget...`);
-    fileData = await wgetDownload(fileInfoUrl, true);
-  }
-
-  if (!fileData || !fileData.ok) throw new Error('Failed to get file info from Telegram');
+  
+  const { stdout: infoStr } = await exec(`curl -sL --ipv4 --connect-timeout 10 "${fileInfoUrl}"`);
+  const fileData = JSON.parse(infoStr);
+  if (!fileData.ok) throw new Error('Failed to get file info from Telegram');
   
   const filePath = fileData.result.file_path;
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-  let base64Data;
-  try {
-    console.log('[VISION] Downloading actual file data from Telegram via pure https...');
-    base64Data = await httpsGetBase64(fileUrl);
-  } catch (err) {
-    console.warn(`[VISION] Pure https image download failed (${err.message}), falling back to wget...`);
-    base64Data = await wgetDownload(fileUrl, false);
-  }
+  console.log('[VISION] Downloading image binary from Telegram via cURL...');
+  const { stdout: base64Data } = await exec(
+    `curl -sL --ipv4 --connect-timeout 15 "${fileUrl}" | base64 -w 0`,
+    { maxBuffer: 20 * 1024 * 1024 }
+  );
+  console.log('[VISION] Image downloaded successfully. Base64 size:', base64Data.length, 'chars');
 
   const ext = filePath.split('.').pop().toLowerCase();
   let mimeType = 'image/jpeg';
   if (ext === 'png') mimeType = 'image/png';
   if (ext === 'webp') mimeType = 'image/webp';
 
-  return { mimeType, data: base64Data };
+  return { mimeType, data: base64Data.trim() };
 }
 
 /**
