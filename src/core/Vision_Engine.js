@@ -159,14 +159,15 @@ async function callGeminiVision(apiKey, modelName, imageData, caption) {
  * @returns {Promise<string>} Rich textual description ready for AI_Router
  */
 async function processTelegramImage(fileId, caption = '') {
+  // Download image ONCE upfront — reuse across all tiers
+  console.log('[VISION] Downloading image from Telegram...');
+  const imageData = await downloadTelegramImageAsBase64(fileId);
+  console.log('[VISION] Image downloaded successfully. Base64 size:', imageData.data.length, 'chars');
+
   // Tier 1: Primary (2.5 Flash — best multimodal model)
   if (env.GEMINI_API_KEY_PRIMARY) {
     try {
-      console.log('[VISION] Processing image with Gemini 2.5 Flash...');
-      const imageData = await downloadTelegramImageAsBase64(fileId);
-      console.log('[VISION] Image downloaded from Telegram successfully. Size:', imageData.data.length, 'bytes');
-      
-      console.log('[VISION] Sending payload to Gemini API via Axios...');
+      console.log('[VISION] Sending to Gemini 2.5 Flash...');
       const result = await callGeminiVision(env.GEMINI_API_KEY_PRIMARY, 'gemini-2.5-flash', imageData, caption);
       console.log('[VISION] Primary vision success. Output length:', result.length);
       return result;
@@ -178,11 +179,7 @@ async function processTelegramImage(fileId, caption = '') {
   // Tier 2: Backup (2.0 Flash Lite)
   if (env.GEMINI_API_KEY_BACKUP) {
     try {
-      console.log('[VISION] Falling back to Gemini 2.0 Flash Lite for vision...');
-      const imageData = await downloadTelegramImageAsBase64(fileId);
-      console.log('[VISION] Image downloaded from Telegram successfully. Size:', imageData.data.length, 'bytes');
-      
-      console.log('[VISION] Sending payload to Gemini API via Axios...');
+      console.log('[VISION] Falling back to Gemini 2.0 Flash Lite...');
       const result = await callGeminiVision(env.GEMINI_API_KEY_BACKUP, 'gemini-2.0-flash-lite', imageData, caption);
       console.log('[VISION] Backup vision success. Output length:', result.length);
       return result;
