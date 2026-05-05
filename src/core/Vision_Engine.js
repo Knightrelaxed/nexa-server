@@ -80,39 +80,42 @@ ATURAN KELUARAN:
 `;
 
 /**
- * Download image from Telegram using system cURL (installed via Dockerfile).
- * cURL uses its own OpenSSL TLS stack, completely bypassing Node.js TLS bugs.
+ * Download image from Telegram using system cURL.
+ * 
+ * CRITICAL: HuggingFace's network firewall blocks SSL (port 443) to api.telegram.org,
+ * causing "SSL connection timeout". Telegram Bot API officially supports BOTH
+ * http:// and https://, so we use HTTP to bypass the SSL block entirely.
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-  console.log('[VISION] Getting file info from Telegram via cURL...');
-  const fileInfoUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
-  
+  // Use HTTP to bypass HuggingFace SSL firewall block to api.telegram.org
+  const telegramBase = `http://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
+
+  console.log('[VISION] Getting file info from Telegram via HTTP...');
   let infoResult;
   try {
     infoResult = await exec(
-      `curl -sSL --ipv4 --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 30 "${fileInfoUrl}"`,
+      `curl -sSL --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 30 "${telegramBase}/getFile?file_id=${fileId}"`,
       { maxBuffer: 5 * 1024 * 1024 }
     );
   } catch (err) {
     console.error('[VISION] cURL getFile STDERR:', err.stderr || 'no stderr');
-    console.error('[VISION] cURL getFile exit code:', err.code);
     throw new Error(`cURL getFile failed: ${err.stderr || err.message}`);
   }
   
   console.log('[VISION] cURL getFile response received. Length:', infoResult.stdout.length);
   const fileData = JSON.parse(infoResult.stdout);
-  if (!fileData.ok) throw new Error('Telegram getFile returned error: ' + JSON.stringify(fileData));
+  if (!fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   
   const filePath = fileData.result.file_path;
-  const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+  const fileUrl = `http://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-  console.log('[VISION] Downloading image binary from Telegram via cURL...');
+  console.log('[VISION] Downloading image binary from Telegram via HTTP...');
   let imageResult;
   try {
     imageResult = await exec(
-      `curl -sSL --ipv4 --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 60 "${fileUrl}" | base64 -w 0`,
+      `curl -sSL --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 60 "${fileUrl}" | base64 -w 0`,
       { maxBuffer: 20 * 1024 * 1024 }
     );
   } catch (err) {
