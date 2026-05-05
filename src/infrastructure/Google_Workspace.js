@@ -21,12 +21,13 @@ function getClients() {
     throw new Error('[GOOGLE] Service Account credentials not configured. Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in HF Secrets.');
   }
 
-  const auth = new google.auth.JWT(
-    env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    null,
-    env.GOOGLE_PRIVATE_KEY,
-    SCOPES
-  );
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      private_key: env.GOOGLE_PRIVATE_KEY
+    },
+    scopes: SCOPES
+  });
 
   _clients = {
     sheets: google.sheets({ version: 'v4', auth }),
