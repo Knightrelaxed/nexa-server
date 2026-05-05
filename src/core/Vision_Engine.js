@@ -89,18 +89,38 @@ async function downloadTelegramImageAsBase64(fileId) {
   console.log('[VISION] Getting file info from Telegram via cURL...');
   const fileInfoUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
   
-  const { stdout: infoStr } = await exec(`curl -sL --ipv4 --connect-timeout 10 "${fileInfoUrl}"`);
-  const fileData = JSON.parse(infoStr);
-  if (!fileData.ok) throw new Error('Failed to get file info from Telegram');
+  let infoResult;
+  try {
+    infoResult = await exec(
+      `curl -sSL --ipv4 --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 30 "${fileInfoUrl}"`,
+      { maxBuffer: 5 * 1024 * 1024 }
+    );
+  } catch (err) {
+    console.error('[VISION] cURL getFile STDERR:', err.stderr || 'no stderr');
+    console.error('[VISION] cURL getFile exit code:', err.code);
+    throw new Error(`cURL getFile failed: ${err.stderr || err.message}`);
+  }
+  
+  console.log('[VISION] cURL getFile response received. Length:', infoResult.stdout.length);
+  const fileData = JSON.parse(infoResult.stdout);
+  if (!fileData.ok) throw new Error('Telegram getFile returned error: ' + JSON.stringify(fileData));
   
   const filePath = fileData.result.file_path;
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
   console.log('[VISION] Downloading image binary from Telegram via cURL...');
-  const { stdout: base64Data } = await exec(
-    `curl -sL --ipv4 --connect-timeout 15 "${fileUrl}" | base64 -w 0`,
-    { maxBuffer: 20 * 1024 * 1024 }
-  );
+  let imageResult;
+  try {
+    imageResult = await exec(
+      `curl -sSL --ipv4 --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 60 "${fileUrl}" | base64 -w 0`,
+      { maxBuffer: 20 * 1024 * 1024 }
+    );
+  } catch (err) {
+    console.error('[VISION] cURL image download STDERR:', err.stderr || 'no stderr');
+    throw new Error(`cURL image download failed: ${err.stderr || err.message}`);
+  }
+
+  const base64Data = imageResult.stdout.trim();
   console.log('[VISION] Image downloaded successfully. Base64 size:', base64Data.length, 'chars');
 
   const ext = filePath.split('.').pop().toLowerCase();
@@ -108,7 +128,7 @@ async function downloadTelegramImageAsBase64(fileId) {
   if (ext === 'png') mimeType = 'image/png';
   if (ext === 'webp') mimeType = 'image/webp';
 
-  return { mimeType, data: base64Data.trim() };
+  return { mimeType, data: base64Data };
 }
 
 /**
