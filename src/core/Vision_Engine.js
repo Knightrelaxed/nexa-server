@@ -2,8 +2,6 @@ const env = require('../config/env');
 const { NEXA_PERSONALITY } = require('../config/personality');
 const axios = require('axios');
 const https = require('https');
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
 
 // Create a dedicated IPv4 agent to bypass Hugging Face network bugs
 const ipv4Agent = new https.Agent({
@@ -83,32 +81,52 @@ ATURAN KELUARAN:
 - Jika ada caption, instruksi caption HARUS dimasukkan ke dalam narasi output
 `;
 
+function httpsGetJson(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { family: 4 }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch(e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
+function httpsGetBase64(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { family: 4 }, (res) => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
+    }).on('error', reject);
+  });
+}
+
 /**
- * Download image from Telegram and convert to Base64 using system curl
- * Bypasses ALL Node.js TLS drop bugs on Hugging Face.
+ * Download image from Telegram and convert to Base64 using pure Node.js HTTPS
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-  console.log('[VISION] Getting file info from Telegram via system curl...');
+  console.log('[VISION] Getting file info from Telegram via pure https...');
   const fileInfoUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
   
-  const { stdout: infoStr } = await exec(`curl -sL --ipv4 "${fileInfoUrl}"`);
-  const fileData = JSON.parse(infoStr);
+  const fileData = await httpsGetJson(fileInfoUrl);
   if (!fileData.ok) throw new Error('Failed to get file info from Telegram');
   
   const filePath = fileData.result.file_path;
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-  console.log('[VISION] Downloading actual file data from Telegram via system curl...');
-  const { stdout: base64Data } = await exec(`curl -sL --ipv4 "${fileUrl}" | base64 -w 0`, { maxBuffer: 15 * 1024 * 1024 });
+  console.log('[VISION] Downloading actual file data from Telegram via pure https...');
+  const base64Data = await httpsGetBase64(fileUrl);
 
   const ext = filePath.split('.').pop().toLowerCase();
   let mimeType = 'image/jpeg';
   if (ext === 'png') mimeType = 'image/png';
   if (ext === 'webp') mimeType = 'image/webp';
 
-  return { mimeType, data: base64Data.trim() };
+  return { mimeType, data: base64Data };
 }
 
 /**
