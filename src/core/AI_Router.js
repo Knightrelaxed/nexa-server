@@ -55,7 +55,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
   "intent": "FINANCE" | "CALENDAR" | "DISCIPLINE" | "2ND_BRAIN" | "SPREADSHEET" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
   "extracted_data": {
      // FINANCE: { nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO) }
-     // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string, end: string }
+     // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string (ISO 8601 offset +07:00), end: string (ISO 8601 offset +07:00) }
      // 2ND_BRAIN: { title: string, content: string, type: "PERSONAL_FACT" | "IDEA" }
      //   → PERSONAL_FACT: fakta permanen tentang Tuan Faqih (kesehatan, preferensi, jadwal, target, relasi, kebiasaan)
      //     Kata kunci pemicu: "simpan ini", "ingat bahwa", "catat bahwa", "perlu kamu tahu", "fakta tentang saya", "aku suka/tidak suka", "aku alergi", "kebiasaanku", dll.
@@ -88,7 +88,13 @@ async function routeUserMessage(textInput) {
     ? `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${personalFacts.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
     : '';
 
+  // 3.5. Inject Current Time (Critical for relative dates like "besok" or "hari ini")
+  const currentJakartaTime = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'full', timeStyle: 'long' });
+
   const prompt = `
+[WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
+${currentJakartaTime}
+
 ${factsContext}
 [RIWAYAT OBROLAN]
 ${contextStr}
