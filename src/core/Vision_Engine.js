@@ -80,58 +80,68 @@ ATURAN KELUARAN:
 `;
 
 /**
- * Download image from Telegram using system cURL.
- * 
- * CRITICAL: HuggingFace's network firewall blocks SSL (port 443) to api.telegram.org,
- * causing "SSL connection timeout". Telegram Bot API officially supports BOTH
- * http:// and https://, so we use HTTP to bypass the SSL block entirely.
+ * Helper to execute curl with IP fallback strategy to bypass DNS/Proxy blocking
+ */
+async function curlWithTelegramBypass(urlPath, isBinary = false) {
+  // Telegram API Datacenter IPs
+  const ips = [
+    'default',          // Try normal DNS first
+    '149.154.167.220',  // DC 4
+    '149.154.166.120',  // DC 2
+    '91.108.56.120'     // DC 1
+  ];
+
+  let lastErr = null;
+  
+  for (const ip of ips) {
+    let resolveFlag = '';
+    if (ip !== 'default') {
+      console.log(`[VISION] Trying Telegram IP bypass: ${ip}`);
+      resolveFlag = `--resolve api.telegram.org:443:${ip}`;
+    }
+
+    const command = `curl -sSL --ipv4 ${resolveFlag} --connect-timeout 10 --max-time 30 "https://api.telegram.org/${urlPath}" ${isBinary ? '| base64 -w 0' : ''}`;
+    
+    try {
+      const { stdout } = await exec(command, { maxBuffer: 20 * 1024 * 1024 });
+      if (stdout && stdout.trim().length > 0) {
+        return stdout;
+      }
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[VISION] cURL failed for ${ip}: ${err.stderr || err.message}`);
+    }
+  }
+
+  throw new Error(`All Telegram connection attempts failed. Last error: ${lastErr?.stderr || lastErr?.message}`);
+}
+
+/**
+ * Download image from Telegram using robust cURL IP fallback
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-  // Use HTTP to bypass HuggingFace SSL firewall block to api.telegram.org
-  const telegramBase = `http://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
-
-  console.log('[VISION] Getting file info from Telegram via HTTP...');
-  let infoResult;
-  try {
-    infoResult = await exec(
-      `curl -sSL --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 30 "${telegramBase}/getFile?file_id=${fileId}"`,
-      { maxBuffer: 5 * 1024 * 1024 }
-    );
-  } catch (err) {
-    console.error('[VISION] cURL getFile STDERR:', err.stderr || 'no stderr');
-    throw new Error(`cURL getFile failed: ${err.stderr || err.message}`);
-  }
+  console.log('[VISION] Getting file info from Telegram via cURL IP Bypass...');
   
-  console.log('[VISION] cURL getFile response received. Length:', infoResult.stdout.length);
-  const fileData = JSON.parse(infoResult.stdout);
+  const infoStdout = await curlWithTelegramBypass(`bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`);
+  const fileData = JSON.parse(infoStdout);
   if (!fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   
   const filePath = fileData.result.file_path;
-  const fileUrl = `http://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-  console.log('[VISION] Downloading image binary from Telegram via HTTP...');
-  let imageResult;
-  try {
-    imageResult = await exec(
-      `curl -sSL --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 60 "${fileUrl}" | base64 -w 0`,
-      { maxBuffer: 20 * 1024 * 1024 }
-    );
-  } catch (err) {
-    console.error('[VISION] cURL image download STDERR:', err.stderr || 'no stderr');
-    throw new Error(`cURL image download failed: ${err.stderr || err.message}`);
-  }
-
-  const base64Data = imageResult.stdout.trim();
-  console.log('[VISION] Image downloaded successfully. Base64 size:', base64Data.length, 'chars');
+  console.log('[VISION] Downloading image binary from Telegram...');
+  const base64Data = await curlWithTelegramBypass(`file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`, true);
+  const trimmedBase64 = base64Data.trim();
+  
+  console.log('[VISION] Image downloaded successfully. Base64 size:', trimmedBase64.length, 'chars');
 
   const ext = filePath.split('.').pop().toLowerCase();
   let mimeType = 'image/jpeg';
   if (ext === 'png') mimeType = 'image/png';
   if (ext === 'webp') mimeType = 'image/webp';
 
-  return { mimeType, data: base64Data };
+  return { mimeType, data: trimmedBase64 };
 }
 
 /**
