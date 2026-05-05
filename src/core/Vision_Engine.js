@@ -1,10 +1,7 @@
 const env = require('../config/env');
 const { NEXA_PERSONALITY } = require('../config/personality');
 
-// Primary: Gemini 2.5 Flash (best multimodal)
-// Fallback: Gemini 2.0 Flash
-const primaryGenAI = env.GEMINI_API_KEY_PRIMARY ? new GoogleGenerativeAI(env.GEMINI_API_KEY_PRIMARY) : null;
-const backupGenAI = env.GEMINI_API_KEY_BACKUP ? new GoogleGenerativeAI(env.GEMINI_API_KEY_BACKUP) : null;
+// Keys will be read directly from env during processing
 
 // ============================================================
 // UNIVERSAL IMAGE INTERPRETER — System Prompt
