@@ -1,5 +1,14 @@
 const env = require('../config/env');
 const { NEXA_PERSONALITY } = require('../config/personality');
+const axios = require('axios');
+const https = require('https');
+
+// Create a dedicated IPv4 agent to bypass Hugging Face network bugs
+const ipv4Agent = new https.Agent({
+  family: 4,
+  keepAlive: true,
+  keepAliveMsecs: 10000
+});
 
 // Keys will be read directly from env during processing
 
@@ -73,25 +82,25 @@ ATURAN KELUARAN:
 `;
 
 /**
- * Download image from Telegram and convert to Base64 using native fetch
+ * Download image from Telegram and convert to Base64 using Axios
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
   console.log('[VISION] Getting file info from Telegram...');
-  const fileRes = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`);
-  const fileData = await fileRes.json();
-  if (!fileData.ok) throw new Error('Failed to get file info from Telegram');
+  const fileRes = await axios.get(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`, { httpsAgent: ipv4Agent });
+  if (!fileRes.data.ok) throw new Error('Failed to get file info from Telegram');
   
-  const filePath = fileData.result.file_path;
+  const filePath = fileRes.data.result.file_path;
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
   console.log('[VISION] Downloading actual file data from Telegram...');
-  const response = await fetch(fileUrl);
-  if (!response.ok) throw new Error(`Telegram file download failed: ${response.status}`);
+  const response = await axios.get(fileUrl, { 
+    responseType: 'arraybuffer',
+    httpsAgent: ipv4Agent 
+  });
   
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
+  const buffer = Buffer.from(response.data, 'binary');
   const base64Data = buffer.toString('base64');
 
   const ext = filePath.split('.').pop().toLowerCase();
@@ -103,7 +112,7 @@ async function downloadTelegramImageAsBase64(fileId) {
 }
 
 /**
- * Internal Vision call with a specific Gemini client and model, using native fetch directly.
+ * Internal Vision call with a specific Gemini API key, using Axios.
  */
 async function callGeminiVision(apiKey, modelName, imageData, caption) {
   const captionContext = caption
@@ -125,23 +134,18 @@ async function callGeminiVision(apiKey, modelName, imageData, caption) {
     generationConfig: { temperature: 0.4 }
   };
 
-  const response = await fetch(url, {
-    method: 'POST',
+  const response = await axios.post(url, payload, {
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    httpsAgent: ipv4Agent
   });
 
-  const responseData = await response.json();
-
-  if (!response.ok) {
-    throw new Error(`Gemini API Error: ${responseData.error?.message || response.statusText}`);
-  }
-
-  if (!responseData.candidates || responseData.candidates.length === 0) {
+  if (!response.data.candidates || response.data.candidates.length === 0) {
     throw new Error('Gemini API returned no candidates.');
   }
 
-  return responseData.candidates[0].content.parts[0].text;
+  return response.data.candidates[0].content.parts[0].text;
 }
 
 /**
