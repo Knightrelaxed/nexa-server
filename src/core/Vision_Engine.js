@@ -102,31 +102,40 @@ async function downloadTelegramImageAsBase64(fileId) {
 }
 
 /**
- * Internal Vision call with a specific Gemini client and model
+ * Internal Vision call with a specific Gemini client and model, using Axios REST directly.
+ * Bypasses the Node.js native fetch TLS socket hangup bug with large Base64 uploads.
  */
-async function callGeminiVision(client, modelName, imageData, caption) {
+async function callGeminiVision(apiKey, modelName, imageData, caption) {
   const captionContext = caption
     ? `\n[CAPTION/INSTRUKSI DARI TUAN FAQIH]: "${caption}"\nGunakan caption ini sebagai petunjuk utama apa yang Tuan Faqih inginkan dari gambar ini.`
     : '\n[TIDAK ADA CAPTION]: Tuan Faqih tidak memberikan instruksi teks. Analisis gambar dan interpretasikan konteksnya secara cerdas.';
 
-  const model = client.getGenerativeModel({
-    model: modelName,
-    systemInstruction: VISION_SYSTEM_PROMPT + captionContext,
-    generationConfig: { temperature: 0.4 } // Moderate — enough creativity to describe, enough precision to extract
-  });
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-  const imagePart = {
-    inlineData: {
-      data: imageData.data,
-      mimeType: imageData.mimeType
-    }
+  const payload = {
+    systemInstruction: {
+      parts: [{ text: VISION_SYSTEM_PROMPT + captionContext }]
+    },
+    contents: [{
+      parts: [
+        { text: 'Analisis gambar ini sekarang dan hasilkan teks instruksi lengkap sesuai sistem prompt.' },
+        { inlineData: { mimeType: imageData.mimeType, data: imageData.data } }
+      ]
+    }],
+    generationConfig: { temperature: 0.4 }
   };
 
-  const result = await model.generateContent([
-    'Analisis gambar ini sekarang dan hasilkan teks instruksi lengkap sesuai sistem prompt.',
-    imagePart
-  ]);
-  return result.response.text();
+  const response = await axios.post(url, payload, {
+    headers: { 'Content-Type': 'application/json' },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  });
+
+  if (!response.data.candidates || response.data.candidates.length === 0) {
+    throw new Error('Gemini API returned no candidates.');
+  }
+
+  return response.data.candidates[0].content.parts[0].text;
 }
 
 /**
@@ -141,11 +150,14 @@ async function callGeminiVision(client, modelName, imageData, caption) {
  */
 async function processTelegramImage(fileId, caption = '') {
   // Tier 1: Primary (2.5 Flash — best multimodal model)
-  if (primaryGenAI) {
+  if (env.GEMINI_API_KEY_PRIMARY) {
     try {
       console.log('[VISION] Processing image with Gemini 2.5 Flash...');
       const imageData = await downloadTelegramImageAsBase64(fileId);
-      const result = await callGeminiVision(primaryGenAI, 'gemini-2.5-flash', imageData, caption);
+      console.log('[VISION] Image downloaded from Telegram successfully. Size:', imageData.data.length, 'bytes');
+      
+      console.log('[VISION] Sending payload to Gemini API via Axios...');
+      const result = await callGeminiVision(env.GEMINI_API_KEY_PRIMARY, 'gemini-2.5-flash', imageData, caption);
       console.log('[VISION] Primary vision success. Output length:', result.length);
       return result;
     } catch (e) {
@@ -153,12 +165,15 @@ async function processTelegramImage(fileId, caption = '') {
     }
   }
 
-  // Tier 2: Backup (2.0 Flash)
-  if (backupGenAI) {
+  // Tier 2: Backup (2.0 Flash Lite)
+  if (env.GEMINI_API_KEY_BACKUP) {
     try {
-      console.log('[VISION] Falling back to Gemini 2.0 Flash for vision...');
+      console.log('[VISION] Falling back to Gemini 2.0 Flash Lite for vision...');
       const imageData = await downloadTelegramImageAsBase64(fileId);
-      const result = await callGeminiVision(backupGenAI, 'gemini-2.0-flash', imageData, caption);
+      console.log('[VISION] Image downloaded from Telegram successfully. Size:', imageData.data.length, 'bytes');
+      
+      console.log('[VISION] Sending payload to Gemini API via Axios...');
+      const result = await callGeminiVision(env.GEMINI_API_KEY_BACKUP, 'gemini-2.0-flash-lite', imageData, caption);
       console.log('[VISION] Backup vision success. Output length:', result.length);
       return result;
     } catch (e) {
