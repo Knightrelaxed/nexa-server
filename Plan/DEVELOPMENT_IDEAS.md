@@ -96,3 +96,18 @@ Inovasi arsitektur untuk mencegah kehilangan data transaksi Livin' saat server s
 ---
 
 *Dokumen ini merupakan keranjang ide dan akan terus berkembang seiring berjalannya waktu dan bertambahnya kebutuhan Anda sebagai seorang mahasiswa, peneliti, dan diplomat di masa depan.*
+
+---
+
+## 5. Sistem Pre-Filter (Regex / Keyword Bypass) untuk Efisiensi API
+
+**Konsep:** Teknik *engineering* untuk menekan konsumsi kuota API (Requests Per Day) secara drastis. Berfungsi sebagai "Resepsionis" yang mencegat pesan di server lokal sebelum dikirim ke Gemini.
+
+**Cara Kerja:**
+1. Anda mengirim perintah baku yang diawali dengan *slash* (misal: `/ping`, `/status`, `/uang keluar 50000 makan`).
+2. Kode `webhook.js` memindai pola teks menggunakan Regex.
+3. Jika cocok, server langsung mengeksekusi fungsi terkait (misal memanggil database atau membalas "Online") **tanpa** menyentuh Gemini API sama sekali.
+4. Gemini hanya dipanggil jika input berupa bahasa natural manusia yang tidak memiliki *prefix* perintah.
+
+**Dampak Signifikan:**
+Hampir 40-50% percakapan repetitif/rutin akan ditangani tanpa mengkonsumsi kuota harian. Hal ini sangat berguna jika suatu saat *Free Tier* Google menjadi semakin ketat atau Anda memutuskan memakai model berbayar.
