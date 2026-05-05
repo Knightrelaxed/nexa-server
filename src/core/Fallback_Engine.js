@@ -15,9 +15,9 @@ const tertiaryGenAI = env.GEMINI_API_KEY_TERTIARY ? new GoogleGenerativeAI(env.G
 /**
  * Execute AI Prompt with Multi-Tier Fallback (5 Layers)
  * 
- * Tier 1: Gemini 2.5 Flash — PRIMARY key (best intelligence, but low quota)
- * Tier 2: Gemini 2.0 Flash — BACKUP key (stable model, high quota)
- * Tier 3: Gemini 1.5 Flash — TERTIARY key (legacy stable model)
+ * Tier 1: Gemini 2.0 Flash — PRIMARY key (1,500 RPD)
+ * Tier 2: Gemini 2.0 Flash — BACKUP key (1,500 RPD, different quota pool)
+ * Tier 3: Gemini 2.0 Flash — TERTIARY key (1,500 RPD, different quota pool)
  * Tier 4: Llama 3.1 via OpenRouter (independent provider)
  * Tier 5: Dumb Mode (static response — server stays alive)
  * 
@@ -27,12 +27,12 @@ const tertiaryGenAI = env.GEMINI_API_KEY_TERTIARY ? new GoogleGenerativeAI(env.G
  * @param {boolean} jsonMode (true = force JSON response, false = free text)
  */
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Gemini 2.5 Flash — PRIMARY KEY (best intelligence)
+  // Tier 1: Gemini 2.0 Flash — PRIMARY KEY (1,500 RPD)
   if (primaryGenAI) {
     try {
-      return await callGemini(primaryGenAI, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
+      return await callGemini(primaryGenAI, 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Tier 1 (Gemini 2.5 PRIMARY) failed:', e.message);
+      console.warn('[FALLBACK] Tier 1 (Gemini 2.0 PRIMARY) failed:', e.message);
     }
   }
 
@@ -46,13 +46,13 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }
   }
 
-  // Tier 3: Gemini 1.5 Flash — TERTIARY KEY (legacy stable model)
+  // Tier 3: Gemini 2.0 Flash — TERTIARY KEY (1,500 RPD)
   if (tertiaryGenAI) {
     try {
-      console.log('[FALLBACK] Switching to Tier 3 (Gemini 1.5 TERTIARY key)...');
-      return await callGemini(tertiaryGenAI, 'gemini-1.5-flash', prompt, systemInstruction, temperature, jsonMode);
+      console.log('[FALLBACK] Switching to Tier 3 (Gemini 2.0 TERTIARY key)...');
+      return await callGemini(tertiaryGenAI, 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Tier 3 (Gemini 1.5 TERTIARY) failed:', e.message);
+      console.warn('[FALLBACK] Tier 3 (Gemini 2.0 TERTIARY) failed:', e.message);
     }
   }
 
