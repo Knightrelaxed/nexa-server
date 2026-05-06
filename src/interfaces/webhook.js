@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const https = require('https');
+const util = require('util');
+const exec = util.promisify(require('child_process').exec);
 const env = require('../config/env');
 const security = require('../utils/security');
 const aiRouter = require('../core/AI_Router');
@@ -13,45 +15,42 @@ const spreadsheetManager = require('../domain/Spreadsheet_Manager');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 
 // ============================================================
-// OUTBOUND TELEGRAM SENDER (FALLBACK ONLY)
-// Uses raw https.request for cases where webhook response is
-// already consumed (Tasker, Cron, or secondary messages).
-// May fail on HF Docker free tier — that's acceptable because
-// the PRIMARY reply uses Webhook Response Method (zero outbound).
+// OUTBOUND TELEGRAM SENDER
+// Routes through Cloudflare Worker proxy because HuggingFace
+// blocks ALL outbound connections to api.telegram.org.
+// Used when webhook response is already consumed (timeout, cron).
 // ============================================================
-function sendTelegramOutbound(text) {
-  return new Promise((resolve) => {
-    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return resolve();
+async function sendTelegramOutbound(text) {
+  try {
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
     const botToken = env.TELEGRAM_BOT_TOKEN.trim();
     const chatId = env.TELEGRAM_CHAT_ID.trim();
     const safeText = String(text).substring(0, 4000);
+
+    // Build the Telegram sendMessage URL
+    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
     const body = JSON.stringify({ chat_id: chatId, text: safeText, parse_mode: 'HTML' });
 
-    const req = https.request({
-      hostname: 'api.telegram.org',
-      port: 443,
-      path: `/bot${botToken}/sendMessage`,
-      method: 'POST',
-      family: 4,
-      rejectUnauthorized: false,
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
-      }
-    }, (res) => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => {
-        if (res.statusCode !== 200) console.error('[TELEGRAM-OUTBOUND] API error:', res.statusCode, d);
-        resolve();
-      });
-    });
-
-    req.setTimeout(10000, () => { req.destroy(); resolve(); });
-    req.on('error', (e) => { console.error('[TELEGRAM-OUTBOUND] Error:', e.message); resolve(); });
-    req.write(body);
-    req.end();
-  });
+    // Route through proxy (same relay as Vision Engine)
+    const proxyBase = env.TELEGRAM_PROXY_URL;
+    if (proxyBase) {
+      const proxiedUrl = `${proxyBase}${encodeURIComponent(telegramUrl)}`;
+      const result = await exec(
+        `curl -sS --ipv4 --connect-timeout 10 --max-time 15 -X POST -H "Content-Type: application/json" -d '${body.replace(/'/g, "'\\''")}' "${proxiedUrl}"`,
+        { maxBuffer: 1 * 1024 * 1024 }
+      );
+      console.log('[TELEGRAM-OUTBOUND] Sent via proxy. Response:', result.stdout.substring(0, 200));
+    } else {
+      // Direct attempt (will fail on HuggingFace but works locally)
+      const result = await exec(
+        `curl -sS --ipv4 --connect-timeout 10 --max-time 15 -X POST -H "Content-Type: application/json" -d '${body.replace(/'/g, "'\\''")}' "${telegramUrl}"`,
+        { maxBuffer: 1 * 1024 * 1024 }
+      );
+      console.log('[TELEGRAM-OUTBOUND] Sent directly. Response:', result.stdout.substring(0, 200));
+    }
+  } catch (e) {
+    console.error('[TELEGRAM-OUTBOUND] Error:', e.stderr || e.message);
+  }
 }
 
 // ============================================================
@@ -214,7 +213,10 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
 
     switch (routingData.intent) {
       case 'FINANCE':
-        if (routingData.extracted_data && routingData.extracted_data.nominal) {
+        if (routingData.extracted_data && routingData.extracted_data.action === 'READ_LATEST') {
+          const recentData = await financeEngine.getRecentTransactions(5);
+          domainReply = recentData;
+        } else if (routingData.extracted_data && routingData.extracted_data.nominal) {
           const result = await financeEngine.processTransaction({
             nominal: routingData.extracted_data.nominal,
             type: routingData.extracted_data.type || 'EXPENSE',
