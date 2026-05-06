@@ -80,41 +80,53 @@ ATURAN KELUARAN:
 `;
 
 /**
- * Download image from Telegram via external relay proxy.
- * 
- * DEFINITIVE FINDING (after exhaustive testing):
- * - HTTPS port 443 to api.telegram.org → BLOCKED by HuggingFace firewall
- * - HTTP port 80 to api.telegram.org → 301 redirect to HTTPS → blocked
- * 
- * Solution: Route Telegram API calls through a relay proxy that IS reachable.
- * Uses TELEGRAM_PROXY_URL env var if set, otherwise falls back to allorigins.win
+ * Route a URL through a relay proxy. Tries multiple proxies if one fails.
+ */
+async function fetchViaProxy(targetUrl, opts = {}) {
+  const maxBuffer = opts.maxBuffer || 5 * 1024 * 1024;
+  const timeout = opts.timeout || 30;
+
+  // Custom proxy from env takes priority, then try public proxies in order
+  const proxies = [
+    ...(env.TELEGRAM_PROXY_URL ? [{ name: 'Custom', fmt: (u) => `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(u)}` }] : []),
+    { name: 'corsproxy.io', fmt: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
+    { name: 'allorigins', fmt: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
+  ];
+
+  for (const proxy of proxies) {
+    try {
+      console.log(`[VISION] Trying proxy: ${proxy.name}...`);
+      const url = proxy.fmt(targetUrl);
+      const result = await exec(
+        `curl -sS --ipv4 --connect-timeout 15 --max-time ${timeout} "${url}"`,
+        { maxBuffer }
+      );
+      if (result.stdout && result.stdout.trim().length > 0) {
+        console.log(`[VISION] Proxy ${proxy.name} succeeded.`);
+        return result.stdout;
+      }
+    } catch (err) {
+      console.warn(`[VISION] Proxy ${proxy.name} failed: ${(err.stderr || err.message).substring(0, 150)}`);
+    }
+  }
+  throw new Error('All relay proxies failed. Set TELEGRAM_PROXY_URL to a working relay.');
+}
+
+/**
+ * Download image from Telegram via relay proxy.
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-  const proxyBase = env.TELEGRAM_PROXY_URL || 'https://api.allorigins.win/raw?url=';
-
-  // Step 1: Get file info via proxy
+  // Step 1: Get file path
   const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
-  const proxiedGetFile = `${proxyBase}${encodeURIComponent(getFileUrl)}`;
-
   console.log('[VISION] Step 1: Getting file info via relay proxy...');
-  let infoResult;
-  try {
-    infoResult = await exec(
-      `curl -sS --ipv4 --connect-timeout 15 --max-time 30 "${proxiedGetFile}"`,
-      { maxBuffer: 5 * 1024 * 1024 }
-    );
-  } catch (err) {
-    console.error('[VISION] Proxy getFile STDERR:', err.stderr || 'no stderr');
-    throw new Error(`Proxy getFile failed: ${err.stderr || err.message}`);
-  }
 
-  const raw = infoResult.stdout.trim();
-  console.log('[VISION] Proxy response (first 300 chars):', raw.substring(0, 300));
+  const raw = (await fetchViaProxy(getFileUrl)).trim();
+  console.log('[VISION] Proxy response (first 200 chars):', raw.substring(0, 200));
 
   if (!raw.startsWith('{')) {
-    throw new Error('Proxy returned non-JSON response: ' + raw.substring(0, 200));
+    throw new Error('Proxy returned non-JSON: ' + raw.substring(0, 200));
   }
 
   const fileData = JSON.parse(raw);
@@ -122,27 +134,18 @@ async function downloadTelegramImageAsBase64(fileId) {
 
   const filePath = fileData.result.file_path;
 
-  // Step 2: Download actual image binary via proxy
+  // Step 2: Download image binary
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const proxiedFileUrl = `${proxyBase}${encodeURIComponent(fileUrl)}`;
-
   console.log('[VISION] Step 2: Downloading image binary via relay proxy...');
-  let imageResult;
-  try {
-    imageResult = await exec(
-      `curl -sS --ipv4 --connect-timeout 15 --max-time 60 "${proxiedFileUrl}" | base64 -w 0`,
-      { maxBuffer: 20 * 1024 * 1024 }
-    );
-  } catch (err) {
-    console.error('[VISION] Proxy image download STDERR:', err.stderr || 'no stderr');
-    throw new Error(`Proxy image download failed: ${err.stderr || err.message}`);
-  }
 
-  const base64Data = imageResult.stdout.trim();
+  const imageRaw = await fetchViaProxy(fileUrl, { maxBuffer: 20 * 1024 * 1024, timeout: 60 });
+
+  // Convert to base64 in Node.js instead of piping through base64 command
+  const base64Data = Buffer.from(imageRaw, 'binary').toString('base64');
   console.log('[VISION] Image downloaded via proxy. Base64 size:', base64Data.length, 'chars');
 
   if (base64Data.length < 100) {
-    throw new Error('Downloaded image is too small — proxy may have returned an error page');
+    throw new Error('Downloaded image too small — proxy may have returned error page');
   }
 
   const ext = filePath.split('.').pop().toLowerCase();
