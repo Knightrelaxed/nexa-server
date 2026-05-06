@@ -206,14 +206,47 @@ async function callGeminiVision(apiKey, modelName, imageData, caption) {
 }
 
 /**
+ * Tier 7 Fallback: Groq Vision (Llama 3.2 90B Vision Preview)
+ * Uses OpenAI-compatible API format. Completely independent from Google.
+ */
+async function callGroqVision(imageData, caption) {
+  const captionContext = caption
+    ? `\nCaption dari pengguna: "${caption}". Gunakan ini sebagai petunjuk utama.`
+    : '\nTidak ada caption. Analisis gambar secara mandiri.';
+
+  const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+    model: 'llama-3.2-90b-vision-preview',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: VISION_SYSTEM_PROMPT + captionContext + '\n\nAnalisis gambar ini sekarang.' },
+          { type: 'image_url', image_url: { url: `data:${imageData.mimeType};base64,${imageData.data}` } }
+        ]
+      }
+    ],
+    temperature: 0.4,
+    max_tokens: 2048
+  }, {
+    headers: {
+      'Authorization': `Bearer ${env.GROQ_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    httpsAgent: ipv4Agent,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  });
+
+  if (!response.data.choices || response.data.choices.length === 0) {
+    throw new Error('Groq Vision returned no choices.');
+  }
+
+  return response.data.choices[0].message.content;
+}
+
+/**
  * Process an image with FULL multi-purpose Vision intelligence.
- * Handles: receipts, business cards, event posters, screenshots,
- * handwritten notes, product photos, casual photos, menus, QR codes,
- * tables/reports, and anything else — all routed to correct intent.
- *
- * @param {string} fileId Telegram file_id
- * @param {string} caption Optional caption from user
- * @returns {Promise<string>} Rich textual description ready for AI_Router
+ * 7-tier fallback: 3 Gemini keys × 2 models + Groq Vision
  */
 async function processTelegramImage(fileId, caption = '') {
   // Download image ONCE upfront — reuse across all tiers
@@ -229,7 +262,7 @@ async function processTelegramImage(fileId, caption = '') {
     { key: env.GEMINI_API_KEY_PRIMARY, model: 'gemini-2.0-flash', name: 'Tier4 (2.0 Flash + Primary Key)' },
     { key: env.GEMINI_API_KEY_BACKUP, model: 'gemini-2.0-flash', name: 'Tier5 (2.0 Flash + Backup Key)' },
     { key: env.GEMINI_API_KEY_TERTIARY, model: 'gemini-2.0-flash', name: 'Tier6 (2.0 Flash + Tertiary Key)' },
-  ].filter(t => t.key); // Remove tiers with missing keys
+  ].filter(t => t.key);
 
   for (const tier of tiers) {
     try {
@@ -241,12 +274,25 @@ async function processTelegramImage(fileId, caption = '') {
       const status = e.response?.status || 'unknown';
       const errMsg = e.response?.data?.error?.message || e.message;
       console.warn(`[VISION] ${tier.name} FAILED (${status}): ${errMsg}`);
-      // Small delay before next attempt to avoid rate limit cascade
       await new Promise(r => setTimeout(r, 500));
     }
   }
 
-  throw new Error('All Vision AI tiers failed. Check Gemini API keys.');
+  // Tier 7: Groq Vision — completely independent provider
+  if (env.GROQ_API_KEY) {
+    try {
+      console.log('[VISION] Trying Tier7 (Groq Llama 3.2 90B Vision)...');
+      const result = await callGroqVision(imageData, caption);
+      console.log('[VISION] Tier7 (Groq Vision) SUCCESS. Output length:', result.length);
+      return result;
+    } catch (e) {
+      const status = e.response?.status || 'unknown';
+      const errMsg = e.response?.data?.error?.message || e.message;
+      console.warn(`[VISION] Tier7 (Groq Vision) FAILED (${status}): ${errMsg}`);
+    }
+  }
+
+  throw new Error('All 7 Vision AI tiers failed (6 Gemini + 1 Groq). All APIs are currently overloaded or rate-limited.');
 }
 
 module.exports = {
