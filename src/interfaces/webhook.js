@@ -157,12 +157,12 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
     // ============================================================
     if (message.voice) {
       try {
-        console.log('[TELEGRAM] Voice note received. Transcribing via Groq Whisper...');
+        console.log('[TELEGRAM] Voice note received. Transcribing (6-Tier God Mode)...');
         textInput = await voiceEngine.transcribeTelegramVoice(message.voice.file_id);
         console.log('[VOICE] Transcription result:', textInput);
       } catch (e) {
-        console.error('[VOICE] Transcription failed:', e.message);
-        await respondToTelegram('⚠️ Maaf Tuan, sistem pendengaran (Groq Whisper) sedang terganggu. Coba kirim ulang pesan suaranya.');
+        console.error('[VOICE] All 6 Voice Tiers FAILED:', e.message);
+        await respondToTelegram('⚠️ Maaf Tuan, seluruh 6 lapisan sistem pendengaran N.E.X.A (4x Groq Whisper + 2x Gemini Native Audio) gagal merespons. Mohon coba kirim ulang pesan suaranya dalam beberapa menit.');
         clearTimeout(safetyTimer);
         return;
       }
@@ -173,13 +173,13 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
     // ============================================================
     if (message.photo && message.photo.length > 0) {
       try {
-        console.log('[TELEGRAM] Photo received. Processing via Gemini Vision...');
+        console.log('[TELEGRAM] Photo received. Processing (11-Tier God Mode Vision)...');
         const largestPhoto = message.photo[message.photo.length - 1];
         textInput = await visionEngine.processTelegramImage(largestPhoto.file_id, message.caption || '');
         console.log('[VISION] Image analysis result:', textInput);
       } catch (e) {
-        console.error('[VISION] Image processing failed:', e.message);
-        await respondToTelegram('⚠️ Maaf Tuan, sistem penglihatan (Vision) sedang terganggu.');
+        console.error('[VISION] All 11 Vision Tiers FAILED:', e.message);
+        await respondToTelegram('⚠️ Maaf Tuan, seluruh 11 lapisan sistem penglihatan N.E.X.A (4x Gemini 2.5 + 4x Groq + 2x Gemini 2.0 + HuggingFace) gagal merespons. Semua provider AI sedang down secara bersamaan.');
         clearTimeout(safetyTimer);
         return;
       }
