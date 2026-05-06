@@ -5,26 +5,39 @@ const https = require('https');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 
-// IPv4 agent for Gemini API calls via Axios
+// IPv4 agent — forces Gemini API calls over IPv4 to avoid Hugging Face routing issues
 const ipv4Agent = new https.Agent({ family: 4, keepAlive: true });
 
-// Keys will be read directly from env during processing
+// ============================================================
+// MULTI-KEY POOL — Built at startup, null slots are skipped
+// ============================================================
+const GEMINI_25_KEYS = [
+  env.GEMINI_API_KEY_1,
+  env.GEMINI_API_KEY_2,
+  env.GEMINI_API_KEY_3,
+  env.GEMINI_API_KEY_4,
+].filter(Boolean);
+
+const GEMINI_20_KEYS = [
+  env.GEMINI_API_KEY_1,
+  env.GEMINI_API_KEY_2,
+].filter(Boolean);
+
+const GROQ_KEYS = [
+  env.GROQ_API_KEY_1,
+  env.GROQ_API_KEY_2,
+  env.GROQ_API_KEY_3,
+  env.GROQ_API_KEY_4,
+].filter(Boolean);
 
 // ============================================================
 // UNIVERSAL IMAGE INTERPRETER — System Prompt
-// This prompt is the "cognitive bridge" between the visual world
-// and the text-based AI Router. It MUST produce output that
-// AI Router can cleanly parse into the correct intent.
 // ============================================================
 const VISION_SYSTEM_PROMPT = `
 ${NEXA_PERSONALITY}
 
 [MODUL PENGLIHATAN — Universal Image Interpreter]
 Anda baru saja menerima SEBUAH GAMBAR dari Tuan Faqih melalui Telegram.
-${
-  // Caption will be injected dynamically in the function
-  ''
-}
 
 TUGAS UTAMA ANDA:
 Analisis gambar ini dan hasilkan satu blok teks instruksi yang kaya, akurat, dan dapat diproses oleh sistem AI Router N.E.X.A. Teks ini akan menjadi "jembatan" antara gambar dan aksi sistem.
@@ -33,43 +46,34 @@ KATEGORIKAN gambar ini ke salah satu kategori berikut berdasarkan isinya, lalu e
 
 1. STRUK / NOTA / FAKTUR / KWITANSI
    → Ekstrak: nama toko/merchant, total nominal, tanggal, daftar item & harga
-   → Contoh output: "Tuan Faqih mengirimkan struk belanja dari Indomaret tanggal 3 Mei 2026. Total pengeluaran Rp 47.500. Item: Aqua 600ml Rp 4.000, Roti Tawar Rp 15.000, dll. Ini adalah pengeluaran pribadi, tolong catat."
+   → Contoh output: "Tuan Faqih mengirimkan struk belanja dari Indomaret tanggal 3 Mei 2026. Total pengeluaran Rp 47.500."
 
 2. KARTU NAMA / KONTAK
    → Ekstrak: nama, nomor HP, email, perusahaan/jabatan, alamat
-   → Contoh output: "Tuan Faqih mengirimkan kartu nama atas nama Dr. Budi Santoso, Dosen UGM, HP: 0812-3456-7890, email: budi@ugm.ac.id. Tolong simpan data kontak ini."
 
 3. POSTER / UNDANGAN / PAMFLET ACARA
    → Ekstrak: nama acara, tanggal, waktu, lokasi, penyelenggara
-   → Contoh output: "Tuan Faqih mengirimkan poster acara Seminar Diplomasi UGM pada Sabtu, 10 Mei 2026 pukul 09:00 di Gedung Pascasarjana UGM. Tolong masukkan ke kalender."
 
 4. TANGKAPAN LAYAR (Screenshot) — Teks/Percakapan/Website
    → Baca SEMUA teks yang terlihat. Pahami konteksnya.
-   → Contoh output: "Tuan Faqih mengirimkan screenshot percakapan WhatsApp yang berisi rencana meeting besok jam 2 siang. Tuan Faqih meminta [sesuai caption]."
 
 5. PAPAN TULIS / CATATAN TANGAN / STICKY NOTE / DOKUMEN
    → Baca teks, interpretasikan isi, perhatikan konteks
-   → Contoh output: "Tuan Faqih mengirimkan foto catatan tangan berisi daftar target minggu ini: 1) Selesaikan paper, 2) Hubungi Prof X, 3) Latihan debat. Tolong simpan ini."
 
 6. FOTO PRODUK / BARANG
    → Deskripsikan produk, harga (jika terlihat), kondisi
-   → Contoh output: "Tuan Faqih mengirimkan foto produk laptop Asus VivoBook seharga Rp 8.000.000. Tuan Faqih meminta [sesuai caption]."
 
 7. FOTO ALAM / ORANG / MOMEN PERSONAL
    → Deskripsikan dengan natural, gunakan kepribadian N.E.X.A
-   → Contoh output: "Tuan Faqih mengirimkan foto [deskripsi]. Caption-nya: [caption]. Tuan Faqih sepertinya ingin [interpretasi konteks]."
 
 8. RESEP / MENU MAKANAN
    → Ekstrak nama makanan, bahan-bahan, langkah
-   → Contoh output: "Tuan Faqih mengirimkan resep Nasi Goreng Spesial. Bahan: telur, nasi, kecap, dll. Tolong simpan resep ini."
 
 9. KODE QR / BARCODE
    → Jika bisa dibaca, ekstrak kontennya
-   → Contoh output: "Tuan Faqih mengirimkan QR code yang berisi link: https://.... Tuan Faqih meminta [sesuai caption]."
 
 10. LAPORAN / TABEL / DATA (foto dokumen berisi tabel angka)
     → Baca dan ekstrak struktur tabelnya
-    → Contoh output: "Tuan Faqih mengirimkan foto tabel laporan keuangan organisasi berisi data pengeluaran bulan April. Tolong buatkan spreadsheet baru dari data ini."
 
 ATURAN KELUARAN:
 - Tulis dalam Bahasa Indonesia yang natural
@@ -79,14 +83,13 @@ ATURAN KELUARAN:
 - Jika ada caption, instruksi caption HARUS dimasukkan ke dalam narasi output
 `;
 
-/**
- * Route a URL through a relay proxy. Tries multiple proxies if one fails.
- */
+// ============================================================
+// PROXY HELPER — Tries custom proxy then fallback public proxies
+// ============================================================
 async function fetchViaProxy(targetUrl, opts = {}) {
   const maxBuffer = opts.maxBuffer || 5 * 1024 * 1024;
   const timeout = opts.timeout || 30;
 
-  // Custom proxy from env takes priority, then try public proxies in order
   const proxies = [
     ...(env.TELEGRAM_PROXY_URL ? [{ name: 'Custom', fmt: (u) => `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(u)}` }] : []),
     { name: 'corsproxy.io', fmt: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
@@ -112,31 +115,25 @@ async function fetchViaProxy(targetUrl, opts = {}) {
   throw new Error('All relay proxies failed. Set TELEGRAM_PROXY_URL to a working relay.');
 }
 
-/**
- * Download image from Telegram via relay proxy.
- */
+// ============================================================
+// STEP 1: Download image as base64 via relay proxy
+// ============================================================
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-  // Step 1: Get file path
   const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
   console.log('[VISION] Step 1: Getting file info via relay proxy...');
 
   const raw = (await fetchViaProxy(getFileUrl)).trim();
-  console.log('[VISION] Proxy response (first 200 chars):', raw.substring(0, 200));
-
   if (!raw.startsWith('{')) {
     throw new Error('Proxy returned non-JSON: ' + raw.substring(0, 200));
   }
 
   const fileData = JSON.parse(raw);
   if (!fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
-
   const filePath = fileData.result.file_path;
 
-  // Step 2: Download image binary and convert to base64 at shell level
-  // CRITICAL: We must pipe through `base64` in the shell, NOT convert in Node.js.
-  // exec() captures stdout as a UTF-8 string, which corrupts binary image data.
+  // CRITICAL: Download binary via shell | base64 -w 0 — never convert binary in Node.js
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
   const proxyBase = env.TELEGRAM_PROXY_URL || 'https://api.allorigins.win/raw?url=';
   const proxiedFileUrl = `${proxyBase}${encodeURIComponent(fileUrl)}`;
@@ -168,20 +165,17 @@ async function downloadTelegramImageAsBase64(fileId) {
   return { mimeType, data: base64Data };
 }
 
-/**
- * Internal Vision call with a specific Gemini API key, using Axios.
- */
+// ============================================================
+// GEMINI VISION CALLER — with 503 Smart Retry
+// ============================================================
 async function callGeminiVision(apiKey, modelName, imageData, caption, retries = 3) {
   const captionContext = caption
     ? `\n[CAPTION/INSTRUKSI DARI TUAN FAQIH]: "${caption}"\nGunakan caption ini sebagai petunjuk utama apa yang Tuan Faqih inginkan dari gambar ini.`
     : '\n[TIDAK ADA CAPTION]: Tuan Faqih tidak memberikan instruksi teks. Analisis gambar dan interpretasikan konteksnya secara cerdas.';
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
   const payload = {
-    systemInstruction: {
-      parts: [{ text: VISION_SYSTEM_PROMPT + captionContext }]
-    },
+    systemInstruction: { parts: [{ text: VISION_SYSTEM_PROMPT + captionContext }] },
     contents: [{
       parts: [
         { text: 'Analisis gambar ini sekarang dan hasilkan teks instruksi lengkap sesuai sistem prompt.' },
@@ -197,121 +191,160 @@ async function callGeminiVision(apiKey, modelName, imageData, caption, retries =
         headers: { 'Content-Type': 'application/json' },
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
-        httpsAgent: ipv4Agent
+        httpsAgent: ipv4Agent,
+        timeout: 30000
       });
 
       if (!response.data.candidates || response.data.candidates.length === 0) {
         throw new Error('Gemini API returned no candidates.');
       }
-
       return response.data.candidates[0].content.parts[0].text;
     } catch (e) {
       const status = e.response?.status;
-      // 503 = temporary overload, worth retrying
       if (status === 503 && attempt < retries) {
-        const delay = attempt * 2000; // 2s, 4s...
+        const delay = attempt * 2000;
         console.warn(`[VISION] 503 attempt ${attempt}/${retries}, retry in ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }
-      throw e; // Throw for 429 quota limits or other errors to trigger next tier
+      throw e;
     }
   }
 }
 
-/**
- * Tier 7 Fallback: Groq Vision (Llama 4 Scout 17B)
- * Uses OpenAI-compatible API format. Completely independent from Google.
- */
-async function callGroqVision(imageData, caption) {
+// ============================================================
+// GROQ VISION CALLER (Llama 4 Scout 17B) — with 503 Smart Retry
+// ============================================================
+async function callGroqVision(apiKey, imageData, caption, retries = 3) {
   const captionContext = caption
     ? `\nCaption dari pengguna: "${caption}". Gunakan ini sebagai petunjuk utama.`
     : '\nTidak ada caption. Analisis gambar secara mandiri.';
 
-  const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct', // Supported Groq model in 2026
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: VISION_SYSTEM_PROMPT + captionContext + '\n\nAnalisis gambar ini sekarang.' },
-          { type: 'image_url', image_url: { url: `data:${imageData.mimeType};base64,${imageData.data}` } }
-        ]
-      }
-    ],
+  const requestBody = {
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: VISION_SYSTEM_PROMPT + captionContext + '\n\nAnalisis gambar ini sekarang.' },
+        { type: 'image_url', image_url: { url: `data:${imageData.mimeType};base64,${imageData.data}` } }
+      ]
+    }],
     temperature: 0.4,
     max_tokens: 2048
-  }, {
-    headers: {
-      'Authorization': `Bearer ${env.GROQ_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    httpsAgent: ipv4Agent,
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity
-  });
+  };
 
-  if (!response.data.choices || response.data.choices.length === 0) {
-    throw new Error('Groq Vision returned no choices.');
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', requestBody, {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        httpsAgent: ipv4Agent,
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        timeout: 25000
+      });
+
+      if (!response.data.choices || response.data.choices.length === 0) {
+        throw new Error('Groq Vision returned no choices.');
+      }
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      const status = e.response?.status;
+      if (status === 503 && attempt < retries) {
+        const delay = attempt * 2000;
+        console.warn(`[VISION] Groq 503 attempt ${attempt}/${retries}, retry in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw e;
+    }
   }
-
-  return response.data.choices[0].message.content;
 }
 
-/**
- * Process an image with FULL multi-purpose Vision intelligence.
- * 7-tier fallback: 3 Gemini keys × 2 models + Groq Vision
- */
+// ============================================================
+// HF VISION CALLER (Qwen2-VL-7B-Instruct) — Final Safety Net
+// ============================================================
+async function callHuggingFaceVision(imageData, caption) {
+  if (!env.HF_TOKEN) throw new Error('HF_TOKEN not configured');
+
+  const captionContext = caption
+    ? `Caption dari pengguna: "${caption}". ` : '';
+
+  const prompt = `${captionContext}Analisis gambar ini sekarang. ${VISION_SYSTEM_PROMPT.substring(0, 300)}`;
+
+  const response = await axios.post(
+    'https://api-inference.huggingface.co/models/Qwen/Qwen2-VL-7B-Instruct',
+    {
+      inputs: {
+        image: imageData.data,
+        question: prompt
+      }
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${env.HF_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 60000
+    }
+  );
+
+  const output = response.data;
+  if (Array.isArray(output) && output[0]?.generated_text) return output[0].generated_text;
+  if (typeof output === 'string') return output;
+  throw new Error('Unexpected HF response format: ' + JSON.stringify(output).substring(0, 200));
+}
+
+// ============================================================
+// MAIN ENTRY POINT — 11-TIER GOD MODE VISION FALLBACK
+// ============================================================
 async function processTelegramImage(fileId, caption = '') {
-  // Download image ONCE upfront — reuse across all tiers
+  // Download image ONCE — reused across ALL tiers
   console.log('[VISION] Downloading image from Telegram...');
   const imageData = await downloadTelegramImageAsBase64(fileId);
-  console.log('[VISION] Image downloaded successfully. Base64 size:', imageData.data.length, 'chars');
+  console.log('[VISION] Image ready. Base64 size:', imageData.data.length, 'chars');
 
-  // Try all 3 API keys across multiple models
+  // Build tier list dynamically from available keys
   const tiers = [
-    { key: env.GEMINI_API_KEY_PRIMARY, model: 'gemini-2.5-flash', name: 'Tier1 (2.5 Flash + Primary Key)' },
-    { key: env.GEMINI_API_KEY_BACKUP, model: 'gemini-2.5-flash', name: 'Tier2 (2.5 Flash + Backup Key)' },
-    { key: env.GEMINI_API_KEY_TERTIARY, model: 'gemini-2.5-flash', name: 'Tier3 (2.5 Flash + Tertiary Key)' },
-    { key: env.GEMINI_API_KEY_PRIMARY, model: 'gemini-2.0-flash', name: 'Tier4 (2.0 Flash + Primary Key)' },
-    { key: env.GEMINI_API_KEY_BACKUP, model: 'gemini-2.0-flash', name: 'Tier5 (2.0 Flash + Backup Key)' },
-    { key: env.GEMINI_API_KEY_TERTIARY, model: 'gemini-2.0-flash', name: 'Tier6 (2.0 Flash + Tertiary Key)' },
-    { key: env.GEMINI_API_KEY_PRIMARY, model: 'gemini-1.5-flash', name: 'Tier7 (1.5 Flash + Primary Key)' },
-    { key: env.GEMINI_API_KEY_BACKUP, model: 'gemini-1.5-flash', name: 'Tier8 (1.5 Flash + Backup Key)' },
-    { key: env.GEMINI_API_KEY_TERTIARY, model: 'gemini-1.5-flash', name: 'Tier9 (1.5 Flash + Tertiary Key)' },
-  ].filter(t => t.key);
+    // Tier 1-4: Gemini 2.5 Flash (Premium Quality, 4 Keys)
+    ...GEMINI_25_KEYS.map((key, i) => ({
+      name: `Tier${i + 1} (Gemini 2.5 Flash Key ${i + 1})`,
+      fn: () => callGeminiVision(key, 'gemini-2.5-flash', imageData, caption)
+    })),
+    // Tier 5-8: Groq Llama 4 Scout 17B (Balanced, 4 Keys)
+    ...GROQ_KEYS.map((key, i) => ({
+      name: `Tier${GEMINI_25_KEYS.length + i + 1} (Groq Llama4-Scout Key ${i + 1})`,
+      fn: () => callGroqVision(key, imageData, caption)
+    })),
+    // Tier 9-10: Gemini 2.0 Flash (Generous Quota, 2 Keys)
+    ...GEMINI_20_KEYS.map((key, i) => ({
+      name: `Tier${GEMINI_25_KEYS.length + GROQ_KEYS.length + i + 1} (Gemini 2.0 Flash Key ${i + 1})`,
+      fn: () => callGeminiVision(key, 'gemini-2.0-flash', imageData, caption)
+    })),
+    // Tier 11: Hugging Face Qwen2-VL (Safety Net — No daily quota)
+    {
+      name: `Tier${GEMINI_25_KEYS.length + GROQ_KEYS.length + GEMINI_20_KEYS.length + 1} (HuggingFace Qwen2-VL)`,
+      fn: () => callHuggingFaceVision(imageData, caption)
+    }
+  ];
 
   for (const tier of tiers) {
     try {
       console.log(`[VISION] Trying ${tier.name}...`);
-      const result = await callGeminiVision(tier.key, tier.model, imageData, caption);
+      const result = await tier.fn();
+      if (!result || result.trim().length < 10) throw new Error('Response too short or empty');
       console.log(`[VISION] ${tier.name} SUCCESS. Output length:`, result.length);
       return result;
     } catch (e) {
-      const status = e.response?.status || 'unknown';
+      const status = e.response?.status || 'net';
       const errMsg = e.response?.data?.error?.message || e.message;
-      console.warn(`[VISION] ${tier.name} FAILED (${status}): ${errMsg}`);
+      console.warn(`[VISION] ${tier.name} FAILED (${status}): ${errMsg.substring(0, 150)}`);
+      // 500ms cooling before trying next tier
       await new Promise(r => setTimeout(r, 500));
     }
   }
 
-  // Tier 10: Groq Vision — completely independent provider
-  if (env.GROQ_API_KEY) {
-    try {
-      console.log('[VISION] Trying Tier10 (Groq Vision)...');
-      const result = await callGroqVision(imageData, caption);
-      console.log('[VISION] Tier10 (Groq Vision) SUCCESS. Output length:', result.length);
-      return result;
-    } catch (e) {
-      const status = e.response?.status || 'unknown';
-      const errMsg = e.response?.data?.error?.message || e.message;
-      console.warn(`[VISION] Tier10 (Groq Vision) FAILED (${status}): ${errMsg}`);
-    }
-  }
-
-  throw new Error('All 10 Vision AI tiers failed (9 Gemini + 1 Groq). All APIs are currently overloaded or rate-limited.');
+  // FALLBACK FINAL — All tiers exhausted, alert user via Telegram
+  throw new Error('⚠️ VISION DOWN TOTAL: Semua 11 Tier Vision Engine gagal (4x Gemini 2.5 + 4x Groq + 2x Gemini 2.0 + HuggingFace).');
 }
 
-module.exports = {
-  processTelegramImage
-};
+module.exports = { processTelegramImage };
