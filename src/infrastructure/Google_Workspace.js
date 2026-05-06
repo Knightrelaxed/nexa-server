@@ -44,11 +44,17 @@ function getClients() {
  */
 async function appendFinanceRow(rowData) {
   const { sheets } = getClients();
-  
+
+  // Get the actual first sheet name dynamically to avoid hardcoding errors
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: env.GOOGLE_SHEET_ID });
+  const sheetName = meta.data.sheets[0].properties.title;
+  console.log(`[FINANCE] Appending to sheet: "${sheetName}"`);
+
   const response = await sheets.spreadsheets.values.append({
     spreadsheetId: env.GOOGLE_SHEET_ID,
-    range: 'A:H', // Extended for 8 columns (Date, Time, Type, Dest, Cat, Desc, Nominal, Source)
+    range: `${sheetName}!A:H`,
     valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS', // Always insert new row, never overwrite
     requestBody: {
       values: [rowData]
     }
