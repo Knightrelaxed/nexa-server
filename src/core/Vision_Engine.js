@@ -171,7 +171,7 @@ async function downloadTelegramImageAsBase64(fileId) {
 /**
  * Internal Vision call with a specific Gemini API key, using Axios.
  */
-async function callGeminiVision(apiKey, modelName, imageData, caption) {
+async function callGeminiVision(apiKey, modelName, imageData, caption, retries = 3) {
   const captionContext = caption
     ? `\n[CAPTION/INSTRUKSI DARI TUAN FAQIH]: "${caption}"\nGunakan caption ini sebagai petunjuk utama apa yang Tuan Faqih inginkan dari gambar ini.`
     : '\n[TIDAK ADA CAPTION]: Tuan Faqih tidak memberikan instruksi teks. Analisis gambar dan interpretasikan konteksnya secara cerdas.';
@@ -191,18 +191,32 @@ async function callGeminiVision(apiKey, modelName, imageData, caption) {
     generationConfig: { temperature: 0.4 }
   };
 
-  const response = await axios.post(url, payload, {
-    headers: { 'Content-Type': 'application/json' },
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity,
-    httpsAgent: ipv4Agent
-  });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post(url, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        httpsAgent: ipv4Agent
+      });
 
-  if (!response.data.candidates || response.data.candidates.length === 0) {
-    throw new Error('Gemini API returned no candidates.');
+      if (!response.data.candidates || response.data.candidates.length === 0) {
+        throw new Error('Gemini API returned no candidates.');
+      }
+
+      return response.data.candidates[0].content.parts[0].text;
+    } catch (e) {
+      const status = e.response?.status;
+      // 503 = temporary overload, worth retrying
+      if (status === 503 && attempt < retries) {
+        const delay = attempt * 2000; // 2s, 4s...
+        console.warn(`[VISION] 503 attempt ${attempt}/${retries}, retry in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw e; // Throw for 429 quota limits or other errors to trigger next tier
+    }
   }
-
-  return response.data.candidates[0].content.parts[0].text;
 }
 
 /**
@@ -215,7 +229,7 @@ async function callGroqVision(imageData, caption) {
     : '\nTidak ada caption. Analisis gambar secara mandiri.';
 
   const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-    model: 'llama-3.2-90b-vision-preview',
+    model: 'llama-3.2-11b-vision-preview', // The supported Groq Vision model
     messages: [
       {
         role: 'user',
@@ -262,6 +276,9 @@ async function processTelegramImage(fileId, caption = '') {
     { key: env.GEMINI_API_KEY_PRIMARY, model: 'gemini-2.0-flash', name: 'Tier4 (2.0 Flash + Primary Key)' },
     { key: env.GEMINI_API_KEY_BACKUP, model: 'gemini-2.0-flash', name: 'Tier5 (2.0 Flash + Backup Key)' },
     { key: env.GEMINI_API_KEY_TERTIARY, model: 'gemini-2.0-flash', name: 'Tier6 (2.0 Flash + Tertiary Key)' },
+    { key: env.GEMINI_API_KEY_PRIMARY, model: 'gemini-1.5-flash', name: 'Tier7 (1.5 Flash + Primary Key)' },
+    { key: env.GEMINI_API_KEY_BACKUP, model: 'gemini-1.5-flash', name: 'Tier8 (1.5 Flash + Backup Key)' },
+    { key: env.GEMINI_API_KEY_TERTIARY, model: 'gemini-1.5-flash', name: 'Tier9 (1.5 Flash + Tertiary Key)' },
   ].filter(t => t.key);
 
   for (const tier of tiers) {
@@ -278,21 +295,21 @@ async function processTelegramImage(fileId, caption = '') {
     }
   }
 
-  // Tier 7: Groq Vision — completely independent provider
+  // Tier 10: Groq Vision — completely independent provider
   if (env.GROQ_API_KEY) {
     try {
-      console.log('[VISION] Trying Tier7 (Groq Llama 3.2 90B Vision)...');
+      console.log('[VISION] Trying Tier10 (Groq Vision)...');
       const result = await callGroqVision(imageData, caption);
-      console.log('[VISION] Tier7 (Groq Vision) SUCCESS. Output length:', result.length);
+      console.log('[VISION] Tier10 (Groq Vision) SUCCESS. Output length:', result.length);
       return result;
     } catch (e) {
       const status = e.response?.status || 'unknown';
       const errMsg = e.response?.data?.error?.message || e.message;
-      console.warn(`[VISION] Tier7 (Groq Vision) FAILED (${status}): ${errMsg}`);
+      console.warn(`[VISION] Tier10 (Groq Vision) FAILED (${status}): ${errMsg}`);
     }
   }
 
-  throw new Error('All 7 Vision AI tiers failed (6 Gemini + 1 Groq). All APIs are currently overloaded or rate-limited.');
+  throw new Error('All 10 Vision AI tiers failed (9 Gemini + 1 Groq). All APIs are currently overloaded or rate-limited.');
 }
 
 module.exports = {
