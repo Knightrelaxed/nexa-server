@@ -80,22 +80,27 @@ ATURAN KELUARAN:
 `;
 
 /**
- * Download image from Telegram using system cURL.
+ * Download image from Telegram using system cURL over HTTP (port 80).
  * 
- * CRITICAL: HuggingFace's IPv6 route to api.telegram.org is a black hole,
- * causing "curl: (28) SSL connection timeout" because it tries IPv6 first
- * and hangs. We MUST force --ipv4 explicitly on every curl command.
+ * DEFINITIVE FINDING: HuggingFace blocks ALL outbound SSL/TLS (port 443)
+ * to api.telegram.org IP ranges. Proven by: Node.js https, axios, fetch,
+ * AND system curl with --ipv4 + hardcoded IP — ALL return "SSL connection timeout".
+ * 
+ * Solution: Use plain HTTP (port 80). Telegram Bot API supports both protocols.
+ * We intentionally OMIT the -L flag to prevent curl from following any
+ * redirect back to HTTPS (which would hit the port 443 block again).
  */
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
-  const telegramBase = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
+  // HTTP on port 80 — the ONLY path that bypasses HuggingFace's port 443 block
+  const telegramBase = `http://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
 
-  console.log('[VISION] Getting file info from Telegram via cURL (Forced IPv4 & Custom DNS)...');
+  console.log('[VISION] Step 1: Getting file info from Telegram via HTTP port 80...');
   let infoResult;
   try {
     infoResult = await exec(
-      `curl -sSL --ipv4 --resolve api.telegram.org:443:149.154.167.220 --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 20 "${telegramBase}/getFile?file_id=${fileId}"`,
+      `curl -sS --ipv4 --connect-timeout 10 --max-time 20 "${telegramBase}/getFile?file_id=${fileId}"`,
       { maxBuffer: 5 * 1024 * 1024 }
     );
   } catch (err) {
@@ -103,18 +108,27 @@ async function downloadTelegramImageAsBase64(fileId) {
     throw new Error(`cURL getFile failed: ${err.stderr || err.message}`);
   }
   
-  console.log('[VISION] cURL getFile response received. Length:', infoResult.stdout.length);
-  const fileData = JSON.parse(infoResult.stdout);
+  const raw = infoResult.stdout.trim();
+  console.log('[VISION] Raw response (first 200 chars):', raw.substring(0, 200));
+
+  // If we got a redirect HTML page instead of JSON, log it
+  if (!raw.startsWith('{')) {
+    console.error('[VISION] Non-JSON response — likely a redirect page. Full:', raw.substring(0, 500));
+    throw new Error('Telegram returned non-JSON (possible redirect). HTTP port 80 may not be supported.');
+  }
+
+  const fileData = JSON.parse(raw);
   if (!fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   
   const filePath = fileData.result.file_path;
-  const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+  // Also use HTTP for file download
+  const fileUrl = `http://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-  console.log('[VISION] Downloading image binary from Telegram via cURL (Forced IPv4 & Custom DNS)...');
+  console.log('[VISION] Step 2: Downloading image binary via HTTP port 80...');
   let imageResult;
   try {
     imageResult = await exec(
-      `curl -sSL --ipv4 --resolve api.telegram.org:443:149.154.167.220 --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 45 "${fileUrl}" | base64 -w 0`,
+      `curl -sS --ipv4 --connect-timeout 10 --max-time 45 "${fileUrl}" | base64 -w 0`,
       { maxBuffer: 20 * 1024 * 1024 }
     );
   } catch (err) {
