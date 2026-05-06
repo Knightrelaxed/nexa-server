@@ -111,3 +111,17 @@ Inovasi arsitektur untuk mencegah kehilangan data transaksi Livin' saat server s
 
 **Dampak Signifikan:**
 Hampir 40-50% percakapan repetitif/rutin akan ditangani tanpa mengkonsumsi kuota harian. Hal ini sangat berguna jika suatu saat *Free Tier* Google menjadi semakin ketat atau Anda memutuskan memakai model berbayar.
+
+---
+
+## 6. Arsitektur God Mode Level 2: Universal Smart Retry & Multi-Tier Fallback
+
+**Konsep:** Memastikan N.E.X.A 100% kebal dari *downtime* provider AI, *rate limit*, dan *overload* dengan membangun jaringan jaring pengaman (safety net) yang cerdas dan berlapis di semua titik masuk (Teks, Suara, Gambar).
+
+**Cara Kerja:**
+1. **Vision Engine (Anti-Buta):** Implementasi 10+ Tier Fallback dengan *Smart Retry 503* untuk pemanggilan API Google dan Groq. Menjamin gambar tidak pernah gagal diproses meski server sedang *down*.
+2. **Text Engine / AI Router (Anti-Bisu):** Menanamkan logika *Smart Retry* ke dalam `Fallback_Engine.js` dan memperluas jaring pengaman hingga 10+ Tier dengan kombinasi 4 Akun Google, Groq, Cerebras, dan OpenRouter.
+3. **Voice Engine (Anti-Tuli):** Mengganti infrastruktur Single Point of Failure (hanya Groq Whisper) menjadi Multi-Tier Fallback. Jika Groq tumbang, suara akan ditranskripsi oleh Gemini 1.5 Flash melalui input audio *native*.
+
+**Dampak Signifikan:**
+N.E.X.A mencapai tingkat ketahanan setara dengan infrastruktur *Enterprise* bernilai ribuan dolar, berjalan murni secara gratis 24/7.
