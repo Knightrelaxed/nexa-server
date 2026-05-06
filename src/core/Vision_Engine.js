@@ -221,27 +221,28 @@ async function processTelegramImage(fileId, caption = '') {
   const imageData = await downloadTelegramImageAsBase64(fileId);
   console.log('[VISION] Image downloaded successfully. Base64 size:', imageData.data.length, 'chars');
 
-  // Tier 1: Primary (2.5 Flash — best multimodal model)
-  if (env.GEMINI_API_KEY_PRIMARY) {
-    try {
-      console.log('[VISION] Sending to Gemini 2.5 Flash...');
-      const result = await callGeminiVision(env.GEMINI_API_KEY_PRIMARY, 'gemini-2.5-flash', imageData, caption);
-      console.log('[VISION] Primary vision success. Output length:', result.length);
-      return result;
-    } catch (e) {
-      console.warn('[VISION] Primary Gemini 2.5 vision failed:', e.message);
-    }
-  }
+  // Try all 3 API keys across multiple models
+  const tiers = [
+    { key: env.GEMINI_API_KEY_PRIMARY, model: 'gemini-2.5-flash', name: 'Tier1 (2.5 Flash + Primary Key)' },
+    { key: env.GEMINI_API_KEY_BACKUP, model: 'gemini-2.5-flash', name: 'Tier2 (2.5 Flash + Backup Key)' },
+    { key: env.GEMINI_API_KEY_TERTIARY, model: 'gemini-2.5-flash', name: 'Tier3 (2.5 Flash + Tertiary Key)' },
+    { key: env.GEMINI_API_KEY_PRIMARY, model: 'gemini-2.0-flash', name: 'Tier4 (2.0 Flash + Primary Key)' },
+    { key: env.GEMINI_API_KEY_BACKUP, model: 'gemini-2.0-flash', name: 'Tier5 (2.0 Flash + Backup Key)' },
+    { key: env.GEMINI_API_KEY_TERTIARY, model: 'gemini-2.0-flash', name: 'Tier6 (2.0 Flash + Tertiary Key)' },
+  ].filter(t => t.key); // Remove tiers with missing keys
 
-  // Tier 2: Backup (2.0 Flash Lite)
-  if (env.GEMINI_API_KEY_BACKUP) {
+  for (const tier of tiers) {
     try {
-      console.log('[VISION] Falling back to Gemini 2.0 Flash Lite...');
-      const result = await callGeminiVision(env.GEMINI_API_KEY_BACKUP, 'gemini-2.0-flash-lite', imageData, caption);
-      console.log('[VISION] Backup vision success. Output length:', result.length);
+      console.log(`[VISION] Trying ${tier.name}...`);
+      const result = await callGeminiVision(tier.key, tier.model, imageData, caption);
+      console.log(`[VISION] ${tier.name} SUCCESS. Output length:`, result.length);
       return result;
     } catch (e) {
-      console.warn('[VISION] Backup Gemini 2.0 vision failed:', e.message);
+      const status = e.response?.status || 'unknown';
+      const errMsg = e.response?.data?.error?.message || e.message;
+      console.warn(`[VISION] ${tier.name} FAILED (${status}): ${errMsg}`);
+      // Small delay before next attempt to avoid rate limit cascade
+      await new Promise(r => setTimeout(r, 500));
     }
   }
 
