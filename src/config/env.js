@@ -4,6 +4,7 @@ module.exports = {
   PORT: process.env.PORT || 3000,
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+  TELEGRAM_PROXY_URL: process.env.TELEGRAM_PROXY_URL, // Cloudflare Worker relay for Vision image downloads
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_KEY: process.env.SUPABASE_KEY,
   GEMINI_API_KEY_PRIMARY: process.env.GEMINI_API_KEY_PRIMARY,
