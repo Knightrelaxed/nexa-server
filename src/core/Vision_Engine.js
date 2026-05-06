@@ -220,7 +220,7 @@ async function callGeminiVision(apiKey, modelName, imageData, caption, retries =
 }
 
 /**
- * Tier 7 Fallback: Groq Vision (Llama 3.2 90B Vision Preview)
+ * Tier 7 Fallback: Groq Vision (Llama 4 Scout 17B)
  * Uses OpenAI-compatible API format. Completely independent from Google.
  */
 async function callGroqVision(imageData, caption) {
@@ -229,7 +229,7 @@ async function callGroqVision(imageData, caption) {
     : '\nTidak ada caption. Analisis gambar secara mandiri.';
 
   const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-    model: 'llama-3.2-11b-vision-preview', // The supported Groq Vision model
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct', // Supported Groq model in 2026
     messages: [
       {
         role: 'user',
