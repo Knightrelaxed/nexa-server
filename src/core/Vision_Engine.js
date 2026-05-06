@@ -134,14 +134,26 @@ async function downloadTelegramImageAsBase64(fileId) {
 
   const filePath = fileData.result.file_path;
 
-  // Step 2: Download image binary
+  // Step 2: Download image binary and convert to base64 at shell level
+  // CRITICAL: We must pipe through `base64` in the shell, NOT convert in Node.js.
+  // exec() captures stdout as a UTF-8 string, which corrupts binary image data.
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+  const proxyBase = env.TELEGRAM_PROXY_URL || 'https://api.allorigins.win/raw?url=';
+  const proxiedFileUrl = `${proxyBase}${encodeURIComponent(fileUrl)}`;
+
   console.log('[VISION] Step 2: Downloading image binary via relay proxy...');
+  let imageResult;
+  try {
+    imageResult = await exec(
+      `curl -sS --ipv4 --connect-timeout 15 --max-time 60 "${proxiedFileUrl}" | base64 -w 0`,
+      { maxBuffer: 20 * 1024 * 1024 }
+    );
+  } catch (err) {
+    console.error('[VISION] Image download STDERR:', err.stderr || 'no stderr');
+    throw new Error(`Image download failed: ${err.stderr || err.message}`);
+  }
 
-  const imageRaw = await fetchViaProxy(fileUrl, { maxBuffer: 20 * 1024 * 1024, timeout: 60 });
-
-  // Convert to base64 in Node.js instead of piping through base64 command
-  const base64Data = Buffer.from(imageRaw, 'binary').toString('base64');
+  const base64Data = imageResult.stdout.trim();
   console.log('[VISION] Image downloaded via proxy. Base64 size:', base64Data.length, 'chars');
 
   if (base64Data.length < 100) {
