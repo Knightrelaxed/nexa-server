@@ -26,6 +26,7 @@ module.exports = {
   GOOGLE_SERVICE_ACCOUNT_EMAIL: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
   GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^["']|["']$/g, '').trim() : '',
   GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID,
+  GOOGLE_FINANCE_SHEET_ID: process.env.GOOGLE_FINANCE_SHEET_ID, // Bank Mandiri Livin Buku Kas (fixed sheet per akun)
   GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID,
   GOOGLE_DRIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_FOLDER_ID,
   GOOGLE_DOCS_IDEA_ID: process.env.GOOGLE_DOCS_IDEA_ID, // Single master doc for 2nd Brain ideation (append-only)

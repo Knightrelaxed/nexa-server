@@ -39,42 +39,115 @@ function getClients() {
 }
 
 /**
- * Append a row to the Finance Google Sheet
- * @param {Array<string|number>} rowData - e.g. [Date, Nominal, Merchant, Source]
+ * Get the current month sheet name in Indonesian (e.g. "Februari 2026")
  */
-async function appendFinanceRow(rowData) {
-  const { sheets } = getClients();
-
-  // Get the actual first sheet name dynamically to avoid hardcoding errors
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: env.GOOGLE_SHEET_ID });
-  const sheetName = meta.data.sheets[0].properties.title;
-  console.log(`[FINANCE] Appending to sheet: "${sheetName}"`);
-
-  const response = await sheets.spreadsheets.values.append({
-    spreadsheetId: env.GOOGLE_SHEET_ID,
-    range: `${sheetName}!A:H`,
-    valueInputOption: 'USER_ENTERED',
-    insertDataOption: 'INSERT_ROWS', // Always insert new row, never overwrite
-    requestBody: {
-      values: [rowData]
-    }
-  });
-  return response.data;
+function getCurrentMonthSheetName() {
+  const months = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  const now = new Date();
+  // Use Jakarta time for month resolution
+  const jakartaDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  return `${months[jakartaDate.getMonth()]} ${jakartaDate.getFullYear()}`;
 }
 
 /**
- * Read the current month's budget/expenses from the sheet
- * @returns {Array<Array<string>>}
+ * Append one transaction row to the Buku Kas Bank Mandiri Livin sheet.
+ * Targets the current month's tab (e.g. "Februari 2026").
+ * Writes columns A-J with Google Sheets formulas for Saldo (I) and Nominal+ (J).
+ *
+ * Sheet structure (row 4 = headers, data starts at row 5):
+ * A: No | B: Tanggal | C: Waktu | D: Tipe | E: Kategori | F: Akun
+ * G: Catatan/Detail | H: Nominal (Rp) | I: Saldo (Rp) [formula] | J: Nominal (+) [formula]
+ *
+ * @param {object} txData - { tanggal, waktu, tipe, kategori, akun, catatan, nominal }
  */
-async function getFinanceSummary(range = 'Dashboard!A1:B10') {
+async function appendFinanceRow(txData) {
   const { sheets } = getClients();
+  const sheetId = env.GOOGLE_FINANCE_SHEET_ID;
+  if (!sheetId) throw new Error('GOOGLE_FINANCE_SHEET_ID tidak dikonfigurasi di Secrets.');
+
+  const sheetName = getCurrentMonthSheetName();
+  console.log(`[FINANCE] Target sheet: "${sheetName}"`);
+
+  // --- Step 1: Find the next empty data row ---
+  // Read column A (No) from row 5 downward to count existing rows
+  const readRange = `${sheetName}!A5:A`;
+  let existingRows = 0;
+  try {
+    const readRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: readRange
+    });
+    existingRows = readRes.data.values ? readRes.data.values.length : 0;
+  } catch (e) {
+    // Sheet may be empty — that's fine, existingRows stays 0
+    console.warn(`[FINANCE] Could not read existing rows (possibly empty sheet): ${e.message}`);
+  }
+
+  const nextRowNumber = 5 + existingRows;        // Absolute row in sheet (1-indexed)
+  const noValue = existingRows + 1;               // Sequential No. for column A
+  const prevRow = nextRowNumber - 1;              // Row above for Saldo formula
+
+  // --- Step 2: Build Saldo (I) and Nominal+ (J) formulas ---
+  // I: Running balance. First data row (row 5) = H5. Subsequent rows = I{prev}+H{current}
+  const saldoFormula = nextRowNumber === 5
+    ? `=H${nextRowNumber}`
+    : `=I${prevRow}+H${nextRowNumber}`;
+
+  // J: Positive value of pengeluaran only. Uses semicolons — Google Sheets locale ID format
+  const nominalPlusFormula = `=IF(D${nextRowNumber}="Pengeluaran";-H${nextRowNumber};0)`;
+
+  // --- Step 3: Build the row array (A to J) ---
+  const row = [
+    noValue,               // A: No
+    txData.tanggal,        // B: Tanggal
+    txData.waktu,          // C: Waktu
+    txData.tipe,           // D: Tipe (Pemasukan/Pengeluaran)
+    txData.kategori,       // E: Kategori
+    txData.akun || 'Bank Mandiri Livin', // F: Akun
+    txData.catatan,        // G: Catatan / Detail
+    txData.nominal,        // H: Nominal (Rp) — negative for Pengeluaran
+    saldoFormula,          // I: Saldo (Rp) — Google Sheets formula
+    nominalPlusFormula     // J: Nominal (+) — Google Sheets formula
+  ];
+
+  // --- Step 4: Write to exact row using update (not append) to preserve formula integrity ---
+  const writeRange = `${sheetName}!A${nextRowNumber}:J${nextRowNumber}`;
+  const response = await sheets.spreadsheets.values.update({
+    spreadsheetId: sheetId,
+    range: writeRange,
+    valueInputOption: 'USER_ENTERED', // Interprets formula strings as actual formulas
+    requestBody: { values: [row] }
+  });
+
+  console.log(`[FINANCE] Row written at ${writeRange}. No: ${noValue}`);
+  return { rowNumber: nextRowNumber, noValue, sheetName, response: response.data };
+}
+
+/**
+ * Read recent transactions from the current month's sheet.
+ * Returns raw values array (rows 5 to lastRow, columns A-J).
+ * @param {number} limit - Number of recent rows to return (default 5)
+ */
+async function getFinanceSummary(limit = 5) {
+  const { sheets } = getClients();
+  const sheetId = env.GOOGLE_FINANCE_SHEET_ID || env.GOOGLE_SHEET_ID;
+  const sheetName = getCurrentMonthSheetName();
 
   const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: env.GOOGLE_SHEET_ID,
-    range: range
+    spreadsheetId: sheetId,
+    range: `${sheetName}!A5:J`
   });
-  return response.data.values;
+
+  const allRows = response.data.values || [];
+  if (allRows.length === 0) return [];
+  // Return the last `limit` rows (most recent first)
+  return allRows.slice(-limit).reverse();
 }
+
+
 
 /**
  * Create a new event in Google Calendar
