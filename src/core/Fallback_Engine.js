@@ -3,141 +3,145 @@ const axios = require('axios');
 const env = require('../config/env');
 
 // ============================================================
-// MULTI-KEY GEMINI INITIALIZATION
-// Each key belongs to a DIFFERENT Google project, giving each
-// its own independent quota pool. When one key is exhausted,
-// the next key still has full quota available.
+// MULTI-KEY AI INITIALIZATION
 // ============================================================
-const primaryGenAI = env.GEMINI_API_KEY_PRIMARY ? new GoogleGenerativeAI(env.GEMINI_API_KEY_PRIMARY) : null;
-const backupGenAI = env.GEMINI_API_KEY_BACKUP ? new GoogleGenerativeAI(env.GEMINI_API_KEY_BACKUP) : null;
-const tertiaryGenAI = env.GEMINI_API_KEY_TERTIARY ? new GoogleGenerativeAI(env.GEMINI_API_KEY_TERTIARY) : null;
+const geminiClients = [
+  env.GEMINI_API_KEY_1 ? new GoogleGenerativeAI(env.GEMINI_API_KEY_1) : null,
+  env.GEMINI_API_KEY_2 ? new GoogleGenerativeAI(env.GEMINI_API_KEY_2) : null,
+  env.GEMINI_API_KEY_3 ? new GoogleGenerativeAI(env.GEMINI_API_KEY_3) : null,
+  env.GEMINI_API_KEY_4 ? new GoogleGenerativeAI(env.GEMINI_API_KEY_4) : null
+];
+
+const groqKeys = [
+  env.GROQ_API_KEY_1,
+  env.GROQ_API_KEY_2,
+  env.GROQ_API_KEY_3,
+  env.GROQ_API_KEY_4
+];
 
 /**
- * Execute AI Prompt with Multi-Tier Fallback
- *
- * Tier 1: Groq — Llama 3.3 70B (generous quota, very fast, most reliable)
- * Tier 2: Gemini 2.5 Flash — PRIMARY key (20 RPD, smart but limited)
- * Tier 3: Gemini 2.5 Flash — BACKUP key
- * Tier 4: Gemini 2.5 Flash — TERTIARY key
- * Tier 5: Gemini 2.0 Flash Lite — BACKUP key
- * Tier 6: Gemini 2.0 Flash Lite — TERTIARY key
- * Tier 7: OpenRouter Llama 3.1 (independent provider)
- * Tier 8: Dumb Mode
+ * Execute AI Prompt with Multi-Tier Fallback (9 Layers)
+ * 
+ * Tier 1 & 2: Groq Llama 3.3 70B (The Sprinter)
+ * Tier 3 & 4: Gemini 2.5 Flash (The Deep Thinkers)
+ * Tier 5: Cerebras Llama 3.1 70B (The Backup Sprinter)
+ * Tier 6 & 7: Gemini 2.0 Flash (The Infinite Context)
+ * Tier 8: Mistral Pixtral 12B (The Mistral)
+ * Tier 9: OpenRouter Gemma 2 (The OpenRouter Net)
  */
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Groq Llama 3.3 70B — most reliable, no daily RPD cap
-  if (env.GROQ_API_KEY) {
+  // Tier 1: Groq Llama 3.3 70B (Key 1)
+  if (groqKeys[0]) {
     try {
-      return await callGroq(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) {
-      console.warn('[FALLBACK] Tier 1 (Groq Llama 3.3) failed:', e.message);
-    }
+      return await callGroq(groqKeys[0], prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 1 (Groq Key 1) failed:', e.message); }
   }
 
-  // Tier 2-4: Gemini 2.5 Flash — tries all 3 keys
-  const geminiClients = [
-    { client: primaryGenAI, name: 'Tier 2 (Gemini 2.5 PRIMARY)' },
-    { client: backupGenAI, name: 'Tier 3 (Gemini 2.5 BACKUP)' },
-    { client: tertiaryGenAI, name: 'Tier 4 (Gemini 2.5 TERTIARY)' },
-  ].filter(t => t.client);
-
-  for (const { client, name } of geminiClients) {
+  // Tier 2: Groq Llama 3.3 70B (Key 2)
+  if (groqKeys[1]) {
     try {
-      console.log(`[FALLBACK] Switching to ${name}...`);
-      return await callGemini(client, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) {
-      const status = e.status || e.response?.status || '';
-      // 429 = quota exhausted for the day — no point logging full error
-      if (String(e.message).includes('429') || status === 429) {
-        console.warn(`[FALLBACK] ${name} skipped: quota exhausted (429).`);
-      } else {
-        console.warn(`[FALLBACK] ${name} failed:`, e.message);
-      }
-    }
+      console.log('[FALLBACK] Switching to Tier 2 (Groq Key 2)...');
+      return await callGroq(groqKeys[1], prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 2 (Groq Key 2) failed:', e.message); }
   }
 
-  // Tier 5-6: Gemini 2.0 Flash Lite — separate model quota pool
-  const gemini20Clients = [
-    { client: backupGenAI, name: 'Tier 5 (Gemini 2.0 BACKUP)' },
-    { client: tertiaryGenAI, name: 'Tier 6 (Gemini 2.0 TERTIARY)' },
-  ].filter(t => t.client);
-
-  for (const { client, name } of gemini20Clients) {
+  // Tier 3: Gemini 2.5 Flash (Key 1)
+  if (geminiClients[0]) {
     try {
-      console.log(`[FALLBACK] Switching to ${name}...`);
-      return await callGemini(client, 'gemini-2.0-flash-lite', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) {
-      console.warn(`[FALLBACK] ${name} failed:`, e.message);
-    }
+      console.log('[FALLBACK] Switching to Tier 3 (Gemini 2.5 Flash Key 1)...');
+      return await callGeminiWithRetry(geminiClients[0], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 3 (Gemini 2.5 Key 1) failed:', e.message); }
   }
 
-  // Tier 7: OpenRouter Llama 3.1
+  // Tier 4: Gemini 2.5 Flash (Key 2)
+  if (geminiClients[1]) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 4 (Gemini 2.5 Flash Key 2)...');
+      return await callGeminiWithRetry(geminiClients[1], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 4 (Gemini 2.5 Key 2) failed:', e.message); }
+  }
+
+  // Tier 5: Cerebras Llama 3.1 70B
+  if (env.CEREBRAS_API_KEY) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 5 (Cerebras Llama 3.1 70B)...');
+      return await callCerebras(prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 5 (Cerebras) failed:', e.message); }
+  }
+
+  // Tier 6: Gemini 2.0 Flash (Key 3)
+  if (geminiClients[2]) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 6 (Gemini 2.0 Flash Key 3)...');
+      return await callGeminiWithRetry(geminiClients[2], 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 6 (Gemini 2.0 Key 3) failed:', e.message); }
+  }
+
+  // Tier 7: Gemini 2.0 Flash (Key 4)
+  if (geminiClients[3]) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 7 (Gemini 2.0 Flash Key 4)...');
+      return await callGeminiWithRetry(geminiClients[3], 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 7 (Gemini 2.0 Key 4) failed:', e.message); }
+  }
+
+  // Tier 8: Mistral API (Pixtral 12B)
+  if (env.MISTRAL_API_KEY) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 8 (Mistral Pixtral 12B)...');
+      return await callMistral(prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 8 (Mistral) failed:', e.message); }
+  }
+
+  // Tier 9: OpenRouter (Gemma 2 27B)
   if (env.OPENROUTER_API_KEY) {
     try {
-      console.log('[FALLBACK] Switching to Tier 7 (OpenRouter Llama 3.1)...');
+      console.log('[FALLBACK] Switching to Tier 9 (OpenRouter)...');
       return await callOpenRouter(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) {
-      console.warn('[FALLBACK] Tier 7 (OpenRouter) failed:', e.message);
-    }
+    } catch (e) { console.warn('[FALLBACK] Tier 9 (OpenRouter) failed:', e.message); }
   }
 
-  // Tier 8: Dumb Mode — ALL AI layers exhausted
-  console.error('[FALLBACK] ⚠️ All AI layers exhausted. Entering Dumb Mode.');
+  // Fallback Final
+  console.error('[FALLBACK] ⚠️ All 9 AI layers exhausted. Entering Dumb Mode.');
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,
     god_mode_trigger: false,
-    reply_message: 'Tuan, semua layanan AI sedang tidak tersedia sementara. Sistem akan pulih otomatis. Coba lagi nanti.'
+    reply_message: '⚠️ Sistem Otak N.E.X.A (AI Router) mengalami Down Total di semua 9 peladen dunia. Mohon tunggu beberapa saat.'
   });
 }
 
-/**
- * Internal wrapper for Gemini GenAI Call
- */
-async function callGemini(client, modelName, prompt, systemInstruction, temperature, jsonMode = true) {
+// ----------------------------------------------------
+// API WRAPPERS WITH 503 SMART RETRY
+// ----------------------------------------------------
+
+async function callGeminiWithRetry(client, modelName, prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
   const generationConfig = { temperature };
-  if (jsonMode) {
-    generationConfig.responseMimeType = 'application/json';
-  }
+  if (jsonMode) generationConfig.responseMimeType = 'application/json';
+  
   const model = client.getGenerativeModel({
     model: modelName,
     systemInstruction: systemInstruction,
     generationConfig
   });
-  const response = await model.generateContent(prompt);
-  return response.response.text();
-}
 
-/**
- * Internal wrapper for OpenRouter (Llama 3.1)
- */
-async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode = true) {
-  const requestBody = {
-    model: 'meta-llama/llama-3.1-8b-instruct',
-    messages: [
-      { role: 'system', content: systemInstruction },
-      { role: 'user', content: prompt }
-    ],
-    temperature
-  };
-  // Only force JSON mode for routing calls, not for free text like briefings
-  if (jsonMode) {
-    requestBody.response_format = { type: 'json_object' };
-  }
-  const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', requestBody, {
-    headers: {
-      'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json'
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await model.generateContent(prompt);
+      return response.response.text();
+    } catch (e) {
+      if (e.message.includes('503') && attempt < retries) {
+        const delay = attempt * 2000;
+        console.warn(`[FALLBACK] Gemini 503 attempt ${attempt}/${retries}, retry in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw e;
     }
-  });
-
-  return response.data.choices[0].message.content;
+  }
 }
 
-/**
- * Internal wrapper for Groq (Llama 3.3 70B Versatile)
- */
-async function callGroq(prompt, systemInstruction, temperature, jsonMode = true) {
+async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
   const requestBody = {
     model: 'llama-3.3-70b-versatile',
     messages: [
@@ -146,17 +150,107 @@ async function callGroq(prompt, systemInstruction, temperature, jsonMode = true)
     ],
     temperature
   };
-  if (jsonMode) {
-    requestBody.response_format = { type: 'json_object' };
-  }
-  const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', requestBody, {
-    headers: {
-      'Authorization': `Bearer ${env.GROQ_API_KEY}`,
-      'Content-Type': 'application/json'
-    }
-  });
+  if (jsonMode) requestBody.response_format = { type: 'json_object' };
 
-  return response.data.choices[0].message.content;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', requestBody, {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 15000
+      });
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      if (e.response?.status === 503 && attempt < retries) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+async function callCerebras(prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
+  const requestBody = {
+    model: 'llama3.1-70b',
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: prompt }
+    ],
+    temperature
+  };
+  if (jsonMode) requestBody.response_format = { type: 'json_object' };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post('https://api.cerebras.ai/v1/chat/completions', requestBody, {
+        headers: { 'Authorization': `Bearer ${env.CEREBRAS_API_KEY}`, 'Content-Type': 'application/json' },
+        timeout: 15000
+      });
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      if (e.response?.status === 503 && attempt < retries) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+async function callMistral(prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
+  const requestBody = {
+    model: 'pixtral-12b-2409',
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: prompt }
+    ],
+    temperature
+  };
+  if (jsonMode) requestBody.response_format = { type: 'json_object' };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post('https://api.mistral.ai/v1/chat/completions', requestBody, {
+        headers: { 'Authorization': `Bearer ${env.MISTRAL_API_KEY}`, 'Content-Type': 'application/json' },
+        timeout: 15000
+      });
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      if (e.response?.status === 503 && attempt < retries) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
+  const requestBody = {
+    model: 'google/gemma-2-27b-it',
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: prompt }
+    ],
+    temperature
+  };
+  if (jsonMode) requestBody.response_format = { type: 'json_object' };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', requestBody, {
+        headers: { 'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
+        timeout: 15000
+      });
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      if (e.response?.status === 503 && attempt < retries) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 module.exports = { executeWithFallback };
