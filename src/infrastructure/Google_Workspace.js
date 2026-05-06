@@ -65,8 +65,8 @@ function getCurrentMonthSheetName() {
  */
 async function appendFinanceRow(txData) {
   const { sheets } = getClients();
-  const sheetId = env.GOOGLE_FINANCE_SHEET_ID;
-  if (!sheetId) throw new Error('GOOGLE_FINANCE_SHEET_ID tidak dikonfigurasi di Secrets.');
+  const sheetId = env.GOOGLE_SHEET_ID;
+  if (!sheetId) throw new Error('GOOGLE_SHEET_ID tidak dikonfigurasi di Secrets.');
 
   const sheetName = getCurrentMonthSheetName();
   console.log(`[FINANCE] Target sheet: "${sheetName}"`);
@@ -133,7 +133,7 @@ async function appendFinanceRow(txData) {
  */
 async function getFinanceSummary(limit = 5) {
   const { sheets } = getClients();
-  const sheetId = env.GOOGLE_FINANCE_SHEET_ID || env.GOOGLE_SHEET_ID;
+  const sheetId = env.GOOGLE_SHEET_ID;
   const sheetName = getCurrentMonthSheetName();
 
   const response = await sheets.spreadsheets.values.get({
