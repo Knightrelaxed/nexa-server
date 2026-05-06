@@ -27,27 +27,21 @@ async function sendTelegramOutbound(text) {
     const chatId = env.TELEGRAM_CHAT_ID.trim();
     const safeText = String(text).substring(0, 4000);
 
-    // Build the Telegram sendMessage URL
-    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    const body = JSON.stringify({ chat_id: chatId, text: safeText, parse_mode: 'HTML' });
+    // Use GET method with query params — Telegram supports both GET and POST.
+    // Our Cloudflare Worker only forwards GET requests (fetch without body),
+    // so POST body would get lost.
+    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}`;
 
-    // Route through proxy (same relay as Vision Engine)
     const proxyBase = env.TELEGRAM_PROXY_URL;
-    if (proxyBase) {
-      const proxiedUrl = `${proxyBase}${encodeURIComponent(telegramUrl)}`;
-      const result = await exec(
-        `curl -sS --ipv4 --connect-timeout 10 --max-time 15 -X POST -H "Content-Type: application/json" -d '${body.replace(/'/g, "'\\''")}' "${proxiedUrl}"`,
-        { maxBuffer: 1 * 1024 * 1024 }
-      );
-      console.log('[TELEGRAM-OUTBOUND] Sent via proxy. Response:', result.stdout.substring(0, 200));
-    } else {
-      // Direct attempt (will fail on HuggingFace but works locally)
-      const result = await exec(
-        `curl -sS --ipv4 --connect-timeout 10 --max-time 15 -X POST -H "Content-Type: application/json" -d '${body.replace(/'/g, "'\\''")}' "${telegramUrl}"`,
-        { maxBuffer: 1 * 1024 * 1024 }
-      );
-      console.log('[TELEGRAM-OUTBOUND] Sent directly. Response:', result.stdout.substring(0, 200));
-    }
+    const targetUrl = proxyBase
+      ? `${proxyBase}${encodeURIComponent(telegramUrl)}`
+      : telegramUrl;
+
+    const result = await exec(
+      `curl -sS --ipv4 --connect-timeout 10 --max-time 15 "${targetUrl}"`,
+      { maxBuffer: 1 * 1024 * 1024 }
+    );
+    console.log('[TELEGRAM-OUTBOUND] Response:', result.stdout.substring(0, 200));
   } catch (e) {
     console.error('[TELEGRAM-OUTBOUND] Error:', e.stderr || e.message);
   }
