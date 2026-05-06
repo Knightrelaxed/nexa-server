@@ -13,77 +13,81 @@ const backupGenAI = env.GEMINI_API_KEY_BACKUP ? new GoogleGenerativeAI(env.GEMIN
 const tertiaryGenAI = env.GEMINI_API_KEY_TERTIARY ? new GoogleGenerativeAI(env.GEMINI_API_KEY_TERTIARY) : null;
 
 /**
- * Execute AI Prompt with Multi-Tier Fallback (5 Layers)
- * 
- * Tier 1: Gemini 2.5 Flash — PRIMARY key (20 RPD limit, but smart)
- * Tier 2: Groq — Llama 3.3 70B Versatile (Generous Free Quota, Super Fast)
- * Tier 3: Gemini 2.0 Flash Lite — BACKUP key (Often blocked limit 0, but fallback)
- * Tier 4: Gemini 2.0 Flash Lite — TERTIARY key (Often blocked limit 0)
- * Tier 5: Llama 3.1 via OpenRouter (independent provider, currently 402 out of credits)
- * Tier 6: Dumb Mode (static response)
- * 
- * @param {string} prompt 
- * @param {string} systemInstruction 
- * @param {number} temperature (low for discipline/routing, high for briefing)
- * @param {boolean} jsonMode (true = force JSON response, false = free text)
+ * Execute AI Prompt with Multi-Tier Fallback
+ *
+ * Tier 1: Groq — Llama 3.3 70B (generous quota, very fast, most reliable)
+ * Tier 2: Gemini 2.5 Flash — PRIMARY key (20 RPD, smart but limited)
+ * Tier 3: Gemini 2.5 Flash — BACKUP key
+ * Tier 4: Gemini 2.5 Flash — TERTIARY key
+ * Tier 5: Gemini 2.0 Flash Lite — BACKUP key
+ * Tier 6: Gemini 2.0 Flash Lite — TERTIARY key
+ * Tier 7: OpenRouter Llama 3.1 (independent provider)
+ * Tier 8: Dumb Mode
  */
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Gemini 2.5 Flash — PRIMARY KEY (20 RPD)
-  if (primaryGenAI) {
-    try {
-      return await callGemini(primaryGenAI, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) {
-      console.warn('[FALLBACK] Tier 1 (Gemini 2.5 PRIMARY) failed:', e.message);
-    }
-  }
-
-  // Tier 2: Groq Llama 3.3 70B (Generous Free Tier, Extremely Fast)
+  // Tier 1: Groq Llama 3.3 70B — most reliable, no daily RPD cap
   if (env.GROQ_API_KEY) {
     try {
-      console.log('[FALLBACK] Switching to Tier 2 (Groq Llama 3.3 70B)...');
       return await callGroq(prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Tier 2 (Groq) failed:', e.message);
+      console.warn('[FALLBACK] Tier 1 (Groq Llama 3.3) failed:', e.message);
     }
   }
 
-  // Tier 3: Gemini 2.0 Flash Lite — BACKUP KEY
-  if (backupGenAI) {
+  // Tier 2-4: Gemini 2.5 Flash — tries all 3 keys
+  const geminiClients = [
+    { client: primaryGenAI, name: 'Tier 2 (Gemini 2.5 PRIMARY)' },
+    { client: backupGenAI, name: 'Tier 3 (Gemini 2.5 BACKUP)' },
+    { client: tertiaryGenAI, name: 'Tier 4 (Gemini 2.5 TERTIARY)' },
+  ].filter(t => t.client);
+
+  for (const { client, name } of geminiClients) {
     try {
-      console.log('[FALLBACK] Switching to Tier 3 (Gemini 2.0 Lite BACKUP key)...');
-      return await callGemini(backupGenAI, 'gemini-2.0-flash-lite', prompt, systemInstruction, temperature, jsonMode);
+      console.log(`[FALLBACK] Switching to ${name}...`);
+      return await callGemini(client, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Tier 3 (Gemini 2.0 Lite BACKUP) failed:', e.message);
+      const status = e.status || e.response?.status || '';
+      // 429 = quota exhausted for the day — no point logging full error
+      if (String(e.message).includes('429') || status === 429) {
+        console.warn(`[FALLBACK] ${name} skipped: quota exhausted (429).`);
+      } else {
+        console.warn(`[FALLBACK] ${name} failed:`, e.message);
+      }
     }
   }
 
-  // Tier 4: Gemini 2.0 Flash Lite — TERTIARY KEY
-  if (tertiaryGenAI) {
+  // Tier 5-6: Gemini 2.0 Flash Lite — separate model quota pool
+  const gemini20Clients = [
+    { client: backupGenAI, name: 'Tier 5 (Gemini 2.0 BACKUP)' },
+    { client: tertiaryGenAI, name: 'Tier 6 (Gemini 2.0 TERTIARY)' },
+  ].filter(t => t.client);
+
+  for (const { client, name } of gemini20Clients) {
     try {
-      console.log('[FALLBACK] Switching to Tier 4 (Gemini 2.0 Lite TERTIARY key)...');
-      return await callGemini(tertiaryGenAI, 'gemini-2.0-flash-lite', prompt, systemInstruction, temperature, jsonMode);
+      console.log(`[FALLBACK] Switching to ${name}...`);
+      return await callGemini(client, 'gemini-2.0-flash-lite', prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Tier 4 (Gemini 2.0 Lite TERTIARY) failed:', e.message);
+      console.warn(`[FALLBACK] ${name} failed:`, e.message);
     }
   }
 
-  // Tier 5: Meta Llama 3.1 via OpenRouter
+  // Tier 7: OpenRouter Llama 3.1
   if (env.OPENROUTER_API_KEY) {
     try {
-      console.log('[FALLBACK] Switching to Tier 5 (OpenRouter Llama 3.1)...');
+      console.log('[FALLBACK] Switching to Tier 7 (OpenRouter Llama 3.1)...');
       return await callOpenRouter(prompt, systemInstruction, temperature, jsonMode);
     } catch (e) {
-      console.warn('[FALLBACK] Tier 5 (OpenRouter Llama) failed:', e.message);
+      console.warn('[FALLBACK] Tier 7 (OpenRouter) failed:', e.message);
     }
   }
 
-  // Tier 6: Dumb Mode — ALL AI layers exhausted
+  // Tier 8: Dumb Mode — ALL AI layers exhausted
   console.error('[FALLBACK] ⚠️ All AI layers exhausted. Entering Dumb Mode.');
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,
     god_mode_trigger: false,
-    reply_message: 'Tuan, Google memblokir akses saya, OpenRouter kehabisan kredit, dan Groq sedang offline. Sistem akan pulih otomatis. Coba lagi nanti.'
+    reply_message: 'Tuan, semua layanan AI sedang tidak tersedia sementara. Sistem akan pulih otomatis. Coba lagi nanti.'
   });
 }
 

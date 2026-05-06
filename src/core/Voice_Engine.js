@@ -76,7 +76,18 @@ async function transcribeTelegramVoice(fileId) {
     });
 
     console.log('[VOICE] Transcription complete. Length:', transcription.text?.length);
-    return transcription.text;
+
+    // Post-processing: strip Whisper hallucination filler words
+    // Whisper-large-v3 adds "Hai"/"Hei"/"Um" when audio has silence/noise
+    const cleaned = transcription.text
+      .replace(/\b(Hai|Hei|Hey|Um+|Hmm+|Eh+|Ah+)\b[,.]?\s*/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (cleaned !== transcription.text.trim()) {
+      console.log('[VOICE] Cleaned transcription:', cleaned);
+    }
+    return cleaned;
 
   } finally {
     // Always clean up temp file
