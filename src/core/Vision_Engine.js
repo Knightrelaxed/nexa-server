@@ -91,11 +91,11 @@ async function downloadTelegramImageAsBase64(fileId) {
 
   const telegramBase = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}`;
 
-  console.log('[VISION] Getting file info from Telegram via cURL (Forced IPv4)...');
+  console.log('[VISION] Getting file info from Telegram via cURL (Forced IPv4 & Custom DNS)...');
   let infoResult;
   try {
     infoResult = await exec(
-      `curl -sSL --ipv4 --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 20 "${telegramBase}/getFile?file_id=${fileId}"`,
+      `curl -sSL --ipv4 --resolve api.telegram.org:443:149.154.167.220 --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 20 "${telegramBase}/getFile?file_id=${fileId}"`,
       { maxBuffer: 5 * 1024 * 1024 }
     );
   } catch (err) {
@@ -110,11 +110,11 @@ async function downloadTelegramImageAsBase64(fileId) {
   const filePath = fileData.result.file_path;
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-  console.log('[VISION] Downloading image binary from Telegram via cURL (Forced IPv4)...');
+  console.log('[VISION] Downloading image binary from Telegram via cURL (Forced IPv4 & Custom DNS)...');
   let imageResult;
   try {
     imageResult = await exec(
-      `curl -sSL --ipv4 --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 45 "${fileUrl}" | base64 -w 0`,
+      `curl -sSL --ipv4 --resolve api.telegram.org:443:149.154.167.220 --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 45 "${fileUrl}" | base64 -w 0`,
       { maxBuffer: 20 * 1024 * 1024 }
     );
   } catch (err) {
