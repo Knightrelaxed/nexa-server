@@ -125,4 +125,46 @@ async function getRecentTransactions(limit = 5) {
   }
 }
 
-module.exports = { processTransaction, getRecentTransactions };
+/**
+ * Fetch and format the Analytics Table (L5:S9) from the current month's sheet.
+ */
+async function getFinanceAnalytics() {
+  try {
+    const rows = await googleWorkspace.getFinanceAnalytics();
+    if (!rows || rows.length === 0) return '📭 Data analitik belum tersedia di sheet bulan ini.';
+
+    // The range is L5:S9. 
+    // Row indices: L5 is 0, L6 is 1, L7 is 2, L8 is 3.
+    // Col indices: L is 0 ... S is 7.
+    // Based on user spec: S6 = Pemasukan, S7 = Pengeluaran, S8 = Saldo
+    
+    // Safely extract values, fallback to 0 if undefined
+    const rawPemasukan = rows[1] && rows[1][7] ? rows[1][7] : 0;
+    const rawPengeluaran = rows[2] && rows[2][7] ? rows[2][7] : 0;
+    const rawSaldo = rows[3] && rows[3][7] ? rows[3][7] : 0;
+
+    // Helper to format currency
+    const formatRp = (val) => {
+      const num = parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+      return isNaN(num) ? val : `Rp${Math.abs(num).toLocaleString('id-ID')}`;
+    };
+
+    const pemasukanFmt = formatRp(rawPemasukan);
+    const pengeluaranFmt = formatRp(rawPengeluaran);
+    const saldoFmt = formatRp(rawSaldo);
+
+    let report = `📊 *Laporan Analitik Keuangan Bulan Ini:*\n\n`;
+    report += `🟢 *Total Pemasukan:* ${pemasukanFmt}\n`;
+    report += `🔴 *Total Pengeluaran:* ${pengeluaranFmt}\n`;
+    report += `──────────────\n`;
+    report += `🏦 *SALDO AKHIR:* **${saldoFmt}**\n\n`;
+    report += `_Laporan dihitung secara real-time dari rumusan Google Sheets Tuan Faqih._`;
+
+    return report;
+  } catch (err) {
+    console.error('[FINANCE] Failed to fetch analytics:', err.message);
+    return `⚠️ Gagal membaca tabel analitik: ${err.message}`;
+  }
+}
+
+module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics };

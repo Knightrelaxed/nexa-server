@@ -210,6 +210,9 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
         if (routingData.extracted_data && routingData.extracted_data.action === 'READ_LATEST') {
           const recentData = await financeEngine.getRecentTransactions(5);
           domainReply = recentData;
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'READ_ANALYTICS') {
+          const analyticsData = await financeEngine.getFinanceAnalytics();
+          domainReply = analyticsData;
         } else if (routingData.extracted_data && routingData.extracted_data.nominal) {
           const result = await financeEngine.processTransaction({
             nominal: routingData.extracted_data.nominal,

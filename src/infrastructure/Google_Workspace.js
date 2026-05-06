@@ -150,6 +150,23 @@ async function getFinanceSummary(limit = 5) {
 
 
 /**
+ * Read the Analytics/Summary table from the current month's sheet.
+ * Assumes the table is located at L5:S9 based on user specification.
+ */
+async function getFinanceAnalytics() {
+  const { sheets } = getClients();
+  const sheetId = env.GOOGLE_SHEET_ID;
+  const sheetName = getCurrentMonthSheetName();
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: `${sheetName}!L5:S9`
+  });
+
+  return response.data.values || [];
+}
+
+/**
  * Create a new event in Google Calendar
  */
 async function createCalendarEvent(summary, startTime, endTime, description = '') {
@@ -433,6 +450,7 @@ async function deleteGenericSpreadsheet(fileId) {
 module.exports = {
   appendFinanceRow,
   getFinanceSummary,
+  getFinanceAnalytics,
   createCalendarEvent,
   updateCalendarEvent,
   findEventByTitle,
