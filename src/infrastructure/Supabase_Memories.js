@@ -98,6 +98,43 @@ async function saveIdeaToVault(ideaContent, type = 'IDEA') {
 }
 
 /**
+ * Delete idea or personal fact from 2nd Brain Vault by keyword match
+ * @param {string} searchKeyword
+ */
+async function deleteIdeaFromVault(searchKeyword) {
+  if (!supabase || !searchKeyword) return false;
+  const { data, error } = await supabase
+    .from('nexa_2nd_brain')
+    .delete()
+    .ilike('content', `%${searchKeyword}%`);
+
+  if (error) {
+    console.error('[SUPABASE] Error deleting idea:', error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Edit idea or personal fact in 2nd Brain Vault by keyword match
+ * @param {string} searchKeyword
+ * @param {string} newContent
+ */
+async function editIdeaInVault(searchKeyword, newContent) {
+  if (!supabase || !searchKeyword || !newContent) return false;
+  const { data, error } = await supabase
+    .from('nexa_2nd_brain')
+    .update({ content: newContent })
+    .ilike('content', `%${searchKeyword}%`);
+
+  if (error) {
+    console.error('[SUPABASE] Error editing idea:', error.message);
+    return false;
+  }
+  return true;
+}
+
+/**
  * Fetch all PERSONAL_FACT entries from the vault.
  * Used by AI_Router to inject long-term personal context.
  * @returns {Promise<string[]>} Array of fact strings
@@ -124,5 +161,7 @@ module.exports = {
   isDuplicateTransaction,
   logTransactionKey,
   saveIdeaToVault,
+  deleteIdeaFromVault,
+  editIdeaInVault,
   getPersonalFacts
 };

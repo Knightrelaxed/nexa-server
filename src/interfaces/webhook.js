@@ -270,10 +270,21 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
               routingData.extracted_data.search_keyword, 
               routingData.extracted_data.content
             );
-            domainReply = success ? `✅ Arsip berhasil diubah.` : `❌ Gagal menemukan/mengubah arsip.`;
+            await supabaseMemories.editIdeaInVault(
+              routingData.extracted_data.search_keyword,
+              routingData.extracted_data.content
+            ).catch(e => console.error('[2ND_BRAIN] Supabase edit error:', e));
+            
+            invalidatePersonalFactsCache();
+            domainReply = success ? `✅ Arsip berhasil diubah di Docs dan Database.` : `❌ Gagal menemukan/mengubah arsip di Docs.`;
           } else if (brainAction === 'DELETE') {
             const success = await googleWorkspace.deleteIdeaDoc(routingData.extracted_data.search_keyword);
-            domainReply = success ? `🗑️ Arsip berhasil dihapus.` : `❌ Gagal menemukan/menghapus arsip.`;
+            await supabaseMemories.deleteIdeaFromVault(
+              routingData.extracted_data.search_keyword
+            ).catch(e => console.error('[2ND_BRAIN] Supabase delete error:', e));
+            
+            invalidatePersonalFactsCache();
+            domainReply = success ? `🗑️ Arsip berhasil dihapus dari Docs dan Database.` : `❌ Gagal menemukan/menghapus arsip di Docs.`;
           } else if (routingData.extracted_data.content) { // APPEND
             await supabaseMemories.saveIdeaToVault(
               routingData.extracted_data.content,
