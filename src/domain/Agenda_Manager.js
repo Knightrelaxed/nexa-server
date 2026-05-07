@@ -22,25 +22,69 @@ async function sendTelegramOutbound(text) {
 
 /**
  * Parse natural language duration into minutes.
- * Examples: "setengah jam" → 30, "1 jam" → 60, "2 jam" → 120, "45 menit" → 45
+ * Uses fast regex for obvious cases, then falls back to AI for creative/ambiguous phrasing.
+ * Handles: "setengah jam", "sejam", "½ jam", "¾ jam", "dua jam", "kira-kira 2 jam lah",
+ *          "sekitar 45 menit", "1 jam 30 menit", "an hour", "30 minutes", bare numbers, etc.
  */
-function parseDurationMinutes(text) {
+async function parseDurationMinutes(text) {
   if (!text) return null;
-  const t = text.toLowerCase();
-  // setengah jam / half hour
-  if (t.includes('setengah jam') || t.includes('half hour') || t.includes('30 menit')) return 30;
-  // X jam Y menit
+  const t = text.toLowerCase().trim();
+
+  // --- FAST PATH: Obvious regex cases ---
+
+  // Unicode fractions: ½ jam, ¼ jam, ¾ jam
+  if (t.includes('½') || t.includes('0.5 jam') || t.includes('0,5 jam')) {
+    const base = t.match(/(\d+)\s*½\s*jam/);
+    return base ? parseInt(base[1]) * 60 + 30 : 30;
+  }
+  if (t.includes('¼ jam') || t.includes('quarter')) return 15;
+  if (t.includes('¾ jam')) return 45;
+
+  // "sejam" / "sejaman" (Indonesian shorthand for "satu jam")
+  if (/\bsejam\w*\b/.test(t)) return 60;
+
+  // "setengah jam" / "half hour" / "half an hour"
+  if (/setengah\s*jam|half[\s-]*(an\s*)?hour/.test(t)) return 30;
+
+  // "X jam Y menit" — e.g. "1 jam 30 menit", "2 jam 15 menit"
   const jamMenitMatch = t.match(/(\d+(?:[.,]\d+)?)\s*jam\s*(\d+)\s*menit/);
-  if (jamMenitMatch) return Math.round(parseFloat(jamMenitMatch[1]) * 60) + parseInt(jamMenitMatch[2]);
-  // X.5 jam
+  if (jamMenitMatch) return Math.round(parseFloat(jamMenitMatch[1].replace(',', '.')) * 60) + parseInt(jamMenitMatch[2]);
+
+  // "X,5 jam" / "X.5 jam" — e.g. "1,5 jam"
   const halfJamMatch = t.match(/(\d+)[.,]5\s*jam/);
   if (halfJamMatch) return parseInt(halfJamMatch[1]) * 60 + 30;
-  // X jam
+
+  // "X jam" — e.g. "2 jam", "1 jam"
   const jamMatch = t.match(/(\d+(?:[.,]\d+)?)\s*jam/);
   if (jamMatch) return Math.round(parseFloat(jamMatch[1].replace(',', '.')) * 60);
-  // X menit
-  const menitMatch = t.match(/(\d+)\s*menit/);
+
+  // "X menit" / "X minutes" — e.g. "45 menit", "90 minutes"
+  const menitMatch = t.match(/(\d+)\s*(menit|minutes?|min)/);
   if (menitMatch) return parseInt(menitMatch[1]);
+
+  // "X hours" / "X hour" (English)
+  const hourMatch = t.match(/(\d+(?:[.,]\d+)?)\s*hours?/);
+  if (hourMatch) return Math.round(parseFloat(hourMatch[1].replace(',', '.')) * 60);
+
+  // Bare small number (< 360 treated as minutes, e.g. user says "60" or "90")
+  const bareNum = t.match(/^\s*(\d{1,3})\s*$/);
+  if (bareNum && parseInt(bareNum[1]) <= 360) return parseInt(bareNum[1]);
+
+  // --- SLOW PATH: Ask AI to extract duration ---
+  // Only hit this if regex all failed (e.g. "dua jam", "kira-kira sejam setengah lah")
+  try {
+    const aiRouter = require('../core/AI_Router');
+    const prompt = `Ekstrak HANYA jumlah menit dari teks berikut. Jawab HANYA dengan angka bulat, tanpa teks lain. Jika tidak ada durasi, jawab 0.\n\nTeks: "${text}"`;
+    const raw = await aiRouter.callAI(prompt);
+    const num = parseInt(String(raw).trim());
+    if (!isNaN(num) && num > 0 && num <= 1440) {
+      console.log(`[AGENDA] AI parsed duration: "${text}" → ${num} menit`);
+      return num;
+    }
+  } catch (e) {
+    console.error('[AGENDA] AI duration parse failed:', e.message);
+  }
+
   return null;
 }
 

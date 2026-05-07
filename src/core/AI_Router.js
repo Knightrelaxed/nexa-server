@@ -141,4 +141,15 @@ Tentukan intent dan ekstrak data!
   }
 }
 
-module.exports = { routeUserMessage, invalidatePersonalFactsCache };
+/**
+ * Lightweight one-shot AI call for simple extraction tasks (e.g. duration parsing).
+ * Does NOT use the full routing system or save chat memory.
+ * @param {string} prompt - The raw prompt to send to the AI
+ * @returns {Promise<string>} - The raw text response from the AI
+ */
+async function callAI(prompt) {
+  const result = await executeWithFallback(prompt);
+  return String(result).trim();
+}
+
+module.exports = { routeUserMessage, invalidatePersonalFactsCache, callAI };
