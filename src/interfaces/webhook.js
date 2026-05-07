@@ -209,11 +209,21 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
       case 'FINANCE':
         if (routingData.extracted_data && routingData.extracted_data.action === 'READ_LATEST') {
           const recentData = await financeEngine.getRecentTransactions(5);
-          domainReply = recentData;
+          domainReply = (routingData.reply_message ? routingData.reply_message + '\n\n' : '') + recentData;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'READ_ANALYTICS') {
           const analyticsData = await financeEngine.getFinanceAnalytics();
-          domainReply = analyticsData;
-        } else if (routingData.extracted_data && routingData.extracted_data.nominal) {
+          domainReply = (routingData.reply_message ? routingData.reply_message + '\n\n' : '') + analyticsData;
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'DELETE') {
+          const result = await financeEngine.deleteTransaction(routingData.extracted_data.search_keyword);
+          domainReply = result.message;
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'EDIT') {
+          const result = await financeEngine.editTransaction(
+            routingData.extracted_data.search_keyword,
+            routingData.extracted_data.nominal,
+            routingData.extracted_data.description || routingData.extracted_data.destination
+          );
+          domainReply = result.message;
+        } else if (routingData.extracted_data && (routingData.extracted_data.nominal || routingData.extracted_data.action === 'RECORD')) {
           const result = await financeEngine.processTransaction({
             nominal: routingData.extracted_data.nominal,
             type: routingData.extracted_data.type || 'EXPENSE',
@@ -247,32 +257,47 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
         break;
 
       case '2ND_BRAIN':
-        if (routingData.extracted_data && routingData.extracted_data.content) {
+        if (routingData.extracted_data) {
           const factType = routingData.extracted_data.type || 'IDEA';
-
-          await supabaseMemories.saveIdeaToVault(
-            routingData.extracted_data.content,
-            factType
-          ).catch(e => console.error('[2ND_BRAIN] Supabase vault save error:', e));
-
-          if (factType === 'PERSONAL_FACT') {
-            invalidatePersonalFactsCache();
-            console.log('[2ND_BRAIN] PERSONAL_FACT saved — cache invalidated.');
-          }
-
+          const brainAction = routingData.extracted_data.action || 'APPEND';
           const googleWorkspace = require('../infrastructure/Google_Workspace');
-          const docUrl = await googleWorkspace.appendToIdeaDoc(
-            routingData.extracted_data.title || (factType === 'PERSONAL_FACT' ? 'Fakta Personal — N.E.X.A' : 'Ideation N.E.X.A'),
-            routingData.extracted_data.content,
-            factType
-          ).catch(e => { console.error('[2ND_BRAIN] Google Doc error:', e); return null; });
 
-          if (docUrl) {
-            domainReply = factType === 'PERSONAL_FACT'
-              ? `✅ Fakta personal tersimpan dan akan selalu saya ingat, Tuan.\n📄 Arsip: ${docUrl}`
-              : `✅ Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;
+          if (brainAction === 'READ') {
+            const docContent = await googleWorkspace.readIdeaDoc();
+            domainReply = `📖 *Isi Arsip 2nd Brain:*\n\n${docContent.substring(0, 3000)}${docContent.length > 3000 ? '\n\n...(terpotong)' : ''}`;
+          } else if (brainAction === 'EDIT') {
+            const success = await googleWorkspace.editIdeaDoc(
+              routingData.extracted_data.search_keyword, 
+              routingData.extracted_data.content
+            );
+            domainReply = success ? `✅ Arsip berhasil diubah.` : `❌ Gagal menemukan/mengubah arsip.`;
+          } else if (brainAction === 'DELETE') {
+            const success = await googleWorkspace.deleteIdeaDoc(routingData.extracted_data.search_keyword);
+            domainReply = success ? `🗑️ Arsip berhasil dihapus.` : `❌ Gagal menemukan/menghapus arsip.`;
+          } else if (routingData.extracted_data.content) { // APPEND
+            await supabaseMemories.saveIdeaToVault(
+              routingData.extracted_data.content,
+              factType
+            ).catch(e => console.error('[2ND_BRAIN] Supabase vault save error:', e));
+
+            if (factType === 'PERSONAL_FACT') {
+              invalidatePersonalFactsCache();
+              console.log('[2ND_BRAIN] PERSONAL_FACT saved — cache invalidated.');
+            }
+
+            const docUrl = await googleWorkspace.appendToIdeaDoc(
+              routingData.extracted_data.title || (factType === 'PERSONAL_FACT' ? 'Fakta Personal — N.E.X.A' : 'Ideation N.E.X.A'),
+              routingData.extracted_data.content,
+              factType
+            ).catch(e => { console.error('[2ND_BRAIN] Google Doc error:', e); return null; });
+
+            if (docUrl) {
+              domainReply = factType === 'PERSONAL_FACT'
+                ? `✅ Fakta personal tersimpan dan akan selalu saya ingat, Tuan.\n📄 Arsip: ${docUrl}`
+                : `✅ Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;
+            }
+            console.log(`[2ND_BRAIN] Saved as ${factType} to Supabase and Google Docs.`);
           }
-          console.log(`[2ND_BRAIN] Saved as ${factType} to Supabase and Google Docs.`);
         }
         break;
 

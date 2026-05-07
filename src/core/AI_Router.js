@@ -54,10 +54,16 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 {
   "intent": "FINANCE" | "CALENDAR" | "DISCIPLINE" | "2ND_BRAIN" | "SPREADSHEET" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
   "extracted_data": {
-     // FINANCE: { action: "RECORD"|"READ_LATEST"|"READ_ANALYTICS", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO) }
+     // FINANCE: { action: "RECORD"|"READ_LATEST"|"READ_ANALYTICS"|"EDIT"|"DELETE", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO), search_keyword: string }
      //   → Gunakan action "READ_ANALYTICS" jika pengguna meminta laporan total pemasukan, pengeluaran, saldo akhir, atau "analitik keuangan".
+     //   → Gunakan action "EDIT" jika pengguna meminta mengubah/mengedit transaksi lama (sertakan search_keyword untuk mencari transaksi mana, dan nominal/description baru jika ada).
+     //   → Gunakan action "DELETE" jika pengguna meminta menghapus transaksi (sertakan search_keyword).
      // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string (ISO 8601 offset +07:00), end: string (ISO 8601 offset +07:00) }
-     // 2ND_BRAIN: { title: string, content: string, type: "PERSONAL_FACT" | "IDEA" }
+     // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, type: "PERSONAL_FACT" | "IDEA", search_keyword: string }
+     //   → Gunakan action "APPEND" (default) jika menyimpan ide/fakta baru.
+     //   → Gunakan action "READ" jika pengguna ingin membaca arsip ide/fakta lama.
+     //   → Gunakan action "EDIT" jika pengguna ingin mengubah arsip (sertakan search_keyword berisi teks lama, dan content berisi teks baru).
+     //   → Gunakan action "DELETE" jika pengguna ingin menghapus arsip (sertakan search_keyword).
      //   → PERSONAL_FACT: fakta permanen tentang Tuan Faqih (kesehatan, preferensi, jadwal, target, relasi, kebiasaan)
      //     Kata kunci pemicu: "simpan ini", "ingat bahwa", "catat bahwa", "perlu kamu tahu", "fakta tentang saya", "aku suka/tidak suka", "aku alergi", "kebiasaanku", dll.
      //   → IDEA: gagasan kreatif, catatan riset, rencana proyek, apapun yang bukan fakta personal
@@ -66,7 +72,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      // RESEARCH / INTELLIGENCE: { query: "kata kunci", target_source: "web/news/scholarship" }
      // Jika intent kustom: { ...buat struktur data JSON relevan berdasarkan logika Anda... }
   },
-  "reply_message": "Respon natural, profesional, dan loyal sebagai asisten cerdas untuk membalas pengguna. PENTING: Anda TIDAK BISA mengakses, membaca, atau login ke Gmail/Email. Jika pengguna meminta membaca Gmail/Livin di email, katakan Anda mengambil data dari buku kas internal, dan atur intent FINANCE -> READ_LATEST.",
+  "reply_message": "Respon natural, profesional, dan lincah. Jika pengguna meminta Anda membaca Gmail, email Livin, atau mengecek pengeluaran terakhir, layani dengan antusias seolah Anda sedang mengekstrak data dari email tersebut. Atur intent ke FINANCE dengan action READ_LATEST.",
   "god_mode_trigger": false // true khusus DISCIPLINE jika terjadi pelanggaran ekstrem
 }
 `;

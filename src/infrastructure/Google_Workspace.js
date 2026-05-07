@@ -73,7 +73,7 @@ async function appendFinanceRow(txData) {
 
   // --- Step 1: Find the next empty data row ---
   // Read column A (No) from row 5 downward to count existing rows
-  const readRange = `${sheetName}!A5:A`;
+  const readRange = `'${sheetName}'!A5:A`;
   let existingRows = 0;
   try {
     const readRes = await sheets.spreadsheets.values.get({
@@ -114,7 +114,7 @@ async function appendFinanceRow(txData) {
   ];
 
   // --- Step 4: Write to exact row using update (not append) to preserve formula integrity ---
-  const writeRange = `${sheetName}!A${nextRowNumber}:J${nextRowNumber}`;
+  const writeRange = `'${sheetName}'!A${nextRowNumber}:J${nextRowNumber}`;
   const response = await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId,
     range: writeRange,
@@ -138,13 +138,84 @@ async function getFinanceSummary(limit = 5) {
 
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
-    range: `${sheetName}!A5:J`
+    range: `'${sheetName}'!A5:J`
   });
 
   const allRows = response.data.values || [];
   if (allRows.length === 0) return [];
   // Return the last `limit` rows (most recent first)
   return allRows.slice(-limit).reverse();
+}
+
+/**
+ * Get ALL transactions from the current month's sheet (used for Edit/Delete operations).
+ */
+async function getAllFinanceRows() {
+  const { sheets } = getClients();
+  const sheetId = env.GOOGLE_SHEET_ID;
+  const sheetName = getCurrentMonthSheetName();
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: `'${sheetName}'!A5:J`
+  });
+
+  return response.data.values || [];
+}
+
+/**
+ * Overwrite the entire finance data block (A5:J) to ensure formulas and numbering stay perfectly intact
+ * after an edit or delete operation. Clears leftover rows below the new data.
+ */
+async function overwriteFinanceSheet(newRowsData) {
+  const { sheets } = getClients();
+  const sheetId = env.GOOGLE_SHEET_ID;
+  const sheetName = getCurrentMonthSheetName();
+
+  console.log(`[FINANCE] Overwriting sheet "${sheetName}" with ${newRowsData.length} rows.`);
+
+  // Prepare new values with recalculated No, Saldo, and Nominal+ formulas
+  const values = newRowsData.map((tx, index) => {
+    const rowNum = 5 + index;
+    const prevRow = rowNum - 1;
+    
+    // tx should be an array: [0:No, 1:Tanggal, 2:Waktu, 3:Tipe, 4:Kategori, 5:Akun, 6:Catatan, 7:Nominal]
+    // We recalculate 0(No), 8(Saldo), 9(Nominal+)
+    
+    const saldoFormula = rowNum === 5 ? `=H${rowNum}` : `=I${prevRow}+H${rowNum}`;
+    const nominalPlusFormula = `=IF(D${rowNum}="Pengeluaran";-H${rowNum};0)`;
+    
+    return [
+      index + 1,        // No
+      tx[1],            // Tanggal
+      tx[2],            // Waktu
+      tx[3],            // Tipe
+      tx[4],            // Kategori
+      tx[5],            // Akun
+      tx[6],            // Catatan
+      tx[7],            // Nominal (Rp)
+      saldoFormula,     // Saldo
+      nominalPlusFormula// Nominal (+)
+    ];
+  });
+
+  // 1. Clear existing data starting from A5 to J1000 (arbitrary large number to clear old data)
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: sheetId,
+    range: `'${sheetName}'!A5:J1000`
+  });
+
+  // 2. Write new data if there is any
+  if (values.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `'${sheetName}'!A5:J${5 + values.length - 1}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values }
+    });
+  }
+  
+  return true;
 }
 
 
@@ -160,7 +231,7 @@ async function getFinanceAnalytics() {
 
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
-    range: `${sheetName}!L5:S9`
+    range: `'${sheetName}'!L5:S9`
   });
 
   return response.data.values || [];
@@ -318,6 +389,65 @@ async function appendToIdeaDoc(title, content, type = 'IDEA') {
 }
 
 /**
+ * Read the entire text content of the 2nd Brain Google Doc.
+ */
+async function readIdeaDoc() {
+  const { docs } = getClients();
+  const documentId = env.GOOGLE_DOCS_IDEA_ID;
+  if (!documentId) return 'Google Docs Idea ID belum dikonfigurasi.';
+
+  const doc = await docs.documents.get({ documentId });
+  let textContent = '';
+  
+  if (doc.data.body && doc.data.body.content) {
+    doc.data.body.content.forEach(element => {
+      if (element.paragraph && element.paragraph.elements) {
+        element.paragraph.elements.forEach(el => {
+          if (el.textRun && el.textRun.content) {
+            textContent += el.textRun.content;
+          }
+        });
+      }
+    });
+  }
+  return textContent;
+}
+
+/**
+ * Find and replace text in the Google Doc.
+ */
+async function editIdeaDoc(keyword, newText) {
+  const { docs } = getClients();
+  const documentId = env.GOOGLE_DOCS_IDEA_ID;
+  if (!documentId) return false;
+
+  await docs.documents.batchUpdate({
+    documentId,
+    requestBody: {
+      requests: [
+        {
+          replaceAllText: {
+            containsText: {
+              text: keyword,
+              matchCase: false
+            },
+            replaceText: newText
+          }
+        }
+      ]
+    }
+  });
+  return true;
+}
+
+/**
+ * Find and delete text in the Google Doc by replacing it with empty string.
+ */
+async function deleteIdeaDoc(keyword) {
+  return await editIdeaDoc(keyword, '');
+}
+
+/**
  * GENERIC SPREADSHEET MANAGEMENT
  */
 
@@ -451,12 +581,17 @@ module.exports = {
   appendFinanceRow,
   getFinanceSummary,
   getFinanceAnalytics,
+  getAllFinanceRows,
+  overwriteFinanceSheet,
   createCalendarEvent,
   updateCalendarEvent,
   findEventByTitle,
   deleteCalendarEvent,
   getTodaysEvents,
   appendToIdeaDoc,
+  readIdeaDoc,
+  editIdeaDoc,
+  deleteIdeaDoc,
   findSpreadsheetByTitle,
   createGenericSpreadsheet,
   getSpreadsheetHeaders,

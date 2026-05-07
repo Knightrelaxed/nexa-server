@@ -81,6 +81,12 @@ async function processTransaction(data, source) {
     };
   } catch (error) {
     console.error('[FINANCE] Failed to record transaction:', error.message);
+    if (error.message && error.message.includes('Office file')) {
+      throw new Error('File buku kas Tuan berformat Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli. Silakan buka file tersebut di Google Drive, klik "File > Save as Google Sheets", lalu masukkan ID file yang baru ke konfigurasi sistem Tuan.');
+    }
+    if (error.message && error.message.includes('Unable to parse range')) {
+      throw new Error(`⚠️ **Tab Bulan Ini Belum Dibuat!**\nN.E.X.A mencoba mencari tab (sheet) dengan nama bulan ini (misal: "Mei 2026"), tetapi tidak menemukannya.\n\n*Solusi:*\nBuka file Google Sheets Anda, lalu duplikat tab "Februari 2026" (atau tab sebelumnya) dan ubah nama tab hasil duplikatnya menjadi nama bulan ini (contoh: "Mei 2026").`);
+    }
     throw error;
   }
 }
@@ -121,6 +127,12 @@ async function getRecentTransactions(limit = 5) {
     return response;
   } catch (err) {
     console.error('[FINANCE] Failed to fetch recent transactions:', err.message);
+    if (err.message && err.message.includes('Office file')) {
+      return `⚠️ **Gagal mengambil data:** Format dokumen tidak didukung.\n\nTuan, file buku kas saat ini berformat Microsoft Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli.\n\n*Cara Perbaikan:*\n1. Buka file tersebut di Google Drive\n2. Klik "File" > "Save as Google Sheets"\n3. Copy ID dari file baru tersebut dan perbarui di setelan (GOOGLE_SHEET_ID).`;
+    }
+    if (err.message && err.message.includes('Unable to parse range')) {
+      return `⚠️ **Tab Bulan Ini Belum Dibuat!**\nN.E.X.A tidak dapat menemukan tab (sheet) dengan nama bulan ini di Google Sheets Tuan. Silakan buat atau duplikat tab sebelumnya, dan beri nama sesuai bulan ini (contoh: "Mei 2026").`;
+    }
     return `⚠️ Gagal mengambil data keuangan: ${err.message}`;
   }
 }
@@ -163,8 +175,93 @@ async function getFinanceAnalytics() {
     return report;
   } catch (err) {
     console.error('[FINANCE] Failed to fetch analytics:', err.message);
+    if (err.message && err.message.includes('Office file')) {
+      return `⚠️ **Gagal membaca analitik:** File buku kas Tuan berformat Excel (.xlsx). Silakan ubah ke format Google Sheets (File > Save as Google Sheets) dan perbarui ID filenya.`;
+    }
+    if (err.message && err.message.includes('Unable to parse range')) {
+      return `⚠️ **Tab Bulan Ini Belum Dibuat!**\nN.E.X.A tidak dapat menemukan tab bulan ini untuk membaca analitik. Silakan buat/duplikat tab di Google Sheets Anda dengan nama bulan ini (contoh: "Mei 2026").`;
+    }
     return `⚠️ Gagal membaca tabel analitik: ${err.message}`;
   }
 }
 
-module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics };
+/**
+ * Delete a specific transaction matching a keyword (usually description or amount).
+ */
+async function deleteTransaction(keyword) {
+  try {
+    const rows = await googleWorkspace.getAllFinanceRows();
+    if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel bulan ini masih kosong.' };
+
+    const kw = String(keyword).toLowerCase();
+    const indexToDelete = rows.findIndex(r => {
+      const cat = (r[6] || '').toLowerCase(); // Catatan
+      const nom = (r[7] || '').toLowerCase(); // Nominal
+      return cat.includes(kw) || nom.includes(kw);
+    });
+
+    if (indexToDelete === -1) {
+      return { status: 'FAILED', message: `Tidak ada transaksi yang cocok dengan "${keyword}".` };
+    }
+
+    const deletedRow = rows[indexToDelete];
+    const cat = deletedRow[6] || '-';
+    
+    // Remove the row from the array
+    rows.splice(indexToDelete, 1);
+    
+    // Overwrite the sheet to recalculate formulas
+    await googleWorkspace.overwriteFinanceSheet(rows);
+
+    return { status: 'SUCCESS', message: `🗑️ Transaksi "${cat}" berhasil dihapus. Semua rumus dan nomor urut telah disesuaikan ulang.` };
+  } catch (error) {
+    console.error('[FINANCE] Failed to delete transaction:', error.message);
+    return { status: 'FAILED', message: `Gagal menghapus transaksi: ${error.message}` };
+  }
+}
+
+/**
+ * Edit a specific transaction matching a keyword.
+ */
+async function editTransaction(keyword, newNominal, newDescription) {
+  try {
+    const rows = await googleWorkspace.getAllFinanceRows();
+    if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel bulan ini masih kosong.' };
+
+    const kw = String(keyword).toLowerCase();
+    const indexToEdit = rows.findIndex(r => {
+      const cat = (r[6] || '').toLowerCase();
+      const nom = (r[7] || '').toLowerCase();
+      return cat.includes(kw) || nom.includes(kw);
+    });
+
+    if (indexToEdit === -1) {
+      return { status: 'FAILED', message: `Tidak ada transaksi yang cocok dengan "${keyword}".` };
+    }
+
+    const oldRow = rows[indexToEdit];
+    const oldCat = oldRow[6] || '-';
+    
+    // Update nominal if provided
+    if (newNominal) {
+      const nominal = parseFloat(newNominal);
+      const isIncome = (oldRow[3] || '') === 'Pemasukan';
+      oldRow[7] = isIncome ? nominal : -nominal;
+    }
+    
+    // Update description if provided
+    if (newDescription) {
+      oldRow[6] = newDescription;
+    }
+    
+    // Overwrite the sheet
+    await googleWorkspace.overwriteFinanceSheet(rows);
+
+    return { status: 'SUCCESS', message: `✏️ Transaksi "${oldCat}" berhasil diubah. Semua rumus dan saldo telah disesuaikan ulang.` };
+  } catch (error) {
+    console.error('[FINANCE] Failed to edit transaction:', error.message);
+    return { status: 'FAILED', message: `Gagal mengubah transaksi: ${error.message}` };
+  }
+}
+
+module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction };
