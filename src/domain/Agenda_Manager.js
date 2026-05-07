@@ -20,7 +20,31 @@ async function sendTelegramOutbound(text) {
   }
 }
 
-async function handleCalendarIntent(extractedData) {
+/**
+ * Parse natural language duration into minutes.
+ * Examples: "setengah jam" → 30, "1 jam" → 60, "2 jam" → 120, "45 menit" → 45
+ */
+function parseDurationMinutes(text) {
+  if (!text) return null;
+  const t = text.toLowerCase();
+  // setengah jam / half hour
+  if (t.includes('setengah jam') || t.includes('half hour') || t.includes('30 menit')) return 30;
+  // X jam Y menit
+  const jamMenitMatch = t.match(/(\d+(?:[.,]\d+)?)\s*jam\s*(\d+)\s*menit/);
+  if (jamMenitMatch) return Math.round(parseFloat(jamMenitMatch[1]) * 60) + parseInt(jamMenitMatch[2]);
+  // X.5 jam
+  const halfJamMatch = t.match(/(\d+)[.,]5\s*jam/);
+  if (halfJamMatch) return parseInt(halfJamMatch[1]) * 60 + 30;
+  // X jam
+  const jamMatch = t.match(/(\d+(?:[.,]\d+)?)\s*jam/);
+  if (jamMatch) return Math.round(parseFloat(jamMatch[1].replace(',', '.')) * 60);
+  // X menit
+  const menitMatch = t.match(/(\d+)\s*menit/);
+  if (menitMatch) return parseInt(menitMatch[1]);
+  return null;
+}
+
+async function handleCalendarIntent(extractedData, rawUserText = '') {
   const { action, summary, start, end, eventId, description } = extractedData;
   console.log(`[AGENDA] Executing Calendar Intent: ${action}`);
 
@@ -33,33 +57,40 @@ async function handleCalendarIntent(extractedData) {
         return { status: 'FAILED', message: `❌ Kapan kegiatan '${summary}' ini dilaksanakan, Tuan?` };
       }
       if (!end) {
+        // Try to extract duration from rawUserText (for follow-up answers like "setengah jam")
+        const durationMins = parseDurationMinutes(rawUserText);
+        if (durationMins) {
+          const startDate = new Date(start);
+          startDate.setMinutes(startDate.getMinutes() + durationMins);
+          const computedEnd = startDate.toISOString();
+          const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '');
+          return { status: 'SUCCESS', message: `✅ Jadwal '${summary}' berhasil ditambahkan ke kalender (durasi ${durationMins} menit).`, eventId: result.id };
+        }
+
+        // No duration in text → return PENDING_END and schedule auto-create after 15 min
         const pendingId = `${summary}_${start}`;
         if (!pendingAgendas.has(pendingId)) {
-          const startDate = new Date(start);
-          startDate.setHours(startDate.getHours() + 1);
-          const finalEnd = startDate.toISOString();
-          
+          const autoEnd = new Date(new Date(start).getTime() + 60 * 60 * 1000).toISOString();
           const timer = setTimeout(async () => {
             if (pendingAgendas.has(pendingId)) {
               try {
-                const data = pendingAgendas.get(pendingId);
-                const result = await googleWorkspace.createCalendarEvent(data.summary, data.start, data.end, data.description || '');
-                sendTelegramOutbound(`⏳ Waktu konfirmasi habis! Jadwal '${data.summary}' telah otomatis ditambahkan ke kalender dengan durasi standar (1 jam).`);
-              } catch (e) {
-                console.error('[AGENDA] Auto-create failed:', e);
-              }
+                const d = pendingAgendas.get(pendingId);
+                await googleWorkspace.createCalendarEvent(d.summary, d.start, d.end, d.description || '');
+                sendTelegramOutbound(`⏳ Waktu konfirmasi habis! Jadwal '<b>${d.summary}</b>' otomatis ditambahkan ke kalender (durasi standar 1 jam).`);
+              } catch (e) { console.error('[AGENDA] Auto-create failed:', e); }
               pendingAgendas.delete(pendingId);
             }
-          }, 15 * 60 * 1000); // 15 minutes
-
-          pendingAgendas.set(pendingId, { summary, start, end: finalEnd, description, timer });
+          }, 15 * 60 * 1000);
+          pendingAgendas.set(pendingId, { summary, start, end: autoEnd, description, timer });
         }
-        return { status: 'FAILED', message: `❌ Kira-kira berapa lama durasi untuk kegiatan '${summary}' ini, Tuan?\n\n_(Jika tidak ada jawaban dalam 15 menit, N.E.X.A akan otomatis menambahkannya dengan durasi standar 1 jam)_` };
+        return { status: 'PENDING_END', message: `❓ Kira-kira berapa lama durasi untuk '<b>${summary}</b>' ini, Tuan?
+
+<i>(Jika tidak ada jawaban dalam 15 menit, N.E.X.A akan otomatis menambahkannya dengan durasi standar 1 jam)</i>` };
       }
 
-      // If we reach here, end is provided. Clear any pending matching agendas!
+      // end is provided — clear any matching pending
       for (const [id, data] of pendingAgendas.entries()) {
-        if (data.summary.toLowerCase() === summary.toLowerCase() || data.start === start) {
+        if (data.summary.toLowerCase() === summary.toLowerCase()) {
           clearTimeout(data.timer);
           pendingAgendas.delete(id);
         }
@@ -126,4 +157,40 @@ async function handleCalendarIntent(extractedData) {
   }
 }
 
-module.exports = { handleCalendarIntent };
+/**
+ * Try to resolve a pending calendar event using the user's follow-up text.
+ * Returns a result object if resolved, or null if text is not a recognizable duration.
+ * @param {string} userText
+ * @param {{ summary: string, start: string }} pendingCtx
+ */
+async function tryResolvePending(userText, pendingCtx) {
+  const durationMins = parseDurationMinutes(userText);
+  if (!durationMins) return null; // Not a duration answer, let AI Router handle it
+
+  try {
+    const startDate = new Date(pendingCtx.start);
+    startDate.setMinutes(startDate.getMinutes() + durationMins);
+    const computedEnd = startDate.toISOString();
+    const result = await googleWorkspace.createCalendarEvent(pendingCtx.summary, pendingCtx.start, computedEnd, '');
+    return { status: 'SUCCESS', message: `✅ Jadwal '<b>${pendingCtx.summary}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).` };
+  } catch (e) {
+    console.error('[AGENDA] tryResolvePending error:', e.message);
+    return { status: 'FAILED', message: `❌ Gagal menyimpan jadwal: ${e.message}` };
+  }
+}
+
+/**
+ * Cancel the 15-minute auto-create timer for a pending event by summary name.
+ * @param {string} summary
+ */
+function cancelPending(summary) {
+  for (const [id, data] of pendingAgendas.entries()) {
+    if (data.summary.toLowerCase() === summary.toLowerCase()) {
+      clearTimeout(data.timer);
+      pendingAgendas.delete(id);
+      console.log(`[AGENDA] Pending timer for '${summary}' cancelled.`);
+    }
+  }
+}
+
+module.exports = { handleCalendarIntent, tryResolvePending, cancelPending };

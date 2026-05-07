@@ -14,6 +14,10 @@ const visionEngine = require('../core/Vision_Engine');
 const spreadsheetManager = require('../domain/Spreadsheet_Manager');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 
+// Pending Calendar Context: holds an incomplete calendar CREATE until user provides missing info
+// Structure: { summary, start, askedAt }
+let pendingCalendarContext = null;
+
 // ============================================================
 // OUTBOUND TELEGRAM SENDER
 // Routes through Cloudflare Worker proxy because HuggingFace
@@ -198,6 +202,22 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
 
     console.log('[TELEGRAM] Received message:', textInput.substring(0, 100));
 
+    // ============================================================
+    // PENDING CALENDAR RESOLUTION — intercept follow-up duration reply
+    // ============================================================
+    if (pendingCalendarContext) {
+      const agendaManager = require('../domain/Agenda_Manager');
+      const resolved = await agendaManager.tryResolvePending(textInput, pendingCalendarContext);
+      if (resolved) {
+        // Clear the pending context and cancel the 15-min timeout
+        agendaManager.cancelPending(pendingCalendarContext.summary);
+        pendingCalendarContext = null;
+        await respondToTelegram(resolved.message);
+        clearTimeout(safetyTimer);
+        return;
+      }
+    }
+
     // Send to AI Router
     const routingData = await aiRouter.routeUserMessage(textInput);
     console.log('[ROUTER] Intent identified:', routingData.intent);
@@ -247,11 +267,27 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
       case 'CALENDAR':
         if (routingData.extracted_data) {
           const agendaManager = require('../domain/Agenda_Manager');
-          const calResult = await agendaManager.handleCalendarIntent(routingData.extracted_data);
+          const calData = routingData.extracted_data;
+
+          // If there's a pending calendar and the current CREATE has an end time + matching summary, merge!
+          if (pendingCalendarContext && calData.action === 'CREATE' && calData.end && !calData.summary) {
+            calData.summary = pendingCalendarContext.summary;
+            calData.start = pendingCalendarContext.start;
+            agendaManager.cancelPending(pendingCalendarContext.summary);
+            pendingCalendarContext = null;
+          }
+
+          const calResult = await agendaManager.handleCalendarIntent(calData, textInput);
+
+          if (calResult && calResult.status === 'PENDING_END') {
+            // Store context so the NEXT message can resolve it directly
+            pendingCalendarContext = { summary: calData.summary, start: calData.start, askedAt: Date.now() };
+          } else if (calResult && calResult.status === 'SUCCESS') {
+            pendingCalendarContext = null;
+          }
+
           if (calResult && calResult.message) {
-            domainReply = calResult.status === 'FAILED'
-              ? `❌ ${calResult.message}`
-              : calResult.message;
+            domainReply = calResult.message;
           }
         }
         break;
