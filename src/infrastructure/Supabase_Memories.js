@@ -80,21 +80,64 @@ async function logTransactionKey(compositeKey, transactionTime, source) {
 }
 
 /**
- * Save idea or personal fact to 2nd Brain Vault
+ * Save idea to 2nd Brain Vault (Syncs with Docs)
  * @param {string} ideaContent
- * @param {'IDEA'|'PERSONAL_FACT'} type
  */
-async function saveIdeaToVault(ideaContent, type = 'IDEA') {
+async function saveIdeaToVault(ideaContent) {
   if (!supabase) return;
   const { data, error } = await supabase
     .from('nexa_2nd_brain')
-    .insert([{ content: ideaContent, type, created_at: new Date().toISOString() }]);
+    .insert([{ content: ideaContent, created_at: new Date().toISOString() }]);
 
   if (error) {
     console.error('[SUPABASE] Error saving idea:', error.message);
     throw error;
   }
   return data;
+}
+
+/**
+ * Save fact to User Profile
+ */
+async function saveUserProfile(content) {
+  if (!supabase) return;
+  const { error } = await supabase.from('nexa_user_profile').insert([{ content }]);
+  if (error) console.error('[SUPABASE] Error saving user profile:', error.message);
+}
+
+/**
+ * Delete from User Profile
+ */
+async function deleteFromUserProfile(searchKeyword) {
+  if (!supabase || !searchKeyword) return false;
+  const { data: rows } = await supabase.from('nexa_user_profile').select('id, content');
+  if (!rows || rows.length === 0) return false;
+  const targetIds = findMatchingIds(rows, searchKeyword);
+  if (targetIds.length === 0) return false;
+  const { error } = await supabase.from('nexa_user_profile').delete().in('id', targetIds);
+  return !error;
+}
+
+/**
+ * Save fact to Core Identity
+ */
+async function saveCoreIdentity(content) {
+  if (!supabase) return;
+  const { error } = await supabase.from('nexa_core_identity').insert([{ content }]);
+  if (error) console.error('[SUPABASE] Error saving core identity:', error.message);
+}
+
+/**
+ * Delete from Core Identity
+ */
+async function deleteFromCoreIdentity(searchKeyword) {
+  if (!supabase || !searchKeyword) return false;
+  const { data: rows } = await supabase.from('nexa_core_identity').select('id, content');
+  if (!rows || rows.length === 0) return false;
+  const targetIds = findMatchingIds(rows, searchKeyword);
+  if (targetIds.length === 0) return false;
+  const { error } = await supabase.from('nexa_core_identity').delete().in('id', targetIds);
+  return !error;
 }
 
 /**
@@ -199,21 +242,22 @@ function findMatchingIds(rows, searchKeyword) {
 /**
  * Fetch all PERSONAL_FACT entries from the vault.
  * Used by AI_Router to inject long-term personal context.
+ * Now fetches from BOTH nexa_user_profile and nexa_core_identity.
  * @returns {Promise<string[]>} Array of fact strings
  */
 async function getPersonalFacts() {
   if (!supabase) return [];
-  const { data, error } = await supabase
-    .from('nexa_2nd_brain')
-    .select('content')
-    .eq('type', 'PERSONAL_FACT')
-    .order('created_at', { ascending: true });
+  
+  const [profileRes, identityRes] = await Promise.all([
+    supabase.from('nexa_user_profile').select('content').order('created_at', { ascending: true }),
+    supabase.from('nexa_core_identity').select('content').order('created_at', { ascending: true })
+  ]);
 
-  if (error) {
-    console.error('[SUPABASE] Error fetching personal facts:', error.message);
-    return [];
-  }
-  return (data || []).map(row => row.content);
+  const facts = [];
+  if (profileRes.data) profileRes.data.forEach(r => facts.push(r.content));
+  if (identityRes.data) identityRes.data.forEach(r => facts.push(r.content));
+
+  return facts;
 }
 
 module.exports = {
@@ -225,5 +269,9 @@ module.exports = {
   saveIdeaToVault,
   deleteIdeaFromVault,
   editIdeaInVault,
+  saveUserProfile,
+  deleteFromUserProfile,
+  saveCoreIdentity,
+  deleteFromCoreIdentity,
   getPersonalFacts
 };

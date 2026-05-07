@@ -52,21 +52,20 @@ Jika instruksi Tuan Faqih tidak detail atau kekurangan data esensial (contoh: "c
 
 Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 {
-  "intent": "FINANCE" | "CALENDAR" | "DISCIPLINE" | "2ND_BRAIN" | "SPREADSHEET" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
+  "intent": "FINANCE" | "CALENDAR" | "DISCIPLINE" | "2ND_BRAIN" | "USER_PROFILE" | "CORE_IDENTITY" | "SPREADSHEET" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
   "extracted_data": {
      // FINANCE: { action: "RECORD"|"READ_LATEST"|"READ_ANALYTICS"|"EDIT"|"DELETE", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO), search_keyword: string }
      //   → Gunakan action "READ_ANALYTICS" jika pengguna meminta laporan total pemasukan, pengeluaran, saldo akhir, atau "analitik keuangan".
      //   → Gunakan action "EDIT" jika pengguna meminta mengubah/mengedit transaksi lama (sertakan search_keyword untuk mencari transaksi mana, dan nominal/description baru jika ada).
      //   → Gunakan action "DELETE" jika pengguna meminta menghapus transaksi (sertakan search_keyword).
      // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string (ISO 8601 offset +07:00), end: string (ISO 8601 offset +07:00) }
-     // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, type: "PERSONAL_FACT" | "IDEA", search_keyword: string }
-     //   → Gunakan action "APPEND" (default) jika menyimpan ide/fakta baru.
-     //   → Gunakan action "READ" jika pengguna ingin membaca arsip ide/fakta lama.
-     //   → Gunakan action "EDIT" jika pengguna ingin mengubah arsip (sertakan search_keyword berisi teks lama, dan content berisi teks baru).
-     //   → Gunakan action "DELETE" jika pengguna ingin menghapus arsip (sertakan search_keyword).
-     //   → PERSONAL_FACT: fakta permanen tentang Tuan Faqih (kesehatan, preferensi, jadwal, target, relasi, kebiasaan)
-     //     Kata kunci pemicu: "simpan ini", "ingat bahwa", "catat bahwa", "perlu kamu tahu", "fakta tentang saya", "aku suka/tidak suka", "aku alergi", "kebiasaanku", dll.
-     //   → IDEA: gagasan kreatif, catatan riset, rencana proyek, apapun yang bukan fakta personal
+     // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, search_keyword: string }
+     //   → Gunakan untuk menyimpan ide, draft, ringkasan, atau catatan kerja yang akan disinkronkan dengan Google Docs.
+     // USER_PROFILE: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
+     //   → Gunakan jika pengguna meminta Anda mengingat fakta/preferensi tentang Tuan Faqih (contoh: "ingat bahwa aku alergi seafood", "aku suka warna biru", "targetku tahun ini lulus").
+     // CORE_IDENTITY: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
+     //   → Gunakan jika pengguna memberikan aturan baru atau identitas bagi Anda sendiri (contoh: "mulai sekarang panggil aku bos", "jangan gunakan emoji", "kamu adalah asisten militer").
+     //   → Untuk USER_PROFILE dan CORE_IDENTITY, gunakan action "DELETE" jika pengguna menyuruh Anda melupakan/menghapus fakta tersebut.
      // SPREADSHEET: { action: "CREATE_OR_APPEND"|"DELETE", table_name: string, data: { "Kolom1": "Nilai1", "Kolom2": "Nilai2" } }
      // EMAIL: { action: "READ" | "SEND" | "DELETE", search_keyword: string, to: string, subject: string, content: string }
      //   → Gunakan action "READ" jika pengguna meminta mengecek kotak masuk (sertakan search_keyword jika mencari email tertentu).

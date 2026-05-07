@@ -301,27 +301,49 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
             domainReply = (vaultRes?.success || docsSuccess) ? `🗑️ Arsip berhasil dihapus dari Database (dan sinkronisasi Docs).` : `❌ Gagal menemukan/menghapus arsip.`;
           } else if (routingData.extracted_data.content) { // APPEND
             await supabaseMemories.saveIdeaToVault(
-              routingData.extracted_data.content,
-              factType
+              routingData.extracted_data.content
             ).catch(e => console.error('[2ND_BRAIN] Supabase vault save error:', e));
 
-            if (factType === 'PERSONAL_FACT') {
-              invalidatePersonalFactsCache();
-              console.log('[2ND_BRAIN] PERSONAL_FACT saved — cache invalidated.');
-            }
-
             const docUrl = await googleWorkspace.appendToIdeaDoc(
-              routingData.extracted_data.title || (factType === 'PERSONAL_FACT' ? 'Fakta Personal — N.E.X.A' : 'Ideation N.E.X.A'),
+              routingData.extracted_data.title || 'Ideation N.E.X.A',
               routingData.extracted_data.content,
-              factType
+              'IDEA'
             ).catch(e => { console.error('[2ND_BRAIN] Google Doc error:', e); return null; });
 
             if (docUrl) {
-              domainReply = factType === 'PERSONAL_FACT'
-                ? `✅ Fakta personal tersimpan dan akan selalu saya ingat, Tuan.\n📄 Arsip: ${docUrl}`
-                : `✅ Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;
+              domainReply = `✅ Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;
             }
-            console.log(`[2ND_BRAIN] Saved as ${factType} to Supabase and Google Docs.`);
+            console.log(`[2ND_BRAIN] Saved IDEA to Supabase and Google Docs.`);
+          }
+        }
+        break;
+
+      case 'USER_PROFILE':
+        if (routingData.extracted_data) {
+          const action = routingData.extracted_data.action || 'APPEND';
+          if (action === 'APPEND' && routingData.extracted_data.content) {
+            await supabaseMemories.saveUserProfile(routingData.extracted_data.content);
+            invalidatePersonalFactsCache();
+            domainReply = `✅ Fakta personal tersimpan ke database profil. Saya akan selalu mengingatnya, Tuan.`;
+          } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
+            const success = await supabaseMemories.deleteFromUserProfile(routingData.extracted_data.search_keyword);
+            invalidatePersonalFactsCache();
+            domainReply = success ? `🗑️ Fakta personal berhasil dihapus dari memori permanen.` : `❌ Gagal menemukan fakta tersebut di profil Anda.`;
+          }
+        }
+        break;
+
+      case 'CORE_IDENTITY':
+        if (routingData.extracted_data) {
+          const action = routingData.extracted_data.action || 'APPEND';
+          if (action === 'APPEND' && routingData.extracted_data.content) {
+            await supabaseMemories.saveCoreIdentity(routingData.extracted_data.content);
+            invalidatePersonalFactsCache();
+            domainReply = `✅ Aturan identitas inti N.E.X.A telah diperbarui.`;
+          } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
+            const success = await supabaseMemories.deleteFromCoreIdentity(routingData.extracted_data.search_keyword);
+            invalidatePersonalFactsCache();
+            domainReply = success ? `🗑️ Aturan identitas inti berhasil dihapus.` : `❌ Gagal menemukan aturan tersebut di sistem.`;
           }
         }
         break;
