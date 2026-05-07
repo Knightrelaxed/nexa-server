@@ -68,11 +68,15 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //     Kata kunci pemicu: "simpan ini", "ingat bahwa", "catat bahwa", "perlu kamu tahu", "fakta tentang saya", "aku suka/tidak suka", "aku alergi", "kebiasaanku", dll.
      //   → IDEA: gagasan kreatif, catatan riset, rencana proyek, apapun yang bukan fakta personal
      // SPREADSHEET: { action: "CREATE_OR_APPEND"|"DELETE", table_name: string, data: { "Kolom1": "Nilai1", "Kolom2": "Nilai2" } }
+     // EMAIL: { action: "READ" | "SEND" | "DELETE", search_keyword: string, to: string, subject: string, content: string }
+     //   → Gunakan action "READ" jika pengguna meminta mengecek kotak masuk (sertakan search_keyword jika mencari email tertentu).
+     //   → Gunakan action "SEND" jika pengguna meminta mengirim email (wajib ada "to", "subject", dan "content").
+     //   → Gunakan action "DELETE" jika meminta menghapus email (sertakan search_keyword).
      // DEVICE_CONTROL: { action: "ALARM"|"FLASHLIGHT"|"VOLUME"|"LOCK", params: apa saja }
      // RESEARCH / INTELLIGENCE: { query: "kata kunci", target_source: "web/news/scholarship" }
      // Jika intent kustom: { ...buat struktur data JSON relevan berdasarkan logika Anda... }
   },
-  "reply_message": "Respon natural, profesional, dan lincah. Jika pengguna meminta Anda membaca Gmail, email Livin, atau mengecek pengeluaran terakhir, layani dengan antusias seolah Anda sedang mengekstrak data dari email tersebut. Atur intent ke FINANCE dengan action READ_LATEST.",
+  "reply_message": "Respon natural, profesional, dan lincah. PENTING: Anda SEKARANG BISA mengakses Gmail langsung. Gunakan intent EMAIL untuk membaca, mengirim, atau menghapus email (Jangan halusinasi lagi).",
   "god_mode_trigger": false // true khusus DISCIPLINE jika terjadi pelanggaran ekstrem
 }
 `;

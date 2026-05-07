@@ -29,5 +29,10 @@ module.exports = {
   GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID,
   GOOGLE_DRIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_FOLDER_ID,
   GOOGLE_DOCS_IDEA_ID: process.env.GOOGLE_DOCS_IDEA_ID, // Single master doc for 2nd Brain ideation (append-only)
-  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY // For Llama 3.1 fallback
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY, // For Llama 3.1 fallback
+
+  // Gmail OAuth2 Credentials
+  GMAIL_CLIENT_ID: process.env.GMAIL_CLIENT_ID,
+  GMAIL_CLIENT_SECRET: process.env.GMAIL_CLIENT_SECRET,
+  GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN,
 };

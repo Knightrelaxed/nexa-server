@@ -309,6 +309,36 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
           }
         }
         break;
+
+      case 'EMAIL':
+        const gmailClient = require('../infrastructure/Gmail_Client');
+        if (routingData.extracted_data) {
+          const action = routingData.extracted_data.action;
+          if (action === 'READ') {
+            const emails = await gmailClient.getLatestEmails(routingData.extracted_data.search_keyword || '', 5);
+            if (emails.length === 0) {
+              domainReply = "Kotak masuk kosong atau tidak ada email yang cocok dengan pencarian.";
+            } else {
+              domainReply = "📧 *Email Terbaru Anda:*\n\n" + emails.map(e => `[${e.date}] Dari: ${e.from}\nSubjek: ${e.subject}\nSnippet: ${e.snippet}\n`).join('\n---\n');
+            }
+          } else if (action === 'SEND') {
+            const success = await gmailClient.sendEmail(
+              routingData.extracted_data.to,
+              routingData.extracted_data.subject,
+              routingData.extracted_data.content
+            );
+            domainReply = success ? `✅ Email berhasil dikirim ke ${routingData.extracted_data.to}.` : `❌ Gagal mengirim email.`;
+          } else if (action === 'DELETE') {
+            const emails = await gmailClient.getLatestEmails(routingData.extracted_data.search_keyword, 1);
+            if (emails.length > 0) {
+              const success = await gmailClient.deleteEmail(emails[0].id);
+              domainReply = success ? `🗑️ Email dengan subjek "${emails[0].subject}" berhasil dihapus.` : `❌ Gagal menghapus email.`;
+            } else {
+              domainReply = `Tidak ditemukan email dengan kata kunci tersebut untuk dihapus.`;
+            }
+          }
+        }
+        break;
     }
 
     // Send reply via Webhook Response Method (ZERO outbound needed)
