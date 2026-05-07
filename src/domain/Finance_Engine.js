@@ -118,9 +118,9 @@ async function getRecentTransactions(limit = 5) {
       const saldoFmt = isNaN(saldoNum) ? saldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
       const tipeIcon = tipe === 'Pemasukan' ? '🟢' : '🔴';
 
-      response += `*No. ${no}* — ${tanggal} ${waktu}\n`;
+      response += `<b>No. ${no}</b> — ${tanggal} ${waktu}\n`;
       response += `${tipeIcon} ${tipe} | 🏷️ ${kategori}\n`;
-      response += `📝 ${catatan}\n`;
+      response += `📝 <i>${catatan}</i>\n`;
       response += `💰 ${nominalFmt} | 🏦 Saldo: ${saldoFmt}\n`;
       response += `──────────────\n`;
     });
@@ -128,7 +128,7 @@ async function getRecentTransactions(limit = 5) {
   } catch (err) {
     console.error('[FINANCE] Failed to fetch recent transactions:', err.message);
     if (err.message && err.message.includes('Office file')) {
-      return `⚠️ **Gagal mengambil data:** Format dokumen tidak didukung.\n\nTuan, file buku kas saat ini berformat Microsoft Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli.\n\n*Cara Perbaikan:*\n1. Buka file tersebut di Google Drive\n2. Klik "File" > "Save as Google Sheets"\n3. Copy ID dari file baru tersebut dan perbarui di setelan (GOOGLE_SHEET_ID).`;
+      return `⚠️ <b>Gagal mengambil data:</b> Format dokumen tidak didukung.\n\nTuan, file buku kas saat ini berformat Microsoft Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli.\n\n<b>Cara Perbaikan:</b>\n1. Buka file tersebut di Google Drive\n2. Klik "File" > "Save as Google Sheets"\n3. Copy ID dari file baru tersebut dan perbarui di setelan (GOOGLE_SHEET_ID).`;
     }
     if (err.message && err.message.includes('Unable to parse range')) {
       return `⚠️ **Tab Bulan Ini Belum Dibuat!**\nN.E.X.A tidak dapat menemukan tab (sheet) dengan nama bulan ini di Google Sheets Tuan. Silakan buat atau duplikat tab sebelumnya, dan beri nama sesuai bulan ini (contoh: "Mei 2026").`;
@@ -165,12 +165,12 @@ async function getFinanceAnalytics() {
     const pengeluaranFmt = formatRp(rawPengeluaran);
     const saldoFmt = formatRp(rawSaldo);
 
-    let report = `📊 *Laporan Analitik Keuangan Bulan Ini:*\n\n`;
-    report += `🟢 *Total Pemasukan:* ${pemasukanFmt}\n`;
-    report += `🔴 *Total Pengeluaran:* ${pengeluaranFmt}\n`;
+    let report = `📊 <b>Laporan Analitik Keuangan Bulan Ini:</b>\n\n`;
+    report += `🟢 <b>Total Pemasukan:</b> ${pemasukanFmt}\n`;
+    report += `🔴 <b>Total Pengeluaran:</b> ${pengeluaranFmt}\n`;
     report += `──────────────\n`;
-    report += `🏦 *SALDO AKHIR:* **${saldoFmt}**\n\n`;
-    report += `_Laporan dihitung secara real-time dari rumusan Google Sheets Tuan Faqih._`;
+    report += `🏦 <b>SALDO AKHIR:</b> <b>${saldoFmt}</b>\n\n`;
+    report += `<i>Laporan dihitung secara real-time dari rumusan Google Sheets Tuan Faqih.</i>`;
 
     return report;
   } catch (err) {
