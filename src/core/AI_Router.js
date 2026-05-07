@@ -114,12 +114,23 @@ async function routeUserMessage(textInput) {
     ? `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${personalFacts.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
     : '';
 
-  // 3.5. Inject Current Time (Critical for relative dates like "besok" or "hari ini")
-  const currentJakartaTime = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'full', timeStyle: 'long' });
+  // 3.5. Inject Current Jakarta Time — manually built to be runtime-safe on any Node/Bun version
+  const _now = new Date();
+  // Offset UTC→WIB (+7h) using en-US locale (guaranteed to work everywhere)
+  const _jkt = new Date(_now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  const _DAYS  = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  const _MONTHS= ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  const currentJakartaTime =
+    `${_DAYS[_jkt.getDay()]}, ${_jkt.getDate()} ${_MONTHS[_jkt.getMonth()]} ${_jkt.getFullYear()} ` +
+    `pukul ${String(_jkt.getHours()).padStart(2,'0')}:${String(_jkt.getMinutes()).padStart(2,'0')} WIB`;
+  // ISO date string in Jakarta (for AI date arithmetic in TASK/CALENDAR intents)
+  const currentJakartaISO = `${_jkt.getFullYear()}-${String(_jkt.getMonth()+1).padStart(2,'0')}-${String(_jkt.getDate()).padStart(2,'0')}`;
 
   const prompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
+ISO Date Hari Ini: ${currentJakartaISO}
+(Gunakan ISO date ini sebagai acuan mutlak saat menghitung tanggal relatif seperti "besok", "Jumat depan", "minggu ini", dsb.)
 
 ${factsContext}
 [RIWAYAT OBROLAN]

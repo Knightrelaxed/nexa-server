@@ -35,7 +35,14 @@ async function getTaskLists() {
 async function createTask({ title, notes = '', dueDate = null, listId = DEFAULT_LIST }) {
   const client = getTasksClient();
   const task = { title, notes };
-  if (dueDate) task.due = new Date(dueDate).toISOString();
+
+  if (dueDate) {
+    // Google Tasks 'due' field is DATE-ONLY (time is ignored).
+    // To avoid off-by-one timezone errors, extract the local date portion
+    // and always store as midnight UTC of that same calendar date.
+    const localDateStr = dueDate.split('T')[0]; // e.g. "2026-05-09"
+    task.due = `${localDateStr}T00:00:00.000Z`;
+  }
 
   const res = await client.tasks.insert({ tasklist: listId, requestBody: task });
   return res.data;
