@@ -59,7 +59,11 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Gunakan action "EDIT" jika pengguna meminta mengubah/mengedit transaksi lama (sertakan search_keyword untuk mencari transaksi mana, dan nominal/description baru jika ada).
      //   → Gunakan action "DELETE" jika pengguna meminta menghapus transaksi (sertakan search_keyword).
      // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string (ISO 8601 offset +07:00), end: string (ISO 8601 offset +07:00) }
-     //   → PENTING: JANGAN PERNAH menebak waktu 'end'. Jika Tuan Faqih tidak menyebutkan durasi/waktu selesai, biarkan 'end' KOSONG.
+     //   → WAJIB: 'start' dan 'end' HARUS dalam format ISO 8601 LENGKAP dengan timezone offset +07:00.
+     //     Contoh BENAR: "2026-05-07T19:00:00+07:00"
+     //     Contoh SALAH: "19:00", "jam 7 malam", "2026-05-07T19:00", null
+     //   → Tanggal default adalah HARI INI jika tidak disebutkan.
+     //   → JANGAN PERNAH menebak waktu 'end'. Jika durasi/waktu selesai tidak disebutkan, KOSONGKAN 'end' (null atau hilangkan fieldnya).
      // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, search_keyword: string }
      //   → Gunakan untuk menyimpan ide, draft, ringkasan, atau catatan kerja yang akan disinkronkan dengan Google Docs.
      // USER_PROFILE: { action: "APPEND"|"DELETE", content: string, search_keyword: string }

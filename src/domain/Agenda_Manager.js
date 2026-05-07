@@ -71,16 +71,16 @@ async function parseDurationMinutes(text) {
   if (bareNum && parseInt(bareNum[1]) <= 360) return parseInt(bareNum[1]);
 
   // --- SLOW PATH: Ask AI to extract duration ---
-  // Guard: only call AI if the text actually sounds like a duration answer
-  const durationKeywords = /jam|menit|hour|minute|min|½|¼|¾|sejam|setengah|quarter|detik|second/i;
-  if (!durationKeywords.test(t)) {
-    // Text has no duration-like words at all — skip AI entirely
+  // Guard: only call AI if the text actually LOOKS like a duration answer
+  // Must have a number+unit OR well-known shorthand - NOT just a time reference like "jam 7 malam"
+  const durationPatterns = /\d+\s*(jam|menit|hours?|minutes?|min)|sejam\w*|setengah\s*jam|half[\s-]*(an\s*)?hour|\b\u00bd|\b\u00bc|\b\u00be/i;
+  if (!durationPatterns.test(t)) {
     return null;
   }
 
   try {
     const aiRouter = require('../core/AI_Router');
-    const prompt = `Ekstrak HANYA jumlah menit dari teks berikut. Jawab HANYA dengan angka bulat, tanpa teks lain. Jika tidak ada durasi, jawab 0.\n\nTeks: "${text}"`;
+    const prompt = `Ekstrak HANYA jumlah menit dari teks berikut. Jawab HANYA dengan angka bulat, tanpa teks lain. Jika tidak ada durasi waktu kegiatan, jawab 0.\n\nTeks: "${text}"`;
     const raw = await aiRouter.callAI(prompt);
     const num = parseInt(String(raw).trim());
     if (!isNaN(num) && num > 0 && num <= 1440) {
@@ -219,14 +219,21 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
  * @param {{ summary: string, start: string }} pendingCtx
  */
 async function tryResolvePending(userText, pendingCtx) {
-  const durationMins = parseDurationMinutes(userText);
+  const durationMins = await parseDurationMinutes(userText);
   if (!durationMins) return null; // Not a duration answer, let AI Router handle it
 
   try {
     const startDate = new Date(pendingCtx.start);
+    if (isNaN(startDate.getTime())) {
+      // start stored in context is invalid — ask the user to re-state the full event
+      return {
+        status: 'FAILED',
+        message: `❌ Maaf Tuan, saya kehilangan informasi waktu mulai untuk '<b>${pendingCtx.summary}</b>'. Mohon ulangi perintahnya lengkap ya, contoh: "<i>Tambahkan makan malam jam 7 malam, durasi 2 jam</i>"`
+      };
+    }
     startDate.setMinutes(startDate.getMinutes() + durationMins);
     const computedEnd = startDate.toISOString();
-    const result = await googleWorkspace.createCalendarEvent(pendingCtx.summary, pendingCtx.start, computedEnd, '');
+    await googleWorkspace.createCalendarEvent(pendingCtx.summary, pendingCtx.start, computedEnd, '');
     return { status: 'SUCCESS', message: `✅ Jadwal '<b>${pendingCtx.summary}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).` };
   } catch (e) {
     console.error('[AGENDA] tryResolvePending error:', e.message);
