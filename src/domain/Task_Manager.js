@@ -27,9 +27,27 @@ async function handleTaskIntent(extractedData) {
     if (action === 'CREATE') {
       if (!title) return { status: 'FAILED', message: '❌ Mohon sebutkan nama tugasnya, Tuan.' };
 
-      const task = await googleTasks.createTask({ title, notes: notes || '', dueDate: due_date || null });
+      // Extract time portion from due_date if provided (Google Tasks only stores date, not time)
+      let taskNotes = notes || '';
+      let timeLabel = null;
+      if (due_date) {
+        const dueMs = new Date(due_date);
+        if (!isNaN(dueMs.getTime())) {
+          const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+          if (h && h !== '00:00') {
+            timeLabel = h + ' WIB';
+            taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
+          }
+        }
+      }
+
+      const task = await googleTasks.createTask({ title, notes: taskNotes, dueDate: due_date || null });
       let msg = `✅ Tugas '<b>${task.title}</b>' berhasil ditambahkan ke Google Tasks.`;
-      if (due_date) msg += `\n📅 Deadline: ${new Date(due_date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' })}`;
+      if (due_date) {
+        const dueDate = new Date(due_date.split('T')[0] + 'T00:00:00+07:00');
+        msg += `\n📅 Deadline: ${dueDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
+        if (timeLabel) msg += ` jam ${timeLabel}`;
+      }
       return { status: 'SUCCESS', message: msg };
     }
 

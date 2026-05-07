@@ -126,11 +126,24 @@ async function routeUserMessage(textInput) {
   // ISO date string in Jakarta (for AI date arithmetic in TASK/CALENDAR intents)
   const currentJakartaISO = `${_jkt.getFullYear()}-${String(_jkt.getMonth()+1).padStart(2,'0')}-${String(_jkt.getDate()).padStart(2,'0')}`;
 
+  // Build next-7-days mini-calendar for reliable day→date mapping by the AI
+  const _miniCal = [];
+  for (let i = 0; i <= 7; i++) {
+    const d = new Date(_jkt.getTime() + i * 86400000);
+    const ds = `${_jkt.getFullYear() === d.getFullYear() ? '' : d.getFullYear() + '-'}${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const dayFull = `${_DAYS[d.getDay()]}, ${d.getDate()} ${_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    _miniCal.push(`  +${i} hari: ${dayFull} (ISO: ${ds})`);
+  }
+  const miniCalStr = _miniCal.join('\n');
+
   const prompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
 ISO Date Hari Ini: ${currentJakartaISO}
-(Gunakan ISO date ini sebagai acuan mutlak saat menghitung tanggal relatif seperti "besok", "Jumat depan", "minggu ini", dsb.)
+
+[KALENDER REFERENSI — 7 HARI KE DEPAN]
+${miniCalStr}
+(Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)
 
 ${factsContext}
 [RIWAYAT OBROLAN]
