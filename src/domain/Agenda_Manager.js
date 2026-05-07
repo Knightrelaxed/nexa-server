@@ -12,15 +12,11 @@ async function handleCalendarIntent(extractedData) {
       if (!start) {
         return { status: 'FAILED', message: `❌ Kapan kegiatan '${summary}' ini dilaksanakan, Tuan?` };
       }
-      
-      let finalEnd = end;
-      if (!finalEnd) {
-        const startDate = new Date(start);
-        startDate.setHours(startDate.getHours() + 1);
-        finalEnd = startDate.toISOString();
+      if (!end) {
+        return { status: 'FAILED', message: `❌ Kira-kira berapa lama durasi untuk kegiatan '${summary}' ini, Tuan?` };
       }
 
-      const result = await googleWorkspace.createCalendarEvent(summary, start, finalEnd, description || '');
+      const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '');
       return { status: 'SUCCESS', message: `✅ Jadwal '${summary}' berhasil ditambahkan ke kalender.`, eventId: result.id };
     }
     else if (action === 'UPDATE') {
@@ -34,20 +30,13 @@ async function handleCalendarIntent(extractedData) {
         return { status: 'FAILED', message: 'Tidak bisa memperbarui jadwal karena event tidak ditemukan. Coba sebutkan judul acaranya lebih spesifik.' };
       }
       // Guard: only update time if at least one is provided
-      let finalStart = start;
-      let finalEnd = end;
-
-      if (finalStart && !finalEnd) {
-        const startDate = new Date(finalStart);
-        startDate.setHours(startDate.getHours() + 1);
-        finalEnd = startDate.toISOString();
-      } else if (!finalStart && finalEnd) {
-        const endDate = new Date(finalEnd);
-        endDate.setHours(endDate.getHours() - 1);
-        finalStart = endDate.toISOString();
+      if (start && !end) {
+        return { status: 'FAILED', message: `❌ Tuan merubah jam mulainya. Kira-kira akan selesai jam berapa acaranya?` };
+      } else if (!start && end) {
+        return { status: 'FAILED', message: `❌ Tuan merubah jam selesainya. Kira-kira acaranya dimulai jam berapa?` };
       }
 
-      await googleWorkspace.updateCalendarEvent(targetEventId, summary, finalStart, finalEnd, description || '');
+      await googleWorkspace.updateCalendarEvent(targetEventId, summary, start, end, description || '');
       return { status: 'SUCCESS', message: `✅ Jadwal '${summary}' berhasil diperbarui di kalender.` };
     }
     else if (action === 'DELETE') {
