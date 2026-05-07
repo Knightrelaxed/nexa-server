@@ -1,4 +1,24 @@
 const googleWorkspace = require('../infrastructure/Google_Workspace');
+const env = require('../config/env');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
+
+const pendingAgendas = new Map();
+
+async function sendTelegramOutbound(text) {
+  try {
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
+    const botToken = env.TELEGRAM_BOT_TOKEN.trim();
+    const chatId = env.TELEGRAM_CHAT_ID.trim();
+    const safeText = String(text).substring(0, 4000);
+    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}`;
+    const targetUrl = env.TELEGRAM_PROXY_URL ? `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(telegramUrl)}` : telegramUrl;
+    await execPromise(`curl -sS --ipv4 --connect-timeout 10 --max-time 15 "${targetUrl}"`, { maxBuffer: 1 * 1024 * 1024 });
+  } catch (e) {
+    console.error('[AGENDA] Failed to send outbound telegram:', e.message);
+  }
+}
 
 async function handleCalendarIntent(extractedData) {
   const { action, summary, start, end, eventId, description } = extractedData;
@@ -13,7 +33,36 @@ async function handleCalendarIntent(extractedData) {
         return { status: 'FAILED', message: `❌ Kapan kegiatan '${summary}' ini dilaksanakan, Tuan?` };
       }
       if (!end) {
-        return { status: 'FAILED', message: `❌ Kira-kira berapa lama durasi untuk kegiatan '${summary}' ini, Tuan?` };
+        const pendingId = `${summary}_${start}`;
+        if (!pendingAgendas.has(pendingId)) {
+          const startDate = new Date(start);
+          startDate.setHours(startDate.getHours() + 1);
+          const finalEnd = startDate.toISOString();
+          
+          const timer = setTimeout(async () => {
+            if (pendingAgendas.has(pendingId)) {
+              try {
+                const data = pendingAgendas.get(pendingId);
+                const result = await googleWorkspace.createCalendarEvent(data.summary, data.start, data.end, data.description || '');
+                sendTelegramOutbound(`⏳ Waktu konfirmasi habis! Jadwal '${data.summary}' telah otomatis ditambahkan ke kalender dengan durasi standar (1 jam).`);
+              } catch (e) {
+                console.error('[AGENDA] Auto-create failed:', e);
+              }
+              pendingAgendas.delete(pendingId);
+            }
+          }, 15 * 60 * 1000); // 15 minutes
+
+          pendingAgendas.set(pendingId, { summary, start, end: finalEnd, description, timer });
+        }
+        return { status: 'FAILED', message: `❌ Kira-kira berapa lama durasi untuk kegiatan '${summary}' ini, Tuan?\n\n_(Jika tidak ada jawaban dalam 15 menit, N.E.X.A akan otomatis menambahkannya dengan durasi standar 1 jam)_` };
+      }
+
+      // If we reach here, end is provided. Clear any pending matching agendas!
+      for (const [id, data] of pendingAgendas.entries()) {
+        if (data.summary.toLowerCase() === summary.toLowerCase() || data.start === start) {
+          clearTimeout(data.timer);
+          pendingAgendas.delete(id);
+        }
       }
 
       const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '');

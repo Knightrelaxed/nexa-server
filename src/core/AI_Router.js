@@ -59,6 +59,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Gunakan action "EDIT" jika pengguna meminta mengubah/mengedit transaksi lama (sertakan search_keyword untuk mencari transaksi mana, dan nominal/description baru jika ada).
      //   → Gunakan action "DELETE" jika pengguna meminta menghapus transaksi (sertakan search_keyword).
      // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string (ISO 8601 offset +07:00), end: string (ISO 8601 offset +07:00) }
+     //   → PENTING: JANGAN PERNAH menebak waktu 'end'. Jika Tuan Faqih tidak menyebutkan durasi/waktu selesai, biarkan 'end' KOSONG.
      // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, search_keyword: string }
      //   → Gunakan untuk menyimpan ide, draft, ringkasan, atau catatan kerja yang akan disinkronkan dengan Google Docs.
      // USER_PROFILE: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
