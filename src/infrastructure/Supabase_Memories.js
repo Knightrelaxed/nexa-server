@@ -98,15 +98,22 @@ async function saveIdeaToVault(ideaContent, type = 'IDEA') {
 }
 
 /**
- * Delete idea or personal fact from 2nd Brain Vault by keyword match
+ * Delete idea or personal fact from 2nd Brain Vault by smart matching
  * @param {string} searchKeyword
  */
 async function deleteIdeaFromVault(searchKeyword) {
   if (!supabase || !searchKeyword) return false;
-  const { data, error } = await supabase
+  
+  const { data: rows } = await supabase.from('nexa_2nd_brain').select('id, content');
+  if (!rows || rows.length === 0) return false;
+
+  const targetIds = findMatchingIds(rows, searchKeyword);
+  if (targetIds.length === 0) return false;
+
+  const { error } = await supabase
     .from('nexa_2nd_brain')
     .delete()
-    .ilike('content', `%${searchKeyword}%`);
+    .in('id', targetIds);
 
   if (error) {
     console.error('[SUPABASE] Error deleting idea:', error.message);
@@ -116,22 +123,73 @@ async function deleteIdeaFromVault(searchKeyword) {
 }
 
 /**
- * Edit idea or personal fact in 2nd Brain Vault by keyword match
+ * Edit idea or personal fact in 2nd Brain Vault by smart matching
  * @param {string} searchKeyword
  * @param {string} newContent
  */
 async function editIdeaInVault(searchKeyword, newContent) {
   if (!supabase || !searchKeyword || !newContent) return false;
-  const { data, error } = await supabase
+
+  const { data: rows } = await supabase.from('nexa_2nd_brain').select('id, content');
+  if (!rows || rows.length === 0) return false;
+
+  const targetIds = findMatchingIds(rows, searchKeyword);
+  if (targetIds.length === 0) return false;
+
+  // Edit the first matched row (or all, but usually we just want to edit one)
+  const { error } = await supabase
     .from('nexa_2nd_brain')
     .update({ content: newContent })
-    .ilike('content', `%${searchKeyword}%`);
+    .in('id', targetIds);
 
   if (error) {
     console.error('[SUPABASE] Error editing idea:', error.message);
     return false;
   }
   return true;
+}
+
+/**
+ * Smart matcher for IDs, ranges, or keywords
+ */
+function findMatchingIds(rows, searchKeyword) {
+  const sk = String(searchKeyword).toLowerCase().trim();
+  const targetIds = new Set();
+
+  // 1. Check if it's an exact ID number
+  if (!isNaN(sk)) {
+    targetIds.add(parseInt(sk));
+    return Array.from(targetIds);
+  }
+
+  // 2. Check if it's a range like "10 sampai 16" or "10-16"
+  const rangeMatch = sk.match(/^(\d+)\s*(sampai|-|to)\s*(\d+)$/);
+  if (rangeMatch) {
+    const start = parseInt(rangeMatch[1]);
+    const end = parseInt(rangeMatch[3]);
+    for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
+      targetIds.add(i);
+    }
+    return Array.from(targetIds);
+  }
+  
+  // 3. Fallback: Check if it mentions "id 18" or "nomor 18"
+  const idMatch = sk.match(/(?:id|nomor|no)\s*(\d+)/);
+  if (idMatch) {
+    targetIds.add(parseInt(idMatch[1]));
+    return Array.from(targetIds);
+  }
+
+  // 4. Fallback: Keyword splitting
+  const keywords = sk.split(' ').filter(w => w.length > 2);
+  rows.forEach(r => {
+    const contentLower = (r.content || '').toLowerCase();
+    if (keywords.length > 0 && keywords.every(kw => contentLower.includes(kw))) {
+      targetIds.add(r.id);
+    }
+  });
+
+  return Array.from(targetIds);
 }
 
 /**
