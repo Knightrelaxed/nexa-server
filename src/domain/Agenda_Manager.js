@@ -6,12 +6,23 @@ async function handleCalendarIntent(extractedData) {
 
   try {
     if (action === 'CREATE') {
-      if (!summary || !start || !end) {
-        return { status: 'FAILED', message: 'Data tidak lengkap untuk membuat jadwal. Butuh: judul, waktu mulai, dan waktu selesai.' };
+      if (!summary) {
+        return { status: 'FAILED', message: '❌ Mohon sebutkan nama kegiatannya, Tuan.' };
       }
-      const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '');
-      return { status: 'SUCCESS', message: `Jadwal '${summary}' berhasil ditambahkan ke kalender.`, eventId: result.id };
-    } 
+      if (!start) {
+        return { status: 'FAILED', message: `❌ Kapan kegiatan '${summary}' ini dilaksanakan, Tuan?` };
+      }
+      
+      let finalEnd = end;
+      if (!finalEnd) {
+        const startDate = new Date(start);
+        startDate.setHours(startDate.getHours() + 1);
+        finalEnd = startDate.toISOString();
+      }
+
+      const result = await googleWorkspace.createCalendarEvent(summary, start, finalEnd, description || '');
+      return { status: 'SUCCESS', message: `✅ Jadwal '${summary}' berhasil ditambahkan ke kalender.`, eventId: result.id };
+    }
     else if (action === 'UPDATE') {
       // If we have eventId directly from AI, use it. Otherwise, find the event by title.
       let targetEventId = eventId;
@@ -22,13 +33,22 @@ async function handleCalendarIntent(extractedData) {
       if (!targetEventId) {
         return { status: 'FAILED', message: 'Tidak bisa memperbarui jadwal karena event tidak ditemukan. Coba sebutkan judul acaranya lebih spesifik.' };
       }
-      // Guard: only update time if both start AND end are provided by AI.
-      // Prevents sending undefined to Google API if user only wants to update the title.
-      if (!start || !end) {
-        return { status: 'FAILED', message: 'Untuk memperbarui jadwal, sebutkan juga waktu mulai dan selesai yang baru.' };
+      // Guard: only update time if at least one is provided
+      let finalStart = start;
+      let finalEnd = end;
+
+      if (finalStart && !finalEnd) {
+        const startDate = new Date(finalStart);
+        startDate.setHours(startDate.getHours() + 1);
+        finalEnd = startDate.toISOString();
+      } else if (!finalStart && finalEnd) {
+        const endDate = new Date(finalEnd);
+        endDate.setHours(endDate.getHours() - 1);
+        finalStart = endDate.toISOString();
       }
-      await googleWorkspace.updateCalendarEvent(targetEventId, summary, start, end, description || '');
-      return { status: 'SUCCESS', message: `Jadwal '${summary}' berhasil diperbarui di kalender.` };
+
+      await googleWorkspace.updateCalendarEvent(targetEventId, summary, finalStart, finalEnd, description || '');
+      return { status: 'SUCCESS', message: `✅ Jadwal '${summary}' berhasil diperbarui di kalender.` };
     }
     else if (action === 'DELETE') {
       // Try to find by eventId first, then by title
