@@ -71,7 +71,13 @@ async function parseDurationMinutes(text) {
   if (bareNum && parseInt(bareNum[1]) <= 360) return parseInt(bareNum[1]);
 
   // --- SLOW PATH: Ask AI to extract duration ---
-  // Only hit this if regex all failed (e.g. "dua jam", "kira-kira sejam setengah lah")
+  // Guard: only call AI if the text actually sounds like a duration answer
+  const durationKeywords = /jam|menit|hour|minute|min|½|¼|¾|sejam|setengah|quarter|detik|second/i;
+  if (!durationKeywords.test(t)) {
+    // Text has no duration-like words at all — skip AI entirely
+    return null;
+  }
+
   try {
     const aiRouter = require('../core/AI_Router');
     const prompt = `Ekstrak HANYA jumlah menit dari teks berikut. Jawab HANYA dengan angka bulat, tanpa teks lain. Jika tidak ada durasi, jawab 0.\n\nTeks: "${text}"`;
@@ -101,20 +107,25 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         return { status: 'FAILED', message: `❌ Kapan kegiatan '${summary}' ini dilaksanakan, Tuan?` };
       }
       if (!end) {
+        // Validate start before doing any date math
+        const startDate = new Date(start);
+        if (isNaN(startDate.getTime())) {
+          return { status: 'FAILED', message: `❌ Format waktu untuk kegiatan '${summary}' tidak valid. Mohon sebutkan ulang waktunya, Tuan? (Contoh: "jam 7 malam" atau "19:00")` };
+        }
+
         // Try to extract duration from rawUserText (for follow-up answers like "setengah jam")
-        const durationMins = parseDurationMinutes(rawUserText);
+        const durationMins = await parseDurationMinutes(rawUserText);
         if (durationMins) {
-          const startDate = new Date(start);
           startDate.setMinutes(startDate.getMinutes() + durationMins);
           const computedEnd = startDate.toISOString();
           const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '');
-          return { status: 'SUCCESS', message: `✅ Jadwal '${summary}' berhasil ditambahkan ke kalender (durasi ${durationMins} menit).`, eventId: result.id };
+          return { status: 'SUCCESS', message: `✅ Jadwal '<b>${summary}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).`, eventId: result.id };
         }
 
         // No duration in text → return PENDING_END and schedule auto-create after 15 min
         const pendingId = `${summary}_${start}`;
         if (!pendingAgendas.has(pendingId)) {
-          const autoEnd = new Date(new Date(start).getTime() + 60 * 60 * 1000).toISOString();
+          const autoEnd = new Date(startDate.getTime() + 60 * 60 * 1000).toISOString();
           const timer = setTimeout(async () => {
             if (pendingAgendas.has(pendingId)) {
               try {
