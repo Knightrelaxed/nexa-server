@@ -307,7 +307,19 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
         const searchType = searchData.type || 'search';
         console.log(`[SEARCH] Searching web: "${query}" [type: ${searchType}]`);
         const searchResult = await webSearch.searchWeb(query, searchType);
-        domainReply = (routingData.reply_message ? routingData.reply_message + '\n\n' : '') + searchResult;
+        
+        console.log('[SEARCH] Synthesizing response with AI...');
+        const prompt = `Sebagai N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh, Anda baru saja melakukan penelusuran web untuk menjawab pernyataannya.
+        
+Pernyataan/Pertanyaan Tuan Faqih: "${textInput}"
+
+Hasil Penelusuran Web:
+${searchResult}
+
+Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil penelusuran di atas. Berikan jawaban yang informatif seolah Anda sedang berdiskusi. Jangan sekadar menyalin ulang hasil pencariannya. Berikan kesimpulan atau opini jika relevan.`;
+        
+        const synthesizedReply = await aiRouter.callAI(prompt);
+        domainReply = synthesizedReply;
         break;
       }
 
