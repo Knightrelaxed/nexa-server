@@ -266,25 +266,39 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
             const docContent = await googleWorkspace.readIdeaDoc();
             domainReply = `📖 *Isi Arsip 2nd Brain:*\n\n${docContent.substring(0, 3000)}${docContent.length > 3000 ? '\n\n...(terpotong)' : ''}`;
           } else if (brainAction === 'EDIT') {
-            const success = await googleWorkspace.editIdeaDoc(
-              routingData.extracted_data.search_keyword, 
-              routingData.extracted_data.content
-            );
-            await supabaseMemories.editIdeaInVault(
+            const vaultRes = await supabaseMemories.editIdeaInVault(
               routingData.extracted_data.search_keyword,
               routingData.extracted_data.content
             ).catch(e => console.error('[2ND_BRAIN] Supabase edit error:', e));
+
+            let docsSuccess = false;
+            if (vaultRes && vaultRes.success && vaultRes.editedRows && vaultRes.editedRows.length > 0) {
+              for (const row of vaultRes.editedRows) {
+                docsSuccess = await googleWorkspace.editIdeaDoc(row.content, routingData.extracted_data.content);
+              }
+            } else {
+              // Fallback
+              docsSuccess = await googleWorkspace.editIdeaDoc(routingData.extracted_data.search_keyword, routingData.extracted_data.content);
+            }
             
             invalidatePersonalFactsCache();
-            domainReply = success ? `✅ Arsip berhasil diubah di Docs dan Database.` : `❌ Gagal menemukan/mengubah arsip di Docs.`;
+            domainReply = (vaultRes?.success || docsSuccess) ? `✅ Arsip berhasil diubah di Database (dan sinkronisasi Docs).` : `❌ Gagal menemukan/mengubah arsip.`;
           } else if (brainAction === 'DELETE') {
-            const success = await googleWorkspace.deleteIdeaDoc(routingData.extracted_data.search_keyword);
-            await supabaseMemories.deleteIdeaFromVault(
+            const vaultRes = await supabaseMemories.deleteIdeaFromVault(
               routingData.extracted_data.search_keyword
             ).catch(e => console.error('[2ND_BRAIN] Supabase delete error:', e));
+
+            let docsSuccess = false;
+            if (vaultRes && vaultRes.success && vaultRes.deletedRows && vaultRes.deletedRows.length > 0) {
+              for (const row of vaultRes.deletedRows) {
+                docsSuccess = await googleWorkspace.deleteIdeaDoc(row.content);
+              }
+            } else {
+              docsSuccess = await googleWorkspace.deleteIdeaDoc(routingData.extracted_data.search_keyword);
+            }
             
             invalidatePersonalFactsCache();
-            domainReply = success ? `🗑️ Arsip berhasil dihapus dari Docs dan Database.` : `❌ Gagal menemukan/menghapus arsip di Docs.`;
+            domainReply = (vaultRes?.success || docsSuccess) ? `🗑️ Arsip berhasil dihapus dari Database (dan sinkronisasi Docs).` : `❌ Gagal menemukan/menghapus arsip.`;
           } else if (routingData.extracted_data.content) { // APPEND
             await supabaseMemories.saveIdeaToVault(
               routingData.extracted_data.content,

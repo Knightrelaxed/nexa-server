@@ -102,24 +102,25 @@ async function saveIdeaToVault(ideaContent, type = 'IDEA') {
  * @param {string} searchKeyword
  */
 async function deleteIdeaFromVault(searchKeyword) {
-  if (!supabase || !searchKeyword) return false;
+  if (!supabase || !searchKeyword) return { success: false, deletedRows: [] };
   
   const { data: rows } = await supabase.from('nexa_2nd_brain').select('id, content');
-  if (!rows || rows.length === 0) return false;
+  if (!rows || rows.length === 0) return { success: false, deletedRows: [] };
 
   const targetIds = findMatchingIds(rows, searchKeyword);
-  if (targetIds.length === 0) return false;
+  if (targetIds.length === 0) return { success: false, deletedRows: [] };
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('nexa_2nd_brain')
     .delete()
-    .in('id', targetIds);
+    .in('id', targetIds)
+    .select();
 
   if (error) {
     console.error('[SUPABASE] Error deleting idea:', error.message);
-    return false;
+    return { success: false, deletedRows: [] };
   }
-  return true;
+  return { success: true, deletedRows: data || [] };
 }
 
 /**
@@ -128,25 +129,28 @@ async function deleteIdeaFromVault(searchKeyword) {
  * @param {string} newContent
  */
 async function editIdeaInVault(searchKeyword, newContent) {
-  if (!supabase || !searchKeyword || !newContent) return false;
+  if (!supabase || !searchKeyword || !newContent) return { success: false, editedRows: [] };
 
   const { data: rows } = await supabase.from('nexa_2nd_brain').select('id, content');
-  if (!rows || rows.length === 0) return false;
+  if (!rows || rows.length === 0) return { success: false, editedRows: [] };
 
   const targetIds = findMatchingIds(rows, searchKeyword);
-  if (targetIds.length === 0) return false;
+  if (targetIds.length === 0) return { success: false, editedRows: [] };
+
+  const oldRows = rows.filter(r => targetIds.includes(r.id));
 
   // Edit the first matched row (or all, but usually we just want to edit one)
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('nexa_2nd_brain')
     .update({ content: newContent })
-    .in('id', targetIds);
+    .in('id', targetIds)
+    .select();
 
   if (error) {
     console.error('[SUPABASE] Error editing idea:', error.message);
-    return false;
+    return { success: false, editedRows: [] };
   }
-  return true;
+  return { success: true, editedRows: oldRows }; // Return the old rows so Docs can find and replace the OLD text
 }
 
 /**
