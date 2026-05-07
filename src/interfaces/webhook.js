@@ -13,6 +13,8 @@ const voiceEngine = require('../core/Voice_Engine');
 const visionEngine = require('../core/Vision_Engine');
 const spreadsheetManager = require('../domain/Spreadsheet_Manager');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
+const taskManager = require('../domain/Task_Manager');
+const webSearch = require('../infrastructure/Web_Search');
 
 // Pending Calendar Context: holds an incomplete calendar CREATE until user provides missing info
 // Structure: { summary, start, askedAt }
@@ -291,6 +293,24 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
           }
         }
         break;
+
+      case 'TASK':
+        if (routingData.extracted_data) {
+          const taskResult = await taskManager.handleTaskIntent(routingData.extracted_data);
+          if (taskResult && taskResult.message) domainReply = taskResult.message;
+        }
+        break;
+
+      case 'WEB_SEARCH': {
+        const searchData = routingData.extracted_data || {};
+        const query = searchData.query || textInput;
+        const searchType = searchData.type || 'search';
+        console.log(`[SEARCH] Searching web: "${query}" [type: ${searchType}]`);
+        const searchResult = await webSearch.searchWeb(query, searchType);
+        domainReply = (routingData.reply_message ? routingData.reply_message + '\n\n' : '') + searchResult;
+        break;
+      }
+
 
       case '2ND_BRAIN':
         if (routingData.extracted_data) {
