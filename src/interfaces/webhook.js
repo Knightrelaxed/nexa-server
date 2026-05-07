@@ -319,7 +319,8 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
             if (emails.length === 0) {
               domainReply = "Kotak masuk kosong atau tidak ada email yang cocok dengan pencarian.";
             } else {
-              domainReply = "📧 *Email Terbaru Anda:*\n\n" + emails.map(e => `[${e.date}] Dari: ${e.from}\nSubjek: ${e.subject}\nSnippet: ${e.snippet}\n`).join('\n---\n');
+              const escapeHTML = (str) => (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              domainReply = "📧 <b>Email Terbaru Anda:</b>\n\n" + emails.map(e => `[${escapeHTML(e.date)}]\n<b>Dari:</b> ${escapeHTML(e.from)}\n<b>Subjek:</b> ${escapeHTML(e.subject)}\n<b>Snippet:</b> <i>${escapeHTML(e.snippet)}</i>\n`).join('\n---\n');
             }
           } else if (action === 'SEND') {
             const success = await gmailClient.sendEmail(
