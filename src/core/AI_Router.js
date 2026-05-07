@@ -168,14 +168,29 @@ Tentukan intent dan ekstrak data!
 }
 
 /**
- * Lightweight one-shot AI call for simple extraction tasks (e.g. duration parsing).
- * Does NOT use the full routing system or save chat memory.
- * @param {string} prompt - The raw prompt to send to the AI
- * @returns {Promise<string>} - The raw text response from the AI
+ * Lightweight one-shot AI call for synthesis and extraction tasks.
+ * Uses a plain-text system prompt — NOT the JSON router system prompt.
+ * Safe for use in: duration parsing, web search synthesis, etc.
+ * @param {string} prompt - The user/task prompt
+ * @returns {Promise<string>} - Plain text response from AI
  */
+const PLAIN_TEXT_SYSTEM_PROMPT = `Anda adalah N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh. 
+Jawab dengan bahasa Indonesia yang natural, cerdas, dan luwes.
+Balas HANYA dengan teks biasa. JANGAN gunakan format JSON. JANGAN gunakan markdown **bold** atau *italic*.
+Berikan jawaban yang informatif dan ringkas.`;
+
 async function callAI(prompt) {
-  const result = await executeWithFallback(prompt);
-  return String(result).trim();
+  const result = await executeWithFallback(prompt, PLAIN_TEXT_SYSTEM_PROMPT, 0.5);
+  // Strip any accidental JSON wrapping that might still appear
+  let text = String(result).trim();
+  // If the model wrapped its answer in JSON anyway, extract the value
+  try {
+    const parsed = JSON.parse(text);
+    // Grab the first string value found in the object
+    const firstVal = Object.values(parsed).find(v => typeof v === 'string');
+    if (firstVal) text = firstVal;
+  } catch (_) { /* Not JSON, already plain text — good */ }
+  return text;
 }
 
 module.exports = { routeUserMessage, invalidatePersonalFactsCache, callAI };
