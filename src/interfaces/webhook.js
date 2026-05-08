@@ -164,6 +164,38 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       if (!normalized) return false;
       return /^(pada\s+)?(tgl|tanggal)\s*\d{1,2}\??$/.test(normalized);
     };
+    const isFinanceImportFromLivinCommand = (text) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      if (!normalized) return false;
+      return /(ambil|masukkan|catat|sinkron|import).*(email|livin)|dari email livin/.test(normalized);
+    };
+    const extractLivinTransactionsFromEmails = (emails) => {
+      const rows = [];
+      for (const e of emails || []) {
+        const blob = `${e.subject || ''}\n${e.snippet || ''}`;
+        const nominalMatch = blob.match(/(?:nominal transaksi|nominal|rp)\s*rp?\s*([0-9\.\,]+)/i);
+        if (!nominalMatch) continue;
+        const rawNominal = nominalMatch[1];
+        const nominal = parseFloat(rawNominal.replace(/\./g, '').replace(',', '.'));
+        if (isNaN(nominal) || nominal <= 0) continue;
+
+        let destination = 'Livin Transaction';
+        const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
+        if (merchantMatch?.[1]) {
+          destination = merchantMatch[1].trim().substring(0, 80);
+        }
+        const dateIso = new Date(e.date).toISOString();
+        rows.push({
+          nominal,
+          type: 'EXPENSE',
+          destination,
+          category: 'Livin Email',
+          description: (e.subject || 'Transaksi dari email Livin').substring(0, 100),
+          time: dateIso
+        });
+      }
+      return rows;
+    };
     const filterEmailsByTemporalHint = (emails, temporalHint) => {
       if (!temporalHint || !emails || emails.length === 0) return emails || [];
 
@@ -310,7 +342,11 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             return '❓ Transaksi mana yang ingin diubah/dihapus, Tuan? Sebutkan kata kunci unik, nominal, atau nomor transaksi.';
           }
         }
-        if ((data.action === 'RECORD' || data.nominal !== undefined) && (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0)) {
+        if (
+          !isFinanceImportFromLivinCommand(lowerText) &&
+          (data.action === 'RECORD' || data.nominal !== undefined) &&
+          (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0)
+        ) {
           return '❓ Nominal transaksi belum valid. Mohon sebutkan angka positifnya, Tuan.';
         }
       }
@@ -621,7 +657,35 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       domainReply = clarificationMessage;
     } else switch (routingData.intent) {
       case 'FINANCE':
-        if (routingData.extracted_data && routingData.extracted_data.action === 'READ_LATEST') {
+        if (isFinanceImportFromLivinCommand(textInput)) {
+          const gmailClient = require('../infrastructure/Gmail_Client');
+          const candidateEmails = pendingEmailContext?.lastBatch?.length
+            ? pendingEmailContext.lastBatch
+            : await gmailClient.getLatestEmails('livin OR from:noreply.livin@bankmandiri.co.id', 30);
+          const temporalHint = getEmailTemporalFilterFromText(textInput);
+          const dayHint = parseDayOfMonthHint(textInput);
+          let scopedEmails = filterEmailsByTemporalHint(candidateEmails, temporalHint);
+          if (dayHint) scopedEmails = filterEmailsByDayOfMonth(scopedEmails, dayHint);
+          const txRows = extractLivinTransactionsFromEmails(scopedEmails);
+
+          if (txRows.length === 0) {
+            domainReply = '📭 Data transaksi Livin tidak ditemukan di email yang dianalisis. Coba sebutkan rentang waktu yang lebih jelas, Tuan.';
+            break;
+          }
+
+          let success = 0;
+          let duplicate = 0;
+          for (const tx of txRows.slice(0, 20)) {
+            try {
+              const result = await financeEngine.processTransaction(tx, 'GMAIL_POLLING');
+              if (result?.status === 'DUPLICATE') duplicate += 1;
+              else success += 1;
+            } catch (_) {
+              // Skip failed row and continue
+            }
+          }
+          domainReply = `✅ Sinkronisasi Livin selesai.\n- Berhasil dicatat: <b>${success}</b>\n- Duplikasi diabaikan: <b>${duplicate}</b>\n- Sumber dianalisis: <b>${txRows.length}</b> transaksi email`;
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'READ_LATEST') {
           const recentData = await financeEngine.getRecentTransactions(5);
           domainReply = (routingData.reply_message ? routingData.reply_message + '\n\n' : '') + recentData;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'READ_ANALYTICS') {
