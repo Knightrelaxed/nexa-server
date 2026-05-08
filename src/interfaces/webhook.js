@@ -131,6 +131,45 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       }
       return fallback;
     };
+    const getJakartaDateOnly = (date) => {
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return null;
+      const jakarta = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+      return `${jakarta.getFullYear()}-${String(jakarta.getMonth() + 1).padStart(2, '0')}-${String(jakarta.getDate()).padStart(2, '0')}`;
+    };
+    const getEmailTemporalFilterFromText = (text) => {
+      const normalized = String(text || '').toLowerCase();
+      if (!normalized) return null;
+      if (/hari ini|today/.test(normalized)) return { type: 'today' };
+      if (/kemarin|yesterday/.test(normalized)) return { type: 'yesterday' };
+      if (/minggu lalu|last week/.test(normalized)) return { type: 'last_week' };
+      return null;
+    };
+    const filterEmailsByTemporalHint = (emails, temporalHint) => {
+      if (!temporalHint || !emails || emails.length === 0) return emails || [];
+
+      const nowJakarta = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+      const todayKey = `${nowJakarta.getFullYear()}-${String(nowJakarta.getMonth() + 1).padStart(2, '0')}-${String(nowJakarta.getDate()).padStart(2, '0')}`;
+      const yesterdayDate = new Date(nowJakarta);
+      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+      const yesterdayKey = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth() + 1).padStart(2, '0')}-${String(yesterdayDate.getDate()).padStart(2, '0')}`;
+      const weekAgoDate = new Date(nowJakarta);
+      weekAgoDate.setDate(weekAgoDate.getDate() - 7);
+
+      if (temporalHint.type === 'today') {
+        return emails.filter((e) => getJakartaDateOnly(e.date) === todayKey);
+      }
+      if (temporalHint.type === 'yesterday') {
+        return emails.filter((e) => getJakartaDateOnly(e.date) === yesterdayKey);
+      }
+      if (temporalHint.type === 'last_week') {
+        return emails.filter((e) => {
+          const d = new Date(e.date);
+          return !isNaN(d.getTime()) && d >= weekAgoDate && d <= nowJakarta;
+        });
+      }
+      return emails;
+    };
 
     const isStopEmailFollowUp = (text) => {
       const normalized = String(text || '').toLowerCase().trim();
@@ -754,6 +793,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             const maxResults = (!isNaN(requestedLimit) && requestedLimit > 0)
               ? Math.min(requestedLimit, 10)
               : getEmailReadLimitFromText(textInput, 5);
+            const temporalHint = getEmailTemporalFilterFromText(textInput);
 
             const followUpPrevious = Boolean(routingData.extracted_data.before_current);
             const searchKeyword = routingData.extracted_data.search_keyword || '';
@@ -770,11 +810,20 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
                 emails = [];
               }
             } else {
-              emails = await gmailClient.getLatestEmails(searchKeyword, maxResults);
+              // Pull a wider batch first so temporal filters (e.g. "kemarin") can work reliably.
+              const candidateEmails = await gmailClient.getLatestEmails(searchKeyword, Math.max(maxResults, 20));
+              const filteredEmails = filterEmailsByTemporalHint(candidateEmails, temporalHint);
+              emails = filteredEmails.slice(0, maxResults);
             }
 
             if (emails.length === 0) {
-              domainReply = "Kotak masuk kosong atau tidak ada email yang cocok dengan pencarian.";
+              if (temporalHint?.type === 'yesterday') {
+                domainReply = '📭 Tidak ada email yang cocok untuk <b>hari kemarin</b>.';
+              } else if (temporalHint?.type === 'today') {
+                domainReply = '📭 Tidak ada email yang cocok untuk <b>hari ini</b>.';
+              } else {
+                domainReply = "Kotak masuk kosong atau tidak ada email yang cocok dengan pencarian.";
+              }
             } else {
               const escapeHTML = (str) => (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               domainReply = `📧 <b>Email Terbaru Anda (${emails.length}):</b>\n\n` + emails.map(e => `[${escapeHTML(e.date)}]\n<b>Dari:</b> ${escapeHTML(e.from)}\n<b>Subjek:</b> ${escapeHTML(e.subject)}\n<b>Snippet:</b> <i>${escapeHTML(e.snippet)}</i>\n`).join('\n---\n');
