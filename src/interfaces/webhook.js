@@ -296,6 +296,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
         const { tmpFilePath } = await downloadTelegramFileToTemp(fileId, '');
         let ocrText = '';
+        let ocrErrorMessage = '';
         try {
           const uploaded = await googleWorkspace.uploadFileToVault({
             filePath: tmpFilePath,
@@ -313,6 +314,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
                 folderId: env.GOOGLE_VAULT_FOLDER_ID
               });
             } catch (e) {
+              ocrErrorMessage = String(e?.message || 'OCR tidak tersedia.');
               console.warn('[VAULT] OCR failed:', e.message);
             }
           }
@@ -323,7 +325,10 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               ? 'DOKUMEN'
               : 'ARSIP';
 
-          const draftMeta = buildVaultDraftMetadata({ ocrText, fileName: uploaded.name || fileName });
+          const draftMeta = {
+            ...buildVaultDraftMetadata({ ocrText, fileName: uploaded.name || fileName }),
+            source: ocrText && ocrText.trim().length > 0 ? 'OCR' : 'OCR_FALLBACK'
+          };
           const saved = await supabaseMemories.saveVaultItem({
             drive_file_id: uploaded.id,
             drive_web_view_link: uploaded.webViewLink,
@@ -358,11 +363,14 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           const ocrHint = ocrText && ocrText.trim().length > 0
             ? `\n\n<b>OCR (ringkas):</b>\n<code>${escapeHtml(ocrText.substring(0, 500))}${ocrText.length > 500 ? '…' : ''}</code>`
             : '';
+          const ocrWarning = (!ocrText || !ocrText.trim()) && ocrErrorMessage
+            ? `\n\n⚠️ <b>OCR gagal:</b> <code>${escapeHtml(ocrErrorMessage)}</code>\nSilakan lanjutkan dengan <b>EDIT ...</b> atau <b>VISION</b> agar metadata lebih akurat.`
+            : '';
 
           await respondToTelegram(
             `✅ Tersimpan di Vault Drive (DRAFT).\n<b>Nama:</b> ${escapeHtml(fileName)}\n<b>Kategori (tebakan):</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}\n\n` +
-            `<b>Draft metadata:</b>\n<code>${escapeHtml(JSON.stringify(buildVaultDraftMetadata({ ocrText, fileName: uploaded.name || fileName }), null, 2).substring(0, 1200))}</code>\n\n` +
-            `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EDIT key=value; key2=value</b>\n- <b>VISION</b> (lebih akurat, tapi lebih berat)\n- <b>SKIP</b>${ocrHint}`
+            `<b>Draft metadata:</b>\n<code>${escapeHtml(JSON.stringify(draftMeta, null, 2).substring(0, 1200))}</code>\n\n` +
+            `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EDIT key=value; key2=value</b>\n- <b>VISION</b> (lebih akurat, tapi lebih berat)\n- <b>SKIP</b>${ocrHint}${ocrWarning}`
           );
         } finally {
           try { if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath); } catch (_) {}
