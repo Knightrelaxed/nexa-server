@@ -46,7 +46,11 @@ function parseVaultEditCommand(text) {
   const pairs = body.split(';').map(s => s.trim()).filter(Boolean);
   const out = {};
   for (const p of pairs) {
-    const idx = p.indexOf('=');
+    const idxEq = p.indexOf('=');
+    const idxColon = p.indexOf(':');
+    let idx = -1;
+    if (idxEq >= 0 && idxColon >= 0) idx = Math.min(idxEq, idxColon);
+    else idx = idxEq >= 0 ? idxEq : idxColon;
     if (idx === -1) continue;
     const key = p.slice(0, idx).trim().toLowerCase();
     const value = p.slice(idx + 1).trim();
@@ -54,6 +58,33 @@ function parseVaultEditCommand(text) {
     out[key] = value;
   }
   return out;
+}
+
+function formatVaultMetadata(meta = {}) {
+  const m = meta && typeof meta === 'object' ? meta : {};
+  const displayOrder = [
+    ['judul', 'Judul'],
+    ['nama', 'Nama'],
+    ['nik', 'NIK'],
+    ['nomor', 'Nomor'],
+    ['tanggal', 'Tanggal'],
+    ['instansi', 'Instansi'],
+    ['alamat', 'Alamat'],
+    ['catatan', 'Catatan'],
+    ['source', 'Sumber Ekstraksi']
+  ];
+
+  const lines = [];
+  for (const [key, label] of displayOrder) {
+    const v = m[key];
+    if (v === undefined || v === null || String(v).trim() === '') continue;
+    lines.push(`- ${label}: ${String(v).trim()}`);
+  }
+
+  if (!lines.length) {
+    return '- Belum ada metadata detail.';
+  }
+  return lines.join('\n');
 }
 
 function buildVaultDraftMetadata({ ocrText, fileName }) {
@@ -254,8 +285,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
             await respondToTelegram(
               `🧠 VISION selesai, Tuan. Ini draft baru:\n` +
-              `<code>${escapeHtml(JSON.stringify(pendingVaultContext.metadata, null, 2).substring(0, 1500))}</code>\n\n` +
-              `Balas: <b>KONFIRM</b> / <b>EDIT key=value; ...</b> / <b>SKIP</b>`
+              `${escapeHtml(formatVaultMetadata(pendingVaultContext.metadata))}\n\n` +
+              `Balas: <b>KONFIRM</b> / <b>EDIT nama: ...; nik: ...</b> / <b>SKIP</b>`
             );
             clearTimeout(safetyTimer);
             return;
@@ -272,8 +303,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           if (edits.category) pendingVaultContext.category = String(edits.category).toUpperCase();
           pendingVaultContext.askedAt = Date.now();
           await respondToTelegram(
-            `✅ Dicatat, Tuan. Draft metadata sekarang:\n<code>${escapeHtml(JSON.stringify(pendingVaultContext.metadata, null, 2).substring(0, 1500))}</code>\n\n` +
-            `Balas: <b>KONFIRM</b> / <b>VISION</b> / <b>EDIT ...</b> / <b>SKIP</b>`
+            `✅ Dicatat, Tuan. Draft metadata sekarang:\n${escapeHtml(formatVaultMetadata(pendingVaultContext.metadata))}\n\n` +
+            `Balas: <b>KONFIRM</b> / <b>VISION</b> / <b>EDIT nama: ...; nik: ...</b> / <b>SKIP</b>`
           );
           clearTimeout(safetyTimer);
           return;
@@ -297,6 +328,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         const { tmpFilePath } = await downloadTelegramFileToTemp(fileId, '');
         let ocrText = '';
         let ocrErrorMessage = '';
+        let visionFallbackUsed = false;
         try {
           const uploaded = await googleWorkspace.uploadFileToVault({
             filePath: tmpFilePath,
@@ -325,10 +357,34 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               ? 'DOKUMEN'
               : 'ARSIP';
 
-          const draftMeta = {
+          let draftMeta = {
             ...buildVaultDraftMetadata({ ocrText, fileName: uploaded.name || fileName }),
             source: ocrText && ocrText.trim().length > 0 ? 'OCR' : 'OCR_FALLBACK'
           };
+          if ((!ocrText || !ocrText.trim()) && /^image\//i.test(mimeType) && fileId) {
+            try {
+              const visionText = await visionEngine.processTelegramImage(
+                fileId,
+                'Baca teks dokumen ini seteliti mungkin seperti OCR lalu rangkum data identitas penting.'
+              );
+              const extractionPrompt =
+                `Ekstrak field penting dari deskripsi dokumen berikut menjadi JSON ringkas. ` +
+                `Kunci: nama, nik, nomor, tanggal, instansi, alamat, catatan. ` +
+                `Jika field tidak ada, jangan isi. Balas HANYA JSON object.\n\n` +
+                `Teks:\n${visionText}`;
+              const jsonText = await aiRouter.callAI(extractionPrompt);
+              let parsed = null;
+              try { parsed = JSON.parse(jsonText); } catch (_) {}
+              if (parsed && typeof parsed === 'object') {
+                draftMeta = { ...draftMeta, ...parsed, source: 'VISION_AUTO_FALLBACK' };
+              } else {
+                draftMeta = { ...draftMeta, catatan: String(visionText || '').substring(0, 280), source: 'VISION_AUTO_FALLBACK' };
+              }
+              visionFallbackUsed = true;
+            } catch (e) {
+              console.warn('[VAULT] Vision fallback after OCR failure failed:', e.message);
+            }
+          }
           const saved = await supabaseMemories.saveVaultItem({
             drive_file_id: uploaded.id,
             drive_web_view_link: uploaded.webViewLink,
@@ -366,11 +422,14 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           const ocrWarning = (!ocrText || !ocrText.trim()) && ocrErrorMessage
             ? `\n\n⚠️ <b>OCR gagal:</b> <code>${escapeHtml(ocrErrorMessage)}</code>\nSilakan lanjutkan dengan <b>EDIT ...</b> atau <b>VISION</b> agar metadata lebih akurat.`
             : '';
+          const visionAutoHint = visionFallbackUsed
+            ? `\n\n🧠 <b>Auto Vision aktif:</b> Saya sudah bantu isi metadata awal dari pembacaan gambar.`
+            : '';
 
           await respondToTelegram(
             `✅ Tersimpan di Vault Drive (DRAFT).\n<b>Nama:</b> ${escapeHtml(fileName)}\n<b>Kategori (tebakan):</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}\n\n` +
-            `<b>Draft metadata:</b>\n<code>${escapeHtml(JSON.stringify(draftMeta, null, 2).substring(0, 1200))}</code>\n\n` +
-            `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EDIT key=value; key2=value</b>\n- <b>VISION</b> (lebih akurat, tapi lebih berat)\n- <b>SKIP</b>${ocrHint}${ocrWarning}`
+            `<b>Draft metadata:</b>\n${escapeHtml(formatVaultMetadata(draftMeta))}\n\n` +
+            `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EDIT nama: ...; nik: ...</b>\n- <b>VISION</b> (lebih akurat, tapi lebih berat)\n- <b>SKIP</b>${ocrHint}${ocrWarning}${visionAutoHint}`
           );
         } finally {
           try { if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath); } catch (_) {}
