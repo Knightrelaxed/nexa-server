@@ -2,6 +2,9 @@ const { executeWithFallback } = require('./Fallback_Engine');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 const { NEXA_PERSONALITY } = require('../config/personality');
 
+const CONTEXT_EXCHANGES = 10;
+const CONTEXT_MESSAGES_LIMIT = CONTEXT_EXCHANGES * 2; // 10 exchange = 20 messages (user+nexa)
+
 // ============================================================
 // PERSONAL FACTS CACHE (Module-level — lives as long as server runs)
 // Zero overhead after first fetch. Invalidated when new PERSONAL_FACT is saved.
@@ -113,8 +116,8 @@ async function routeUserMessage(textInput) {
   // 1. Load personal facts (from cache — zero overhead after first call)
   const personalFacts = await loadPersonalFactsWithCache();
 
-  // 2. Contextual Retrieval (last 10 chat exchanges)
-  const memories = await supabaseMemories.getRecentMemories(10);
+  // 2. Contextual Retrieval (last 10 chat exchanges = 20 messages)
+  const memories = await supabaseMemories.getRecentMemories(CONTEXT_MESSAGES_LIMIT);
   const contextStr = memories.length > 0
     ? memories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n')
     : '[Tidak ada riwayat obrolan sebelumnya]';
