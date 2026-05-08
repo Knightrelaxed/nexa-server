@@ -3,6 +3,37 @@ const env = require('../config/env');
 
 let gmailClient = null;
 
+function decodeBase64Url(data = '') {
+  if (!data) return '';
+  try {
+    const normalized = String(data).replace(/-/g, '+').replace(/_/g, '/');
+    return Buffer.from(normalized, 'base64').toString('utf8');
+  } catch (_) {
+    return '';
+  }
+}
+
+function extractTextParts(payload) {
+  if (!payload) return '';
+
+  const mimeType = String(payload.mimeType || '').toLowerCase();
+  if (payload.body?.data && (mimeType.startsWith('text/plain') || mimeType.startsWith('text/html'))) {
+    const raw = decodeBase64Url(payload.body.data);
+    if (mimeType.startsWith('text/html')) {
+      return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    return raw.replace(/\s+/g, ' ').trim();
+  }
+
+  const parts = Array.isArray(payload.parts) ? payload.parts : [];
+  for (const part of parts) {
+    const found = extractTextParts(part);
+    if (found) return found;
+  }
+
+  return '';
+}
+
 function getGmailClient() {
   if (gmailClient) return gmailClient;
 
@@ -60,15 +91,17 @@ async function getLatestEmails(query = '', maxResults = 5) {
       const from = headers.find(h => h.name.toLowerCase() === 'from')?.value || 'Unknown';
       const date = headers.find(h => h.name.toLowerCase() === 'date')?.value || '';
 
-      // Extract body snippet
+      // Extract short snippet + full body text (if available)
       const snippet = msgData.data.snippet;
+      const body = extractTextParts(payload);
 
       emails.push({
         id: msg.id,
         from,
         subject,
         date,
-        snippet
+        snippet,
+        body
       });
     }
 

@@ -169,15 +169,19 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       if (!normalized) return false;
       return /(ambil|masukkan|catat|sinkron|import).*(email|livin)|dari email livin/.test(normalized);
     };
+    const extractNominalFromEmail = (email) => {
+      const blob = `${email?.subject || ''}\n${email?.body || ''}\n${email?.snippet || ''}`;
+      const nominalMatch = blob.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp?\s*([0-9][0-9\.\,]+)/i);
+      if (!nominalMatch) return null;
+      const nominal = parseFloat(String(nominalMatch[1]).replace(/\./g, '').replace(',', '.'));
+      return isNaN(nominal) || nominal <= 0 ? null : nominal;
+    };
     const extractLivinTransactionsFromEmails = (emails) => {
       const rows = [];
       for (const e of emails || []) {
-        const blob = `${e.subject || ''}\n${e.snippet || ''}`;
-        const nominalMatch = blob.match(/(?:nominal transaksi|nominal|rp)\s*rp?\s*([0-9\.\,]+)/i);
-        if (!nominalMatch) continue;
-        const rawNominal = nominalMatch[1];
-        const nominal = parseFloat(rawNominal.replace(/\./g, '').replace(',', '.'));
-        if (isNaN(nominal) || nominal <= 0) continue;
+        const blob = `${e.subject || ''}\n${e.body || ''}\n${e.snippet || ''}`;
+        const nominal = extractNominalFromEmail(e);
+        if (!nominal) continue;
 
         let destination = 'Livin Transaction';
         const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
@@ -965,7 +969,13 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               }
             } else {
               const escapeHTML = (str) => (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              domainReply = `📧 <b>Email Terbaru Anda (${emails.length}):</b>\n\n` + emails.map(e => `[${escapeHTML(e.date)}]\n<b>Dari:</b> ${escapeHTML(e.from)}\n<b>Subjek:</b> ${escapeHTML(e.subject)}\n<b>Snippet:</b> <i>${escapeHTML(e.snippet)}</i>\n`).join('\n---\n');
+              domainReply = `📧 <b>Email Terbaru Anda (${emails.length}):</b>\n\n` + emails.map(e => {
+                const parsedNominal = extractNominalFromEmail(e);
+                const nominalLine = parsedNominal
+                  ? `\n<b>Nominal:</b> Rp${parsedNominal.toLocaleString('id-ID')}`
+                  : '';
+                return `[${escapeHTML(e.date)}]\n<b>Dari:</b> ${escapeHTML(e.from)}\n<b>Subjek:</b> ${escapeHTML(e.subject)}${nominalLine}\n<b>Snippet:</b> <i>${escapeHTML(e.snippet)}</i>\n`;
+              }).join('\n---\n');
               pendingEmailContext = {
                 searchKeyword,
                 lastLimit: maxResults,
