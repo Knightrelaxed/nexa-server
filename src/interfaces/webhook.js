@@ -66,6 +66,7 @@ function formatVaultMetadata(meta = {}) {
     ['judul', 'Judul'],
     ['nama', 'Nama'],
     ['nik', 'NIK'],
+    ['nomor_kartu', 'Nomor Kartu'],
     ['nomor', 'Nomor'],
     ['tanggal', 'Tanggal'],
     ['instansi', 'Instansi'],
@@ -85,6 +86,38 @@ function formatVaultMetadata(meta = {}) {
     return '- Belum ada metadata detail.';
   }
   return lines.join('\n');
+}
+
+function extractVaultMetadataFromNarrative(text, fileName = '') {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  const out = {};
+  if (fileName) out.judul = fileName;
+  if (!t) return out;
+
+  const nikMatch = t.match(/\b\d{16}\b/);
+  if (nikMatch) out.nik = nikMatch[0];
+
+  const nomorKartuMatch = t.match(/nomor\s*kartu\s*[:\-]?\s*(\d{10,25})/i);
+  if (nomorKartuMatch?.[1]) out.nomor_kartu = nomorKartuMatch[1];
+
+  const nomorMatch = t.match(/(?:nomor|no)\s*(?:identitas|id|kartu)?\s*[:\-]?\s*(\d{8,25})/i);
+  if (nomorMatch?.[1]) out.nomor = nomorMatch[1];
+
+  const namaMatch =
+    t.match(/atas\s+nama\s*[:\-]?\s*([A-Z][A-Z\s'.-]{2,80})/i) ||
+    t.match(/nama\s*[:\-]?\s*([A-Z][A-Z\s'.-]{2,80})/i);
+  if (namaMatch?.[1]) out.nama = namaMatch[1].trim().replace(/\s+/g, ' ').substring(0, 90);
+
+  const tanggalMatch = t.match(/\b(\d{1,2})\s*(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\s*(\d{4})\b/i);
+  if (tanggalMatch) out.tanggal = `${tanggalMatch[1]} ${tanggalMatch[2]} ${tanggalMatch[3]}`;
+
+  const alamatMatch = t.match(/alamat\s*[:\-]?\s*([^:]{5,120})/i);
+  if (alamatMatch?.[1]) out.alamat = alamatMatch[1].trim().replace(/\s+/g, ' ').substring(0, 120);
+
+  if (/kartu indonesia sehat|kis|bpjs/i.test(t)) out.instansi = 'BPJS Kesehatan';
+  if (!out.catatan) out.catatan = t.substring(0, 900);
+
+  return out;
 }
 
 function buildVaultDraftMetadata({ ocrText, fileName }) {
@@ -276,10 +309,21 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             const jsonText = await aiRouter.callAI(prompt);
             let parsed = null;
             try { parsed = JSON.parse(jsonText); } catch (_) {}
+            const heuristic = extractVaultMetadataFromNarrative(visionText, pendingVaultContext.fileName);
             if (parsed && typeof parsed === 'object') {
-              pendingVaultContext.metadata = { ...(pendingVaultContext.metadata || {}), ...parsed, source: 'VISION' };
+              pendingVaultContext.metadata = {
+                ...(pendingVaultContext.metadata || {}),
+                ...heuristic,
+                ...parsed,
+                source: 'VISION'
+              };
             } else {
-              pendingVaultContext.metadata = { ...(pendingVaultContext.metadata || {}), vision_raw: visionText.substring(0, 2000), source: 'VISION' };
+              pendingVaultContext.metadata = {
+                ...(pendingVaultContext.metadata || {}),
+                ...heuristic,
+                vision_raw: visionText.substring(0, 3500),
+                source: 'VISION'
+              };
             }
             pendingVaultContext.askedAt = Date.now();
 
@@ -376,9 +420,19 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               let parsed = null;
               try { parsed = JSON.parse(jsonText); } catch (_) {}
               if (parsed && typeof parsed === 'object') {
-                draftMeta = { ...draftMeta, ...parsed, source: 'VISION_AUTO_FALLBACK' };
+                draftMeta = {
+                  ...draftMeta,
+                  ...extractVaultMetadataFromNarrative(visionText, uploaded.name || fileName),
+                  ...parsed,
+                  source: 'VISION_AUTO_FALLBACK'
+                };
               } else {
-                draftMeta = { ...draftMeta, catatan: String(visionText || '').substring(0, 280), source: 'VISION_AUTO_FALLBACK' };
+                draftMeta = {
+                  ...draftMeta,
+                  ...extractVaultMetadataFromNarrative(visionText, uploaded.name || fileName),
+                  vision_raw: String(visionText || '').substring(0, 3500),
+                  source: 'VISION_AUTO_FALLBACK'
+                };
               }
               visionFallbackUsed = true;
             } catch (e) {
