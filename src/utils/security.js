@@ -14,12 +14,17 @@ function safeEqual(a, b) {
  * Note: Telegram webhooks don't send headers easily, so we check the body.
  */
 function telegramIdentityLock(req, res, next) {
-  // Telegram update structure: req.body.message.chat.id
-  const chat = req.body?.message?.chat || req.body?.callback_query?.message?.chat;
+  // Telegram update structures may be: message, edited_message, channel_post, callback_query, etc.
+  const chat =
+    req.body?.message?.chat ||
+    req.body?.edited_message?.chat ||
+    req.body?.channel_post?.chat ||
+    req.body?.edited_channel_post?.chat ||
+    req.body?.callback_query?.message?.chat;
   
   if (!chat || !chat.id) {
-    // Drop silent if invalid structure
-    return res.status(400).send('Bad Request');
+    // Non-message updates are valid from Telegram; acknowledge to avoid retries/spam.
+    return res.status(200).send('OK');
   }
 
   // Convert both to string for safe comparison

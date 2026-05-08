@@ -159,6 +159,11 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       if (!normalized) return false;
       return /(apakah|berapa|hanya|cuma|total|jumlah).*(kali|transaksi|email)|transaksi.*(tgl|tanggal)/.test(normalized);
     };
+    const isEmailDateOnlyQuestion = (text) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      if (!normalized) return false;
+      return /^(pada\s+)?(tgl|tanggal)\s*\d{1,2}\??$/.test(normalized);
+    };
     const filterEmailsByTemporalHint = (emails, temporalHint) => {
       if (!temporalHint || !emails || emails.length === 0) return emails || [];
 
@@ -810,11 +815,21 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               domainReply = '✅ Siap, saya hentikan pembacaan email dulu. Kalau perlu lanjut, tinggal bilang.';
               break;
             }
-            if (isEmailAnalyticsQuestion(textInput) && pendingEmailContext?.lastBatch?.length) {
-              const dayHint = parseDayOfMonthHint(textInput);
+
+            const dayHint = parseDayOfMonthHint(textInput);
+            const shouldRunEmailAnalytics =
+              isEmailAnalyticsQuestion(textInput) ||
+              isEmailDateOnlyQuestion(textInput) ||
+              (dayHint && Boolean(pendingEmailContext?.lastBatch?.length));
+
+            if (shouldRunEmailAnalytics) {
+              const searchKeywordForAnalytics = routingData.extracted_data.search_keyword || pendingEmailContext?.searchKeyword || 'livin';
+              const sourceBatch = pendingEmailContext?.lastBatch?.length
+                ? pendingEmailContext.lastBatch
+                : await gmailClient.getLatestEmails(searchKeywordForAnalytics, 50);
               const scoped = dayHint
-                ? filterEmailsByDayOfMonth(pendingEmailContext.lastBatch, dayHint)
-                : pendingEmailContext.lastBatch;
+                ? filterEmailsByDayOfMonth(sourceBatch, dayHint)
+                : sourceBatch;
               const total = scoped.length;
               if (dayHint) {
                 domainReply = total <= 0
@@ -823,6 +838,13 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               } else {
                 domainReply = `📊 Dari batch email terakhir, saya menemukan <b>${total}</b> email transaksi Livin yang relevan.`;
               }
+              pendingEmailContext = {
+                searchKeyword: searchKeywordForAnalytics,
+                lastLimit: pendingEmailContext?.lastLimit || 5,
+                cursorIndex: pendingEmailContext?.cursorIndex || 0,
+                lastBatch: sourceBatch.slice(0, 50),
+                askedAt: Date.now()
+              };
               break;
             }
 
