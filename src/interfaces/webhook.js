@@ -33,6 +33,48 @@ let pendingDatabaseContext = null;
 // Structure: { intent, extractedData, lastUserText, lastAssistantReply, askedAt }
 let conversationContext = null;
 
+// Pending Vault Context: confirmation loop for OCR/metadata
+// Structure: { vaultRowId, driveFileId, driveLink, fileName, mimeType, telegramFileId, category, ocrText, metadata, askedAt }
+let pendingVaultContext = null;
+
+function parseVaultEditCommand(text) {
+  const raw = String(text || '').trim();
+  if (!/^edit\b/i.test(raw)) return null;
+  const body = raw.replace(/^edit\b/i, '').trim();
+  if (!body) return {};
+
+  const pairs = body.split(';').map(s => s.trim()).filter(Boolean);
+  const out = {};
+  for (const p of pairs) {
+    const idx = p.indexOf('=');
+    if (idx === -1) continue;
+    const key = p.slice(0, idx).trim().toLowerCase();
+    const value = p.slice(idx + 1).trim();
+    if (!key) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+function buildVaultDraftMetadata({ ocrText, fileName }) {
+  const t = String(ocrText || '');
+  const meta = {};
+
+  const nikMatch = t.match(/\b\d{16}\b/);
+  if (nikMatch) meta.nik = nikMatch[0];
+
+  const nameMatch =
+    t.match(/nama\s*[:\-]?\s*([A-Z][A-Z\s]{2,60})/i) ||
+    t.match(/name\s*[:\-]?\s*([A-Z][A-Z\s]{2,60})/i);
+  if (nameMatch?.[1]) meta.nama = nameMatch[1].trim().replace(/\s+/g, ' ').substring(0, 80);
+
+  const dateMatch = t.match(/\b(\d{1,2})\s*(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\s*(\d{4})\b/i);
+  if (dateMatch) meta.tanggal = `${dateMatch[1]} ${dateMatch[2]} ${dateMatch[3]}`;
+
+  meta.judul = fileName || '';
+  return meta;
+}
+
 async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
   const proxyBase = env.TELEGRAM_PROXY_URL;
@@ -159,6 +201,89 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
   try {
     // ============================================================
+    // VAULT CONFIRMATION LOOP (KONFIRM / EDIT / VISION / SKIP)
+    // ============================================================
+    if (pendingVaultContext && textInput) {
+      const normalized = String(textInput).trim();
+      const upper = normalized.toUpperCase();
+      const ageMs = Date.now() - (pendingVaultContext.askedAt || 0);
+      if (ageMs <= 15 * 60 * 1000) {
+        if (upper === 'KONFIRM' || upper === 'CONFIRM') {
+          await supabaseMemories.updateVaultItemById(pendingVaultContext.vaultRowId, {
+            status: 'CONFIRMED',
+            category: pendingVaultContext.category,
+            metadata_json: pendingVaultContext.metadata,
+            confirmed_at: new Date().toISOString()
+          }).catch((e) => console.error('[VAULT] Confirm update failed:', e.message));
+          pendingVaultContext = null;
+          await respondToTelegram('✅ Baik, Tuan. Metadata Vault dikonfirmasi dan disimpan.');
+          clearTimeout(safetyTimer);
+          return;
+        }
+
+        if (upper === 'SKIP') {
+          await supabaseMemories.updateVaultItemById(pendingVaultContext.vaultRowId, {
+            status: 'SKIPPED',
+            category: pendingVaultContext.category,
+            metadata_json: pendingVaultContext.metadata,
+            confirmed_at: new Date().toISOString()
+          }).catch((e) => console.error('[VAULT] Skip update failed:', e.message));
+          pendingVaultContext = null;
+          await respondToTelegram('✅ Siap. Saya simpan apa adanya tanpa konfirmasi detail.');
+          clearTimeout(safetyTimer);
+          return;
+        }
+
+        if (upper === 'VISION') {
+          try {
+            // Vision works best for images coming from Telegram file_id
+            const visionText = await visionEngine.processTelegramImage(
+              pendingVaultContext.telegramFileId,
+              'Ekstrak data penting dokumen ini (nama, nomor identitas, tanggal, instansi).'
+            );
+            const prompt = `Ekstrak field penting dari teks berikut menjadi JSON ringkas. Kunci: nama, nik, nomor, tanggal, instansi, catatan.\n\nTeks:\n${visionText}\n\nOCR:\n${pendingVaultContext.ocrText || ''}\n\nBalas HANYA JSON.`;
+            const jsonText = await aiRouter.callAI(prompt);
+            let parsed = null;
+            try { parsed = JSON.parse(jsonText); } catch (_) {}
+            if (parsed && typeof parsed === 'object') {
+              pendingVaultContext.metadata = { ...(pendingVaultContext.metadata || {}), ...parsed, source: 'VISION' };
+            } else {
+              pendingVaultContext.metadata = { ...(pendingVaultContext.metadata || {}), vision_raw: visionText.substring(0, 2000), source: 'VISION' };
+            }
+            pendingVaultContext.askedAt = Date.now();
+
+            await respondToTelegram(
+              `🧠 VISION selesai, Tuan. Ini draft baru:\n` +
+              `<code>${escapeHtml(JSON.stringify(pendingVaultContext.metadata, null, 2).substring(0, 1500))}</code>\n\n` +
+              `Balas: <b>KONFIRM</b> / <b>EDIT key=value; ...</b> / <b>SKIP</b>`
+            );
+            clearTimeout(safetyTimer);
+            return;
+          } catch (e) {
+            await respondToTelegram(`❌ VISION gagal: <code>${escapeHtml(e.message)}</code>`);
+            clearTimeout(safetyTimer);
+            return;
+          }
+        }
+
+        const edits = parseVaultEditCommand(normalized);
+        if (edits) {
+          pendingVaultContext.metadata = { ...(pendingVaultContext.metadata || {}), ...edits, source: 'USER_EDIT' };
+          if (edits.category) pendingVaultContext.category = String(edits.category).toUpperCase();
+          pendingVaultContext.askedAt = Date.now();
+          await respondToTelegram(
+            `✅ Dicatat, Tuan. Draft metadata sekarang:\n<code>${escapeHtml(JSON.stringify(pendingVaultContext.metadata, null, 2).substring(0, 1500))}</code>\n\n` +
+            `Balas: <b>KONFIRM</b> / <b>VISION</b> / <b>EDIT ...</b> / <b>SKIP</b>`
+          );
+          clearTimeout(safetyTimer);
+          return;
+        }
+      } else {
+        pendingVaultContext = null;
+      }
+    }
+
+    // ============================================================
     // VAULT UPLOAD (Telegram media -> Google Drive -> OCR -> Supabase index)
     // Triggered when caption/text contains "/vault" or "arsip"
     // ============================================================
@@ -198,7 +323,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               ? 'DOKUMEN'
               : 'ARSIP';
 
-          await supabaseMemories.saveVaultItem({
+          const draftMeta = buildVaultDraftMetadata({ ocrText, fileName: uploaded.name || fileName });
+          const saved = await supabaseMemories.saveVaultItem({
             drive_file_id: uploaded.id,
             drive_web_view_link: uploaded.webViewLink,
             file_name: uploaded.name || fileName,
@@ -206,15 +332,37 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             category,
             telegram_file_id: fileId,
             source: 'TELEGRAM',
+            status: 'DRAFT',
+            metadata_json: draftMeta,
             ocr_text: ocrText ? ocrText.substring(0, 20000) : null
-          }).catch((e) => console.error('[VAULT] Supabase save failed:', e.message));
+          }).catch((e) => {
+            console.error('[VAULT] Supabase save failed:', e.message);
+            return { success: false, row: null };
+          });
+
+          if (saved?.row?.id) {
+            pendingVaultContext = {
+              vaultRowId: saved.row.id,
+              driveFileId: uploaded.id,
+              driveLink: uploaded.webViewLink,
+              fileName: uploaded.name || fileName,
+              mimeType: uploaded.mimeType || mimeType,
+              telegramFileId: fileId,
+              category,
+              ocrText: ocrText || '',
+              metadata: draftMeta,
+              askedAt: Date.now()
+            };
+          }
 
           const ocrHint = ocrText && ocrText.trim().length > 0
             ? `\n\n<b>OCR (ringkas):</b>\n<code>${escapeHtml(ocrText.substring(0, 500))}${ocrText.length > 500 ? '…' : ''}</code>`
             : '';
 
           await respondToTelegram(
-            `✅ Tersimpan di Vault Drive.\n<b>Nama:</b> ${escapeHtml(fileName)}\n<b>Kategori:</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}${ocrHint}`
+            `✅ Tersimpan di Vault Drive (DRAFT).\n<b>Nama:</b> ${escapeHtml(fileName)}\n<b>Kategori (tebakan):</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}\n\n` +
+            `<b>Draft metadata:</b>\n<code>${escapeHtml(JSON.stringify(buildVaultDraftMetadata({ ocrText, fileName: uploaded.name || fileName }), null, 2).substring(0, 1200))}</code>\n\n` +
+            `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EDIT key=value; key2=value</b>\n- <b>VISION</b> (lebih akurat, tapi lebih berat)\n- <b>SKIP</b>${ocrHint}`
           );
         } finally {
           try { if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath); } catch (_) {}

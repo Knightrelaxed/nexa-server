@@ -429,11 +429,39 @@ async function saveVaultItem(item) {
     category: item.category ? String(item.category) : null,
     telegram_file_id: item.telegram_file_id ? String(item.telegram_file_id) : null,
     source: item.source ? String(item.source) : 'TELEGRAM',
+    status: item.status ? String(item.status) : 'DRAFT',
+    metadata_json: item.metadata_json || null,
     ocr_text: item.ocr_text ? String(item.ocr_text) : null,
+    confirmed_at: item.confirmed_at || null,
     created_at: new Date().toISOString()
   };
 
   const { data, error } = await supabase.from('nexa_vault_items').insert([payload]).select();
+  if (error) return { success: false, error: error.message };
+  return { success: true, row: data?.[0] || null };
+}
+
+async function updateVaultItemById(id, patch = {}) {
+  if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
+  const idNum = parseInt(id, 10);
+  if (isNaN(idNum) || idNum <= 0) return { success: false, error: 'ID vault tidak valid.' };
+
+  const safePatch = {};
+  if (patch.file_name !== undefined) safePatch.file_name = patch.file_name ? String(patch.file_name) : null;
+  if (patch.category !== undefined) safePatch.category = patch.category ? String(patch.category) : null;
+  if (patch.status !== undefined) safePatch.status = String(patch.status);
+  if (patch.metadata_json !== undefined) safePatch.metadata_json = patch.metadata_json;
+  if (patch.ocr_text !== undefined) safePatch.ocr_text = patch.ocr_text ? String(patch.ocr_text) : null;
+  if (patch.confirmed_at !== undefined) safePatch.confirmed_at = patch.confirmed_at;
+
+  if (Object.keys(safePatch).length === 0) return { success: false, error: 'Patch kosong.' };
+
+  const { data, error } = await supabase
+    .from('nexa_vault_items')
+    .update(safePatch)
+    .eq('id', idNum)
+    .select();
+
   if (error) return { success: false, error: error.message };
   return { success: true, row: data?.[0] || null };
 }
@@ -457,5 +485,6 @@ module.exports = {
   insertDatabaseRow,
   updateDatabaseRows,
   deleteDatabaseRows,
-  saveVaultItem
+  saveVaultItem,
+  updateVaultItemById
 };

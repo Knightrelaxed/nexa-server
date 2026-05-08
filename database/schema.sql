@@ -55,10 +55,19 @@ CREATE TABLE IF NOT EXISTS nexa_vault_items (
   category TEXT,
   telegram_file_id TEXT,
   source TEXT DEFAULT 'TELEGRAM',
+  status TEXT DEFAULT 'DRAFT', -- DRAFT | CONFIRMED | SKIPPED
+  metadata_json JSONB,
   ocr_text TEXT,
+  confirmed_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_vault_items_created_at ON nexa_vault_items(created_at);
 CREATE INDEX IF NOT EXISTS idx_vault_items_drive_file_id ON nexa_vault_items(drive_file_id);
+
+-- NOTE (Jika tabel sudah terlanjur dibuat tanpa kolom di atas, jalankan ALTER berikut di Supabase SQL Editor):
+-- ALTER TABLE public.nexa_vault_items
+--   ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'DRAFT',
+--   ADD COLUMN IF NOT EXISTS metadata_json JSONB,
+--   ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP WITH TIME ZONE;
 
