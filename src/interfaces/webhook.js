@@ -26,7 +26,7 @@ let pendingEmailContext = null;
 // Structure: { tableName, lastAction, askedAt }
 let pendingDatabaseContext = null;
 // Global conversation context for cross-feature follow-up continuity
-// Structure: { intent, extractedData, lastUserText, askedAt }
+// Structure: { intent, extractedData, lastUserText, lastAssistantReply, askedAt }
 let conversationContext = null;
 
 // ============================================================
@@ -589,16 +589,28 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       }
     } else {
       // Send to AI Router
-      routingData = await aiRouter.routeUserMessage(textInput);
+      routingData = await aiRouter.routeUserMessage(textInput, {
+        last_intent: conversationContext?.intent || null,
+        last_user_text: conversationContext?.lastUserText || null,
+        last_assistant_reply: conversationContext?.lastAssistantReply || null,
+        has_pending_calendar: Boolean(pendingCalendarContext),
+        has_pending_email: Boolean(pendingEmailContext),
+        has_pending_database: Boolean(pendingDatabaseContext)
+      });
     }
     if (!routingData) {
-      routingData = await aiRouter.routeUserMessage(textInput);
+      routingData = await aiRouter.routeUserMessage(textInput, {
+        last_intent: conversationContext?.intent || null,
+        last_user_text: conversationContext?.lastUserText || null,
+        last_assistant_reply: conversationContext?.lastAssistantReply || null
+      });
     }
     console.log('[ROUTER] Intent identified:', routingData.intent);
     conversationContext = {
       intent: routingData.intent,
       extractedData: routingData.extracted_data || null,
       lastUserText: textInput,
+      lastAssistantReply: conversationContext?.lastAssistantReply || '',
       askedAt: Date.now()
     };
 
@@ -1006,6 +1018,11 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         await supabaseMemories.saveChatMemory('nexa', finalReply).catch(() => {});
       }
       console.log('[TELEGRAM] Replying with intent:', routingData.intent);
+      conversationContext = {
+        ...(conversationContext || {}),
+        lastAssistantReply: finalReply,
+        askedAt: Date.now()
+      };
       await respondToTelegram(finalReply);
     }
 

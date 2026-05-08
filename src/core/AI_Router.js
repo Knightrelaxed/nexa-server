@@ -112,7 +112,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 /**
  * Route incoming natural language (text) from user
  */
-async function routeUserMessage(textInput) {
+async function routeUserMessage(textInput, runtimeHints = {}) {
   // 1. Load personal facts (from cache — zero overhead after first call)
   const personalFacts = await loadPersonalFactsWithCache();
 
@@ -148,6 +148,9 @@ async function routeUserMessage(textInput) {
     _miniCal.push(`  +${i} hari: ${dayFull} (ISO: ${ds})`);
   }
   const miniCalStr = _miniCal.join('\n');
+  const runtimeContextBlock = runtimeHints && Object.keys(runtimeHints).length > 0
+    ? `\n[KONTEKS RUNTIME PRIORITAS]\n${JSON.stringify(runtimeHints, null, 2)}\n`
+    : '';
 
   const prompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
@@ -159,6 +162,9 @@ ${miniCalStr}
 (Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)
 
 ${factsContext}
+[RIWAYAT KONTEKS RUNTIME]
+${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
+
 [RIWAYAT OBROLAN]
 ${contextStr}
 
@@ -201,7 +207,7 @@ Tentukan intent dan ekstrak data!
  * @returns {Promise<string>} - Plain text response from AI
  */
 const PLAIN_TEXT_SYSTEM_PROMPT = `Anda adalah N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh. 
-Jawab dengan bahasa Indonesia yang natural, cerdas, dan luwes.
+Jawab dengan bahasa Indonesia yang natural, cerdas, luwes, sopan, dan hangat (gaya asisten premium ala Jarvis).
 Balas HANYA dengan teks biasa. JANGAN gunakan format JSON. JANGAN gunakan markdown **bold** atau *italic*.
 Berikan jawaban yang informatif dan ringkas.`;
 
