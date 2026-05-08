@@ -52,7 +52,7 @@ Jika instruksi Tuan Faqih tidak detail atau kekurangan data esensial (contoh: "c
 
 Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 {
-  "intent": "FINANCE" | "CALENDAR" | "TASK" | "WEB_SEARCH" | "DISCIPLINE" | "2ND_BRAIN" | "USER_PROFILE" | "CORE_IDENTITY" | "SPREADSHEET" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
+  "intent": "FINANCE" | "CALENDAR" | "TASK" | "WEB_SEARCH" | "DISCIPLINE" | "2ND_BRAIN" | "USER_PROFILE" | "CORE_IDENTITY" | "SPREADSHEET" | "EMAIL" | "DATABASE" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
   "extracted_data": {
      // FINANCE: { action: "RECORD"|"READ_LATEST"|"READ_ANALYTICS"|"EDIT"|"DELETE", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO), search_keyword: string }
      //   → Gunakan action "READ_ANALYTICS" jika pengguna meminta laporan total pemasukan, pengeluaran, saldo akhir, atau "analitik keuangan".
@@ -89,6 +89,9 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Isi max_results sesuai jumlah yang diminta user (contoh: "satu saja" => 1, "3 email terbaru" => 3). Default 5 jika tidak disebut.
      //   → Gunakan action "SEND" jika pengguna meminta mengirim email (wajib ada "to", "subject", dan "content").
      //   → Gunakan action "DELETE" jika meminta menghapus email (sertakan search_keyword).
+     // DATABASE: { action: "LIST_TABLES"|"READ_TABLE"|"INSERT_ROW"|"UPDATE_ROW"|"DELETE_ROW", table_name: string, row_id: number, search_keyword: string, max_results: number, row_data: object, update_data: object }
+     //   → Gunakan intent DATABASE untuk perintah terkait Supabase/database (cek tabel, lihat data tabel, tambah/edit/hapus baris).
+     //   → Jika user berkata umum seperti "periksa database" TANPA menyebut tabel/aksi, WAJIB pakai INCOMPLETE_INFO dan tanya tabel mana: nexa_chat_memories / nexa_finance_dedup / nexa_user_profile / nexa_core_identity / nexa_2nd_brain.
      // DEVICE_CONTROL: { action: "ALARM"|"FLASHLIGHT"|"VOLUME"|"LOCK", params: apa saja }
      // Jika intent kustom: { ...buat struktur data JSON relevan berdasarkan logika Anda... }
   },

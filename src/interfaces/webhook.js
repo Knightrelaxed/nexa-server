@@ -19,6 +19,9 @@ const webSearch = require('../infrastructure/Web_Search');
 // Pending Calendar Context: holds an incomplete calendar CREATE until user provides missing info
 // Structure: { summary, start, askedAt }
 let pendingCalendarContext = null;
+// Pending Email Context: keeps last email search context for follow-up commands
+// Structure: { searchKeyword, lastLimit, cursorIndex, askedAt }
+let pendingEmailContext = null;
 
 // ============================================================
 // OUTBOUND TELEGRAM SENDER
@@ -127,6 +130,11 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       const normalized = String(text || '').toLowerCase().trim();
       if (!normalized) return false;
       return /^(oke|ok|baik|sip|siap)?\s*(cukup|sudah cukup|berhenti|stop|udah|sudahi)\s*!?$/.test(normalized);
+    };
+    const isEmailHistoryFollowUp = (text) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      if (!normalized) return false;
+      return /sebelum itu|sebelumnya|email sebelumnya|yang sebelum|prior/.test(normalized);
     };
 
     // ============================================================
@@ -240,8 +248,25 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       }
     }
 
-    // Send to AI Router
-    const routingData = await aiRouter.routeUserMessage(textInput);
+    // Email follow-up override: keep intent in EMAIL context to avoid misrouting to CALENDAR/NORMAL_CHAT
+    let routingData;
+    if (pendingEmailContext && isEmailHistoryFollowUp(textInput)) {
+      routingData = {
+        intent: 'EMAIL',
+        extracted_data: {
+          action: 'READ',
+          search_keyword: pendingEmailContext.searchKeyword || '',
+          max_results: 1,
+          before_current: true
+        },
+        reply_message: '',
+        god_mode_trigger: false
+      };
+      console.log('[ROUTER] Email follow-up context override activated.');
+    } else {
+      // Send to AI Router
+      routingData = await aiRouter.routeUserMessage(textInput);
+    }
     console.log('[ROUTER] Intent identified:', routingData.intent);
 
     // Execute Domain Logic based on Intent
@@ -451,6 +476,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           const action = routingData.extracted_data.action;
           if (action === 'READ') {
             if (isStopEmailFollowUp(textInput)) {
+              pendingEmailContext = null;
               domainReply = '✅ Siap, saya hentikan pembacaan email dulu. Kalau perlu lanjut, tinggal bilang.';
               break;
             }
@@ -461,12 +487,35 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               ? Math.min(requestedLimit, 10)
               : getEmailReadLimitFromText(textInput, 5);
 
-            const emails = await gmailClient.getLatestEmails(routingData.extracted_data.search_keyword || '', maxResults);
+            const followUpPrevious = Boolean(routingData.extracted_data.before_current);
+            const searchKeyword = routingData.extracted_data.search_keyword || '';
+            let emails = [];
+            let contextCursorIndex = 0;
+
+            if (followUpPrevious && pendingEmailContext) {
+              const fullBatch = await gmailClient.getLatestEmails(searchKeyword, 20);
+              const nextCursor = (pendingEmailContext.cursorIndex || 0) + 1;
+              if (nextCursor < fullBatch.length) {
+                emails = [fullBatch[nextCursor]];
+                contextCursorIndex = nextCursor;
+              } else {
+                emails = [];
+              }
+            } else {
+              emails = await gmailClient.getLatestEmails(searchKeyword, maxResults);
+            }
+
             if (emails.length === 0) {
               domainReply = "Kotak masuk kosong atau tidak ada email yang cocok dengan pencarian.";
             } else {
               const escapeHTML = (str) => (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               domainReply = `📧 <b>Email Terbaru Anda (${emails.length}):</b>\n\n` + emails.map(e => `[${escapeHTML(e.date)}]\n<b>Dari:</b> ${escapeHTML(e.from)}\n<b>Subjek:</b> ${escapeHTML(e.subject)}\n<b>Snippet:</b> <i>${escapeHTML(e.snippet)}</i>\n`).join('\n---\n');
+              pendingEmailContext = {
+                searchKeyword,
+                lastLimit: maxResults,
+                cursorIndex: contextCursorIndex,
+                askedAt: Date.now()
+              };
             }
           } else if (action === 'SEND') {
             const success = await gmailClient.sendEmail(
@@ -474,6 +523,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               routingData.extracted_data.subject,
               routingData.extracted_data.content
             );
+            pendingEmailContext = null;
             domainReply = success ? `✅ Email berhasil dikirim ke ${routingData.extracted_data.to}.` : `❌ Gagal mengirim email.`;
           } else if (action === 'DELETE') {
             const emails = await gmailClient.getLatestEmails(routingData.extracted_data.search_keyword, 1);
@@ -483,9 +533,81 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             } else {
               domainReply = `Tidak ditemukan email dengan kata kunci tersebut untuk dihapus.`;
             }
+            pendingEmailContext = null;
           }
         }
         break;
+
+      case 'DATABASE': {
+        const dbData = routingData.extracted_data || {};
+        const dbAction = dbData.action || 'LIST_TABLES';
+        const tableName = dbData.table_name;
+
+        if (!tableName && dbAction !== 'LIST_TABLES') {
+          domainReply = `❓ Tabel Supabase mana yang ingin Anda kelola?\nPilih salah satu:\n- nexa_chat_memories\n- nexa_finance_dedup\n- nexa_user_profile\n- nexa_core_identity\n- nexa_2nd_brain`;
+          break;
+        }
+
+        if (dbAction === 'LIST_TABLES') {
+          const overview = await supabaseMemories.getDatabaseOverview();
+          if (!overview.success) {
+            domainReply = `❌ Gagal membaca overview database: ${escapeHtml(overview.error)}`;
+            break;
+          }
+          const lines = overview.tables.map((t) => {
+            const info = overview.counts[t];
+            if (info?.error) return `- <b>${t}</b>: error (${escapeHtml(info.error)})`;
+            return `- <b>${t}</b>: ${info?.count || 0} baris`;
+          });
+          domainReply = `🗄️ <b>Overview Supabase (5 tabel N.E.X.A):</b>\n${lines.join('\n')}\n\nBalas dengan aksi jelas, misalnya:\n- "baca nexa_core_identity 5 data"\n- "tambah nexa_user_profile: aku suka teh"\n- "hapus nexa_2nd_brain id 12"`;
+        } else if (dbAction === 'READ_TABLE') {
+          const result = await supabaseMemories.readDatabaseTable(tableName, {
+            limit: dbData.max_results || 5,
+            searchKeyword: dbData.search_keyword || ''
+          });
+          if (!result.success) {
+            domainReply = `❌ Gagal membaca tabel <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
+            break;
+          }
+          if (!result.rows || result.rows.length === 0) {
+            domainReply = `📭 Tabel <b>${escapeHtml(result.table)}</b> tidak memiliki data yang cocok.`;
+            break;
+          }
+          const rowsPreview = result.rows.map((r) => {
+            const summary = Object.entries(r)
+              .slice(0, 4)
+              .map(([k, v]) => `${k}: ${String(v).substring(0, 80)}`)
+              .join(' | ');
+            return `• ${escapeHtml(summary)}`;
+          }).join('\n');
+          domainReply = `📚 <b>Data ${escapeHtml(result.table)} (${result.rows.length} baris):</b>\n${rowsPreview}`;
+        } else if (dbAction === 'INSERT_ROW') {
+          const result = await supabaseMemories.insertDatabaseRow(tableName, dbData.row_data || {});
+          domainReply = result.success
+            ? `✅ Insert berhasil ke <b>${escapeHtml(result.table)}</b> (id: ${result.row?.id || '-'})`
+            : `❌ Insert gagal ke <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
+        } else if (dbAction === 'UPDATE_ROW') {
+          const result = await supabaseMemories.updateDatabaseRows(
+            tableName,
+            dbData.update_data || {},
+            { rowId: dbData.row_id, searchKeyword: dbData.search_keyword }
+          );
+          domainReply = result.success
+            ? `✅ Update berhasil di <b>${escapeHtml(result.table)}</b>. Baris terubah: ${result.updatedRows.length}`
+            : `❌ Update gagal di <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
+        } else if (dbAction === 'DELETE_ROW') {
+          const result = await supabaseMemories.deleteDatabaseRows(
+            tableName,
+            { rowId: dbData.row_id, searchKeyword: dbData.search_keyword }
+          );
+          domainReply = result.success
+            ? `🗑️ Delete berhasil di <b>${escapeHtml(result.table)}</b>. Baris terhapus: ${result.deletedRows.length}`
+            : `❌ Delete gagal di <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
+        } else {
+          domainReply = `❌ Aksi database tidak dikenali: ${escapeHtml(dbAction)}`;
+        }
+        break;
+      }
     }
 
     // Send reply via Webhook Response Method (ZERO outbound needed)
