@@ -20,7 +20,7 @@ const webSearch = require('../infrastructure/Web_Search');
 // Structure: { summary, start, askedAt }
 let pendingCalendarContext = null;
 // Pending Email Context: keeps last email search context for follow-up commands
-// Structure: { searchKeyword, lastLimit, cursorIndex, askedAt }
+// Structure: { searchKeyword, lastLimit, cursorIndex, lastBatch, askedAt }
 let pendingEmailContext = null;
 // Pending Database Context: keeps last database table/action for follow-up commands
 // Structure: { tableName, lastAction, askedAt }
@@ -145,6 +145,20 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       if (/minggu lalu|last week/.test(normalized)) return { type: 'last_week' };
       return null;
     };
+    const parseDayOfMonthHint = (text) => {
+      const normalized = String(text || '').toLowerCase();
+      if (!normalized) return null;
+      const m = normalized.match(/\b(?:tgl|tanggal)\s*(\d{1,2})\b/);
+      if (!m) return null;
+      const day = parseInt(m[1], 10);
+      if (isNaN(day) || day < 1 || day > 31) return null;
+      return day;
+    };
+    const isEmailAnalyticsQuestion = (text) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      if (!normalized) return false;
+      return /(apakah|berapa|hanya|cuma|total|jumlah).*(kali|transaksi|email)|transaksi.*(tgl|tanggal)/.test(normalized);
+    };
     const filterEmailsByTemporalHint = (emails, temporalHint) => {
       if (!temporalHint || !emails || emails.length === 0) return emails || [];
 
@@ -169,6 +183,15 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         });
       }
       return emails;
+    };
+    const filterEmailsByDayOfMonth = (emails, dayOfMonth) => {
+      if (!Array.isArray(emails) || !dayOfMonth) return emails || [];
+      return emails.filter((e) => {
+        const d = new Date(e.date);
+        if (isNaN(d.getTime())) return false;
+        const jakarta = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        return jakarta.getDate() === dayOfMonth;
+      });
     };
 
     const isStopEmailFollowUp = (text) => {
@@ -787,6 +810,21 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               domainReply = '✅ Siap, saya hentikan pembacaan email dulu. Kalau perlu lanjut, tinggal bilang.';
               break;
             }
+            if (isEmailAnalyticsQuestion(textInput) && pendingEmailContext?.lastBatch?.length) {
+              const dayHint = parseDayOfMonthHint(textInput);
+              const scoped = dayHint
+                ? filterEmailsByDayOfMonth(pendingEmailContext.lastBatch, dayHint)
+                : pendingEmailContext.lastBatch;
+              const total = scoped.length;
+              if (dayHint) {
+                domainReply = total <= 0
+                  ? `📭 Saya tidak menemukan transaksi/email Livin pada tanggal <b>${dayHint}</b> di batch email terakhir.`
+                  : `📊 Pada tanggal <b>${dayHint}</b>, terdeteksi <b>${total}</b> transaksi/email Livin di batch yang saya analisis.`;
+              } else {
+                domainReply = `📊 Dari batch email terakhir, saya menemukan <b>${total}</b> email transaksi Livin yang relevan.`;
+              }
+              break;
+            }
 
             const requestedLimitRaw = routingData.extracted_data.max_results;
             const requestedLimit = parseInt(requestedLimitRaw, 10);
@@ -799,9 +837,11 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             const searchKeyword = routingData.extracted_data.search_keyword || '';
             let emails = [];
             let contextCursorIndex = 0;
+            let candidateEmailsForContext = [];
 
             if (followUpPrevious && pendingEmailContext) {
               const fullBatch = await gmailClient.getLatestEmails(searchKeyword, 20);
+              candidateEmailsForContext = fullBatch;
               const nextCursor = (pendingEmailContext.cursorIndex || 0) + 1;
               if (nextCursor < fullBatch.length) {
                 emails = [fullBatch[nextCursor]];
@@ -812,6 +852,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             } else {
               // Pull a wider batch first so temporal filters (e.g. "kemarin") can work reliably.
               const candidateEmails = await gmailClient.getLatestEmails(searchKeyword, Math.max(maxResults, 20));
+              candidateEmailsForContext = candidateEmails;
               const filteredEmails = filterEmailsByTemporalHint(candidateEmails, temporalHint);
               emails = filteredEmails.slice(0, maxResults);
             }
@@ -831,6 +872,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
                 searchKeyword,
                 lastLimit: maxResults,
                 cursorIndex: contextCursorIndex,
+                lastBatch: candidateEmailsForContext.slice(0, 50),
                 askedAt: Date.now()
               };
             }
