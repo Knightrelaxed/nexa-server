@@ -417,6 +417,27 @@ async function deleteDatabaseRows(tableName, { rowId, searchKeyword } = {}) {
   return { success: true, table, deletedRows: data || [] };
 }
 
+async function saveVaultItem(item) {
+  if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
+  if (!item || !item.drive_file_id) return { success: false, error: 'drive_file_id wajib.' };
+
+  const payload = {
+    drive_file_id: String(item.drive_file_id),
+    drive_web_view_link: item.drive_web_view_link ? String(item.drive_web_view_link) : null,
+    file_name: item.file_name ? String(item.file_name) : null,
+    mime_type: item.mime_type ? String(item.mime_type) : null,
+    category: item.category ? String(item.category) : null,
+    telegram_file_id: item.telegram_file_id ? String(item.telegram_file_id) : null,
+    source: item.source ? String(item.source) : 'TELEGRAM',
+    ocr_text: item.ocr_text ? String(item.ocr_text) : null,
+    created_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase.from('nexa_vault_items').insert([payload]).select();
+  if (error) return { success: false, error: error.message };
+  return { success: true, row: data?.[0] || null };
+}
+
 module.exports = {
   supabase,
   saveChatMemory,
@@ -435,5 +456,6 @@ module.exports = {
   readDatabaseTable,
   insertDatabaseRow,
   updateDatabaseRows,
-  deleteDatabaseRows
+  deleteDatabaseRows,
+  saveVaultItem
 };

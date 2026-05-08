@@ -3,6 +3,9 @@ const router = express.Router();
 const https = require('https');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const env = require('../config/env');
 const security = require('../utils/security');
 const aiRouter = require('../core/AI_Router');
@@ -15,6 +18,7 @@ const spreadsheetManager = require('../domain/Spreadsheet_Manager');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 const taskManager = require('../domain/Task_Manager');
 const webSearch = require('../infrastructure/Web_Search');
+const googleWorkspace = require('../infrastructure/Google_Workspace');
 
 // Pending Calendar Context: holds an incomplete calendar CREATE until user provides missing info
 // Structure: { summary, start, askedAt }
@@ -28,6 +32,40 @@ let pendingDatabaseContext = null;
 // Global conversation context for cross-feature follow-up continuity
 // Structure: { intent, extractedData, lastUserText, lastAssistantReply, askedAt }
 let conversationContext = null;
+
+async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
+  if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
+  const proxyBase = env.TELEGRAM_PROXY_URL;
+
+  const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
+  const proxiedGetFileUrl = proxyBase ? `${proxyBase}${encodeURIComponent(getFileUrl)}` : getFileUrl;
+
+  const result = await exec(
+    `curl -sS --ipv4 --connect-timeout 15 --max-time 30 "${proxiedGetFileUrl}"`,
+    { maxBuffer: 2 * 1024 * 1024 }
+  );
+  const raw = String(result.stdout || '').trim();
+  if (!raw.startsWith('{')) throw new Error(`Telegram getFile non-JSON: ${raw.substring(0, 200)}`);
+  const parsed = JSON.parse(raw);
+  if (!parsed.ok || !parsed.result?.file_path) throw new Error(`Telegram getFile error: ${raw.substring(0, 200)}`);
+
+  const filePath = parsed.result.file_path;
+  const ext = preferredExt || (filePath.includes('.') ? filePath.split('.').pop() : '');
+  const tmpFilePath = path.join(os.tmpdir(), `nexa_vault_${Date.now()}${ext ? '.' + ext : ''}`);
+
+  const downloadUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+  const proxiedDownloadUrl = proxyBase ? `${proxyBase}${encodeURIComponent(downloadUrl)}` : downloadUrl;
+
+  await exec(
+    `curl -sS --ipv4 --connect-timeout 15 --max-time 60 -o "${tmpFilePath}" "${proxiedDownloadUrl}"`,
+    { maxBuffer: 5 * 1024 * 1024 }
+  );
+
+  const size = fs.existsSync(tmpFilePath) ? fs.statSync(tmpFilePath).size : 0;
+  if (size < 50) throw new Error(`Downloaded file too small (${size} bytes)`);
+
+  return { tmpFilePath, originalFilePath: filePath };
+}
 
 // ============================================================
 // OUTBOUND TELEGRAM SENDER
@@ -72,7 +110,7 @@ async function sendTelegramOutbound(text) {
 // Docs: https://core.telegram.org/bots/api#making-requests-when-getting-updates
 // ============================================================
 router.post('/telegram', security.telegramWebhookSecret, security.telegramIdentityLock, async (req, res) => {
-  const message = req.body?.message;
+  const message = req.body?.message || req.body?.edited_message;
   if (!message) {
     return res.status(200).send('OK');
   }
@@ -116,8 +154,81 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
   }, 25000);
 
   let textInput = message.text;
+  const captionText = message.caption || '';
+  const vaultTriggerText = `${textInput || ''} ${captionText || ''}`.toLowerCase();
 
   try {
+    // ============================================================
+    // VAULT UPLOAD (Telegram media -> Google Drive -> OCR -> Supabase index)
+    // Triggered when caption/text contains "/vault" or "arsip"
+    // ============================================================
+    const isVaultTriggered = /(^|\s)(\/vault|arsip|arsipkan|vault)(\s|$)/i.test(vaultTriggerText);
+    if (isVaultTriggered && (message.document || (message.photo && message.photo.length > 0))) {
+      try {
+        const fileId = message.document?.file_id || message.photo?.[message.photo.length - 1]?.file_id;
+        const fileName = message.document?.file_name || `photo_${Date.now()}.jpg`;
+        const mimeType = message.document?.mime_type || 'image/jpeg';
+
+        const { tmpFilePath } = await downloadTelegramFileToTemp(fileId, '');
+        let ocrText = '';
+        try {
+          const uploaded = await googleWorkspace.uploadFileToVault({
+            filePath: tmpFilePath,
+            fileName,
+            mimeType,
+            folderId: env.GOOGLE_VAULT_FOLDER_ID
+          });
+
+          if (/^image\//i.test(mimeType) || mimeType === 'application/pdf') {
+            try {
+              ocrText = await googleWorkspace.extractOcrTextViaDriveOcr({
+                filePath: tmpFilePath,
+                fileName,
+                mimeType,
+                folderId: env.GOOGLE_VAULT_FOLDER_ID
+              });
+            } catch (e) {
+              console.warn('[VAULT] OCR failed:', e.message);
+            }
+          }
+
+          const category = /ktp|kartu identitas|sim|paspor|passport/i.test(vaultTriggerText)
+            ? 'IDENTITAS'
+            : /surat|dokumen|pdf|legal/i.test(vaultTriggerText)
+              ? 'DOKUMEN'
+              : 'ARSIP';
+
+          await supabaseMemories.saveVaultItem({
+            drive_file_id: uploaded.id,
+            drive_web_view_link: uploaded.webViewLink,
+            file_name: uploaded.name || fileName,
+            mime_type: uploaded.mimeType || mimeType,
+            category,
+            telegram_file_id: fileId,
+            source: 'TELEGRAM',
+            ocr_text: ocrText ? ocrText.substring(0, 20000) : null
+          }).catch((e) => console.error('[VAULT] Supabase save failed:', e.message));
+
+          const ocrHint = ocrText && ocrText.trim().length > 0
+            ? `\n\n<b>OCR (ringkas):</b>\n<code>${escapeHtml(ocrText.substring(0, 500))}${ocrText.length > 500 ? '…' : ''}</code>`
+            : '';
+
+          await respondToTelegram(
+            `✅ Tersimpan di Vault Drive.\n<b>Nama:</b> ${escapeHtml(fileName)}\n<b>Kategori:</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}${ocrHint}`
+          );
+        } finally {
+          try { if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath); } catch (_) {}
+        }
+
+        clearTimeout(safetyTimer);
+        return;
+      } catch (e) {
+        console.error('[VAULT] Upload failed:', e.message);
+        await respondToTelegram(`❌ Gagal menyimpan ke Vault: <code>${escapeHtml(e.message)}</code>`);
+        clearTimeout(safetyTimer);
+        return;
+      }
+    }
     const getEmailReadLimitFromText = (text, fallback = 5) => {
       const normalized = String(text || '').toLowerCase().trim();
       if (!normalized) return fallback;

@@ -1,5 +1,6 @@
 const { google } = require('googleapis');
 const env = require('../config/env');
+const fs = require('fs');
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -33,9 +34,71 @@ function getClients() {
     sheets: google.sheets({ version: 'v4', auth }),
     calendar: google.calendar({ version: 'v3', auth }),
     docs: google.docs({ version: 'v1', auth }),
-    drive: google.drive({ version: 'v3', auth })
+    drive: google.drive({ version: 'v3', auth }),
+    // Drive v2 is used for OCR conversion flags not present in v3
+    driveV2: google.drive({ version: 'v2', auth })
   };
   return _clients;
+}
+
+function stripHtml(text = '') {
+  return String(text).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function uploadFileToVault({ filePath, fileName, mimeType, folderId }) {
+  const { drive } = getClients();
+  const targetFolder = folderId || env.GOOGLE_VAULT_FOLDER_ID;
+  if (!targetFolder) throw new Error('GOOGLE_VAULT_FOLDER_ID / GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi.');
+
+  const res = await drive.files.create({
+    requestBody: {
+      name: fileName,
+      parents: [targetFolder]
+    },
+    media: {
+      mimeType,
+      body: fs.createReadStream(filePath)
+    },
+    fields: 'id, webViewLink, name, mimeType'
+  });
+
+  return res.data;
+}
+
+async function extractOcrTextViaDriveOcr({ filePath, fileName, mimeType, folderId }) {
+  const { driveV2 } = getClients();
+  const targetFolder = folderId || env.GOOGLE_VAULT_FOLDER_ID;
+  if (!targetFolder) throw new Error('GOOGLE_VAULT_FOLDER_ID / GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi.');
+
+  // Create a Google Doc with OCR+convert (Drive v2)
+  const docRes = await driveV2.files.insert({
+    ocr: true,
+    convert: true,
+    requestBody: {
+      title: `OCR_${fileName || 'vault'}`,
+      parents: [{ id: targetFolder }]
+    },
+    media: {
+      mimeType,
+      body: fs.createReadStream(filePath)
+    }
+  });
+
+  const docId = docRes.data.id;
+  try {
+    const exported = await driveV2.files.export({
+      fileId: docId,
+      mimeType: 'text/plain'
+    }, { responseType: 'arraybuffer' });
+
+    const text = Buffer.from(exported.data).toString('utf8');
+    return stripHtml(text);
+  } finally {
+    // Best-effort cleanup: move OCR doc to trash to keep Drive tidy
+    try {
+      await driveV2.files.trash({ fileId: docId });
+    } catch (_) {}
+  }
 }
 
 /**
@@ -578,6 +641,8 @@ async function deleteGenericSpreadsheet(fileId) {
 }
 
 module.exports = {
+  uploadFileToVault,
+  extractOcrTextViaDriveOcr,
   appendFinanceRow,
   getFinanceSummary,
   getFinanceAnalytics,

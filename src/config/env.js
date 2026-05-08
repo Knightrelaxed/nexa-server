@@ -29,6 +29,7 @@ module.exports = {
   GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID,
   GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID,
   GOOGLE_DRIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_FOLDER_ID,
+  GOOGLE_VAULT_FOLDER_ID: process.env.GOOGLE_VAULT_FOLDER_ID || process.env.GOOGLE_DRIVE_FOLDER_ID, // Optional separate folder for vault uploads
   GOOGLE_DOCS_IDEA_ID: process.env.GOOGLE_DOCS_IDEA_ID, // Single master doc for 2nd Brain ideation (append-only)
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY, // For Llama 3.1 fallback
 
