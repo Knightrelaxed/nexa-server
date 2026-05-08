@@ -72,21 +72,22 @@ async function uploadFileToVault({ filePath, fileName, mimeType, folderId }) {
   const targetFolder = folderId || env.GOOGLE_VAULT_FOLDER_ID;
   if (!targetFolder) throw new Error('GOOGLE_VAULT_FOLDER_ID / GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi.');
 
-  const createPayload = {
+  const buildCreatePayload = () => ({
     requestBody: {
       name: fileName,
       parents: [targetFolder]
     },
     media: {
       mimeType,
+      // IMPORTANT: create a fresh stream per attempt (SA first, OAuth retry)
       body: fs.createReadStream(filePath)
     },
     fields: 'id, webViewLink, name, mimeType',
     supportsAllDrives: true
-  };
+  });
 
   try {
-    const res = await drive.files.create(createPayload);
+    const res = await drive.files.create(buildCreatePayload());
     return res.data;
   } catch (err) {
     const msg = err?.message || '';
@@ -96,7 +97,7 @@ async function uploadFileToVault({ filePath, fileName, mimeType, folderId }) {
 
     console.warn('[DRIVE] Service Account quota issue detected. Retrying Vault upload with OAuth user credentials...');
     const { drive: oauthDrive } = getOAuthDriveClients();
-    const res = await oauthDrive.files.create(createPayload);
+    const res = await oauthDrive.files.create(buildCreatePayload());
     return res.data;
   }
 }
