@@ -62,36 +62,9 @@ function parseVaultEditCommand(text) {
 
 function formatVaultMetadata(meta = {}) {
   const m = meta && typeof meta === 'object' ? meta : {};
-  const displayOrder = [
-    'judul',
-    'nama',
-    'nik',
-    'nomor_kartu',
-    'nomor_registrasi',
-    'nomor',
-    'tanggal',
-    'instansi',
-    'agama',
-    'alamat',
-    'source'
-  ];
   const prettyLabel = (key) => {
     const normalized = String(key || '').trim();
     if (!normalized) return '-';
-    const aliases = {
-      judul: 'Judul',
-      nama: 'Nama',
-      nik: 'NIK',
-      nomor_kartu: 'Nomor Kartu',
-      nomor_registrasi: 'Nomor Registrasi',
-      nomor: 'Nomor',
-      tanggal: 'Tanggal',
-      instansi: 'Instansi',
-      agama: 'Agama',
-      alamat: 'Alamat',
-      source: 'Sumber Ekstraksi'
-    };
-    if (aliases[normalized]) return aliases[normalized];
     return normalized
       .replace(/_/g, ' ')
       .replace(/\s+/g, ' ')
@@ -99,16 +72,13 @@ function formatVaultMetadata(meta = {}) {
       .replace(/\b\w/g, (c) => c.toUpperCase());
   };
 
+  const dynamicKeys = Object.keys(m)
+    .filter((key) => m[key] !== undefined && m[key] !== null && String(m[key]).trim() !== '')
+    .sort((a, b) => a.localeCompare(b));
+
   const lines = [];
-  for (const key of displayOrder) {
+  for (const key of dynamicKeys) {
     const v = m[key];
-    if (v === undefined || v === null || String(v).trim() === '') continue;
-    lines.push(`- ${prettyLabel(key)}: ${String(v).trim()}`);
-  }
-  for (const key of Object.keys(m)) {
-    if (displayOrder.includes(key)) continue;
-    const v = m[key];
-    if (v === undefined || v === null || String(v).trim() === '') continue;
     lines.push(`- ${prettyLabel(key)}: ${String(v).trim()}`);
   }
 
@@ -193,9 +163,11 @@ async function extractVaultMetadataFromVision({ fileId, fileName, promptHint = '
     `Aturan:\n` +
     `1) Output WAJIB hanya JSON object valid (tanpa penjelasan).\n` +
     `2) Semua key harus snake_case.\n` +
-    `3) Setiap informasi penting yang terbaca harus masuk ke key-value.\n` +
+    `3) Setiap informasi penting yang terbaca harus masuk ke key-value, jangan hilangkan data penting.\n` +
     `4) Jika informasi penting tidak punya label eksplisit, buat key logis sesuai konteks.\n` +
-    `5) Hindari nilai terlalu panjang; ringkas tapi lengkap.\n\n` +
+    `5) Hindari pemotongan data krusial, tetapi tetap padat.\n` +
+    `6) Sertakan key "tipe_dokumen" berdasarkan isi dokumen.\n` +
+    `7) Jika ada teks kontak/layanan/instansi di bagian bawah dokumen, tetap masukkan sebagai key yang relevan.\n\n` +
     `Teks hasil baca dokumen:\n${visionText}`;
 
   const aiJsonText = await aiRouter.callAI(extractionPrompt);
