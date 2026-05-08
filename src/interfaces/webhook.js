@@ -33,8 +33,8 @@ let pendingDatabaseContext = null;
 // Structure: { intent, extractedData, lastUserText, lastAssistantReply, askedAt }
 let conversationContext = null;
 
-// Pending Vault Context: confirmation loop for OCR/metadata
-// Structure: { vaultRowId, driveFileId, driveLink, fileName, mimeType, telegramFileId, category, ocrText, metadata, askedAt }
+// Pending Vault Context: confirmation loop for metadata
+// Structure: { vaultRowId, driveFileId, driveLink, fileName, mimeType, telegramFileId, category, metadata, askedAt }
 let pendingVaultContext = null;
 
 function parseVaultEditCommand(text) {
@@ -63,29 +63,86 @@ function parseVaultEditCommand(text) {
 function formatVaultMetadata(meta = {}) {
   const m = meta && typeof meta === 'object' ? meta : {};
   const displayOrder = [
-    ['judul', 'Judul'],
-    ['nama', 'Nama'],
-    ['nik', 'NIK'],
-    ['nomor_kartu', 'Nomor Kartu'],
-    ['nomor', 'Nomor'],
-    ['tanggal', 'Tanggal'],
-    ['instansi', 'Instansi'],
-    ['alamat', 'Alamat'],
-    ['catatan', 'Catatan'],
-    ['source', 'Sumber Ekstraksi']
+    'judul',
+    'nama',
+    'nik',
+    'nomor_kartu',
+    'nomor_registrasi',
+    'nomor',
+    'tanggal',
+    'instansi',
+    'agama',
+    'alamat',
+    'source'
   ];
+  const prettyLabel = (key) => {
+    const normalized = String(key || '').trim();
+    if (!normalized) return '-';
+    const aliases = {
+      judul: 'Judul',
+      nama: 'Nama',
+      nik: 'NIK',
+      nomor_kartu: 'Nomor Kartu',
+      nomor_registrasi: 'Nomor Registrasi',
+      nomor: 'Nomor',
+      tanggal: 'Tanggal',
+      instansi: 'Instansi',
+      agama: 'Agama',
+      alamat: 'Alamat',
+      source: 'Sumber Ekstraksi'
+    };
+    if (aliases[normalized]) return aliases[normalized];
+    return normalized
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  };
 
   const lines = [];
-  for (const [key, label] of displayOrder) {
+  for (const key of displayOrder) {
     const v = m[key];
     if (v === undefined || v === null || String(v).trim() === '') continue;
-    lines.push(`- ${label}: ${String(v).trim()}`);
+    lines.push(`- ${prettyLabel(key)}: ${String(v).trim()}`);
+  }
+  for (const key of Object.keys(m)) {
+    if (displayOrder.includes(key)) continue;
+    const v = m[key];
+    if (v === undefined || v === null || String(v).trim() === '') continue;
+    lines.push(`- ${prettyLabel(key)}: ${String(v).trim()}`);
   }
 
   if (!lines.length) {
     return '- Belum ada metadata detail.';
   }
   return lines.join('\n');
+}
+
+function parseJsonObjectFromText(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch (_) {}
+
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    try {
+      const parsed = JSON.parse(fenced[1].trim());
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch (_) {}
+  }
+
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if (first !== -1 && last > first) {
+    try {
+      const parsed = JSON.parse(text.slice(first, last + 1));
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch (_) {}
+  }
+  return null;
 }
 
 function extractVaultMetadataFromNarrative(text, fileName = '') {
@@ -120,23 +177,38 @@ function extractVaultMetadataFromNarrative(text, fileName = '') {
   return out;
 }
 
-function buildVaultDraftMetadata({ ocrText, fileName }) {
-  const t = String(ocrText || '');
-  const meta = {};
+async function extractVaultMetadataFromVision({ fileId, fileName, promptHint = '' }) {
+  if (!fileId) {
+    return { judul: fileName || '', source: 'VISION_UNAVAILABLE' };
+  }
+  const visionText = await visionEngine.processTelegramImage(
+    fileId,
+    promptHint || 'Ekstrak semua teks penting dokumen ini seakurat mungkin.'
+  );
 
-  const nikMatch = t.match(/\b\d{16}\b/);
-  if (nikMatch) meta.nik = nikMatch[0];
+  const extractionPrompt =
+    `Anda adalah mesin ekstraksi metadata dokumen. ` +
+    `Ubah hasil pembacaan dokumen menjadi JSON object key-value dinamis yang rinci dan jelas. ` +
+    `Jangan kaku pada field tertentu; sesuaikan field dengan tipe dokumen pada gambar (contoh: KTP, STNK, BPJS, SIM, surat resmi). ` +
+    `Aturan:\n` +
+    `1) Output WAJIB hanya JSON object valid (tanpa penjelasan).\n` +
+    `2) Semua key harus snake_case.\n` +
+    `3) Setiap informasi penting yang terbaca harus masuk ke key-value.\n` +
+    `4) Jika informasi penting tidak punya label eksplisit, buat key logis sesuai konteks.\n` +
+    `5) Hindari nilai terlalu panjang; ringkas tapi lengkap.\n\n` +
+    `Teks hasil baca dokumen:\n${visionText}`;
 
-  const nameMatch =
-    t.match(/nama\s*[:\-]?\s*([A-Z][A-Z\s]{2,60})/i) ||
-    t.match(/name\s*[:\-]?\s*([A-Z][A-Z\s]{2,60})/i);
-  if (nameMatch?.[1]) meta.nama = nameMatch[1].trim().replace(/\s+/g, ' ').substring(0, 80);
-
-  const dateMatch = t.match(/\b(\d{1,2})\s*(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\s*(\d{4})\b/i);
-  if (dateMatch) meta.tanggal = `${dateMatch[1]} ${dateMatch[2]} ${dateMatch[3]}`;
-
-  meta.judul = fileName || '';
-  return meta;
+  const aiJsonText = await aiRouter.callAI(extractionPrompt);
+  const parsed = parseJsonObjectFromText(aiJsonText);
+  const heuristic = extractVaultMetadataFromNarrative(visionText, fileName);
+  const combined = parsed && typeof parsed === 'object'
+    ? { ...heuristic, ...parsed }
+    : { ...heuristic, ringkasan_dokumen: String(visionText || '').substring(0, 1500) };
+  return {
+    judul: fileName || '',
+    ...combined,
+    source: 'VISION'
+  };
 }
 
 async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
@@ -265,7 +337,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
   try {
     // ============================================================
-    // VAULT CONFIRMATION LOOP (KONFIRM / EDIT / VISION / SKIP)
+    // VAULT CONFIRMATION LOOP (KONFIRM / EKSTRAK ULANG / EDIT)
     // ============================================================
     if (pendingVaultContext && textInput) {
       const normalized = String(textInput).trim();
@@ -285,57 +357,29 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           return;
         }
 
-        if (upper === 'SKIP') {
-          await supabaseMemories.updateVaultItemById(pendingVaultContext.vaultRowId, {
-            status: 'SKIPPED',
-            category: pendingVaultContext.category,
-            metadata_json: pendingVaultContext.metadata,
-            confirmed_at: new Date().toISOString()
-          }).catch((e) => console.error('[VAULT] Skip update failed:', e.message));
-          pendingVaultContext = null;
-          await respondToTelegram('✅ Siap. Saya simpan apa adanya tanpa konfirmasi detail.');
-          clearTimeout(safetyTimer);
-          return;
-        }
-
-        if (upper === 'VISION') {
+        if (upper === 'EKSTRAK ULANG' || upper === 'EXTRACT ULANG' || upper === 'ULANGI') {
           try {
-            // Vision works best for images coming from Telegram file_id
-            const visionText = await visionEngine.processTelegramImage(
-              pendingVaultContext.telegramFileId,
-              'Ekstrak data penting dokumen ini (nama, nomor identitas, tanggal, instansi).'
-            );
-            const prompt = `Ekstrak field penting dari teks berikut menjadi JSON ringkas. Kunci: nama, nik, nomor, tanggal, instansi, catatan.\n\nTeks:\n${visionText}\n\nOCR:\n${pendingVaultContext.ocrText || ''}\n\nBalas HANYA JSON.`;
-            const jsonText = await aiRouter.callAI(prompt);
-            let parsed = null;
-            try { parsed = JSON.parse(jsonText); } catch (_) {}
-            const heuristic = extractVaultMetadataFromNarrative(visionText, pendingVaultContext.fileName);
-            if (parsed && typeof parsed === 'object') {
-              pendingVaultContext.metadata = {
-                ...(pendingVaultContext.metadata || {}),
-                ...heuristic,
-                ...parsed,
-                source: 'VISION'
-              };
-            } else {
-              pendingVaultContext.metadata = {
-                ...(pendingVaultContext.metadata || {}),
-                ...heuristic,
-                vision_raw: visionText.substring(0, 3500),
-                source: 'VISION'
-              };
-            }
+            const reExtracted = await extractVaultMetadataFromVision({
+              fileId: pendingVaultContext.telegramFileId,
+              fileName: pendingVaultContext.fileName,
+              promptHint: 'Ekstrak ulang metadata dokumen ini. Fokus pada key-value yang paling akurat, lengkap, dan tidak redundan.'
+            });
+            pendingVaultContext.metadata = {
+              ...(pendingVaultContext.metadata || {}),
+              ...reExtracted,
+              source: 'VISION_REEXTRACT'
+            };
             pendingVaultContext.askedAt = Date.now();
 
             await respondToTelegram(
-              `🧠 VISION selesai, Tuan. Ini draft baru:\n` +
+              `🧠 Ekstrak ulang selesai, Tuan. Ini draft metadata terbaru:\n` +
               `${escapeHtml(formatVaultMetadata(pendingVaultContext.metadata))}\n\n` +
-              `Balas: <b>KONFIRM</b> / <b>EDIT nama: ...; nik: ...</b> / <b>SKIP</b>`
+              `Balas: <b>KONFIRM</b> / <b>EKSTRAK ULANG</b> / <b>EDIT key: value; key2: value2</b>`
             );
             clearTimeout(safetyTimer);
             return;
           } catch (e) {
-            await respondToTelegram(`❌ VISION gagal: <code>${escapeHtml(e.message)}</code>`);
+            await respondToTelegram(`❌ Ekstrak ulang gagal: <code>${escapeHtml(e.message)}</code>`);
             clearTimeout(safetyTimer);
             return;
           }
@@ -348,7 +392,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           pendingVaultContext.askedAt = Date.now();
           await respondToTelegram(
             `✅ Dicatat, Tuan. Draft metadata sekarang:\n${escapeHtml(formatVaultMetadata(pendingVaultContext.metadata))}\n\n` +
-            `Balas: <b>KONFIRM</b> / <b>VISION</b> / <b>EDIT nama: ...; nik: ...</b> / <b>SKIP</b>`
+            `Balas: <b>KONFIRM</b> / <b>EKSTRAK ULANG</b> / <b>EDIT key: value; key2: value2</b>`
           );
           clearTimeout(safetyTimer);
           return;
@@ -359,7 +403,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     }
 
     // ============================================================
-    // VAULT UPLOAD (Telegram media -> Google Drive -> OCR -> Supabase index)
+    // VAULT UPLOAD (Telegram media -> Google Drive -> Vision metadata -> Supabase index)
     // Triggered when caption/text contains "/vault" or "arsip"
     // ============================================================
     const isVaultTriggered = /(^|\s)(\/vault|arsip|arsipkan|vault)(\s|$)/i.test(vaultTriggerText);
@@ -370,9 +414,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         const mimeType = message.document?.mime_type || 'image/jpeg';
 
         const { tmpFilePath } = await downloadTelegramFileToTemp(fileId, '');
-        let ocrText = '';
-        let ocrErrorMessage = '';
-        let visionFallbackUsed = false;
         try {
           const uploaded = await googleWorkspace.uploadFileToVault({
             filePath: tmpFilePath,
@@ -381,63 +422,34 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             folderId: env.GOOGLE_VAULT_FOLDER_ID
           });
 
-          if (/^image\//i.test(mimeType) || mimeType === 'application/pdf') {
-            try {
-              ocrText = await googleWorkspace.extractOcrTextViaDriveOcr({
-                filePath: tmpFilePath,
-                fileName,
-                mimeType,
-                folderId: env.GOOGLE_VAULT_FOLDER_ID
-              });
-            } catch (e) {
-              ocrErrorMessage = String(e?.message || 'OCR tidak tersedia.');
-              console.warn('[VAULT] OCR failed:', e.message);
-            }
-          }
-
           const category = /ktp|kartu identitas|sim|paspor|passport/i.test(vaultTriggerText)
             ? 'IDENTITAS'
             : /surat|dokumen|pdf|legal/i.test(vaultTriggerText)
               ? 'DOKUMEN'
               : 'ARSIP';
 
-          let draftMeta = {
-            ...buildVaultDraftMetadata({ ocrText, fileName: uploaded.name || fileName }),
-            source: ocrText && ocrText.trim().length > 0 ? 'OCR' : 'OCR_FALLBACK'
-          };
-          if ((!ocrText || !ocrText.trim()) && /^image\//i.test(mimeType) && fileId) {
+          let draftMeta = { judul: uploaded.name || fileName, source: 'VISION_PENDING' };
+          if (/^image\//i.test(mimeType) && fileId) {
             try {
-              const visionText = await visionEngine.processTelegramImage(
+              draftMeta = await extractVaultMetadataFromVision({
                 fileId,
-                'Baca teks dokumen ini seteliti mungkin seperti OCR lalu rangkum data identitas penting.'
-              );
-              const extractionPrompt =
-                `Ekstrak field penting dari deskripsi dokumen berikut menjadi JSON ringkas. ` +
-                `Kunci: nama, nik, nomor, tanggal, instansi, alamat, catatan. ` +
-                `Jika field tidak ada, jangan isi. Balas HANYA JSON object.\n\n` +
-                `Teks:\n${visionText}`;
-              const jsonText = await aiRouter.callAI(extractionPrompt);
-              let parsed = null;
-              try { parsed = JSON.parse(jsonText); } catch (_) {}
-              if (parsed && typeof parsed === 'object') {
-                draftMeta = {
-                  ...draftMeta,
-                  ...extractVaultMetadataFromNarrative(visionText, uploaded.name || fileName),
-                  ...parsed,
-                  source: 'VISION_AUTO_FALLBACK'
-                };
-              } else {
-                draftMeta = {
-                  ...draftMeta,
-                  ...extractVaultMetadataFromNarrative(visionText, uploaded.name || fileName),
-                  vision_raw: String(visionText || '').substring(0, 3500),
-                  source: 'VISION_AUTO_FALLBACK'
-                };
-              }
-              visionFallbackUsed = true;
+                fileName: uploaded.name || fileName,
+                promptHint: 'Ekstrak metadata dokumen ini lengkap dalam key-value yang relevan sesuai jenis dokumen.'
+              });
             } catch (e) {
-              console.warn('[VAULT] Vision fallback after OCR failure failed:', e.message);
+              console.warn('[VAULT] Vision metadata extraction failed:', e.message);
+              draftMeta = {
+                judul: uploaded.name || fileName,
+                catatan: 'Ekstraksi otomatis belum optimal. Gunakan EKSTRAK ULANG atau EDIT untuk menyempurnakan.',
+                source: 'VISION_FAILED'
+              };
             }
+          } else {
+            draftMeta = {
+              judul: uploaded.name || fileName,
+              catatan: 'File non-gambar terdeteksi. Tambahkan metadata via EDIT.',
+              source: 'MANUAL_REQUIRED'
+            };
           }
           const saved = await supabaseMemories.saveVaultItem({
             drive_file_id: uploaded.id,
@@ -449,7 +461,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             source: 'TELEGRAM',
             status: 'DRAFT',
             metadata_json: draftMeta,
-            ocr_text: ocrText ? ocrText.substring(0, 20000) : null
+            ocr_text: null
           }).catch((e) => {
             console.error('[VAULT] Supabase save failed:', e.message);
             return { success: false, row: null };
@@ -464,26 +476,15 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               mimeType: uploaded.mimeType || mimeType,
               telegramFileId: fileId,
               category,
-              ocrText: ocrText || '',
               metadata: draftMeta,
               askedAt: Date.now()
             };
           }
 
-          const ocrHint = ocrText && ocrText.trim().length > 0
-            ? `\n\n<b>OCR (ringkas):</b>\n<code>${escapeHtml(ocrText.substring(0, 500))}${ocrText.length > 500 ? '…' : ''}</code>`
-            : '';
-          const ocrWarning = (!ocrText || !ocrText.trim()) && ocrErrorMessage
-            ? `\n\n⚠️ <b>OCR gagal:</b> <code>${escapeHtml(ocrErrorMessage)}</code>\nSilakan lanjutkan dengan <b>EDIT ...</b> atau <b>VISION</b> agar metadata lebih akurat.`
-            : '';
-          const visionAutoHint = visionFallbackUsed
-            ? `\n\n🧠 <b>Auto Vision aktif:</b> Saya sudah bantu isi metadata awal dari pembacaan gambar.`
-            : '';
-
           await respondToTelegram(
             `✅ Tersimpan di Vault Drive (DRAFT).\n<b>Nama:</b> ${escapeHtml(fileName)}\n<b>Kategori (tebakan):</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}\n\n` +
             `<b>Draft metadata:</b>\n${escapeHtml(formatVaultMetadata(draftMeta))}\n\n` +
-            `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EDIT nama: ...; nik: ...</b>\n- <b>VISION</b> (lebih akurat, tapi lebih berat)\n- <b>SKIP</b>${ocrHint}${ocrWarning}${visionAutoHint}`
+            `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EKSTRAK ULANG</b>\n- <b>EDIT key: value; key2: value2</b>`
           );
         } finally {
           try { if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath); } catch (_) {}
