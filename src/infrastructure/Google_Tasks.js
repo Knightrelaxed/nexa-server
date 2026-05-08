@@ -6,6 +6,11 @@ let tasksClient = null;
 function getTasksClient() {
   if (tasksClient) return tasksClient;
 
+  if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.TASKS_REFRESH_TOKEN) {
+    console.error('[TASKS] OAuth2 credentials not fully configured.');
+    return null;
+  }
+
   const oauth2Client = new google.auth.OAuth2(
     env.GMAIL_CLIENT_ID,
     env.GMAIL_CLIENT_SECRET,
@@ -25,6 +30,7 @@ const DEFAULT_LIST = '@default';
  */
 async function getTaskLists() {
   const client = getTasksClient();
+  if (!client) return [];
   const res = await client.tasklists.list({ maxResults: 20 });
   return res.data.items || [];
 }
@@ -34,6 +40,7 @@ async function getTaskLists() {
  */
 async function createTask({ title, notes = '', dueDate = null, listId = DEFAULT_LIST }) {
   const client = getTasksClient();
+  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
   const task = { title, notes };
 
   if (dueDate) {
@@ -53,6 +60,7 @@ async function createTask({ title, notes = '', dueDate = null, listId = DEFAULT_
  */
 async function getActiveTasks(listId = DEFAULT_LIST) {
   const client = getTasksClient();
+  if (!client) return [];
   const res = await client.tasks.list({
     tasklist: listId,
     showCompleted: false,
@@ -67,6 +75,7 @@ async function getActiveTasks(listId = DEFAULT_LIST) {
  */
 async function getCompletedTasks(listId = DEFAULT_LIST) {
   const client = getTasksClient();
+  if (!client) return [];
   const res = await client.tasks.list({
     tasklist: listId,
     showCompleted: true,
@@ -82,6 +91,7 @@ async function getCompletedTasks(listId = DEFAULT_LIST) {
  */
 async function completeTask(taskId, listId = DEFAULT_LIST) {
   const client = getTasksClient();
+  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
   const res = await client.tasks.patch({
     tasklist: listId,
     task: taskId,
@@ -95,6 +105,7 @@ async function completeTask(taskId, listId = DEFAULT_LIST) {
  */
 async function deleteTask(taskId, listId = DEFAULT_LIST) {
   const client = getTasksClient();
+  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
   await client.tasks.delete({ tasklist: listId, task: taskId });
   return true;
 }
@@ -104,10 +115,14 @@ async function deleteTask(taskId, listId = DEFAULT_LIST) {
  */
 async function editTask({ taskId, newTitle, newNotes, newDueDate, listId = DEFAULT_LIST }) {
   const client = getTasksClient();
+  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
   const patch = {};
   if (newTitle) patch.title = newTitle;
   if (newNotes) patch.notes = newNotes;
-  if (newDueDate) patch.due = new Date(newDueDate).toISOString();
+  if (newDueDate) {
+    const localDateStr = String(newDueDate).split('T')[0];
+    patch.due = `${localDateStr}T00:00:00.000Z`;
+  }
 
   const res = await client.tasks.patch({
     tasklist: listId,
@@ -133,6 +148,7 @@ async function findTasksByKeyword(keyword, listId = DEFAULT_LIST) {
  */
 async function clearCompletedTasks(listId = DEFAULT_LIST) {
   const client = getTasksClient();
+  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
   await client.tasks.clear({ tasklist: listId });
   return true;
 }

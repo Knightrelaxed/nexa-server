@@ -5,6 +5,7 @@ module.exports = {
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
   TELEGRAM_PROXY_URL: process.env.TELEGRAM_PROXY_URL, // Cloudflare Worker relay for Vision image downloads
+  TELEGRAM_WEBHOOK_SECRET_TOKEN: process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN, // Optional hardening: verify X-Telegram-Bot-Api-Secret-Token header
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_KEY: process.env.SUPABASE_KEY,
   GEMINI_API_KEY_1: process.env.GEMINI_API_KEY_1,

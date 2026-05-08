@@ -243,8 +243,11 @@ async function editTransaction(keyword, newNominal, newDescription) {
     const oldCat = oldRow[6] || '-';
     
     // Update nominal if provided
-    if (newNominal) {
+    if (newNominal !== undefined && newNominal !== null && String(newNominal).trim() !== '') {
       const nominal = parseFloat(newNominal);
+      if (isNaN(nominal) || nominal <= 0) {
+        return { status: 'FAILED', message: `Nominal baru tidak valid: "${newNominal}". Harus berupa angka positif.` };
+      }
       const isIncome = (oldRow[3] || '') === 'Pemasukan';
       oldRow[7] = isIncome ? nominal : -nominal;
     }

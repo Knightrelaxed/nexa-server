@@ -62,7 +62,7 @@ async function sendTelegramOutbound(text) {
 // delivers the message. Zero outbound connections needed.
 // Docs: https://core.telegram.org/bots/api#making-requests-when-getting-updates
 // ============================================================
-router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
+router.post('/telegram', security.telegramWebhookSecret, security.telegramIdentityLock, async (req, res) => {
   const message = req.body?.message;
   if (!message) {
     return res.status(200).send('OK');
@@ -109,6 +109,26 @@ router.post('/telegram', security.telegramIdentityLock, async (req, res) => {
   let textInput = message.text;
 
   try {
+    const getEmailReadLimitFromText = (text, fallback = 5) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      if (!normalized) return fallback;
+      if (/\b(satu|1)\b/.test(normalized) || /paling terbaru|terbaru saja|satu saja/.test(normalized)) {
+        return 1;
+      }
+      const explicitNumber = normalized.match(/\b(\d{1,2})\b/);
+      if (explicitNumber) {
+        const n = parseInt(explicitNumber[1], 10);
+        if (!isNaN(n) && n > 0) return Math.min(n, 10);
+      }
+      return fallback;
+    };
+
+    const isStopEmailFollowUp = (text) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      if (!normalized) return false;
+      return /^(oke|ok|baik|sip|siap)?\s*(cukup|sudah cukup|berhenti|stop|udah|sudahi)\s*!?$/.test(normalized);
+    };
+
     // ============================================================
     // LAPISAN 4: BLACK BOX — Emergency Telegram Buffer Parser
     // ============================================================
@@ -430,12 +450,23 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         if (routingData.extracted_data) {
           const action = routingData.extracted_data.action;
           if (action === 'READ') {
-            const emails = await gmailClient.getLatestEmails(routingData.extracted_data.search_keyword || '', 5);
+            if (isStopEmailFollowUp(textInput)) {
+              domainReply = '✅ Siap, saya hentikan pembacaan email dulu. Kalau perlu lanjut, tinggal bilang.';
+              break;
+            }
+
+            const requestedLimitRaw = routingData.extracted_data.max_results;
+            const requestedLimit = parseInt(requestedLimitRaw, 10);
+            const maxResults = (!isNaN(requestedLimit) && requestedLimit > 0)
+              ? Math.min(requestedLimit, 10)
+              : getEmailReadLimitFromText(textInput, 5);
+
+            const emails = await gmailClient.getLatestEmails(routingData.extracted_data.search_keyword || '', maxResults);
             if (emails.length === 0) {
               domainReply = "Kotak masuk kosong atau tidak ada email yang cocok dengan pencarian.";
             } else {
               const escapeHTML = (str) => (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              domainReply = "📧 <b>Email Terbaru Anda:</b>\n\n" + emails.map(e => `[${escapeHTML(e.date)}]\n<b>Dari:</b> ${escapeHTML(e.from)}\n<b>Subjek:</b> ${escapeHTML(e.subject)}\n<b>Snippet:</b> <i>${escapeHTML(e.snippet)}</i>\n`).join('\n---\n');
+              domainReply = `📧 <b>Email Terbaru Anda (${emails.length}):</b>\n\n` + emails.map(e => `[${escapeHTML(e.date)}]\n<b>Dari:</b> ${escapeHTML(e.from)}\n<b>Subjek:</b> ${escapeHTML(e.subject)}\n<b>Snippet:</b> <i>${escapeHTML(e.snippet)}</i>\n`).join('\n---\n');
             }
           } else if (action === 'SEND') {
             const success = await gmailClient.sendEmail(

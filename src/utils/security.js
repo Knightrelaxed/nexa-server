@@ -1,6 +1,13 @@
 const crypto = require('crypto');
 const env = require('../config/env');
 
+function safeEqual(a, b) {
+  const aBuf = Buffer.from(String(a || ''), 'utf8');
+  const bBuf = Buffer.from(String(b || ''), 'utf8');
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
 /**
  * Middleware to ensure requests to /webhook/telegram 
  * only come from the authorized chat ID (Tuan Faqih).
@@ -25,19 +32,43 @@ function telegramIdentityLock(req, res, next) {
 }
 
 /**
+ * Optional Telegram webhook header verification.
+ * If TELEGRAM_WEBHOOK_SECRET_TOKEN is configured, enforce exact match.
+ * Header name from Telegram: X-Telegram-Bot-Api-Secret-Token
+ */
+function telegramWebhookSecret(req, res, next) {
+  const configuredSecret = String(env.TELEGRAM_WEBHOOK_SECRET_TOKEN || '').trim();
+  if (!configuredSecret) return next();
+
+  const provided = String(req.headers['x-telegram-bot-api-secret-token'] || '').trim();
+  if (!provided || !safeEqual(provided, configuredSecret)) {
+    console.warn('[SECURITY] Rejected Telegram webhook: invalid secret token header.');
+    return res.status(403).send('Forbidden');
+  }
+
+  next();
+}
+
+/**
  * Middleware to protect incoming webhooks (from Tasker → N.E.X.A HF Space)
  * Requires 'Authorization: Bearer <SECRET_TOKEN>' header
  */
 function webhookAuth(req, res, next) {
   const authHeader = req.headers.authorization;
+  const configuredSecret = String(env.NEXA_GODMODE_SECRET || '').trim();
+
+  if (!configuredSecret) {
+    console.error('[SECURITY] NEXA_GODMODE_SECRET is missing. Rejecting webhook request.');
+    return res.status(500).json({ error: 'Server webhook auth not configured' });
+  }
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid Authorization header' });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = String(authHeader.slice('Bearer '.length)).trim();
   
-  if (token !== env.NEXA_GODMODE_SECRET) {
+  if (!token || !safeEqual(token, configuredSecret)) {
     console.warn(`[SECURITY] Unauthorized webhook attempt with invalid token`);
     return res.status(403).json({ error: 'Forbidden: Invalid token' });
   }
@@ -60,6 +91,7 @@ function generateTaskerSignature(timestamp, level) {
 
 module.exports = {
   telegramIdentityLock,
+  telegramWebhookSecret,
   webhookAuth,
   generateTaskerSignature
 };

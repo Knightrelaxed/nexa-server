@@ -1,17 +1,26 @@
 const googleTasks = require('../infrastructure/Google_Tasks');
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /**
  * Format a task for display in Telegram (HTML)
  */
 function formatTask(task, index) {
   const isDone = task.status === 'completed';
   const icon = isDone ? '✅' : '🔲';
-  let line = `${icon} <b>${index + 1}. ${task.title || '(Tanpa judul)'}</b>`;
+  let line = `${icon} <b>${index + 1}. ${escapeHtml(task.title || '(Tanpa judul)')}</b>`;
   if (task.due) {
     const due = new Date(task.due);
     line += `\n   📅 Deadline: ${due.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
   }
-  if (task.notes) line += `\n   📝 ${task.notes}`;
+  if (task.notes) line += `\n   📝 ${escapeHtml(task.notes)}`;
   return line;
 }
 
@@ -71,10 +80,10 @@ async function handleTaskIntent(extractedData) {
     if (action === 'COMPLETE') {
       if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin ditandai selesai.' };
       const matches = await googleTasks.findTasksByKeyword(search_keyword);
-      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan "<b>${search_keyword}</b>".` };
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
 
       for (const t of matches) await googleTasks.completeTask(t.id);
-      const names = matches.map(t => `'<b>${t.title}</b>'`).join(', ');
+      const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
       return { status: 'SUCCESS', message: `✅ Tugas ${names} berhasil ditandai sebagai <b>Selesai</b>!` };
     }
 
@@ -82,10 +91,10 @@ async function handleTaskIntent(extractedData) {
     if (action === 'DELETE') {
       if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dihapus.' };
       const matches = await googleTasks.findTasksByKeyword(search_keyword);
-      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan "<b>${search_keyword}</b>".` };
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
 
       for (const t of matches) await googleTasks.deleteTask(t.id);
-      const names = matches.map(t => `'<b>${t.title}</b>'`).join(', ');
+      const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
       return { status: 'SUCCESS', message: `🗑️ Tugas ${names} berhasil dihapus.` };
     }
 
@@ -99,12 +108,12 @@ async function handleTaskIntent(extractedData) {
     if (action === 'EDIT') {
       if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin diubah.' };
       const matches = await googleTasks.findTasksByKeyword(search_keyword);
-      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan "<b>${search_keyword}</b>".` };
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
 
       for (const t of matches) {
         await googleTasks.editTask({ taskId: t.id, newTitle: title || t.title, newNotes: notes, newDueDate: due_date });
       }
-      return { status: 'SUCCESS', message: `✏️ Tugas '<b>${matches[0].title}</b>' berhasil diperbarui.` };
+      return { status: 'SUCCESS', message: `✏️ Tugas '<b>${escapeHtml(matches[0].title)}</b>' berhasil diperbarui.` };
     }
 
     return { status: 'FAILED', message: `Aksi task tidak dikenali: ${action}` };

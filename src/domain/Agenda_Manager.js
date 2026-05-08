@@ -6,6 +6,15 @@ const execPromise = util.promisify(exec);
 
 const pendingAgendas = new Map();
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function sendTelegramOutbound(text) {
   try {
     if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
@@ -119,7 +128,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
           startDate.setMinutes(startDate.getMinutes() + durationMins);
           const computedEnd = startDate.toISOString();
           const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '');
-          return { status: 'SUCCESS', message: `✅ Jadwal '<b>${summary}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).`, eventId: result.id };
+          return { status: 'SUCCESS', message: `✅ Jadwal '<b>${escapeHtml(summary)}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).`, eventId: result.id };
         }
 
         // No duration in text → return PENDING_END and schedule auto-create after 15 min
@@ -131,14 +140,14 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
               try {
                 const d = pendingAgendas.get(pendingId);
                 await googleWorkspace.createCalendarEvent(d.summary, d.start, d.end, d.description || '');
-                sendTelegramOutbound(`⏳ Waktu konfirmasi habis! Jadwal '<b>${d.summary}</b>' otomatis ditambahkan ke kalender (durasi standar 1 jam).`);
+                sendTelegramOutbound(`⏳ Waktu konfirmasi habis! Jadwal '<b>${escapeHtml(d.summary)}</b>' otomatis ditambahkan ke kalender (durasi standar 1 jam).`);
               } catch (e) { console.error('[AGENDA] Auto-create failed:', e); }
               pendingAgendas.delete(pendingId);
             }
           }, 15 * 60 * 1000);
           pendingAgendas.set(pendingId, { summary, start, end: autoEnd, description, timer });
         }
-        return { status: 'PENDING_END', message: `❓ Kira-kira berapa lama durasi untuk '<b>${summary}</b>' ini, Tuan?
+        return { status: 'PENDING_END', message: `❓ Kira-kira berapa lama durasi untuk '<b>${escapeHtml(summary)}</b>' ini, Tuan?
 
 <i>(Jika tidak ada jawaban dalam 15 menit, N.E.X.A akan otomatis menambahkannya dengan durasi standar 1 jam)</i>` };
       }
@@ -152,7 +161,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       }
 
       const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '');
-      return { status: 'SUCCESS', message: `✅ Jadwal '${summary}' berhasil ditambahkan ke kalender.`, eventId: result.id };
+      return { status: 'SUCCESS', message: `✅ Jadwal '${escapeHtml(summary)}' berhasil ditambahkan ke kalender.`, eventId: result.id };
     }
     else if (action === 'UPDATE') {
       // If we have eventId directly from AI, use it. Otherwise, find the event by title.
@@ -172,7 +181,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       }
 
       await googleWorkspace.updateCalendarEvent(targetEventId, summary, start, end, description || '');
-      return { status: 'SUCCESS', message: `✅ Jadwal '${summary}' berhasil diperbarui di kalender.` };
+      return { status: 'SUCCESS', message: `✅ Jadwal '${escapeHtml(summary)}' berhasil diperbarui di kalender.` };
     }
     else if (action === 'DELETE') {
       // Try to find by eventId first, then by title
@@ -182,10 +191,10 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         if (found.length > 0) targetEventId = found[0].id;
       }
       if (!targetEventId) {
-        return { status: 'FAILED', message: `Gagal menghapus: event '${summary || '(tanpa judul)'}' tidak ditemukan di kalender.` };
+        return { status: 'FAILED', message: `Gagal menghapus: event '${escapeHtml(summary || '(tanpa judul)')}' tidak ditemukan di kalender.` };
       }
       await googleWorkspace.deleteCalendarEvent(targetEventId);
-      return { status: 'SUCCESS', message: `Jadwal '${summary || targetEventId}' berhasil dihapus dari kalender.` };
+      return { status: 'SUCCESS', message: `Jadwal '${escapeHtml(summary || targetEventId)}' berhasil dihapus dari kalender.` };
     }
     else if (action === 'READ') {
       // Return today's events as a readable summary for the AI to relay
@@ -228,13 +237,13 @@ async function tryResolvePending(userText, pendingCtx) {
       // start stored in context is invalid — ask the user to re-state the full event
       return {
         status: 'FAILED',
-        message: `❌ Maaf Tuan, saya kehilangan informasi waktu mulai untuk '<b>${pendingCtx.summary}</b>'. Mohon ulangi perintahnya lengkap ya, contoh: "<i>Tambahkan makan malam jam 7 malam, durasi 2 jam</i>"`
+        message: `❌ Maaf Tuan, saya kehilangan informasi waktu mulai untuk '<b>${escapeHtml(pendingCtx.summary)}</b>'. Mohon ulangi perintahnya lengkap ya, contoh: "<i>Tambahkan makan malam jam 7 malam, durasi 2 jam</i>"`
       };
     }
     startDate.setMinutes(startDate.getMinutes() + durationMins);
     const computedEnd = startDate.toISOString();
     await googleWorkspace.createCalendarEvent(pendingCtx.summary, pendingCtx.start, computedEnd, '');
-    return { status: 'SUCCESS', message: `✅ Jadwal '<b>${pendingCtx.summary}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).` };
+    return { status: 'SUCCESS', message: `✅ Jadwal '<b>${escapeHtml(pendingCtx.summary)}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).` };
   } catch (e) {
     console.error('[AGENDA] tryResolvePending error:', e.message);
     return { status: 'FAILED', message: `❌ Gagal menyimpan jadwal: ${e.message}` };
