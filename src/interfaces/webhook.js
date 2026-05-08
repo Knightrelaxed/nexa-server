@@ -131,8 +131,25 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       }
       return fallback;
     };
+    const parseEmailDateSafe = (rawDate) => {
+      const raw = String(rawDate || '').trim();
+      if (!raw) return null;
+
+      // Common Livin format: "Thu, 7 May 2026 21:38:01 +0700 (WIB)"
+      // Remove trailing parenthetical timezone label to improve JS Date parsing consistency.
+      const cleaned = raw.replace(/\s*\([^)]+\)\s*$/, '');
+      let parsed = new Date(cleaned);
+      if (!isNaN(parsed.getTime())) return parsed;
+
+      // Fallback: strip non-essential labels and retry.
+      parsed = new Date(cleaned.replace(/\bWIB\b/gi, '').trim());
+      if (!isNaN(parsed.getTime())) return parsed;
+
+      return null;
+    };
     const getJakartaDateOnly = (date) => {
-      const d = new Date(date);
+      const d = parseEmailDateSafe(date);
+      if (!d) return null;
       if (isNaN(d.getTime())) return null;
       const jakarta = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
       return `${jakarta.getFullYear()}-${String(jakarta.getMonth() + 1).padStart(2, '0')}-${String(jakarta.getDate()).padStart(2, '0')}`;
@@ -188,7 +205,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         if (merchantMatch?.[1]) {
           destination = merchantMatch[1].trim().substring(0, 80);
         }
-        const dateIso = new Date(e.date).toISOString();
+        const parsedDate = parseEmailDateSafe(e.date);
+        const dateIso = parsedDate ? parsedDate.toISOString() : new Date().toISOString();
         rows.push({
           nominal,
           type: 'EXPENSE',
@@ -219,7 +237,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       }
       if (temporalHint.type === 'last_week') {
         return emails.filter((e) => {
-          const d = new Date(e.date);
+          const d = parseEmailDateSafe(e.date);
+          if (!d) return false;
           return !isNaN(d.getTime()) && d >= weekAgoDate && d <= nowJakarta;
         });
       }
@@ -228,7 +247,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     const filterEmailsByDayOfMonth = (emails, dayOfMonth) => {
       if (!Array.isArray(emails) || !dayOfMonth) return emails || [];
       return emails.filter((e) => {
-        const d = new Date(e.date);
+        const d = parseEmailDateSafe(e.date);
+        if (!d) return false;
         if (isNaN(d.getTime())) return false;
         const jakarta = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
         return jakarta.getDate() === dayOfMonth;
