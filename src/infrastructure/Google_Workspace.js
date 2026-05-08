@@ -14,6 +14,7 @@ const SCOPES = [
 // If credentials are missing, Node crashes immediately on require().
 // Instead, build clients on first use via getClients().
 let _clients = null;
+let _oauthDriveClients = null;
 
 function getClients() {
   if (_clients) return _clients;
@@ -41,6 +42,27 @@ function getClients() {
   return _clients;
 }
 
+function getOAuthDriveClients() {
+  if (_oauthDriveClients) return _oauthDriveClients;
+
+  if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
+    throw new Error('[GOOGLE] OAuth Drive fallback belum dikonfigurasi (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN).');
+  }
+
+  const oauth2Client = new google.auth.OAuth2(
+    env.GMAIL_CLIENT_ID,
+    env.GMAIL_CLIENT_SECRET,
+    'http://localhost:3000/oauth2callback'
+  );
+  oauth2Client.setCredentials({ refresh_token: env.GMAIL_REFRESH_TOKEN });
+
+  _oauthDriveClients = {
+    drive: google.drive({ version: 'v3', auth: oauth2Client }),
+    driveV2: google.drive({ version: 'v2', auth: oauth2Client })
+  };
+  return _oauthDriveClients;
+}
+
 function stripHtml(text = '') {
   return String(text).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -50,7 +72,7 @@ async function uploadFileToVault({ filePath, fileName, mimeType, folderId }) {
   const targetFolder = folderId || env.GOOGLE_VAULT_FOLDER_ID;
   if (!targetFolder) throw new Error('GOOGLE_VAULT_FOLDER_ID / GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi.');
 
-  const res = await drive.files.create({
+  const createPayload = {
     requestBody: {
       name: fileName,
       parents: [targetFolder]
@@ -59,45 +81,73 @@ async function uploadFileToVault({ filePath, fileName, mimeType, folderId }) {
       mimeType,
       body: fs.createReadStream(filePath)
     },
-    fields: 'id, webViewLink, name, mimeType'
-  });
+    fields: 'id, webViewLink, name, mimeType',
+    supportsAllDrives: true
+  };
 
-  return res.data;
+  try {
+    const res = await drive.files.create(createPayload);
+    return res.data;
+  } catch (err) {
+    const msg = err?.message || '';
+    if (!/Service Accounts do not have storage quota/i.test(msg)) {
+      throw err;
+    }
+
+    console.warn('[DRIVE] Service Account quota issue detected. Retrying Vault upload with OAuth user credentials...');
+    const { drive: oauthDrive } = getOAuthDriveClients();
+    const res = await oauthDrive.files.create(createPayload);
+    return res.data;
+  }
 }
 
 async function extractOcrTextViaDriveOcr({ filePath, fileName, mimeType, folderId }) {
   const { driveV2 } = getClients();
   const targetFolder = folderId || env.GOOGLE_VAULT_FOLDER_ID;
   if (!targetFolder) throw new Error('GOOGLE_VAULT_FOLDER_ID / GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi.');
+  const doOcrWithClient = async (client) => {
+    // Create a Google Doc with OCR+convert (Drive v2)
+    const docRes = await client.files.insert({
+      ocr: true,
+      convert: true,
+      supportsAllDrives: true,
+      requestBody: {
+        title: `OCR_${fileName || 'vault'}`,
+        parents: [{ id: targetFolder }]
+      },
+      media: {
+        mimeType,
+        body: fs.createReadStream(filePath)
+      }
+    });
 
-  // Create a Google Doc with OCR+convert (Drive v2)
-  const docRes = await driveV2.files.insert({
-    ocr: true,
-    convert: true,
-    requestBody: {
-      title: `OCR_${fileName || 'vault'}`,
-      parents: [{ id: targetFolder }]
-    },
-    media: {
-      mimeType,
-      body: fs.createReadStream(filePath)
-    }
-  });
-
-  const docId = docRes.data.id;
-  try {
-    const exported = await driveV2.files.export({
-      fileId: docId,
-      mimeType: 'text/plain'
-    }, { responseType: 'arraybuffer' });
-
-    const text = Buffer.from(exported.data).toString('utf8');
-    return stripHtml(text);
-  } finally {
-    // Best-effort cleanup: move OCR doc to trash to keep Drive tidy
+    const docId = docRes.data.id;
     try {
-      await driveV2.files.trash({ fileId: docId });
-    } catch (_) {}
+      const exported = await client.files.export({
+        fileId: docId,
+        mimeType: 'text/plain'
+      }, { responseType: 'arraybuffer' });
+
+      const text = Buffer.from(exported.data).toString('utf8');
+      return stripHtml(text);
+    } finally {
+      // Best-effort cleanup: move OCR doc to trash to keep Drive tidy
+      try {
+        await client.files.trash({ fileId: docId });
+      } catch (_) {}
+    }
+  };
+
+  try {
+    return await doOcrWithClient(driveV2);
+  } catch (err) {
+    const msg = err?.message || '';
+    if (!/Service Accounts do not have storage quota/i.test(msg)) {
+      throw err;
+    }
+    console.warn('[DRIVE] Service Account quota issue detected. Retrying OCR with OAuth user credentials...');
+    const { driveV2: oauthDriveV2 } = getOAuthDriveClients();
+    return await doOcrWithClient(oauthDriveV2);
   }
 }
 
