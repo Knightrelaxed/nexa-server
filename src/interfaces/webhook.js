@@ -22,6 +22,9 @@ let pendingCalendarContext = null;
 // Pending Email Context: keeps last email search context for follow-up commands
 // Structure: { searchKeyword, lastLimit, cursorIndex, askedAt }
 let pendingEmailContext = null;
+// Pending Database Context: keeps last database table/action for follow-up commands
+// Structure: { tableName, lastAction, askedAt }
+let pendingDatabaseContext = null;
 
 // ============================================================
 // OUTBOUND TELEGRAM SENDER
@@ -134,7 +137,50 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     const isEmailHistoryFollowUp = (text) => {
       const normalized = String(text || '').toLowerCase().trim();
       if (!normalized) return false;
-      return /sebelum itu|sebelumnya|email sebelumnya|yang sebelum|prior/.test(normalized);
+      return /sebelum itu|sebelumnya|email sebelumnya|yang sebelum|prior|email di bawahnya|email tadi/.test(normalized);
+    };
+    const isGenericContinuation = (text) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      if (!normalized) return false;
+      return /^(lanjut|teruskan|yang tadi|yang itu|itu saja|lagi|next|berikutnya|lanjutkan)$/.test(normalized);
+    };
+    const parseDatabaseFollowUp = (text, lastTableName) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      if (!normalized) return null;
+
+      if (/list tabel|daftar tabel|tabel apa saja|overview database/.test(normalized)) {
+        return { action: 'LIST_TABLES' };
+      }
+
+      let action = null;
+      if (/(cek|periksa|lihat|baca|tampilkan)/.test(normalized)) action = 'READ_TABLE';
+      if (/(tambah|insert|buat|simpan)/.test(normalized)) action = 'INSERT_ROW';
+      if (/(ubah|edit|update|ganti)/.test(normalized)) action = 'UPDATE_ROW';
+      if (/(hapus|delete|buang|remove)/.test(normalized)) action = 'DELETE_ROW';
+      if (!action && /(baris|row|id|tabel)/.test(normalized) && isGenericContinuation(normalized)) {
+        action = 'READ_TABLE';
+      }
+      if (!action) return null;
+
+      const idMatch = normalized.match(/\bid\s*(\d+)\b/);
+      const tableMatch = normalized.match(/\b(nexa_chat_memories|nexa_finance_dedup|nexa_user_profile|nexa_core_identity|nexa_2nd_brain)\b/);
+      const tableName = tableMatch?.[1] || lastTableName || '';
+
+      // Simple data parser from "..." : "..."
+      let contentFromColon = '';
+      const colonIdx = normalized.indexOf(':');
+      if (colonIdx !== -1 && colonIdx < normalized.length - 1) {
+        contentFromColon = normalized.slice(colonIdx + 1).trim();
+      }
+
+      return {
+        action,
+        table_name: tableName,
+        row_id: idMatch ? parseInt(idMatch[1], 10) : undefined,
+        search_keyword: !idMatch && !contentFromColon ? normalized : undefined,
+        row_data: contentFromColon ? { content: contentFromColon } : undefined,
+        update_data: contentFromColon ? { content: contentFromColon } : undefined
+      };
     };
 
     // ============================================================
@@ -263,8 +309,43 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         god_mode_trigger: false
       };
       console.log('[ROUTER] Email follow-up context override activated.');
+    } else if (
+      pendingEmailContext &&
+      isGenericContinuation(textInput) &&
+      Date.now() - pendingEmailContext.askedAt < 10 * 60 * 1000
+    ) {
+      routingData = {
+        intent: 'EMAIL',
+        extracted_data: {
+          action: 'READ',
+          search_keyword: pendingEmailContext.searchKeyword || '',
+          max_results: 1,
+          before_current: true
+        },
+        reply_message: '',
+        god_mode_trigger: false
+      };
+      console.log('[ROUTER] Generic continuation mapped to EMAIL follow-up.');
+    } else if (
+      pendingDatabaseContext &&
+      (/(database|supabase|tabel|row|baris|id)/i.test(textInput) || isGenericContinuation(textInput)) &&
+      Date.now() - pendingDatabaseContext.askedAt < 10 * 60 * 1000
+    ) {
+      const dbFollowUp = parseDatabaseFollowUp(textInput, pendingDatabaseContext.tableName);
+      if (dbFollowUp) {
+        routingData = {
+          intent: 'DATABASE',
+          extracted_data: dbFollowUp,
+          reply_message: '',
+          god_mode_trigger: false
+        };
+        console.log('[ROUTER] Database follow-up context override activated.');
+      }
     } else {
       // Send to AI Router
+      routingData = await aiRouter.routeUserMessage(textInput);
+    }
+    if (!routingData) {
       routingData = await aiRouter.routeUserMessage(textInput);
     }
     console.log('[ROUTER] Intent identified:', routingData.intent);
@@ -545,6 +626,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
 
         if (!tableName && dbAction !== 'LIST_TABLES') {
           domainReply = `❓ Tabel Supabase mana yang ingin Anda kelola?\nPilih salah satu:\n- nexa_chat_memories\n- nexa_finance_dedup\n- nexa_user_profile\n- nexa_core_identity\n- nexa_2nd_brain`;
+          pendingDatabaseContext = { tableName: '', lastAction: dbAction, askedAt: Date.now() };
           break;
         }
 
@@ -560,6 +642,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             return `- <b>${t}</b>: ${info?.count || 0} baris`;
           });
           domainReply = `🗄️ <b>Overview Supabase (5 tabel N.E.X.A):</b>\n${lines.join('\n')}\n\nBalas dengan aksi jelas, misalnya:\n- "baca nexa_core_identity 5 data"\n- "tambah nexa_user_profile: aku suka teh"\n- "hapus nexa_2nd_brain id 12"`;
+          pendingDatabaseContext = { tableName: '', lastAction: dbAction, askedAt: Date.now() };
         } else if (dbAction === 'READ_TABLE') {
           const result = await supabaseMemories.readDatabaseTable(tableName, {
             limit: dbData.max_results || 5,
@@ -581,11 +664,13 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             return `• ${escapeHtml(summary)}`;
           }).join('\n');
           domainReply = `📚 <b>Data ${escapeHtml(result.table)} (${result.rows.length} baris):</b>\n${rowsPreview}`;
+          pendingDatabaseContext = { tableName: result.table, lastAction: dbAction, askedAt: Date.now() };
         } else if (dbAction === 'INSERT_ROW') {
           const result = await supabaseMemories.insertDatabaseRow(tableName, dbData.row_data || {});
           domainReply = result.success
             ? `✅ Insert berhasil ke <b>${escapeHtml(result.table)}</b> (id: ${result.row?.id || '-'})`
             : `❌ Insert gagal ke <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
+          pendingDatabaseContext = { tableName: result.table || tableName, lastAction: dbAction, askedAt: Date.now() };
         } else if (dbAction === 'UPDATE_ROW') {
           const result = await supabaseMemories.updateDatabaseRows(
             tableName,
@@ -595,6 +680,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           domainReply = result.success
             ? `✅ Update berhasil di <b>${escapeHtml(result.table)}</b>. Baris terubah: ${result.updatedRows.length}`
             : `❌ Update gagal di <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
+          pendingDatabaseContext = { tableName: result.table || tableName, lastAction: dbAction, askedAt: Date.now() };
         } else if (dbAction === 'DELETE_ROW') {
           const result = await supabaseMemories.deleteDatabaseRows(
             tableName,
@@ -603,6 +689,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           domainReply = result.success
             ? `🗑️ Delete berhasil di <b>${escapeHtml(result.table)}</b>. Baris terhapus: ${result.deletedRows.length}`
             : `❌ Delete gagal di <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
+          pendingDatabaseContext = { tableName: result.table || tableName, lastAction: dbAction, askedAt: Date.now() };
         } else {
           domainReply = `❌ Aksi database tidak dikenali: ${escapeHtml(dbAction)}`;
         }
@@ -613,6 +700,11 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
     // Send reply via Webhook Response Method (ZERO outbound needed)
     const finalReply = domainReply || routingData.reply_message;
     if (finalReply) {
+      // Keep memory aligned with the ACTUAL final reply (domain execution output),
+      // not only the router's draft reply_message.
+      if (domainReply && domainReply !== routingData.reply_message) {
+        await supabaseMemories.saveChatMemory('nexa', finalReply).catch(() => {});
+      }
       console.log('[TELEGRAM] Replying with intent:', routingData.intent);
       await respondToTelegram(finalReply);
     }
