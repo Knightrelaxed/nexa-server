@@ -227,6 +227,96 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
       return null;
     };
+    const getClarificationMessage = (routing, originalText) => {
+      if (!routing || !routing.intent) return null;
+      const data = routing.extracted_data || {};
+      const intent = routing.intent;
+      const lowerText = String(originalText || '').toLowerCase();
+
+      if (intent === 'INCOMPLETE_INFO') {
+        return routing.reply_message || '❓ Instruksi masih belum lengkap, Tuan. Mohon tambahkan detailnya.';
+      }
+
+      if (intent === 'FINANCE') {
+        if (data.action === 'DELETE' || data.action === 'EDIT') {
+          if (!data.search_keyword || String(data.search_keyword).trim() === '') {
+            return '❓ Transaksi mana yang ingin diubah/dihapus, Tuan? Sebutkan kata kunci unik, nominal, atau nomor transaksi.';
+          }
+        }
+        if ((data.action === 'RECORD' || data.nominal !== undefined) && (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0)) {
+          return '❓ Nominal transaksi belum valid. Mohon sebutkan angka positifnya, Tuan.';
+        }
+      }
+
+      if (intent === 'CALENDAR' && data.action === 'CREATE') {
+        if (!data.summary) return '❓ Nama agendanya apa, Tuan?';
+        if (!data.start) return `❓ Jadwal "${escapeHtml(data.summary)}" dimulai kapan, Tuan?`;
+      }
+
+      if (intent === 'TASK') {
+        if (data.action === 'CREATE' && !data.title) return '❓ Nama tugas yang ingin dibuat apa, Tuan?';
+        if ((data.action === 'DELETE' || data.action === 'COMPLETE' || data.action === 'EDIT') && !data.search_keyword) {
+          return '❓ Tugas mana yang dimaksud, Tuan? Sebutkan kata kunci judul tugasnya.';
+        }
+      }
+
+      if (intent === 'EMAIL') {
+        if (data.action === 'SEND' && (!data.to || !data.subject || !data.content)) {
+          return '❓ Untuk kirim email, mohon lengkapi penerima, subjek, dan isi emailnya, Tuan.';
+        }
+        if (data.action === 'DELETE' && !data.search_keyword) {
+          return '❓ Email mana yang ingin dihapus, Tuan? Beri kata kunci subjek/pengirim.';
+        }
+      }
+
+      if (intent === 'DATABASE') {
+        const action = data.action || 'LIST_TABLES';
+        if (action !== 'LIST_TABLES' && !data.table_name) {
+          return '❓ Tabel Supabase mana yang dimaksud, Tuan?';
+        }
+        if (action === 'INSERT_ROW' && (!data.row_data || typeof data.row_data !== 'object')) {
+          return `❓ Data yang ingin ditambahkan ke tabel <b>${escapeHtml(data.table_name || '(belum disebut)')}</b> apa, Tuan?`;
+        }
+        if (action === 'UPDATE_ROW' && (!data.update_data || typeof data.update_data !== 'object')) {
+          return `❓ Data perubahan untuk tabel <b>${escapeHtml(data.table_name || '(belum disebut)')}</b> apa, Tuan?`;
+        }
+        if ((action === 'UPDATE_ROW' || action === 'DELETE_ROW') && !data.row_id && !data.search_keyword) {
+          return '❓ Baris mana yang ingin diubah/hapus, Tuan? Sertakan row id atau kata kunci pencarian.';
+        }
+      }
+
+      if (intent === '2ND_BRAIN') {
+        const action = data.action || 'APPEND';
+        if ((action === 'EDIT' || action === 'DELETE') && !data.search_keyword) {
+          return '❓ Arsip mana yang dimaksud, Tuan? Mohon beri kata kunci untuk mencari arsipnya.';
+        }
+        if ((action === 'APPEND' || action === 'EDIT') && !data.content) {
+          return '❓ Konten arsip yang ingin disimpan/diubah belum ada, Tuan.';
+        }
+      }
+
+      if (intent === 'USER_PROFILE' || intent === 'CORE_IDENTITY') {
+        const action = data.action || 'APPEND';
+        if (action === 'APPEND' && !data.content) {
+          return '❓ Fakta/aturan yang ingin ditambahkan apa, Tuan?';
+        }
+        if (action === 'DELETE' && !data.search_keyword) {
+          return '❓ Item mana yang ingin dihapus dari memori, Tuan?';
+        }
+      }
+
+      if (intent === 'SPREADSHEET') {
+        if (!data.action || !data.table_name) {
+          return '❓ Untuk Spreadsheet, mohon sebutkan aksi dan nama tabel/file yang dimaksud, Tuan.';
+        }
+      }
+
+      if (intent === 'NORMAL_CHAT' && /(hapus|delete|ubah|edit|update)\s+(itu|yang tadi)/.test(lowerText) && conversationContext?.intent) {
+        return `❓ Apakah maksud Tuan untuk <b>${conversationContext.intent}</b> pada item sebelumnya? Mohon konfirmasi singkat.`;
+      }
+
+      return null;
+    };
     const parseDatabaseFollowUp = (text, lastTableName) => {
       const normalized = String(text || '').toLowerCase().trim();
       if (!normalized) return null;
@@ -447,8 +537,10 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
     // Execute Domain Logic based on Intent
     let domainReply = null;
-
-    switch (routingData.intent) {
+    const clarificationMessage = getClarificationMessage(routingData, textInput);
+    if (clarificationMessage) {
+      domainReply = clarificationMessage;
+    } else switch (routingData.intent) {
       case 'FINANCE':
         if (routingData.extracted_data && routingData.extracted_data.action === 'READ_LATEST') {
           const recentData = await financeEngine.getRecentTransactions(5);
