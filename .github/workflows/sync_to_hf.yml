@@ -20,4 +20,4 @@ jobs:
           HF_USERNAME: nexa-asistant
           HF_SPACE_NAME: NEXA-Core-Server
         run: |
-          git push --force-with-lease https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME main
+          git push --force https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME main
