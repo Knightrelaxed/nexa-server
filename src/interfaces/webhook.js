@@ -25,6 +25,9 @@ let pendingEmailContext = null;
 // Pending Database Context: keeps last database table/action for follow-up commands
 // Structure: { tableName, lastAction, askedAt }
 let pendingDatabaseContext = null;
+// Global conversation context for cross-feature follow-up continuity
+// Structure: { intent, extractedData, lastUserText, askedAt }
+let conversationContext = null;
 
 // ============================================================
 // OUTBOUND TELEGRAM SENDER
@@ -143,6 +146,86 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       const normalized = String(text || '').toLowerCase().trim();
       if (!normalized) return false;
       return /^(lanjut|teruskan|yang tadi|yang itu|itu saja|lagi|next|berikutnya|lanjutkan)$/.test(normalized);
+    };
+    const isAmbiguousFollowUp = (text) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      if (!normalized) return false;
+      return /^(lanjut|teruskan|yang tadi|yang itu|itu|itu aja|itu saja|sebelumnya|sebelum itu|lagi|next|berikutnya|lanjutkan|hapus itu|ubah itu|edit itu)$/.test(normalized);
+    };
+    const hasStrongNewIntentCue = (text) => {
+      const normalized = String(text || '').toLowerCase();
+      if (!normalized) return false;
+      return /(email|gmail|database|supabase|kalender|agenda|jadwal|task|tugas|keuangan|pengeluaran|pemasukan|search|cari|berita|spreadsheet|sheet|dokumen|2nd brain|profil|identitas)/.test(normalized);
+    };
+    const normalizeKeywordCandidate = (text) => {
+      const normalized = String(text || '').toLowerCase().trim();
+      return normalized
+        .replace(/^(hapus|delete|ubah|edit|update|ganti|selesaikan|complete)\s*/g, '')
+        .replace(/^(itu|yang itu|yang tadi)\s*/g, '')
+        .trim();
+    };
+    const buildGlobalFollowUpRouting = (text, ctx) => {
+      if (!ctx || !ctx.intent) return null;
+      if (Date.now() - (ctx.askedAt || 0) > 10 * 60 * 1000) return null;
+      if (!isAmbiguousFollowUp(text) || hasStrongNewIntentCue(text)) return null;
+
+      const normalized = String(text || '').toLowerCase().trim();
+      const keyword = normalizeKeywordCandidate(normalized);
+      const fallbackKeyword = ctx.extractedData?.search_keyword || ctx.extractedData?.summary || ctx.extractedData?.title || ctx.extractedData?.destination || ctx.extractedData?.content || '';
+      const mergedKeyword = keyword || fallbackKeyword;
+
+      if (ctx.intent === 'FINANCE') {
+        if (/(hapus|delete)/.test(normalized)) {
+          return { intent: 'FINANCE', extracted_data: { action: 'DELETE', search_keyword: mergedKeyword }, reply_message: '', god_mode_trigger: false };
+        }
+        if (/(ubah|edit|update|ganti)/.test(normalized)) {
+          return { intent: 'FINANCE', extracted_data: { action: 'EDIT', search_keyword: mergedKeyword }, reply_message: '', god_mode_trigger: false };
+        }
+        return { intent: 'FINANCE', extracted_data: { action: 'READ_LATEST' }, reply_message: '', god_mode_trigger: false };
+      }
+
+      if (ctx.intent === 'TASK') {
+        if (/(hapus|delete)/.test(normalized)) {
+          return { intent: 'TASK', extracted_data: { action: 'DELETE', search_keyword: mergedKeyword }, reply_message: '', god_mode_trigger: false };
+        }
+        if (/(selesai|complete|done)/.test(normalized)) {
+          return { intent: 'TASK', extracted_data: { action: 'COMPLETE', search_keyword: mergedKeyword }, reply_message: '', god_mode_trigger: false };
+        }
+        if (/(ubah|edit|update|ganti)/.test(normalized)) {
+          return { intent: 'TASK', extracted_data: { action: 'EDIT', search_keyword: mergedKeyword }, reply_message: '', god_mode_trigger: false };
+        }
+        return { intent: 'TASK', extracted_data: { action: 'READ' }, reply_message: '', god_mode_trigger: false };
+      }
+
+      if (ctx.intent === 'CALENDAR') {
+        if (/(hapus|delete)/.test(normalized)) {
+          return { intent: 'CALENDAR', extracted_data: { action: 'DELETE', summary: mergedKeyword || ctx.extractedData?.summary }, reply_message: '', god_mode_trigger: false };
+        }
+        if (/(ubah|edit|update|ganti)/.test(normalized)) {
+          return { intent: 'CALENDAR', extracted_data: { action: 'UPDATE', summary: mergedKeyword || ctx.extractedData?.summary }, reply_message: '', god_mode_trigger: false };
+        }
+        return { intent: 'CALENDAR', extracted_data: { action: 'READ' }, reply_message: '', god_mode_trigger: false };
+      }
+
+      if (ctx.intent === '2ND_BRAIN' || ctx.intent === 'USER_PROFILE' || ctx.intent === 'CORE_IDENTITY') {
+        if (/(hapus|delete)/.test(normalized)) {
+          return { intent: ctx.intent, extracted_data: { action: 'DELETE', search_keyword: mergedKeyword }, reply_message: '', god_mode_trigger: false };
+        }
+      }
+
+      if (ctx.intent === 'WEB_SEARCH') {
+        return {
+          intent: 'WEB_SEARCH',
+          extracted_data: {
+            query: ctx.extractedData?.query || ctx.lastUserText || '',
+            type: ctx.extractedData?.type || 'search'
+          },
+          reply_message: '',
+          god_mode_trigger: false
+        };
+      }
+
+      return null;
     };
     const parseDatabaseFollowUp = (text, lastTableName) => {
       const normalized = String(text || '').toLowerCase().trim();
@@ -341,6 +424,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         };
         console.log('[ROUTER] Database follow-up context override activated.');
       }
+    } else if (conversationContext) {
+      const globalFollowUpRouting = buildGlobalFollowUpRouting(textInput, conversationContext);
+      if (globalFollowUpRouting) {
+        routingData = globalFollowUpRouting;
+        console.log('[ROUTER] Global follow-up context override activated for intent:', routingData.intent);
+      }
     } else {
       // Send to AI Router
       routingData = await aiRouter.routeUserMessage(textInput);
@@ -349,6 +438,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       routingData = await aiRouter.routeUserMessage(textInput);
     }
     console.log('[ROUTER] Intent identified:', routingData.intent);
+    conversationContext = {
+      intent: routingData.intent,
+      extractedData: routingData.extracted_data || null,
+      lastUserText: textInput,
+      askedAt: Date.now()
+    };
 
     // Execute Domain Logic based on Intent
     let domainReply = null;
