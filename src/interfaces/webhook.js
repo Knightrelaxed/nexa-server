@@ -115,6 +115,83 @@ function parseJsonObjectFromText(raw) {
   return null;
 }
 
+function toCleanSingleLine(value, maxLen = 160) {
+  const s = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  return s.substring(0, maxLen);
+}
+
+function looksNarrative(value) {
+  const s = String(value || '').trim();
+  if (!s) return false;
+  if (s.length > 120) return true;
+  return /[.!?]/.test(s) || /\b(berdasarkan|tampaknya|saya|telah|menganalisis|mengidentifikasi)\b/i.test(s);
+}
+
+function normalizeVaultMetadata(metadata = {}, visionText = '', fileName = '') {
+  const out = {};
+  const input = metadata && typeof metadata === 'object' ? metadata : {};
+
+  for (const [k, v] of Object.entries(input)) {
+    if (v === undefined || v === null) continue;
+    const key = String(k).trim().toLowerCase();
+    if (!key) continue;
+    const cleaned = toCleanSingleLine(v, 600);
+    if (!cleaned) continue;
+    out[key] = cleaned;
+  }
+
+  if (fileName) out.judul = out.judul || fileName;
+
+  // Strict clean for core fields so they stay structured, not narrative blobs.
+  const coreFields = ['nama', 'nik', 'nomor', 'nomor_kartu', 'nomor_registrasi', 'alamat', 'tanggal', 'instansi', 'agama'];
+  for (const key of coreFields) {
+    if (!out[key]) continue;
+    if (looksNarrative(out[key])) {
+      // Keep narrative in catatan, but clear noisy core field.
+      out.catatan = out.catatan || out[key];
+      delete out[key];
+    }
+  }
+
+  const textPool = `${visionText || ''}\n${out.catatan || ''}\n${out.ringkasan_dokumen || ''}`;
+
+  const nik = textPool.match(/\b\d{16}\b/);
+  if (nik && !out.nik) out.nik = nik[0];
+
+  const nomorKartu = textPool.match(/nomor\s*kartu\s*[:\-]?\s*(\d{10,25})/i);
+  if (nomorKartu?.[1] && !out.nomor_kartu) out.nomor_kartu = nomorKartu[1];
+
+  const nomorReg = textPool.match(/nomor\s*registrasi\s*[:\-]?\s*([A-Z0-9\-]{4,25})/i);
+  if (nomorReg?.[1] && !out.nomor_registrasi) out.nomor_registrasi = nomorReg[1];
+
+  const namaAtas = textPool.match(/atas\s+nama\s*[:\-]?\s*([A-Z][A-Z\s'.-]{2,90})/i);
+  if (namaAtas?.[1] && !out.nama) out.nama = toCleanSingleLine(namaAtas[1], 90);
+
+  const alamat = textPool.match(/alamat\s*[:\-]?\s*([^.;\n]{8,160})/i);
+  if (alamat?.[1] && !out.alamat) out.alamat = toCleanSingleLine(alamat[1], 160);
+
+  const tanggal = textPool.match(/\b(\d{1,2})\s*(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\s*(\d{4})\b/i);
+  if (tanggal && !out.tanggal) out.tanggal = `${tanggal[1]} ${tanggal[2]} ${tanggal[3]}`;
+
+  const faskes = textPool.match(/faskes(?:\s*tingkat\s*i)?\s*[:\-]?\s*([^.;\n]{3,80})/i);
+  if (faskes?.[1] && !out.faskes_tingkat_1) out.faskes_tingkat_1 = toCleanSingleLine(faskes[1], 80);
+
+  const layanan = textPool.match(/(?:pusat\s*layanan[^0-9]{0,40})?(\b1\d{5,6}\b)/i);
+  if (layanan?.[1] && !out.kontak_layanan) out.kontak_layanan = layanan[1];
+
+  const website = textPool.match(/\b((?:https?:\/\/)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s]*)?)\b/i);
+  if (website?.[1] && !out.website_layanan) out.website_layanan = website[1];
+
+  if (/kartu indonesia sehat|kis|bpjs/i.test(textPool) && !out.instansi) out.instansi = 'BPJS Kesehatan';
+
+  // Keep catatan as optional short supplement only.
+  if (out.catatan) out.catatan = toCleanSingleLine(out.catatan, 280);
+  if (out.ringkasan_dokumen) out.ringkasan_dokumen = toCleanSingleLine(out.ringkasan_dokumen, 320);
+
+  return out;
+}
+
 function extractVaultMetadataFromNarrative(text, fileName = '') {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
   const out = {};
@@ -165,7 +242,7 @@ async function extractVaultMetadataFromVision({ fileId, fileName, promptHint = '
     `2) Semua key harus snake_case.\n` +
     `3) Setiap informasi penting yang terbaca harus masuk ke key-value, jangan hilangkan data penting.\n` +
     `4) Jika informasi penting tidak punya label eksplisit, buat key logis sesuai konteks.\n` +
-    `5) Hindari pemotongan data krusial, tetapi tetap padat.\n` +
+    `5) Untuk field inti (nama, nik, nomor_xxx, alamat, tanggal, instansi), isi nilai singkat-faktual saja, jangan narasi.\n` +
     `6) Sertakan key "tipe_dokumen" berdasarkan isi dokumen.\n` +
     `7) Jika ada teks kontak/layanan/instansi di bagian bawah dokumen, tetap masukkan sebagai key yang relevan.\n\n` +
     `Teks hasil baca dokumen:\n${visionText}`;
@@ -176,9 +253,10 @@ async function extractVaultMetadataFromVision({ fileId, fileName, promptHint = '
   const combined = parsed && typeof parsed === 'object'
     ? { ...heuristic, ...parsed }
     : { ...heuristic, ringkasan_dokumen: String(visionText || '').substring(0, 1500) };
+  const normalized = normalizeVaultMetadata(combined, visionText, fileName);
   return {
     judul: fileName || '',
-    ...combined,
+    ...normalized,
     source: 'VISION'
   };
 }
