@@ -45,8 +45,9 @@ function getClients() {
 function getOAuthDriveClients() {
   if (_oauthDriveClients) return _oauthDriveClients;
 
-  if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
-    throw new Error('[GOOGLE] OAuth Drive fallback belum dikonfigurasi (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN).');
+  const refreshToken = env.GOOGLE_DRIVE_REFRESH_TOKEN || env.GMAIL_REFRESH_TOKEN || env.TASKS_REFRESH_TOKEN;
+  if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !refreshToken) {
+    throw new Error('[GOOGLE] OAuth Drive fallback belum dikonfigurasi (butuh GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET + GOOGLE_DRIVE_REFRESH_TOKEN atau token OAuth lain yang memiliki scope Drive).');
   }
 
   const oauth2Client = new google.auth.OAuth2(
@@ -54,7 +55,7 @@ function getOAuthDriveClients() {
     env.GMAIL_CLIENT_SECRET,
     'http://localhost:3000/oauth2callback'
   );
-  oauth2Client.setCredentials({ refresh_token: env.GMAIL_REFRESH_TOKEN });
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
 
   _oauthDriveClients = {
     drive: google.drive({ version: 'v3', auth: oauth2Client }),

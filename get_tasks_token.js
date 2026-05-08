@@ -13,10 +13,11 @@ const actualClientSecret = process.env.GMAIL_CLIENT_SECRET || CLIENT_SECRET;
 
 const oauth2Client = new google.auth.OAuth2(actualClientId, actualClientSecret, REDIRECT_URI);
 
-// Scope gabungan: Gmail + Google Tasks
+// Scope gabungan: Gmail + Google Tasks + Google Drive
 const SCOPES = [
   'https://mail.google.com/',
-  'https://www.googleapis.com/auth/tasks'
+  'https://www.googleapis.com/auth/tasks',
+  'https://www.googleapis.com/auth/drive'
 ];
 
 const authUrl = oauth2Client.generateAuthUrl({
@@ -30,7 +31,8 @@ console.log('🔑 N.E.X.A — GOOGLE TASKS TOKEN GENERATOR');
 console.log('====================================================\n');
 console.log('Scope yang diminta:');
 console.log('  ✅ Gmail (https://mail.google.com/)');
-console.log('  ✅ Google Tasks (tasks read/write)\n');
+console.log('  ✅ Google Tasks (tasks read/write)');
+console.log('  ✅ Google Drive (drive full)\n');
 console.log('1. Silakan buka URL berikut di browser Anda:');
 console.log('\n' + authUrl + '\n');
 console.log('2. Login dengan akun Gmail Anda dan klik "Izinkan".');
@@ -52,11 +54,14 @@ const server = http.createServer(async (req, res) => {
         console.log('\n🎉 BERHASIL! Ini Token Rahasia Anda:\n');
         console.log('====================================================');
         console.log('TASKS_REFRESH_TOKEN=' + tokens.refresh_token);
+        console.log('GOOGLE_DRIVE_REFRESH_TOKEN=' + tokens.refresh_token);
         console.log('====================================================\n');
         console.log('📋 LANGKAH SELANJUTNYA:');
-        console.log('1. Copy nilai TASKS_REFRESH_TOKEN di atas');
+        console.log('1. Copy nilai refresh token di atas');
         console.log('2. Tambahkan ke file .env lokal Anda');
-        console.log('3. Upload ke Hugging Face Secrets dengan nama: TASKS_REFRESH_TOKEN');
+        console.log('3. Upload ke Hugging Face Secrets dengan nama:');
+        console.log('   - TASKS_REFRESH_TOKEN');
+        console.log('   - GOOGLE_DRIVE_REFRESH_TOKEN');
         console.log('\nSelesai! Tekan Ctrl+C untuk keluar.');
 
         setTimeout(() => process.exit(0), 2000);

@@ -37,6 +37,7 @@ module.exports = {
   GMAIL_CLIENT_ID: process.env.GMAIL_CLIENT_ID,
   GMAIL_CLIENT_SECRET: process.env.GMAIL_CLIENT_SECRET,
   GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN,
+  GOOGLE_DRIVE_REFRESH_TOKEN: process.env.GOOGLE_DRIVE_REFRESH_TOKEN, // Optional dedicated OAuth refresh token with Drive scopes
 
   // Google Tasks OAuth2 (uses same Client ID/Secret as Gmail)
   TASKS_REFRESH_TOKEN: process.env.TASKS_REFRESH_TOKEN,
