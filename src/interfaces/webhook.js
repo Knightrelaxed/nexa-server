@@ -254,6 +254,35 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         return jakarta.getDate() === dayOfMonth;
       });
     };
+    const toGmailDateLiteral = (dateObj) => {
+      return `${dateObj.getFullYear()}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${String(dateObj.getDate()).padStart(2, '0')}`;
+    };
+    const getJakartaNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    const getTemporalGmailQuerySuffix = (temporalHint, dayHint) => {
+      const nowJakarta = getJakartaNow();
+
+      if (temporalHint?.type === 'today') {
+        const start = new Date(nowJakarta); start.setHours(0, 0, 0, 0);
+        const end = new Date(start); end.setDate(end.getDate() + 1);
+        return ` after:${toGmailDateLiteral(start)} before:${toGmailDateLiteral(end)}`;
+      }
+      if (temporalHint?.type === 'yesterday') {
+        const end = new Date(nowJakarta); end.setHours(0, 0, 0, 0);
+        const start = new Date(end); start.setDate(start.getDate() - 1);
+        return ` after:${toGmailDateLiteral(start)} before:${toGmailDateLiteral(end)}`;
+      }
+      if (temporalHint?.type === 'last_week') {
+        const end = new Date(nowJakarta); end.setHours(23, 59, 59, 999);
+        const start = new Date(nowJakarta); start.setDate(start.getDate() - 7); start.setHours(0, 0, 0, 0);
+        return ` after:${toGmailDateLiteral(start)} before:${toGmailDateLiteral(end)}`;
+      }
+      if (dayHint) {
+        const start = new Date(nowJakarta.getFullYear(), nowJakarta.getMonth(), dayHint, 0, 0, 0, 0);
+        const end = new Date(start); end.setDate(end.getDate() + 1);
+        return ` after:${toGmailDateLiteral(start)} before:${toGmailDateLiteral(end)}`;
+      }
+      return '';
+    };
 
     const isStopEmailFollowUp = (text) => {
       const normalized = String(text || '').toLowerCase().trim();
@@ -924,9 +953,12 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
 
             if (shouldRunEmailAnalytics) {
               const searchKeywordForAnalytics = routingData.extracted_data.search_keyword || pendingEmailContext?.searchKeyword || 'livin';
+              const temporalHintForAnalytics = getEmailTemporalFilterFromText(textInput);
+              const temporalQuerySuffixForAnalytics = getTemporalGmailQuerySuffix(temporalHintForAnalytics, dayHint);
+              const analyticsQuery = `${searchKeywordForAnalytics}${temporalQuerySuffixForAnalytics}`;
               const sourceBatch = pendingEmailContext?.lastBatch?.length
                 ? pendingEmailContext.lastBatch
-                : await gmailClient.getLatestEmails(searchKeywordForAnalytics, 50);
+                : await gmailClient.getLatestEmails(analyticsQuery, 50);
               const scoped = dayHint
                 ? filterEmailsByDayOfMonth(sourceBatch, dayHint)
                 : sourceBatch;
@@ -954,15 +986,19 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               ? Math.min(requestedLimit, 10)
               : getEmailReadLimitFromText(textInput, 5);
             const temporalHint = getEmailTemporalFilterFromText(textInput);
+            const dayHintForRead = parseDayOfMonthHint(textInput);
 
             const followUpPrevious = Boolean(routingData.extracted_data.before_current);
             const searchKeyword = routingData.extracted_data.search_keyword || '';
+            const baseQuery = searchKeyword || 'livin OR from:noreply.livin@bankmandiri.co.id';
+            const temporalQuerySuffix = getTemporalGmailQuerySuffix(temporalHint, dayHintForRead);
+            const queryWithTemporalWindow = `${baseQuery}${temporalQuerySuffix}`;
             let emails = [];
             let contextCursorIndex = 0;
             let candidateEmailsForContext = [];
 
             if (followUpPrevious && pendingEmailContext) {
-              const fullBatch = await gmailClient.getLatestEmails(searchKeyword, 20);
+              const fullBatch = await gmailClient.getLatestEmails(searchKeyword || pendingEmailContext.searchKeyword || baseQuery, 20);
               candidateEmailsForContext = fullBatch;
               const nextCursor = (pendingEmailContext.cursorIndex || 0) + 1;
               if (nextCursor < fullBatch.length) {
@@ -972,10 +1008,11 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
                 emails = [];
               }
             } else {
-              // Pull a wider batch first so temporal filters (e.g. "kemarin") can work reliably.
-              const candidateEmails = await gmailClient.getLatestEmails(searchKeyword, Math.max(maxResults, 20));
+              // Pull a wider batch first (already windowed by Gmail query when temporal hint exists).
+              const candidateEmails = await gmailClient.getLatestEmails(queryWithTemporalWindow, Math.max(maxResults, 20));
               candidateEmailsForContext = candidateEmails;
-              const filteredEmails = filterEmailsByTemporalHint(candidateEmails, temporalHint);
+              let filteredEmails = filterEmailsByTemporalHint(candidateEmails, temporalHint);
+              if (dayHintForRead) filteredEmails = filterEmailsByDayOfMonth(filteredEmails, dayHintForRead);
               emails = filteredEmails.slice(0, maxResults);
             }
 
