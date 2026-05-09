@@ -157,14 +157,10 @@ async function extractOcrTextViaDriveOcr({ filePath, fileName, mimeType, folderI
  * Get the current month sheet name in Indonesian (e.g. "Februari 2026")
  */
 function getCurrentMonthSheetName() {
-  const months = [
-    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-  ];
   const now = new Date();
-  // Use Jakarta time for month resolution
+  // Use Jakarta time for year resolution
   const jakartaDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-  return `${months[jakartaDate.getMonth()]} ${jakartaDate.getFullYear()}`;
+  return jakartaDate.getFullYear().toString(); // e.g. "2026"
 }
 
 /**
