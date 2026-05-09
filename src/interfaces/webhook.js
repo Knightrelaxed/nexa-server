@@ -1272,16 +1272,19 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           );
           domainReply = result.message;
         } else if (routingData.extracted_data && (routingData.extracted_data.nominal || routingData.extracted_data.action === 'RECORD')) {
-          const result = await financeEngine.processTransaction({
+          const txData = {
             nominal: routingData.extracted_data.nominal,
             type: routingData.extracted_data.type || 'EXPENSE',
             destination: routingData.extracted_data.destination || routingData.extracted_data.merchant || 'Unknown',
             category: routingData.extracted_data.category || 'Uncategorized',
             description: routingData.extracted_data.description || '-',
             time: routingData.extracted_data.time || new Date().toISOString()
-          }, 'TELEGRAM_MANUAL');
-          if (result && result.status === 'DUPLICATE') {
-            domainReply = '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya. Tidak ada duplikasi yang dieksekusi.';
+          };
+          const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
+          if (confirmMsg) {
+             domainReply = confirmMsg; // Send the confirmation prompt back to the user
+          } else {
+             domainReply = '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya (duplikat) atau sedang menunggu konfirmasi.';
           }
         }
         break;

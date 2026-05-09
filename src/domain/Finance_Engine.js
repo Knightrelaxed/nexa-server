@@ -388,71 +388,14 @@ async function pollLivinEmails() {
 
       newCount++;
 
-      // Formatting for Telegram
-      const dateStr = transactionTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' });
-      const timeStr = transactionTime.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.');
-      
-      // Get current Saldo
-      let currentSaldo = '-';
-      try {
-        const recentRows = await googleWorkspace.getFinanceSummary(1);
-        if (recentRows && recentRows.length > 0) {
-          const rawSaldo = recentRows[0][8];
-          const saldoNum = parseFloat(String(rawSaldo).replace(/[^0-9.-]/g, ''));
-          currentSaldo = isNaN(saldoNum) ? rawSaldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
-        }
-      } catch (_) {}
-
-      const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
-      const msg = `💸 <b>TRANSAKSI LIVIN TERBARU</b>\n\n` +
-                  `<b>No:</b> [Auto]\n` +
-                  `<b>Tanggal:</b> ${dateStr}\n` +
-                  `<b>Waktu:</b> ${timeStr}\n` +
-                  `<b>Tipe:</b> Pengeluaran\n` +
-                  `<b>Kategori:</b> [Auto-AI]\n` +
-                  `<b>Akun:</b> Bank Mandiri Livin\n` +
-                  `<b>Catatan / Detail:</b> [KOSONG - Tujuan: ${tx.destination}]\n` +
-                  `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
-                  `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
-                  `Silakan balas dengan detail pengeluaran ini untuk mengisi bagian yang kosong (contoh: "buat beli sate" atau "bayar kas"). Jika dalam 5 menit tidak ada balasan, N.E.X.A akan mengotomatiskan kategori dan catatannya.`;
-
-      if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+      const msg = await requestTransactionConfirmation(tx, 'TRANSAKSI LIVIN TERBARU');
+      if (msg && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
         await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
           chat_id: env.TELEGRAM_CHAT_ID,
           text: msg,
           parse_mode: 'HTML'
         });
       }
-
-      // Auto-save after 5 minutes
-      const timeoutId = setTimeout(async () => {
-        if (pendingConfirmations.has(compositeKey)) {
-          try {
-            // Auto categorize using AI Router since user didn't reply
-            const aiRouter = require('../core/AI_Router');
-            const autoQuery = `catat pengeluaran ${nominal} ke ${tx.destination}`;
-            const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
-            
-            tx.category = routingData?.extracted_data?.category || 'Lainnya';
-            tx.description = `Pembayaran ke ${tx.destination}`;
-
-            await processTransaction(tx, 'GMAIL_POLLING');
-            pendingConfirmations.delete(compositeKey);
-            
-            if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-              await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                chat_id: env.TELEGRAM_CHAT_ID,
-                text: `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`,
-                parse_mode: 'HTML'
-              });
-            }
-          } catch (e) {
-            console.error('[FINANCE] Auto-save timeout failed:', e.message);
-          }
-        }
-      }, 5 * 60 * 1000);
-
-      pendingConfirmations.set(compositeKey, { tx, timeoutId });
     }
     return newCount;
   } catch (error) {
@@ -461,4 +404,88 @@ async function pollLivinEmails() {
   }
 }
 
-module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction, pollLivinEmails, confirmPendingTransactions };
+/**
+ * Universally requests transaction confirmation (Email, Text, Voice, Photo).
+ * Waits 5 minutes before auto-saving.
+ */
+async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN KEUANGAN BARU') {
+  const nominal = txData.nominal;
+  const destination = txData.destination || 'Unknown';
+  
+  const tx = {
+    nominal,
+    type: txData.type || 'EXPENSE',
+    destination,
+    category: txData.category && txData.category !== 'Uncategorized' ? txData.category : '[Menunggu Kategori AI/User]',
+    description: txData.description && txData.description !== '-' ? txData.description : '[Menunggu Detail User]',
+    time: txData.time || new Date().toISOString()
+  };
+
+  const transactionTime = new Date(tx.time);
+  const cleanMerchant = (tx.destination).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const compositeKey = `${nominal}_${cleanMerchant}_${Date.now()}`; // Added Date.now() to ensure manual inputs never collide with existing pending keys
+
+  // Formatting for Telegram
+  const dateStr = transactionTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' });
+  const timeStr = transactionTime.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.');
+  
+  let currentSaldo = '-';
+  try {
+    const recentRows = await googleWorkspace.getFinanceSummary(1);
+    if (recentRows && recentRows.length > 0) {
+      const rawSaldo = recentRows[0][8];
+      const saldoNum = parseFloat(String(rawSaldo).replace(/[^0-9.-]/g, ''));
+      currentSaldo = isNaN(saldoNum) ? rawSaldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
+    }
+  } catch (_) {}
+
+  const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
+  const tipeStr = tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran';
+  const displayDesc = tx.description === '[Menunggu Detail User]' ? `[KOSONG - Tujuan: ${destination}]` : tx.description;
+
+  const msg = `💸 <b>${sourceLabel}</b>\n\n` +
+              `<b>No:</b> [Auto]\n` +
+              `<b>Tanggal:</b> ${dateStr}\n` +
+              `<b>Waktu:</b> ${timeStr}\n` +
+              `<b>Tipe:</b> ${tipeStr}\n` +
+              `<b>Kategori:</b> [Auto-AI]\n` +
+              `<b>Akun:</b> Bank Mandiri Livin\n` +
+              `<b>Catatan / Detail:</b> ${displayDesc}\n` +
+              `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
+              `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
+              `Silakan balas dengan detail pengeluaran ini untuk mengisi bagian yang kosong (contoh: "buat beli sate" atau "bayar kas"). Jika dalam 5 menit tidak ada balasan, N.E.X.A akan mengotomatiskan kategori dan catatannya.`;
+
+  // Auto-save after 5 minutes
+  const timeoutId = setTimeout(async () => {
+    if (pendingConfirmations.has(compositeKey)) {
+      try {
+        const aiRouter = require('../core/AI_Router');
+        const autoQuery = `catat ${tipeStr.toLowerCase()} ${nominal} ke ${tx.destination} dengan catatan ${tx.description}`;
+        const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
+        
+        tx.category = routingData?.extracted_data?.category || 'Lainnya';
+        if (tx.description === '[Menunggu Detail User]') {
+            tx.description = `${tipeStr} ke ${tx.destination}`;
+        }
+
+        await processTransaction(tx, sourceLabel.includes('LIVIN') ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL');
+        pendingConfirmations.delete(compositeKey);
+        
+        if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+          await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: env.TELEGRAM_CHAT_ID,
+            text: `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`,
+            parse_mode: 'HTML'
+          });
+        }
+      } catch (e) {
+        console.error('[FINANCE] Auto-save timeout failed:', e.message);
+      }
+    }
+  }, 5 * 60 * 1000);
+
+  pendingConfirmations.set(compositeKey, { tx, timeoutId });
+  return msg;
+}
+
+module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction, pollLivinEmails, confirmPendingTransactions, requestTransactionConfirmation };
