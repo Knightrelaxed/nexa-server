@@ -116,7 +116,11 @@ function parseJsonObjectFromText(raw) {
 }
 
 function toCleanSingleLine(value, maxLen = 160) {
-  const s = String(value || '').replace(/\s+/g, ' ').trim();
+  let valStr = value;
+  if (value && typeof value === 'object') {
+    valStr = JSON.stringify(value);
+  }
+  const s = String(valStr || '').replace(/\s+/g, ' ').trim();
   if (!s) return '';
   return s.substring(0, maxLen);
 }
@@ -294,7 +298,8 @@ async function extractVaultMetadataFromVision({ fileId, fileName, promptHint = '
     `4. Value WAJIB faktual dan singkat. Jangan buat kalimat narasi panjang sebagai value.\n` +
     `5. Sertakan key "kategori_gambar" untuk mengkategorikan isi (contoh: KTP, Struk Belanja, Surat Keterangan Kematian, Plang Jalan, dll).\n` +
     `6. JANGAN lewatkan angka penting, nomor identitas, tanggal, nama, lokasi, total bayar, atau informasi krusial lainnya.\n` +
-    `7. Jika melihat nomor kontak, email, atau website, buat key yang sesuai.`;
+    `7. Jika melihat nomor kontak, email, atau website, buat key yang sesuai.\n` +
+    `8. WAJIB keluarkan key "judul" yang berisi deskripsi singkat/nama dokumen yang sangat spesifik dan representatif.`;
 
   const rawVisionOutput = await visionEngine.processTelegramImage(
     fileId,
