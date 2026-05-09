@@ -1210,6 +1210,27 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       askedAt: Date.now()
     };
 
+    // Passive Background Learning (Auto-Extraction)
+    if (routingData.learned_user_facts && Array.isArray(routingData.learned_user_facts) && routingData.learned_user_facts.length > 0) {
+      for (const fact of routingData.learned_user_facts) {
+        if (typeof fact === 'string' && fact.trim().length > 0) {
+          console.log('[ROUTER] Passive Learning - User Fact:', fact);
+          await supabaseMemories.saveUserProfile(fact);
+        }
+      }
+      invalidatePersonalFactsCache();
+    }
+    
+    if (routingData.learned_core_identities && Array.isArray(routingData.learned_core_identities) && routingData.learned_core_identities.length > 0) {
+      for (const fact of routingData.learned_core_identities) {
+        if (typeof fact === 'string' && fact.trim().length > 0) {
+          console.log('[ROUTER] Passive Learning - Core Identity:', fact);
+          await supabaseMemories.saveCoreIdentity(fact);
+        }
+      }
+      invalidatePersonalFactsCache();
+    }
+
     // Execute Domain Logic based on Intent
     let domainReply = null;
     const clarificationMessage = getClarificationMessage(routingData, textInput);

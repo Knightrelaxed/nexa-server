@@ -62,6 +62,8 @@ LOGIKA KONTEKS LANJUTAN (WAJIB):
 Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 {
   "intent": "FINANCE" | "CALENDAR" | "TASK" | "WEB_SEARCH" | "DISCIPLINE" | "2ND_BRAIN" | "USER_PROFILE" | "CORE_IDENTITY" | "SPREADSHEET" | "EMAIL" | "DATABASE" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
+  "learned_user_facts": ["Fakta baru tentang preferensi/kebiasaan Tuan Faqih (opsional, hanya jika ada)"],
+  "learned_core_identities": ["Aturan baru tentang kepribadian N.E.X.A (opsional, hanya jika ada)"],
   "extracted_data": {
      // FINANCE: { action: "RECORD"|"READ_LATEST"|"READ_ANALYTICS"|"EDIT"|"DELETE"|"IMPORT_FROM_EMAIL"|"CONFIRM_TRANSACTION"|"CANCEL_TRANSACTION", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO), search_keyword: string }
      //   → Jika pengguna menyetujui transaksi tertunda ATAU memberikan keterangan/detail untuk transaksi tertunda (misal: "itu buat beli sate"), gunakan "CONFIRM_TRANSACTION" beserta field "description" dan pilih "category" yang sesuai. Jika menolak/batal, gunakan "CANCEL_TRANSACTION".
@@ -79,10 +81,10 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, search_keyword: string }
      //   → Gunakan untuk menyimpan ide, draft, ringkasan, atau catatan kerja yang akan disinkronkan dengan Google Docs.
      // USER_PROFILE: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
-     //   → Gunakan jika pengguna meminta Anda mengingat fakta/preferensi tentang Tuan Faqih (contoh: "ingat bahwa aku alergi seafood", "aku suka warna biru", "targetku tahun ini lulus").
+     //   → Gunakan INI HANYA jika pengguna SECARA EKSPLISIT menyuruh Anda ("ingat bahwa...", "lupakan bahwa...").
+     //   → Untuk penemuan fakta secara OTOMATIS/PASIF dari obrolan, JANGAN gunakan intent ini. Gunakan array "learned_user_facts" di *root* JSON agar Anda tetap bisa mengeksekusi intent utama (misalnya FINANCE).
      // CORE_IDENTITY: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
-     //   → Gunakan jika pengguna memberikan aturan baru atau identitas bagi Anda sendiri (contoh: "mulai sekarang panggil aku bos", "jangan gunakan emoji", "kamu adalah asisten militer").
-     //   → Untuk USER_PROFILE dan CORE_IDENTITY, gunakan action "DELETE" jika pengguna menyuruh Anda melupakan/menghapus fakta tersebut.
+     //   → Sama seperti atas, gunakan HANYA jika disuruh eksplisit. Untuk pembelajaran pasif, gunakan array "learned_core_identities" di *root* JSON.
      // TASK: { action: "CREATE"|"READ"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"CLEAR_DONE", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string }
      //   → CREATE: "Catat tugas: selesaikan essay sebelum Jumat", "tambahkan ke daftar belanja: beras"
      //   → READ: "tampilkan tugasku", "apa saja task yang belum selesai?"
