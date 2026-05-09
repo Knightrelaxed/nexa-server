@@ -373,8 +373,13 @@ async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
 // blocks ALL outbound connections to api.telegram.org.
 // Used when webhook response is already consumed (timeout, cron).
 // ============================================================
-async function sendTelegramOutbound(text) {
+async function sendTelegramOutbound(text, skipMemory = false) {
   try {
+    if (!skipMemory) {
+      // Save ALL outbound Telegram messages to memory by default
+      await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => {});
+    }
+
     if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
     const botToken = env.TELEGRAM_BOT_TOKEN.trim();
     const chatId = env.TELEGRAM_CHAT_ID.trim();
@@ -428,10 +433,14 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
   // ============================================================
   let hasResponded = false;
 
-  const respondToTelegram = (text) => {
+  const respondToTelegram = async (text, skipMemory = false) => {
+    if (!skipMemory) {
+      await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => {});
+    }
+
     if (hasResponded) {
       // Already used the webhook response slot — use outbound fallback
-      return sendTelegramOutbound(text);
+      return sendTelegramOutbound(text, true); // Pass true because we already saved it above
     }
     hasResponded = true;
     const safeText = String(text).substring(0, 4000);
@@ -475,8 +484,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           }).catch((e) => console.error('[VAULT] Confirm update failed:', e.message));
           
           await supabaseMemories.saveChatMemory('user', textInput);
-          await supabaseMemories.saveChatMemory('nexa', '✅ Baik, Tuan. Metadata Vault dikonfirmasi dan disimpan.');
-          
           pendingVaultContext = null;
           await respondToTelegram('✅ Baik, Tuan. Metadata Vault dikonfirmasi dan disimpan.');
           clearTimeout(safetyTimer);
@@ -1672,7 +1679,8 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         lastAssistantReply: finalReply,
         askedAt: Date.now()
       };
-      await respondToTelegram(finalReply);
+      // Pass skipMemory = true because AI_Router (or domainReply logic above) already saved it!
+      await respondToTelegram(finalReply, true);
     }
 
   } catch (error) {
