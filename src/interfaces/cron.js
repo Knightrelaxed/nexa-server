@@ -38,8 +38,8 @@ function initCronJobs() {
     timezone: "Asia/Jakarta"
   });
 
-  // 3. Livin' Auto-Sync (Every 10 minutes)
-  cron.schedule('*/10 * * * *', async () => {
+  // 3. Livin' Auto-Sync (Every 3 minutes)
+  cron.schedule('*/3 * * * *', async () => {
     console.log('[CRON] Executing Livin Auto-Sync...');
     try {
       const financeEngine = require('../domain/Finance_Engine');
