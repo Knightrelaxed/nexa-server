@@ -389,10 +389,16 @@ async function pollLivinEmails() {
 
       const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
       const msg = `💸 <b>TRANSAKSI LIVIN TERBARU</b>\n\n` +
-                  `<b>Tujuan:</b> ${tx.destination}\n` +
-                  `<b>Nominal:</b> ${nominalFmt}\n\n` +
+                  `<b>No:</b> [Auto]\n` +
+                  `<b>Tanggal:</b> ${dateStr}\n` +
+                  `<b>Waktu:</b> ${timeStr}\n` +
+                  `<b>Tipe:</b> Pengeluaran\n` +
+                  `<b>Kategori:</b> [Auto-AI]\n` +
+                  `<b>Akun:</b> Bank Mandiri Livin\n` +
+                  `<b>Catatan / Detail:</b> [KOSONG - Tujuan: ${tx.destination}]\n` +
+                  `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
                   `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
-                  `Silakan balas dengan <b>detail pengeluaran ini</b> (contoh: <i>"buat beli sate"</i> atau <i>"bayar kas"</i>).\n` +
+                  `Silakan balas dengan <b>detail pengeluaran ini</b> untuk mengisi bagian yang kosong (contoh: <i>"buat beli sate"</i> atau <i>"bayar kas"</i>).\n` +
                   `<i>(Jika dalam 5 menit tidak ada balasan, N.E.X.A akan mengotomatiskan kategori dan catatannya.)</i>`;
 
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
