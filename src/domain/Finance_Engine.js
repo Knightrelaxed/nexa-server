@@ -428,7 +428,7 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
 
   const transactionTime = new Date(tx.time);
   const cleanMerchant = (tx.destination).toLowerCase().replace(/[^a-z0-9]/g, '');
-  const compositeKey = `${nominal}_${cleanMerchant}_${Date.now()}`; // Added Date.now() to ensure manual inputs never collide with existing pending keys
+  const compositeKey = `${nominal}_${cleanMerchant}`;
 
   // Formatting for Telegram
   const dateStr = transactionTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' });
