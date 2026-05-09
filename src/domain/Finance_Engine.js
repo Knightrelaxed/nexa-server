@@ -293,6 +293,12 @@ async function confirmPendingTransactions(isYes) {
       }
     } else {
       skippedCount++;
+      try {
+        // Log to Supabase so it doesn't get re-polled as a new transaction
+        await supabase.logTransactionKey(key, new Date(pending.tx.time || Date.now()), 'CANCELLED');
+      } catch (e) {
+        console.error(`[FINANCE] Failed to log cancelled tx:`, e.message);
+      }
     }
     pendingConfirmations.delete(key);
   }
