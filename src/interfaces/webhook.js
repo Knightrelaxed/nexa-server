@@ -121,143 +121,215 @@ function toCleanSingleLine(value, maxLen = 160) {
   return s.substring(0, maxLen);
 }
 
-function looksNarrative(value) {
-  const s = String(value || '').trim();
-  if (!s) return false;
-  if (s.length > 120) return true;
-  return /[.!?]/.test(s) || /\b(berdasarkan|tampaknya|saya|telah|menganalisis|mengidentifikasi)\b/i.test(s);
+// =============================================================
+// VAULT EXTRACTION — 5-LAYER PIPELINE
+// =============================================================
+
+// --- Schema Registry Removed (Digantikan oleh Direct Multimodal JSON Extraction) ---
+
+// Field yang secara alami bisa panjang — TIDAK dibuang ke catatan
+const LONG_VALUE_WHITELIST = new Set([
+  'alamat','address','keterangan','catatan','deskripsi',
+  'lokasi','uraian','penjelasan','tujuan','nama_jalan',
+  'tempat_tinggal','domisili','perihal','isi_surat',
+  'nama_pemegang','nama_peserta','atas_nama',
+]);
+
+// Sinyal bahwa string adalah DATA terstruktur, bukan narasi
+const STRUCTURED_DATA_SIGNALS = [
+  /\d{5,}/,
+  /\d{2}[-\/]\d{2}/,
+  /Rp\.?\s*[\d.,]+/,
+  /m²|m2|ha|kg/,
+  /www\.|http/,
+  /\d+[\/\\]\d+/,
+];
+
+// --- Layer 5 helper: context-aware looksNarrative ---
+function looksNarrative(key, value) {
+  if (!value || typeof value !== 'string') return false;
+  const k = String(key || '').toLowerCase().replace(/[\s-]/g, '_');
+  if (LONG_VALUE_WHITELIST.has(k)) return false;
+  if (STRUCTURED_DATA_SIGNALS.some(rx => rx.test(value))) return false;
+  const words = value.trim().split(/\s+/);
+  const avgWordLen = value.replace(/\s/g, '').length / (words.length || 1);
+  if (words.length > 8 && avgWordLen < 5.5) return true;
+  return value.length > 200;
 }
 
-function normalizeVaultMetadata(metadata = {}, visionText = '', fileName = '') {
-  const out = {};
-  const input = metadata && typeof metadata === 'object' ? metadata : {};
+// --- Key normalizer ---
+function _normalizeKey(raw) {
+  return String(raw || '')
+    .trim().toLowerCase()
+    .replace(/[^a-z0-9\u00C0-\u024F\s]/g, ' ')
+    .trim().replace(/\s+/g, '_')
+    .replace(/_+/g, '_').replace(/^_|_$/g, '');
+}
 
-  for (const [k, v] of Object.entries(input)) {
-    if (v === undefined || v === null) continue;
-    const key = String(k).trim().toLowerCase();
-    if (!key) continue;
-    const cleaned = toCleanSingleLine(v, 600);
-    if (!cleaned) continue;
-    out[key] = cleaned;
-  }
+// Rename key generik (field_1, nilai, teks) berdasarkan konten value
+function _renameGenericKey(key, value) {
+  if (!/^(field_\d+|nilai|teks|data|item|kolom_\d+)$/i.test(key)) return key;
+  const v = String(value || '').trim();
+  if (/^\d{16}$/.test(v)) return 'nik';
+  if (/^[A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3}$/.test(v)) return 'nomor_polisi';
+  if (/^\d{2}[-\/]\d{2}[-\/]\d{4}$/.test(v)) return 'tanggal';
+  if (/^(www\.|https?)/.test(v)) return 'website';
+  if (/@/.test(v)) return 'email';
+  if (/^(08|\+62|1\d{5,6})/.test(v)) return 'nomor_telepon';
+  return key;
+}
 
-  if (fileName) out.judul = out.judul || fileName;
+// --- Layer 3: Smart heuristic fallback (Format parsers + Universal Regex) ---
+function _smartKVSweep(text) {
+  const results = {};
+  if (!text) return results;
 
-  // Strict clean for core fields so they stay structured, not narrative blobs.
-  const coreFields = ['nama', 'nik', 'nomor', 'nomor_kartu', 'nomor_registrasi', 'alamat', 'tanggal', 'instansi', 'agama'];
-  for (const key of coreFields) {
-    if (!out[key]) continue;
-    if (looksNarrative(out[key])) {
-      // Keep narrative in catatan, but clear noisy core field.
-      out.catatan = out.catatan || out[key];
-      delete out[key];
+  // Pola deterministik universal (apapun tipe dokumennya)
+  const UNIVERSAL_PATTERNS = {
+    nik:           /\b(\d{16})\b/,
+    nomor_polisi:  /\b([A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3})\b/,
+    nomor_telepon: /(?:Tel|Telp|HP|Phone)?\.?\s*(\+?62[\d\s-]{9,14}|0[\d\s-]{9,12})/i,
+    website:       /(www\.[a-z0-9.-]+\.[a-z]{2,}|https?:\/\/[^\s]+)/i,
+    email:         /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,})/i,
+    tanggal:       /(\d{1,2}\s+(?:Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+\d{4})/i,
+    nomor_npwp:    /(\d{2}\.\d{3}\.\d{3}\.\d{1}-\d{3}\.\d{3})/,
+  };
+
+  // Format 1: "Label: Value"
+  const colonRx = /^([A-Za-z\s\/]{2,40})\s*:\s*(.+)$/gm;
+  // Format 2: "Label\nValue" (dua baris berurutan)
+  const nlRx = /^([A-Z][A-Za-z\s]{2,30})\n([^\n]{1,80})$/gm;
+  // Format 3: "Label   Value" (tab/banyak spasi)
+  const tabRx = /^([A-Za-z\s\/]{3,30})\s{2,}(.{1,80})$/gm;
+
+  for (const rx of [colonRx, nlRx, tabRx]) {
+    let m;
+    while ((m = rx.exec(text)) !== null) {
+      const k = _normalizeKey(m[1]);
+      if (k && m[2] && !results[k]) results[k] = m[2].trim();
     }
   }
 
-  const textPool = `${visionText || ''}\n${out.catatan || ''}\n${out.ringkasan_dokumen || ''}`;
+  // Sweep pakai regex universal
+  for (const [field, regex] of Object.entries(UNIVERSAL_PATTERNS)) {
+    const match = text.match(regex);
+    if (match?.[1] && !results[field]) results[field] = match[1].trim();
+  }
 
-  const nik = textPool.match(/\b\d{16}\b/);
-  if (nik && !out.nik) out.nik = nik[0];
-
-  const nomorKartu = textPool.match(/nomor\s*kartu\s*[:\-]?\s*(\d{10,25})/i);
-  if (nomorKartu?.[1] && !out.nomor_kartu) out.nomor_kartu = nomorKartu[1];
-
-  const nomorReg = textPool.match(/nomor\s*registrasi\s*[:\-]?\s*([A-Z0-9\-]{4,25})/i);
-  if (nomorReg?.[1] && !out.nomor_registrasi) out.nomor_registrasi = nomorReg[1];
-
-  const namaAtas = textPool.match(/atas\s+nama\s*[:\-]?\s*([A-Z][A-Z\s'.-]{2,90})/i);
-  if (namaAtas?.[1] && !out.nama) out.nama = toCleanSingleLine(namaAtas[1], 90);
-
-  const alamat = textPool.match(/alamat\s*[:\-]?\s*([^.;\n]{8,160})/i);
-  if (alamat?.[1] && !out.alamat) out.alamat = toCleanSingleLine(alamat[1], 160);
-
-  const tanggal = textPool.match(/\b(\d{1,2})\s*(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\s*(\d{4})\b/i);
-  if (tanggal && !out.tanggal) out.tanggal = `${tanggal[1]} ${tanggal[2]} ${tanggal[3]}`;
-
-  const faskes = textPool.match(/faskes(?:\s*tingkat\s*i)?\s*[:\-]?\s*([^.;\n]{3,80})/i);
-  if (faskes?.[1] && !out.faskes_tingkat_1) out.faskes_tingkat_1 = toCleanSingleLine(faskes[1], 80);
-
-  const layanan = textPool.match(/(?:pusat\s*layanan[^0-9]{0,40})?(\b1\d{5,6}\b)/i);
-  if (layanan?.[1] && !out.kontak_layanan) out.kontak_layanan = layanan[1];
-
-  const website = textPool.match(/\b((?:https?:\/\/)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s]*)?)\b/i);
-  if (website?.[1] && !out.website_layanan) out.website_layanan = website[1];
-
-  if (/kartu indonesia sehat|kis|bpjs/i.test(textPool) && !out.instansi) out.instansi = 'BPJS Kesehatan';
-
-  // Keep catatan as optional short supplement only.
-  if (out.catatan) out.catatan = toCleanSingleLine(out.catatan, 280);
-  if (out.ringkasan_dokumen) out.ringkasan_dokumen = toCleanSingleLine(out.ringkasan_dokumen, 320);
-
-  return out;
+  return results;
 }
 
-function extractVaultMetadataFromNarrative(text, fileName = '') {
-  const t = String(text || '').replace(/\s+/g, ' ').trim();
-  const out = {};
-  if (fileName) out.judul = fileName;
-  if (!t) return out;
-
-  const nikMatch = t.match(/\b\d{16}\b/);
-  if (nikMatch) out.nik = nikMatch[0];
-
-  const nomorKartuMatch = t.match(/nomor\s*kartu\s*[:\-]?\s*(\d{10,25})/i);
-  if (nomorKartuMatch?.[1]) out.nomor_kartu = nomorKartuMatch[1];
-
-  const nomorMatch = t.match(/(?:nomor|no)\s*(?:identitas|id|kartu)?\s*[:\-]?\s*(\d{8,25})/i);
-  if (nomorMatch?.[1]) out.nomor = nomorMatch[1];
-
-  const namaMatch =
-    t.match(/atas\s+nama\s*[:\-]?\s*([A-Z][A-Z\s'.-]{2,80})/i) ||
-    t.match(/nama\s*[:\-]?\s*([A-Z][A-Z\s'.-]{2,80})/i);
-  if (namaMatch?.[1]) out.nama = namaMatch[1].trim().replace(/\s+/g, ' ').substring(0, 90);
-
-  const tanggalMatch = t.match(/\b(\d{1,2})\s*(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\s*(\d{4})\b/i);
-  if (tanggalMatch) out.tanggal = `${tanggalMatch[1]} ${tanggalMatch[2]} ${tanggalMatch[3]}`;
-
-  const alamatMatch = t.match(/alamat\s*[:\-]?\s*([^:]{5,120})/i);
-  if (alamatMatch?.[1]) out.alamat = alamatMatch[1].trim().replace(/\s+/g, ' ').substring(0, 120);
-
-  if (/kartu indonesia sehat|kis|bpjs/i.test(t)) out.instansi = 'BPJS Kesehatan';
-  if (!out.catatan) out.catatan = t.substring(0, 900);
-
-  return out;
+// --- Layer 4: Orphan Text Pass ---
+function extractOrphanText(visionText, existingMetadata) {
+  const orphans = {};
+  if (!visionText) return orphans;
+  const existingValues = new Set(
+    Object.values(existingMetadata).map(v => String(v).toLowerCase().trim())
+  );
+  const ORPHAN_PATTERNS = [
+    { key: 'kontak_hotline', regex: /\b(1\d{5,6}|1500\d{3})\b/g },
+    { key: 'website',        regex: /(www\.[a-z0-9.-]+\.[a-z]{2,}(?:\.[a-z]{2,})?)/gi },
+    { key: 'email',          regex: /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,})/gi },
+    { key: 'nomor_telepon',  regex: /(?<!\d)(\+?62[\d\s-]{9,13}|0[\d\s-]{9,12})(?!\d)/g },
+    { key: 'nama_lembaga',   regex: /([A-Z][a-z]+ (?:[A-Z][a-z]+ ){1,4}(?:Indonesia|Nasional|Kota|Kabupaten|Republik))/g },
+    { key: 'nomor_referensi',regex: /(?:No\.|Nomor)\s*:?\s*([A-Z0-9\/.-]{5,20})/gi },
+  ];
+  for (const { key, regex } of ORPHAN_PATTERNS) {
+    const matches = [...visionText.matchAll(regex)];
+    for (const m of matches) {
+      const val = m[1]?.trim();
+      if (!val || existingValues.has(val.toLowerCase())) continue;
+      if (!orphans[key]) orphans[key] = val;
+    }
+  }
+  return orphans;
 }
 
+// --- Layer 5: Normalisasi context-aware ---
+function normalizeVaultMetadata(metadata = {}, visionText = '', fileName = '') {
+  const input = metadata && typeof metadata === 'object' ? metadata : {};
+  const output = {};
+  const catatanParts = [];
+
+  for (const [rawKey, rawVal] of Object.entries(input)) {
+    if (rawVal === undefined || rawVal === null) continue;
+    const key = _normalizeKey(_renameGenericKey(rawKey, rawVal));
+    if (!key) continue;
+    const val = toCleanSingleLine(rawVal, 600);
+    if (!val) continue;
+    if (looksNarrative(key, val)) {
+      catatanParts.push(`${key}: ${val}`);
+    } else {
+      output[key] = val;
+    }
+  }
+
+  if (fileName) output.judul = output.judul || fileName;
+  if (catatanParts.length > 0) output.catatan = catatanParts.join(' | ').substring(0, 500);
+  if (output.catatan) output.catatan = toCleanSingleLine(output.catatan, 500);
+  if (output.ringkasan_dokumen) output.ringkasan_dokumen = toCleanSingleLine(output.ringkasan_dokumen, 320);
+
+  return output;
+}
+
+// Legacy text-to-JSON and docType classification helpers have been removed
+// in favor of Direct Multimodal JSON Extraction logic.
+
+// =============================================================
+// extractVaultMetadataFromVision — DIRECT MULTIMODAL EXTRACTION
+// =============================================================
 async function extractVaultMetadataFromVision({ fileId, fileName, promptHint = '' }) {
   if (!fileId) {
     return { judul: fileName || '', source: 'VISION_UNAVAILABLE' };
   }
-  const visionText = await visionEngine.processTelegramImage(
+
+  // Prompt canggih: Meminta Vision Model untuk LANGSUNG mengembalikan JSON
+  const directJsonPrompt =
+    `Kamu adalah sistem ekstraksi metadata tingkat lanjut yang sangat presisi.\n` +
+    `Tugas Utama: Ekstrak SEMUA informasi penting dari gambar ini menjadi satu JSON object.\n\n` +
+    `ATURAN KETAT:\n` +
+    `1. Output WAJIB 100% JSON valid. DILARANG KERAS menyertakan markdown (seperti \`\`\`json), pembukaan, narasi, atau penjelasan.\n` +
+    `2. Buat "key" secara DINAMIS berdasarkan konteks apa yang kamu lihat. Pahami apa objek di gambar (dokumen resmi, struk, surat kerja, pamflet, dll) dan buat struktur data yang sesuai.\n` +
+    `3. Semua key WAJIB format snake_case.\n` +
+    `4. Value WAJIB faktual dan singkat. Jangan buat kalimat narasi panjang sebagai value.\n` +
+    `5. Sertakan key "kategori_gambar" untuk mengkategorikan isi (contoh: KTP, Struk Belanja, Surat Keterangan Kematian, Plang Jalan, dll).\n` +
+    `6. JANGAN lewatkan angka penting, nomor identitas, tanggal, nama, lokasi, total bayar, atau informasi krusial lainnya.\n` +
+    `7. Jika melihat nomor kontak, email, atau website, buat key yang sesuai.`;
+
+  const rawVisionOutput = await visionEngine.processTelegramImage(
     fileId,
-    promptHint || 'Ekstrak semua teks penting dokumen ini seakurat mungkin.'
+    promptHint, // Caption dari user sebagai hint tambahan
+    directJsonPrompt // Override system prompt!
   );
 
-  const extractionPrompt =
-    `Anda adalah mesin ekstraksi metadata dokumen. ` +
-    `Ubah hasil pembacaan dokumen menjadi JSON object key-value dinamis yang rinci dan jelas. ` +
-    `Jangan kaku pada field tertentu; sesuaikan field dengan tipe dokumen pada gambar (contoh: KTP, STNK, BPJS, SIM, surat resmi). ` +
-    `Aturan:\n` +
-    `1) Output WAJIB hanya JSON object valid (tanpa penjelasan).\n` +
-    `2) Semua key harus snake_case.\n` +
-    `3) Setiap informasi penting yang terbaca harus masuk ke key-value, jangan hilangkan data penting.\n` +
-    `4) Jika informasi penting tidak punya label eksplisit, buat key logis sesuai konteks.\n` +
-    `5) Untuk field inti (nama, nik, nomor_xxx, alamat, tanggal, instansi), isi nilai singkat-faktual saja, jangan narasi.\n` +
-    `6) Sertakan key "tipe_dokumen" berdasarkan isi dokumen.\n` +
-    `7) Jika ada teks kontak/layanan/instansi di bagian bawah dokumen, tetap masukkan sebagai key yang relevan.\n\n` +
-    `Teks hasil baca dokumen:\n${visionText}`;
+  let directParsed = {};
+  try {
+    directParsed = parseJsonObjectFromText(rawVisionOutput) || {};
+  } catch (e) {
+    console.warn('[VAULT] Failed to parse direct JSON from vision. Fallback to regex. Output:', rawVisionOutput.substring(0, 50));
+  }
 
-  const aiJsonText = await aiRouter.callAI(extractionPrompt);
-  const parsed = parseJsonObjectFromText(aiJsonText);
-  const heuristic = extractVaultMetadataFromNarrative(visionText, fileName);
-  const combined = parsed && typeof parsed === 'object'
-    ? { ...heuristic, ...parsed }
-    : { ...heuristic, ringkasan_dokumen: String(visionText || '').substring(0, 1500) };
-  const normalized = normalizeVaultMetadata(combined, visionText, fileName);
+  // Jika entah bagaimana hasil JSON sangat sedikit (gagal), jalankan heuristic sweep universal
+  let heuristic = {};
+  if (Object.keys(directParsed).length < 3) {
+    heuristic = _smartKVSweep(rawVisionOutput);
+  }
+
+  // Lakukan Orphan Pass
+  const merged = { ...heuristic, ...directParsed };
+  const orphans = extractOrphanText(rawVisionOutput, merged);
+  const combined = { ...merged, ...orphans };
+
+  // Normalisasi akhir
+  const normalized = normalizeVaultMetadata(combined, rawVisionOutput, fileName);
+
+  const docCategory = normalized.kategori_gambar || 'UMUM';
+  console.log(`[VAULT-DIRECT] Processed image as: ${docCategory}. Extracted ${Object.keys(normalized).length} fields.`);
+
   return {
     judul: fileName || '',
     ...normalized,
-    source: 'VISION'
+    source: 'VISION_DIRECT',
   };
 }
 

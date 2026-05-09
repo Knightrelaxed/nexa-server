@@ -40,47 +40,19 @@ ${NEXA_PERSONALITY}
 Anda baru saja menerima SEBUAH GAMBAR dari Tuan Faqih melalui Telegram.
 
 TUGAS UTAMA ANDA:
-Analisis gambar ini dan hasilkan satu blok teks instruksi yang kaya, akurat, dan dapat diproses oleh sistem AI Router N.E.X.A. Teks ini akan menjadi "jembatan" antara gambar dan aksi sistem.
+Bertindaklah sebagai mata cerdas N.E.X.A. Analisis gambar ini secara komprehensif, dinamis, dan tanpa batasan kategori kaku. Pahami secara mendalam apa yang ada di dalam gambar, lalu hasilkan deskripsi naratif yang kaya, akurat, dan sangat mendetail. 
 
-KATEGORIKAN gambar ini ke salah satu kategori berikut berdasarkan isinya, lalu ekstrak data yang relevan:
+PANDUAN ANALISIS DINAMIS:
+- Jika gambar mengandung TEKS (dokumen, surat, tulisan tangan, screenshot), BACA dan EKSTRAK semua informasi krusialnya ke dalam narasi. Jangan lewatkan nama, angka penting, tanggal, nominal, kontak, atau nomor referensi.
+- Jika gambar berupa DATA (tabel, grafik, struk belanja, tiket), EKSTRAK intisari dan nilai-nilai utamanya (misal: nama tempat, total harga, daftar barang, jadwal).
+- Jika gambar adalah OBJEK/MOMEN/PRODUK (foto alam, orang, makanan, barang), DESKRIPSIKAN dengan natural, detail, dan gunakan kepribadian N.E.X.A.
+- Jadilah PROAKTIF. Pahami *mengapa* gambar ini dikirimkan berdasarkan konteks visualnya.
 
-1. STRUK / NOTA / FAKTUR / KWITANSI
-   → Ekstrak: nama toko/merchant, total nominal, tanggal, daftar item & harga
-   → Contoh output: "Tuan Faqih mengirimkan struk belanja dari Indomaret tanggal 3 Mei 2026. Total pengeluaran Rp 47.500."
-
-2. KARTU NAMA / KONTAK
-   → Ekstrak: nama, nomor HP, email, perusahaan/jabatan, alamat
-
-3. POSTER / UNDANGAN / PAMFLET ACARA
-   → Ekstrak: nama acara, tanggal, waktu, lokasi, penyelenggara
-
-4. TANGKAPAN LAYAR (Screenshot) — Teks/Percakapan/Website
-   → Baca SEMUA teks yang terlihat. Pahami konteksnya.
-
-5. PAPAN TULIS / CATATAN TANGAN / STICKY NOTE / DOKUMEN
-   → Baca teks, interpretasikan isi, perhatikan konteks
-
-6. FOTO PRODUK / BARANG
-   → Deskripsikan produk, harga (jika terlihat), kondisi
-
-7. FOTO ALAM / ORANG / MOMEN PERSONAL
-   → Deskripsikan dengan natural, gunakan kepribadian N.E.X.A
-
-8. RESEP / MENU MAKANAN
-   → Ekstrak nama makanan, bahan-bahan, langkah
-
-9. KODE QR / BARCODE
-   → Jika bisa dibaca, ekstrak kontennya
-
-10. LAPORAN / TABEL / DATA (foto dokumen berisi tabel angka)
-    → Baca dan ekstrak struktur tabelnya
-
-ATURAN KELUARAN:
-- Tulis dalam Bahasa Indonesia yang natural
-- SELALU sertakan "Tuan Faqih" sebagai subjek
-- SELALU akhiri dengan interpretasi maksud Tuan Faqih (berdasarkan caption + konteks gambar)
-- Output harus berupa SATU paragraf naratif kaya informasi (bukan poin-poin bullet)
-- Jika ada caption, instruksi caption HARUS dimasukkan ke dalam narasi output
+ATURAN KELUARAN WAJIB:
+- Tulis dalam Bahasa Indonesia yang natural dan mengalir.
+- SELALU sebut "Tuan Faqih" sebagai subjek (contoh: "Tuan Faqih mengirimkan gambar...").
+- Output HANYA boleh berupa SATU paragraf naratif yang kaya informasi. DILARANG KERAS menggunakan format poin-poin (bullet points).
+- Jika ada caption dari pengguna, instruksi/konteks caption tersebut HARUS menjadi fokus utama dari arah narasimu, dan sertakan interpretasi maksud Tuan Faqih di bagian akhir.
 `;
 
 // ============================================================
@@ -168,21 +140,23 @@ async function downloadTelegramImageAsBase64(fileId) {
 // ============================================================
 // GEMINI VISION CALLER — with 503 Smart Retry
 // ============================================================
-async function callGeminiVision(apiKey, modelName, imageData, caption, retries = 3) {
+async function callGeminiVision(apiKey, modelName, imageData, caption, retries = 3, systemPromptOverride = '') {
   const captionContext = caption
     ? `\n[CAPTION/INSTRUKSI DARI TUAN FAQIH]: "${caption}"\nGunakan caption ini sebagai petunjuk utama apa yang Tuan Faqih inginkan dari gambar ini.`
     : '\n[TIDAK ADA CAPTION]: Tuan Faqih tidak memberikan instruksi teks. Analisis gambar dan interpretasikan konteksnya secara cerdas.';
 
+  const finalSystemPrompt = systemPromptOverride || (VISION_SYSTEM_PROMPT + captionContext);
+
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
   const payload = {
-    systemInstruction: { parts: [{ text: VISION_SYSTEM_PROMPT + captionContext }] },
+    systemInstruction: { parts: [{ text: finalSystemPrompt }] },
     contents: [{
       parts: [
-        { text: 'Analisis gambar ini sekarang dan hasilkan teks instruksi lengkap sesuai sistem prompt.' },
+        { text: systemPromptOverride ? 'Lakukan ekstraksi metadata sesuai system prompt.' : 'Analisis gambar ini sekarang dan hasilkan teks instruksi lengkap sesuai sistem prompt.' },
         { inlineData: { mimeType: imageData.mimeType, data: imageData.data } }
       ]
     }],
-    generationConfig: { temperature: 0.4 }
+    generationConfig: { temperature: systemPromptOverride ? 0.1 : 0.4 } // Lower temperature for JSON extraction
   };
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -215,21 +189,23 @@ async function callGeminiVision(apiKey, modelName, imageData, caption, retries =
 // ============================================================
 // GROQ VISION CALLER (Llama 4 Scout 17B) — with 503 Smart Retry
 // ============================================================
-async function callGroqVision(apiKey, imageData, caption, retries = 3) {
+async function callGroqVision(apiKey, imageData, caption, retries = 3, systemPromptOverride = '') {
   const captionContext = caption
     ? `\nCaption dari pengguna: "${caption}". Gunakan ini sebagai petunjuk utama.`
     : '\nTidak ada caption. Analisis gambar secara mandiri.';
+
+  const finalSystemPrompt = systemPromptOverride || (VISION_SYSTEM_PROMPT + captionContext);
 
   const requestBody = {
     model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     messages: [{
       role: 'user',
       content: [
-        { type: 'text', text: VISION_SYSTEM_PROMPT + captionContext + '\n\nAnalisis gambar ini sekarang.' },
+        { type: 'text', text: finalSystemPrompt + (systemPromptOverride ? '' : '\n\nAnalisis gambar ini sekarang.') },
         { type: 'image_url', image_url: { url: `data:${imageData.mimeType};base64,${imageData.data}` } }
       ]
     }],
-    temperature: 0.4,
+    temperature: systemPromptOverride ? 0.1 : 0.4,
     max_tokens: 2048
   };
 
@@ -263,13 +239,17 @@ async function callGroqVision(apiKey, imageData, caption, retries = 3) {
 // ============================================================
 // HF VISION CALLER (Qwen2-VL-7B-Instruct) — Final Safety Net
 // ============================================================
-async function callHuggingFaceVision(imageData, caption) {
+async function callHuggingFaceVision(imageData, caption, systemPromptOverride = '') {
   if (!env.HF_TOKEN) throw new Error('HF_TOKEN not configured');
 
   const captionContext = caption
     ? `Caption dari pengguna: "${caption}". ` : '';
 
-  const prompt = `${captionContext}Analisis gambar ini sekarang. ${VISION_SYSTEM_PROMPT.substring(0, 300)}`;
+  const finalPrompt = systemPromptOverride 
+    ? systemPromptOverride
+    : `${captionContext}Analisis gambar ini sekarang. ${VISION_SYSTEM_PROMPT.substring(0, 300)}`;
+
+  const prompt = finalPrompt;
 
   const response = await axios.post(
     'https://api-inference.huggingface.co/models/Qwen/Qwen2-VL-7B-Instruct',
@@ -297,7 +277,7 @@ async function callHuggingFaceVision(imageData, caption) {
 // ============================================================
 // MAIN ENTRY POINT — 11-TIER GOD MODE VISION FALLBACK
 // ============================================================
-async function processTelegramImage(fileId, caption = '') {
+async function processTelegramImage(fileId, caption = '', systemPromptOverride = '') {
   // Download image ONCE — reused across ALL tiers
   console.log('[VISION] Downloading image from Telegram...');
   const imageData = await downloadTelegramImageAsBase64(fileId);
@@ -308,22 +288,22 @@ async function processTelegramImage(fileId, caption = '') {
     // Tier 1-4: Gemini 2.5 Flash (Premium Quality, 4 Keys)
     ...GEMINI_25_KEYS.map((key, i) => ({
       name: `Tier${i + 1} (Gemini 2.5 Flash Key ${i + 1})`,
-      fn: () => callGeminiVision(key, 'gemini-2.5-flash', imageData, caption)
+      fn: () => callGeminiVision(key, 'gemini-2.5-flash', imageData, caption, 3, systemPromptOverride)
     })),
     // Tier 5-8: Groq Llama 4 Scout 17B (Balanced, 4 Keys)
     ...GROQ_KEYS.map((key, i) => ({
       name: `Tier${GEMINI_25_KEYS.length + i + 1} (Groq Llama4-Scout Key ${i + 1})`,
-      fn: () => callGroqVision(key, imageData, caption)
+      fn: () => callGroqVision(key, imageData, caption, 3, systemPromptOverride)
     })),
     // Tier 9-10: Gemini 2.0 Flash (Generous Quota, 2 Keys)
     ...GEMINI_20_KEYS.map((key, i) => ({
       name: `Tier${GEMINI_25_KEYS.length + GROQ_KEYS.length + i + 1} (Gemini 2.0 Flash Key ${i + 1})`,
-      fn: () => callGeminiVision(key, 'gemini-2.0-flash', imageData, caption)
+      fn: () => callGeminiVision(key, 'gemini-2.0-flash', imageData, caption, 3, systemPromptOverride)
     })),
     // Tier 11: Hugging Face Qwen2-VL (Safety Net — No daily quota)
     {
       name: `Tier${GEMINI_25_KEYS.length + GROQ_KEYS.length + GEMINI_20_KEYS.length + 1} (HuggingFace Qwen2-VL)`,
-      fn: () => callHuggingFaceVision(imageData, caption)
+      fn: () => callHuggingFaceVision(imageData, caption, systemPromptOverride)
     }
   ];
 
