@@ -906,6 +906,15 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         }
       }
 
+      if (ctx.intent === 'DATABASE') {
+        if (ctx.awaitingConfirmation && /(ya|iya|lanjut|hapus|oke|ok|y)/.test(normalized)) {
+           return { intent: 'DATABASE', extracted_data: { action: ctx.lastAction, table_name: ctx.tableName }, reply_message: '', god_mode_trigger: false };
+        }
+        if (ctx.awaitingConfirmation && /(tidak|batal|jangan|cancel|n|ga|gak)/.test(normalized)) {
+           return { intent: 'DATABASE', extracted_data: { action: 'CANCEL_ACTION' }, reply_message: '', god_mode_trigger: false };
+        }
+      }
+
       if (ctx.intent === 'WEB_SEARCH') {
         return {
           intent: 'WEB_SEARCH',
@@ -976,6 +985,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         }
         if (action === 'UPDATE_ROW' && (!data.update_data || typeof data.update_data !== 'object')) {
           return `❓ Data perubahan untuk tabel <b>${escapeHtml(data.table_name || '(belum disebut)')}</b> apa, Tuan?`;
+        }
+        if (action === 'DELETE_ALL_ROWS') {
+          return null; // Bebaskan, biarkan execution block yang meminta konfirmasi atau biarkan AI Router menyampaikannya.
         }
         if ((action === 'UPDATE_ROW' || action === 'DELETE_ROW') && !data.row_id && !data.search_keyword) {
           return '❓ Baris mana yang ingin diubah/hapus, Tuan? Sertakan row id atau kata kunci pencarian.';
@@ -1622,6 +1634,20 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             ? `🗑️ Delete berhasil di <b>${escapeHtml(result.table)}</b>. Baris terhapus: ${result.deletedRows.length}`
             : `❌ Delete gagal di <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
           pendingDatabaseContext = { tableName: result.table || tableName, lastAction: dbAction, askedAt: Date.now() };
+        } else if (dbAction === 'DELETE_ALL_ROWS') {
+          if (!pendingDatabaseContext?.awaitingConfirmation) {
+            domainReply = routingData.reply_message || `⚠️ <b>PERINGATAN!</b> Anda meminta untuk menghapus SELURUH isi dari tabel <b>${escapeHtml(tableName)}</b>.\n\nApakah Anda benar-benar yakin ingin memusnahkan semua datanya? Balas <b>"YA"</b> untuk mengeksekusi, atau <b>"BATAL"</b>.`;
+            pendingDatabaseContext = { tableName, lastAction: dbAction, awaitingConfirmation: true, askedAt: Date.now() };
+          } else {
+            const result = await supabaseMemories.deleteAllDatabaseRows(tableName);
+            domainReply = result.success
+              ? `💥 <b>Pemusnahan Massal Selesai</b>.\nSeluruh data di tabel <b>${escapeHtml(result.table)}</b> telah dihapus. Jumlah baris yang terdampak: ${result.deletedRows.length}`
+              : `❌ Gagal memusnahkan isi tabel <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
+            pendingDatabaseContext = null;
+          }
+        } else if (dbAction === 'CANCEL_ACTION') {
+          domainReply = '✅ Aksi database dibatalkan, Tuan.';
+          pendingDatabaseContext = null;
         } else {
           domainReply = `❌ Aksi database tidak dikenali: ${escapeHtml(dbAction)}`;
         }

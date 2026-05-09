@@ -409,6 +409,18 @@ async function deleteDatabaseRows(tableName, { rowId, searchKeyword } = {}) {
   return { success: true, table, deletedRows: data || [] };
 }
 
+async function deleteAllDatabaseRows(tableName) {
+  if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
+  const table = resolveAllowedTableName(tableName);
+  if (!table) return { success: false, error: 'Nama tabel tidak valid atau tidak diizinkan.' };
+
+  // To delete all rows safely, we can do a .neq('id', 0) since IDs are generally > 0
+  // Or we can just use .not('id', 'is', null)
+  const { data, error } = await supabase.from(table).delete().not('id', 'is', null).select();
+  if (error) return { success: false, error: error.message };
+  return { success: true, table, deletedRows: data || [] };
+}
+
 async function saveVaultItem(item) {
   if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
   if (!item || !item.drive_file_id) return { success: false, error: 'drive_file_id wajib.' };
@@ -477,6 +489,7 @@ module.exports = {
   insertDatabaseRow,
   updateDatabaseRows,
   deleteDatabaseRows,
+  deleteAllDatabaseRows,
   saveVaultItem,
   updateVaultItemById
 };
