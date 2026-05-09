@@ -398,8 +398,7 @@ async function pollLivinEmails() {
                   `<b>Catatan / Detail:</b> [KOSONG - Tujuan: ${tx.destination}]\n` +
                   `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
                   `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
-                  `Silakan balas dengan <b>detail pengeluaran ini</b> untuk mengisi bagian yang kosong (contoh: <i>"buat beli sate"</i> atau <i>"bayar kas"</i>).\n` +
-                  `<i>(Jika dalam 5 menit tidak ada balasan, N.E.X.A akan mengotomatiskan kategori dan catatannya.)</i>`;
+                  `Silakan balas dengan detail pengeluaran ini untuk mengisi bagian yang kosong (contoh: "buat beli sate" atau "bayar kas"). Jika dalam 5 menit tidak ada balasan, N.E.X.A akan mengotomatiskan kategori dan catatannya.`;
 
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
         await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
