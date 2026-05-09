@@ -223,11 +223,11 @@ function findMatchingIds(rows, searchKeyword) {
     return Array.from(targetIds);
   }
 
-  // 2. Check if it's a range like "10 sampai 16" or "10-16"
-  const rangeMatch = sk.match(/^(\d+)\s*(sampai|-|to)\s*(\d+)$/);
+  // 2. Check if it's a range like "10 sampai 16" or "10-16" anywhere in the text
+  const rangeMatch = sk.match(/(\d+)\s*(sampai|-|to)\s*(\d+)/);
   if (rangeMatch) {
-    const start = parseInt(rangeMatch[1]);
-    const end = parseInt(rangeMatch[3]);
+    const start = parseInt(rangeMatch[1], 10);
+    const end = parseInt(rangeMatch[3], 10);
     for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
       targetIds.add(i);
     }
@@ -371,13 +371,11 @@ async function updateDatabaseRows(tableName, updateData = {}, { rowId, searchKey
   }
 
   let query = supabase.from(table).update(patch).select();
-  const idNum = parseInt(rowId, 10);
-  if (!isNaN(idNum) && idNum > 0) {
-    query = query.eq('id', idNum);
-  } else if (searchKeyword) {
-    // USE SMART MATCHER
+  const combinedKeyword = String(searchKeyword || '').trim() || String(rowId || '').trim();
+  if (combinedKeyword) {
+    // USE SMART MATCHER FOR EVERYTHING
     const { data: rows } = await supabase.from(table).select('*');
-    const targetIds = findMatchingIds(rows || [], searchKeyword);
+    const targetIds = findMatchingIds(rows || [], combinedKeyword);
     if (targetIds.length === 0) return { success: false, error: 'Tidak ada baris yang cocok.' };
     query = query.in('id', targetIds);
   } else {
@@ -395,13 +393,11 @@ async function deleteDatabaseRows(tableName, { rowId, searchKeyword } = {}) {
   if (!table) return { success: false, error: 'Nama tabel tidak valid atau tidak diizinkan.' };
 
   let query = supabase.from(table).delete().select();
-  const idNum = parseInt(rowId, 10);
-  if (!isNaN(idNum) && idNum > 0) {
-    query = query.eq('id', idNum);
-  } else if (searchKeyword) {
-    // USE SMART MATCHER
+  const combinedKeyword = String(searchKeyword || '').trim() || String(rowId || '').trim();
+  if (combinedKeyword) {
+    // USE SMART MATCHER FOR EVERYTHING
     const { data: rows } = await supabase.from(table).select('*');
-    const targetIds = findMatchingIds(rows || [], searchKeyword);
+    const targetIds = findMatchingIds(rows || [], combinedKeyword);
     if (targetIds.length === 0) return { success: false, error: 'Tidak ada baris yang cocok.' };
     query = query.in('id', targetIds);
   } else {
