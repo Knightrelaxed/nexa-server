@@ -208,7 +208,7 @@ async function appendFinanceRow(txData) {
     : `=I${prevRow}+H${nextRowNumber}`;
 
   // J: Positive value of pengeluaran only. Uses semicolons — Google Sheets locale ID format
-  const nominalPlusFormula = `=IF(D${nextRowNumber}="Pengeluaran";-H${nextRowNumber};0)`;
+  const nominalPlusFormula = `=IF(H${nextRowNumber}<0; ABS(H${nextRowNumber}); 0)`;
 
   // --- Step 3: Build the row array (A to J) ---
   const row = [
