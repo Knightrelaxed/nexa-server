@@ -341,11 +341,27 @@ async function pollLivinEmails() {
       const nominal = parseFloat(String(nominalMatch[1]).replace(/\./g, '').replace(',', '.'));
       if (isNaN(nominal) || nominal <= 0) continue;
 
+      // Check for failed transactions
+      const isFailed = blob.toLowerCase().includes('tidak berhasil') || blob.toLowerCase().includes('gagal');
+
       // Extract Merchant/Destination
       let destination = 'Livin Transaction';
       const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
       if (merchantMatch?.[1]) {
-        destination = merchantMatch[1].trim().substring(0, 80);
+        destination = merchantMatch[1].replace(/&nbsp;/ig, ' ').replace(/\s+/g, ' ').trim().substring(0, 80);
+      }
+
+      if (isFailed) {
+        // Just notify the user and don't process it further
+        if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+          const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
+          await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: env.TELEGRAM_CHAT_ID,
+            text: `⚠️ <b>TRANSFER GAGAL</b>\n\nTujuan: ${destination}\nNominal: ${nominalFmt}\n\n<i>N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam buku kas Anda.</i>`,
+            parse_mode: 'HTML'
+          });
+        }
+        continue;
       }
 
       // Date parsing
