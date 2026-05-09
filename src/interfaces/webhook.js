@@ -1258,6 +1258,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'DELETE') {
           const result = await financeEngine.deleteTransaction(routingData.extracted_data.search_keyword);
           domainReply = result.message;
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'CONFIRM_TRANSACTION') {
+          const confirmationReply = await financeEngine.confirmPendingTransactions(true);
+          domainReply = confirmationReply || 'Tidak ada transaksi yang tertunda.';
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'CANCEL_TRANSACTION') {
+          const confirmationReply = await financeEngine.confirmPendingTransactions(false);
+          domainReply = confirmationReply || 'Tidak ada transaksi yang tertunda.';
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'EDIT') {
           const result = await financeEngine.editTransaction(
             routingData.extracted_data.search_keyword,

@@ -380,8 +380,8 @@ async function pollLivinEmails() {
                   `<b>Catatan / Detail:</b> ${tx.description}\n` +
                   `<b>Nominal:</b> ${nominalFmt}\n\n` +
                   `🏦 <b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
-                  `Balas <b>'y'</b> untuk setuju menyimpan atau <b>'n'</b> untuk membatalkan.\n` +
-                  `<i>(Jika dalam 5 menit tidak ada balasan, N.E.X.A akan otomatis memasukannya ke sheet keuangan.)</i>`;
+                  `Silakan konfirmasi (contoh: <i>"ya", "simpan", "gass"</i>) atau batalkan (contoh: <i>"tidak", "batal", "jangan"</i>) transaksi ini.\n` +
+                  `<i>(Jika dalam 5 menit tidak ada konfirmasi, N.E.X.A akan otomatis memasukannya ke sheet keuangan.)</i>`;
 
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
         await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
