@@ -624,7 +624,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               vaultRowId: saved.row.id,
               driveFileId: uploaded.id,
               driveLink: uploaded.webViewLink,
-              fileName: uploaded.name || fileName,
+              fileName: uploaded.name || finalFileName,
               mimeType: uploaded.mimeType || mimeType,
               telegramFileId: fileId,
               category,
@@ -633,11 +633,11 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             };
           }
 
-          await supabaseMemories.saveChatMemory('user', `[SISTEM: MENGUNGGAH GAMBAR] Tuan Faqih mengirimkan gambar dokumen/arsip dengan nama: ${fileName}`);
+          await supabaseMemories.saveChatMemory('user', `[SISTEM: MENGUNGGAH GAMBAR] Tuan Faqih mengirimkan gambar dokumen/arsip dengan nama: ${finalFileName}`);
           await supabaseMemories.saveChatMemory('nexa', `[SISTEM: HASIL EKSTRAKSI VISION] Saya telah membaca gambar tersebut dan mengekstrak data berikut:\n${JSON.stringify(draftMeta, null, 2)}`);
 
           await respondToTelegram(
-            `✅ Tersimpan di Vault Drive (DRAFT).\n<b>Nama:</b> ${escapeHtml(fileName)}\n<b>Kategori (tebakan):</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}\n\n` +
+            `✅ Tersimpan di Vault Drive (DRAFT).\n<b>Nama:</b> ${escapeHtml(finalFileName)}\n<b>Kategori (tebakan):</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}\n\n` +
             `<b>Draft metadata:</b>\n${escapeHtml(formatVaultMetadata(draftMeta))}\n\n` +
             `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EKSTRAK ULANG</b>\n- <b>EDIT key: value; key2: value2</b>`
           );
