@@ -276,7 +276,7 @@ async function editTransaction(keyword, newNominal, newDescription) {
  * Resolves a pending transaction confirmation.
  * Returns a reply message to send to the user, or null if no pending transactions.
  */
-async function confirmPendingTransactions(isYes) {
+async function confirmPendingTransactions(isYes, customDescription = null, customCategory = null) {
   if (pendingConfirmations.size === 0) return null;
 
   let processedCount = 0;
@@ -286,6 +286,17 @@ async function confirmPendingTransactions(isYes) {
     clearTimeout(pending.timeoutId);
     if (isYes) {
       try {
+        if (customDescription) pending.tx.description = customDescription;
+        if (customCategory) pending.tx.category = customCategory;
+        
+        // If it's still uncategorized but has a user description, auto-categorize it via AI Router
+        if (!customCategory && pending.tx.description !== '[Menunggu Detail User]') {
+          const aiRouter = require('../core/AI_Router');
+          const autoQuery = `catat pengeluaran ${pending.tx.nominal} untuk ${pending.tx.description} di ${pending.tx.destination}`;
+          const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
+          pending.tx.category = routingData?.extracted_data?.category || 'Lainnya';
+        }
+
         await processTransaction(pending.tx, 'GMAIL_POLLING');
         processedCount++;
       } catch (e) {
@@ -346,8 +357,8 @@ async function pollLivinEmails() {
         nominal,
         type: 'EXPENSE',
         destination,
-        category: 'Livin Auto-Poll',
-        description: (e.subject || 'Auto-Polled Livin Transaction').substring(0, 100),
+        category: '[Menunggu Kategori AI/User]',
+        description: '[Menunggu Detail User]',
         time: dateIso
       };
 
@@ -378,16 +389,11 @@ async function pollLivinEmails() {
 
       const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
       const msg = `💸 <b>TRANSAKSI LIVIN TERBARU</b>\n\n` +
-                  `<b>Tanggal:</b> ${dateStr}\n` +
-                  `<b>Waktu:</b> ${timeStr}\n` +
-                  `<b>Tipe:</b> Pengeluaran\n` +
-                  `<b>Kategori:</b> ${tx.category}\n` +
-                  `<b>Akun:</b> Bank Mandiri Livin\n` +
-                  `<b>Catatan / Detail:</b> ${tx.description}\n` +
+                  `<b>Tujuan:</b> ${tx.destination}\n` +
                   `<b>Nominal:</b> ${nominalFmt}\n\n` +
-                  `🏦 <b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
-                  `Silakan konfirmasi (contoh: <i>"ya", "simpan", "gass"</i>) atau batalkan (contoh: <i>"tidak", "batal", "jangan"</i>) transaksi ini.\n` +
-                  `<i>(Jika dalam 5 menit tidak ada konfirmasi, N.E.X.A akan otomatis memasukannya ke sheet keuangan.)</i>`;
+                  `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
+                  `Silakan balas dengan <b>detail pengeluaran ini</b> (contoh: <i>"buat beli sate"</i> atau <i>"bayar kas"</i>).\n` +
+                  `<i>(Jika dalam 5 menit tidak ada balasan, N.E.X.A akan mengotomatiskan kategori dan catatannya.)</i>`;
 
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
         await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -401,12 +407,21 @@ async function pollLivinEmails() {
       const timeoutId = setTimeout(async () => {
         if (pendingConfirmations.has(compositeKey)) {
           try {
+            // Auto categorize using AI Router since user didn't reply
+            const aiRouter = require('../core/AI_Router');
+            const autoQuery = `catat pengeluaran ${nominal} ke ${tx.destination}`;
+            const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
+            
+            tx.category = routingData?.extracted_data?.category || 'Lainnya';
+            tx.description = `Pembayaran ke ${tx.destination}`;
+
             await processTransaction(tx, 'GMAIL_POLLING');
             pendingConfirmations.delete(compositeKey);
+            
             if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
               await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
                 chat_id: env.TELEGRAM_CHAT_ID,
-                text: `⏳ <i>Waktu habis (5 menit).</i>\nTransaksi Livin senilai <b>${nominalFmt}</b> telah dimasukkan ke sheet secara otomatis.`,
+                text: `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`,
                 parse_mode: 'HTML'
               });
             }
