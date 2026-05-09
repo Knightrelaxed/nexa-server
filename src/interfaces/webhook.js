@@ -741,11 +741,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       if (!normalized) return false;
       return /^(pada\s+)?(tgl|tanggal)\s*\d{1,2}\??$/.test(normalized);
     };
-    const isFinanceImportFromLivinCommand = (text) => {
-      const normalized = String(text || '').toLowerCase().trim();
-      if (!normalized) return false;
-      return /(ambil|masukkan|catat|sinkron|import).*(email|livin)|dari email livin/.test(normalized);
-    };
+
     const extractNominalFromEmail = (email) => {
       const blob = `${email?.subject || ''}\n${email?.body || ''}\n${email?.snippet || ''}`;
       const nominalMatch = blob.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp?\s*([0-9][0-9\.\,]+)/i);
@@ -956,7 +952,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           }
         }
         if (
-          !isFinanceImportFromLivinCommand(lowerText) &&
+          data.action !== 'IMPORT_FROM_EMAIL' &&
           (data.action === 'RECORD' || data.nominal !== undefined) &&
           (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0)
         ) {
@@ -1221,7 +1217,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       domainReply = clarificationMessage;
     } else switch (routingData.intent) {
       case 'FINANCE':
-        if (isFinanceImportFromLivinCommand(textInput)) {
+        if (routingData.extracted_data && routingData.extracted_data.action === 'IMPORT_FROM_EMAIL') {
           const gmailClient = require('../infrastructure/Gmail_Client');
           const candidateEmails = pendingEmailContext?.lastBatch?.length
             ? pendingEmailContext.lastBatch
