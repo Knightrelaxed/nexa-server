@@ -446,9 +446,15 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
   const isMissingDesc = tx.description === '[Menunggu Detail User]';
   const displayDesc = isMissingDesc ? `[KOSONG - Tujuan: ${destination}]` : tx.description;
 
-  let proactiveQuestion = `Silakan balas dengan detail pengeluaran ini untuk mengisi bagian yang kosong (contoh: "buat beli sate" atau "bayar kas"). Jika dalam 5 menit tidak ada balasan, N.E.X.A akan mengotomatiskan kategori dan catatannya.`;
+  let proactiveQuestion = '';
   if (isMissingDesc) {
-    proactiveQuestion = `❓ <b>Anda menggunakan uang ini untuk beli apa di ${destination}, Tuan?</b>\n\nTolong jelaskan agar saya dapat mencatat keuangan Anda dengan akurat. Jika dalam 5 menit tidak ada balasan, saya akan menebaknya secara otomatis.`;
+    if (tx.type === 'INCOME') {
+      proactiveQuestion = `❓ <b>Terdapat dana masuk dari ${destination}.</b>\n\nKira-kira uang ini masuk dalam rangka apa, Tuan? Mohon berikan detail singkatnya agar saya dapat merapikan laporan pemasukan Anda. <i>(Tanpa balasan, N.E.X.A akan menyimpannya dengan kategori otomatis dalam 5 menit).</i>`;
+    } else {
+      proactiveQuestion = `❓ <b>N.E.X.A mencatat pengeluaran ke ${destination}.</b>\n\nTuan, uang ini digunakan untuk keperluan apa ya? Mohon arahannya agar saya dapat melengkapi buku kas Anda dengan akurat. <i>(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).</i>`;
+    }
+  } else {
+    proactiveQuestion = `💡 Transaksi ini siap dikunci. Jika ada koreksi tambahan pada detail di atas, silakan balas pesan ini. Jika tidak, N.E.X.A akan meresmikannya ke dalam Sheet secara otomatis dalam 5 menit.`;
   }
 
   const msg = `💸 <b>${sourceLabel}</b>\n\n` +
