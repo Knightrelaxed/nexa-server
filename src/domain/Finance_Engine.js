@@ -311,7 +311,7 @@ async function confirmPendingTransactions(isYes) {
 async function pollLivinEmails() {
   try {
     console.log('[FINANCE] Polling for new Livin emails...');
-    const emails = await gmailClient.getLatestEmails('from:noreply.livin@bankmandiri.co.id', 5);
+    const emails = await gmailClient.getLatestEmails('from:noreply.livin@bankmandiri.co.id', 15);
     if (!emails || emails.length === 0) return 0;
 
     let newCount = 0;
