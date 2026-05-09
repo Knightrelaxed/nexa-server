@@ -551,51 +551,62 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     if (isVaultTriggered && (message.document || (message.photo && message.photo.length > 0))) {
       try {
         const fileId = message.document?.file_id || message.photo?.[message.photo.length - 1]?.file_id;
-        const fileName = message.document?.file_name || `photo_${Date.now()}.jpg`;
+        const rawFileName = message.document?.file_name || `photo_${Date.now()}.jpg`;
         const mimeType = message.document?.mime_type || 'image/jpeg';
+
+        let draftMeta = { judul: rawFileName, source: 'VISION_PENDING' };
+        let finalFileName = rawFileName;
+
+        if (/^image\//i.test(mimeType) && fileId) {
+          try {
+            draftMeta = await extractVaultMetadataFromVision({
+              fileId,
+              fileName: rawFileName,
+              promptHint: 'Ekstrak metadata dokumen ini lengkap dalam key-value yang relevan sesuai jenis dokumen. Wajib keluarkan field "judul" dengan nama dokumen yang sangat spesifik dan representatif terhadap isi gambar.'
+            });
+
+            // Generate smart file name based on vision-extracted title
+            if (draftMeta.judul && draftMeta.judul !== rawFileName) {
+              const ext = rawFileName.includes('.') ? rawFileName.split('.').pop() : 'jpg';
+              let safeJudul = draftMeta.judul.replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_');
+              if (safeJudul.length > 60) safeJudul = safeJudul.substring(0, 60);
+              if (safeJudul.length > 0) finalFileName = `${safeJudul}_${Date.now()}.${ext}`;
+            }
+          } catch (e) {
+            console.warn('[VAULT] Vision metadata extraction failed before upload:', e.message);
+            draftMeta = {
+              judul: rawFileName,
+              catatan: 'Ekstraksi otomatis gagal. Gunakan EKSTRAK ULANG atau EDIT untuk menyempurnakan.',
+              source: 'VISION_FAILED'
+            };
+          }
+        } else {
+          draftMeta = {
+            judul: rawFileName,
+            catatan: 'File non-gambar terdeteksi. Tambahkan metadata via EDIT.',
+            source: 'MANUAL_REQUIRED'
+          };
+        }
 
         const { tmpFilePath } = await downloadTelegramFileToTemp(fileId, '');
         try {
           const uploaded = await googleWorkspace.uploadFileToVault({
             filePath: tmpFilePath,
-            fileName,
+            fileName: finalFileName,
             mimeType,
             folderId: env.GOOGLE_VAULT_FOLDER_ID
           });
 
-          const category = /ktp|kartu identitas|sim|paspor|passport/i.test(vaultTriggerText)
+          // Prefer vision category if available, fallback to regex trigger
+          const category = draftMeta.kategori_gambar || (/ktp|kartu identitas|sim|paspor|passport/i.test(vaultTriggerText)
             ? 'IDENTITAS'
             : /surat|dokumen|pdf|legal/i.test(vaultTriggerText)
               ? 'DOKUMEN'
-              : 'ARSIP';
-
-          let draftMeta = { judul: uploaded.name || fileName, source: 'VISION_PENDING' };
-          if (/^image\//i.test(mimeType) && fileId) {
-            try {
-              draftMeta = await extractVaultMetadataFromVision({
-                fileId,
-                fileName: uploaded.name || fileName,
-                promptHint: 'Ekstrak metadata dokumen ini lengkap dalam key-value yang relevan sesuai jenis dokumen.'
-              });
-            } catch (e) {
-              console.warn('[VAULT] Vision metadata extraction failed:', e.message);
-              draftMeta = {
-                judul: uploaded.name || fileName,
-                catatan: 'Ekstraksi otomatis belum optimal. Gunakan EKSTRAK ULANG atau EDIT untuk menyempurnakan.',
-                source: 'VISION_FAILED'
-              };
-            }
-          } else {
-            draftMeta = {
-              judul: uploaded.name || fileName,
-              catatan: 'File non-gambar terdeteksi. Tambahkan metadata via EDIT.',
-              source: 'MANUAL_REQUIRED'
-            };
-          }
+              : 'ARSIP');
           const saved = await supabaseMemories.saveVaultItem({
             drive_file_id: uploaded.id,
             drive_web_view_link: uploaded.webViewLink,
-            file_name: uploaded.name || fileName,
+            file_name: uploaded.name || finalFileName,
             mime_type: uploaded.mimeType || mimeType,
             category,
             telegram_file_id: fileId,
