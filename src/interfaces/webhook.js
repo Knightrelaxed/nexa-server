@@ -906,15 +906,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         }
       }
 
-      if (ctx.intent === 'DATABASE') {
-        if (ctx.awaitingConfirmation && /(ya|iya|lanjut|hapus|oke|ok|y)/.test(normalized)) {
-           return { intent: 'DATABASE', extracted_data: { action: ctx.lastAction, table_name: ctx.tableName }, reply_message: '', god_mode_trigger: false };
-        }
-        if (ctx.awaitingConfirmation && /(tidak|batal|jangan|cancel|n|ga|gak)/.test(normalized)) {
-           return { intent: 'DATABASE', extracted_data: { action: 'CANCEL_ACTION' }, reply_message: '', god_mode_trigger: false };
-        }
-      }
-
       if (ctx.intent === 'WEB_SEARCH') {
         return {
           intent: 'WEB_SEARCH',
@@ -1635,14 +1626,20 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             : `❌ Delete gagal di <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
           pendingDatabaseContext = { tableName: result.table || tableName, lastAction: dbAction, askedAt: Date.now() };
         } else if (dbAction === 'DELETE_ALL_ROWS') {
-          if (!pendingDatabaseContext?.awaitingConfirmation) {
-            domainReply = routingData.reply_message || `⚠️ <b>PERINGATAN!</b> Anda meminta untuk menghapus SELURUH isi dari tabel <b>${escapeHtml(tableName)}</b>.\n\nApakah Anda benar-benar yakin ingin memusnahkan semua datanya? Balas <b>"YA"</b> untuk mengeksekusi, atau <b>"BATAL"</b>.`;
-            pendingDatabaseContext = { tableName, lastAction: dbAction, awaitingConfirmation: true, askedAt: Date.now() };
+          // Hanya set peringatan konfirmasi
+          domainReply = routingData.reply_message || `⚠️ <b>PERINGATAN!</b> Anda meminta untuk menghapus SELURUH isi dari tabel <b>${escapeHtml(tableName)}</b>.\n\nApakah Anda benar-benar yakin ingin memusnahkan semua datanya? Balas <b>"YA"</b> untuk mengeksekusi, atau <b>"BATAL"</b>.`;
+          pendingDatabaseContext = { tableName, lastAction: dbAction, awaitingConfirmation: true, askedAt: Date.now() };
+        } else if (dbAction === 'DELETE_ALL_ROWS_CONFIRMED') {
+          // AI router telah menyatakan user setuju. Gunakan tabel dari context jika AI lupa.
+          const targetTable = tableName || pendingDatabaseContext?.tableName;
+          if (!targetTable) {
+            domainReply = `❌ Kesalahan memori: N.E.X.A lupa tabel mana yang ingin dihapus massal. Silakan ulangi perintah dari awal.`;
+            pendingDatabaseContext = null;
           } else {
-            const result = await supabaseMemories.deleteAllDatabaseRows(tableName);
+            const result = await supabaseMemories.deleteAllDatabaseRows(targetTable);
             domainReply = result.success
               ? `💥 <b>Pemusnahan Massal Selesai</b>.\nSeluruh data di tabel <b>${escapeHtml(result.table)}</b> telah dihapus. Jumlah baris yang terdampak: ${result.deletedRows.length}`
-              : `❌ Gagal memusnahkan isi tabel <b>${escapeHtml(tableName)}</b>: ${escapeHtml(result.error)}`;
+              : `❌ Gagal memusnahkan isi tabel <b>${escapeHtml(targetTable)}</b>: ${escapeHtml(result.error)}`;
             pendingDatabaseContext = null;
           }
         } else if (dbAction === 'CANCEL_ACTION') {
