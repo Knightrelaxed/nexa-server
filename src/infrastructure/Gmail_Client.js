@@ -67,49 +67,54 @@ async function getLatestEmails(query = '', maxResults = 5) {
   const gmail = getGmailClient();
   if (!gmail) return [];
 
-  try {
-    const res = await gmail.users.messages.list({
-      userId: 'me',
-      q: query,
-      maxResults
-    });
-
-    const messages = res.data.messages || [];
-    const emails = [];
-
-    for (const msg of messages) {
-      const msgData = await gmail.users.messages.get({
+  let retries = 3;
+  while (retries > 0) {
+    try {
+      const res = await gmail.users.messages.list({
         userId: 'me',
-        id: msg.id,
-        format: 'full'
+        q: query,
+        maxResults
       });
-      
-      const payload = msgData.data.payload;
-      const headers = payload.headers;
-      
-      const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
-      const from = headers.find(h => h.name.toLowerCase() === 'from')?.value || 'Unknown';
-      const date = headers.find(h => h.name.toLowerCase() === 'date')?.value || '';
 
-      // Extract short snippet + full body text (if available)
-      const snippet = msgData.data.snippet;
-      const body = extractTextParts(payload);
+      const messages = res.data.messages || [];
+      const emails = [];
 
-      emails.push({
-        id: msg.id,
-        from,
-        subject,
-        date,
-        snippet,
-        body
-      });
+      for (const msg of messages) {
+        const msgData = await gmail.users.messages.get({
+          userId: 'me',
+          id: msg.id,
+          format: 'full'
+        });
+        
+        const payload = msgData.data.payload;
+        const headers = payload.headers;
+        
+        const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
+        const from = headers.find(h => h.name.toLowerCase() === 'from')?.value || 'Unknown';
+        const date = headers.find(h => h.name.toLowerCase() === 'date')?.value || '';
+
+        const snippet = msgData.data.snippet;
+        const body = extractTextParts(payload);
+
+        emails.push({
+          id: msg.id,
+          from,
+          subject,
+          date,
+          snippet,
+          body
+        });
+      }
+
+      return emails; // Success!
+    } catch (error) {
+      console.error(`[GMAIL] Error reading emails (Retries left: ${retries - 1}):`, error.message);
+      retries--;
+      if (retries === 0) return [];
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
     }
-
-    return emails;
-  } catch (error) {
-    console.error('[GMAIL] Error reading emails:', error.message);
-    return [];
   }
+  return [];
 }
 
 /**
