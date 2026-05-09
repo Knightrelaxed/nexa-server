@@ -64,6 +64,8 @@ async function triggerGodMode(level = 3, metadata = {}) {
         text: telegramMessage,
         parse_mode: 'HTML'
       });
+      const supabase = require('../infrastructure/Supabase_Memories');
+      try { await supabase.saveChatMemory('assistant', telegramMessage); } catch(e) {}
     } catch (telegramErr) {
       console.error('[DISCIPLINE] Failed to send God Mode audit to Telegram:', telegramErr.message);
     }

@@ -17,6 +17,8 @@ function initCronJobs() {
           chat_id: env.TELEGRAM_CHAT_ID,
           text: briefingText
         });
+        const supabase = require('../infrastructure/Supabase_Memories');
+        try { await supabase.saveChatMemory('assistant', briefingText); } catch(e) {}
         console.log('[CRON] Morning Briefing delivered successfully.');
       } else {
         console.warn('[CRON] Telegram bot not configured. Briefing not sent.');
