@@ -1,6 +1,10 @@
 const supabase = require('../infrastructure/Supabase_Memories');
 const googleWorkspace = require('../infrastructure/Google_Workspace');
 const gmailClient = require('../infrastructure/Gmail_Client');
+const axios = require('axios');
+const env = require('../config/env');
+
+const pendingConfirmations = new Map();
 
 /**
  * Handle a finance transaction (Deduplication & Recording)
@@ -269,6 +273,38 @@ async function editTransaction(keyword, newNominal, newDescription) {
 }
 
 /**
+ * Resolves a pending transaction confirmation.
+ * Returns a reply message to send to the user, or null if no pending transactions.
+ */
+async function confirmPendingTransactions(isYes) {
+  if (pendingConfirmations.size === 0) return null;
+
+  let processedCount = 0;
+  let skippedCount = 0;
+
+  for (const [key, pending] of pendingConfirmations.entries()) {
+    clearTimeout(pending.timeoutId);
+    if (isYes) {
+      try {
+        await processTransaction(pending.tx, 'GMAIL_POLLING');
+        processedCount++;
+      } catch (e) {
+        console.error(`[FINANCE] Failed to save confirmed tx:`, e.message);
+      }
+    } else {
+      skippedCount++;
+    }
+    pendingConfirmations.delete(key);
+  }
+
+  if (isYes) {
+    return `✅ <b>Berhasil dicatat!</b> ${processedCount} transaksi telah dimasukkan ke dalam sheet keuangan Tuan.`;
+  } else {
+    return `❌ <b>Dibatalkan.</b> ${skippedCount} transaksi Livin' diabaikan dan tidak dimasukkan ke dalam sheet.`;
+  }
+}
+
+/**
  * Automatically poll Gmail for new Livin' transaction emails, parse them, and record them.
  * Relies on Zero-Duplication Engine to prevent duplicate entries across polls.
  */
@@ -278,7 +314,7 @@ async function pollLivinEmails() {
     const emails = await gmailClient.getLatestEmails('from:noreply.livin@bankmandiri.co.id', 5);
     if (!emails || emails.length === 0) return 0;
 
-    let successCount = 0;
+    let newCount = 0;
     for (const e of emails) {
       const blob = `${e.subject || ''}\n${e.body || ''}\n${e.snippet || ''}`;
       
@@ -297,10 +333,8 @@ async function pollLivinEmails() {
 
       // Date parsing
       let dateIso = new Date().toISOString();
-      if (e.date) {
-        const d = new Date(e.date);
-        if (!isNaN(d.getTime())) dateIso = d.toISOString();
-      }
+      const transactionTime = e.date ? new Date(e.date) : new Date();
+      if (!isNaN(transactionTime.getTime())) dateIso = transactionTime.toISOString();
 
       const tx = {
         nominal,
@@ -311,21 +345,78 @@ async function pollLivinEmails() {
         time: dateIso
       };
 
+      const cleanMerchant = (tx.destination || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const compositeKey = `${nominal}_${cleanMerchant}`;
+
+      // Check if already pending or duplicated
+      if (pendingConfirmations.has(compositeKey)) continue;
+      const isDuplicate = await supabase.isDuplicateTransaction(compositeKey, transactionTime);
+      if (isDuplicate) continue;
+
+      newCount++;
+
+      // Formatting for Telegram
+      const dateStr = transactionTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' });
+      const timeStr = transactionTime.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.');
+      
+      // Get current Saldo
+      let currentSaldo = '-';
       try {
-        const res = await processTransaction(tx, 'GMAIL_POLLING');
-        if (res && res.status !== 'DUPLICATE') {
-          successCount++;
+        const recentRows = await googleWorkspace.getFinanceSummary(1);
+        if (recentRows && recentRows.length > 0) {
+          const rawSaldo = recentRows[0][8];
+          const saldoNum = parseFloat(String(rawSaldo).replace(/[^0-9.-]/g, ''));
+          currentSaldo = isNaN(saldoNum) ? rawSaldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
         }
-      } catch (err) {
-        // Skip on error, e.g. sheet issues
-        console.error(`[FINANCE] Auto-poll insert failed for ${destination}:`, err.message);
+      } catch (_) {}
+
+      const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
+      const msg = `💸 <b>TRANSAKSI LIVIN TERBARU</b>\n\n` +
+                  `<b>Tanggal:</b> ${dateStr}\n` +
+                  `<b>Waktu:</b> ${timeStr}\n` +
+                  `<b>Tipe:</b> Pengeluaran\n` +
+                  `<b>Kategori:</b> ${tx.category}\n` +
+                  `<b>Akun:</b> Bank Mandiri Livin\n` +
+                  `<b>Catatan / Detail:</b> ${tx.description}\n` +
+                  `<b>Nominal:</b> ${nominalFmt}\n\n` +
+                  `🏦 <b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
+                  `Balas <b>'y'</b> untuk setuju menyimpan atau <b>'n'</b> untuk membatalkan.\n` +
+                  `<i>(Jika dalam 5 menit tidak ada balasan, N.E.X.A akan otomatis memasukannya ke sheet keuangan.)</i>`;
+
+      if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+        await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          chat_id: env.TELEGRAM_CHAT_ID,
+          text: msg,
+          parse_mode: 'HTML'
+        });
       }
+
+      // Auto-save after 5 minutes
+      const timeoutId = setTimeout(async () => {
+        if (pendingConfirmations.has(compositeKey)) {
+          try {
+            await processTransaction(tx, 'GMAIL_POLLING');
+            pendingConfirmations.delete(compositeKey);
+            if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+              await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                chat_id: env.TELEGRAM_CHAT_ID,
+                text: `⏳ <i>Waktu habis (5 menit).</i>\nTransaksi Livin senilai <b>${nominalFmt}</b> telah dimasukkan ke sheet secara otomatis.`,
+                parse_mode: 'HTML'
+              });
+            }
+          } catch (e) {
+            console.error('[FINANCE] Auto-save timeout failed:', e.message);
+          }
+        }
+      }, 5 * 60 * 1000);
+
+      pendingConfirmations.set(compositeKey, { tx, timeoutId });
     }
-    return successCount;
+    return newCount;
   } catch (error) {
     console.error('[FINANCE] Auto-poll Livin emails failed:', error.message);
     return 0;
   }
 }
 
-module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction, pollLivinEmails };
+module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction, pollLivinEmails, confirmPendingTransactions };

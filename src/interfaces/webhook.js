@@ -473,6 +473,25 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
   try {
     // ============================================================
+    // FINANCE CONFIRMATION LOOP (Y/N)
+    // ============================================================
+    if (textInput) {
+      const isY = /^(y|ya|yes|simpan|ok|oke)$/i.test(textInput.trim());
+      const isN = /^(n|no|tidak|batal|cancel)$/i.test(textInput.trim());
+      
+      if (isY || isN) {
+        const financeEngine = require('../domain/Finance_Engine');
+        const confirmationReply = await financeEngine.confirmPendingTransactions(isY);
+        if (confirmationReply) {
+          await supabaseMemories.saveChatMemory('user', textInput);
+          await respondToTelegram(confirmationReply);
+          clearTimeout(safetyTimer);
+          return;
+        }
+      }
+    }
+
+    // ============================================================
     // VAULT CONFIRMATION LOOP (KONFIRM / EKSTRAK ULANG / EDIT)
     // ============================================================
     if (pendingVaultContext && textInput) {
