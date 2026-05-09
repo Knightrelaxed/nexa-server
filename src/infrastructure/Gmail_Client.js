@@ -168,8 +168,33 @@ async function sendEmail(to, subject, textContent) {
   }
 }
 
+/**
+ * Enable Gmail Push Notifications via Pub/Sub
+ */
+async function watchMailbox(topicName) {
+  const gmail = getGmailClient();
+  if (!gmail) return false;
+
+  try {
+    const res = await gmail.users.watch({
+      userId: 'me',
+      requestBody: {
+        labelIds: ['INBOX'],
+        labelFilterAction: 'include',
+        topicName: topicName // e.g. 'projects/YOUR_PROJECT_ID/topics/YOUR_TOPIC_NAME'
+      }
+    });
+    console.log('[GMAIL] Watch initiated successfully:', res.data);
+    return res.data;
+  } catch (error) {
+    console.error('[GMAIL] Error initiating watch:', error.message);
+    return false;
+  }
+}
+
 module.exports = {
   getLatestEmails,
   deleteEmail,
-  sendEmail
+  sendEmail,
+  watchMailbox
 };

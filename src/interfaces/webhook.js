@@ -1764,4 +1764,30 @@ router.post('/tasker', security.webhookAuth, async (req, res) => {
   }
 });
 
+// ============================================================
+// GMAIL WEBHOOK (Google Cloud Pub/Sub → N.E.X.A Server)
+// ============================================================
+router.post('/gmail', async (req, res) => {
+  // Google Pub/Sub sends data in req.body.message
+  if (!req.body || !req.body.message) {
+    return res.status(400).send('Invalid Pub/Sub payload');
+  }
+
+  console.log('[GMAIL WEBHOOK] Received push notification from Pub/Sub');
+  
+  // Acknowledge the webhook immediately so Google doesn't retry
+  res.status(200).send('OK');
+
+  try {
+    const financeEngine = require('../domain/Finance_Engine');
+    // Instantly trigger polling logic without waiting for the 3-minute cron
+    const count = await financeEngine.pollLivinEmails();
+    if (count > 0) {
+      console.log(`[GMAIL WEBHOOK] Instantly processed ${count} new Livin transactions.`);
+    }
+  } catch (err) {
+    console.error('[GMAIL WEBHOOK] Error processing instant poll:', err.message);
+  }
+});
+
 module.exports = router;
