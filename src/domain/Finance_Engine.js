@@ -370,11 +370,13 @@ async function pollLivinEmails() {
         // Just notify the user and don't process it further
         if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
           const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
+          const failedMsg = `⚠️ <b>TRANSFER GAGAL</b>\n\nTujuan: ${destination}\nNominal: ${nominalFmt}\n\n<i>N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam buku kas Anda.</i>`;
           await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
             chat_id: env.TELEGRAM_CHAT_ID,
-            text: `⚠️ <b>TRANSFER GAGAL</b>\n\nTujuan: ${destination}\nNominal: ${nominalFmt}\n\n<i>N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam buku kas Anda.</i>`,
+            text: failedMsg,
             parse_mode: 'HTML'
           });
+          try { await supabase.saveChatMemory('assistant', failedMsg); } catch(e) {}
         }
         continue;
       }
@@ -397,6 +399,7 @@ async function pollLivinEmails() {
           text: msg,
           parse_mode: 'HTML'
         });
+        try { await supabase.saveChatMemory('assistant', msg); } catch(e) {}
       }
     }
     return newCount;
@@ -486,11 +489,13 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
         pendingConfirmations.delete(compositeKey);
         
         if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+          const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`;
           await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
             chat_id: env.TELEGRAM_CHAT_ID,
-            text: `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`,
+            text: timeoutMsg,
             parse_mode: 'HTML'
           });
+          try { await supabase.saveChatMemory('assistant', timeoutMsg); } catch(e) {}
         }
       } catch (e) {
         console.error('[FINANCE] Auto-save timeout failed:', e.message);
