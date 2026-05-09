@@ -473,6 +473,10 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             metadata_json: pendingVaultContext.metadata,
             confirmed_at: new Date().toISOString()
           }).catch((e) => console.error('[VAULT] Confirm update failed:', e.message));
+          
+          await supabaseMemories.saveChatMemory('user', textInput);
+          await supabaseMemories.saveChatMemory('nexa', '✅ Baik, Tuan. Metadata Vault dikonfirmasi dan disimpan.');
+          
           pendingVaultContext = null;
           await respondToTelegram('✅ Baik, Tuan. Metadata Vault dikonfirmasi dan disimpan.');
           clearTimeout(safetyTimer);
@@ -498,6 +502,10 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               `${escapeHtml(formatVaultMetadata(pendingVaultContext.metadata))}\n\n` +
               `Balas: <b>KONFIRM</b> / <b>EKSTRAK ULANG</b> / <b>EDIT key: value; key2: value2</b>`
             );
+            
+            await supabaseMemories.saveChatMemory('user', textInput);
+            await supabaseMemories.saveChatMemory('nexa', `[SISTEM: HASIL EKSTRAKSI ULANG VISION]\n${JSON.stringify(pendingVaultContext.metadata, null, 2)}`);
+            
             clearTimeout(safetyTimer);
             return;
           } catch (e) {
@@ -512,6 +520,10 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           pendingVaultContext.metadata = { ...(pendingVaultContext.metadata || {}), ...edits, source: 'USER_EDIT' };
           if (edits.category) pendingVaultContext.category = String(edits.category).toUpperCase();
           pendingVaultContext.askedAt = Date.now();
+          
+          await supabaseMemories.saveChatMemory('user', textInput);
+          await supabaseMemories.saveChatMemory('nexa', `[SISTEM: DRAFT METADATA DIUPDATE MANUAL]\n${JSON.stringify(pendingVaultContext.metadata, null, 2)}`);
+
           await respondToTelegram(
             `✅ Dicatat, Tuan. Draft metadata sekarang:\n${escapeHtml(formatVaultMetadata(pendingVaultContext.metadata))}\n\n` +
             `Balas: <b>KONFIRM</b> / <b>EKSTRAK ULANG</b> / <b>EDIT key: value; key2: value2</b>`
@@ -602,6 +614,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               askedAt: Date.now()
             };
           }
+
+          await supabaseMemories.saveChatMemory('user', `[SISTEM: MENGUNGGAH GAMBAR] Tuan Faqih mengirimkan gambar dokumen/arsip dengan nama: ${fileName}`);
+          await supabaseMemories.saveChatMemory('nexa', `[SISTEM: HASIL EKSTRAKSI VISION] Saya telah membaca gambar tersebut dan mengekstrak data berikut:\n${JSON.stringify(draftMeta, null, 2)}`);
 
           await respondToTelegram(
             `✅ Tersimpan di Vault Drive (DRAFT).\n<b>Nama:</b> ${escapeHtml(fileName)}\n<b>Kategori (tebakan):</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}\n\n` +
