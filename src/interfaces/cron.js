@@ -37,6 +37,23 @@ function initCronJobs() {
     scheduled: true,
     timezone: "Asia/Jakarta"
   });
+
+  // 3. Livin' Auto-Sync (Every 10 minutes)
+  cron.schedule('*/10 * * * *', async () => {
+    console.log('[CRON] Executing Livin Auto-Sync...');
+    try {
+      const financeEngine = require('../domain/Finance_Engine');
+      const count = await financeEngine.pollLivinEmails();
+      if (count > 0) {
+        console.log(`[CRON] Livin Auto-Sync processed ${count} new transactions.`);
+      }
+    } catch (e) {
+      console.error('[CRON] Livin Auto-Sync failed:', e.message);
+    }
+  }, {
+    scheduled: true,
+    timezone: "Asia/Jakarta"
+  });
 }
 
 module.exports = { initCronJobs };

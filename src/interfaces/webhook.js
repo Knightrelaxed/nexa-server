@@ -1707,23 +1707,8 @@ router.post('/tasker', security.webhookAuth, async (req, res) => {
 
   console.log(`[TASKER] Received event type: ${type}`);
 
-  if (type === 'FINANCE_PUSH') {
-    try {
-      const result = await financeEngine.processTransaction({
-        nominal: data.nominal,
-        type: 'EXPENSE',
-        destination: data.merchant || 'Unknown',
-        category: 'Uncategorized',
-        description: 'Auto-captured from Push Notification',
-        time: data.timestamp
-      }, 'TASKER_LIVIN');
-      res.status(200).json(result);
-    } catch (e) {
-      console.error('[TASKER] Finance push failed:', e.message);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
 
-  } else if (type === 'SCREEN_TIME_VIOLATION') {
+  if (type === 'SCREEN_TIME_VIOLATION') {
     try {
       await godMode.triggerGodMode(3, { violation_app: data.app_name, session_id: 'auto' });
       res.status(200).json({ status: 'God Mode Activated' });
@@ -1748,15 +1733,6 @@ router.post('/tasker', security.webhookAuth, async (req, res) => {
       console.error('[TASKER] Alarm briefing failed:', e.message);
       res.status(500).json({ error: 'Briefing Failed', detail: e.message });
     }
-
-  } else if (type === 'WATCHDOG_PING') {
-    const uptimeSeconds = Math.floor(process.uptime());
-    res.status(200).json({
-      status: 'ALIVE',
-      uptime_human: `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m`,
-      timestamp_jakarta: new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }),
-      memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024)
-    });
 
   } else {
     res.status(400).json({ error: `Unknown event type: ${type}` });

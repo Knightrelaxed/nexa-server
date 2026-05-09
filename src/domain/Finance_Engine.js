@@ -1,5 +1,6 @@
 const supabase = require('../infrastructure/Supabase_Memories');
 const googleWorkspace = require('../infrastructure/Google_Workspace');
+const gmailClient = require('../infrastructure/Gmail_Client');
 
 /**
  * Handle a finance transaction (Deduplication & Recording)
@@ -267,4 +268,64 @@ async function editTransaction(keyword, newNominal, newDescription) {
   }
 }
 
-module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction };
+/**
+ * Automatically poll Gmail for new Livin' transaction emails, parse them, and record them.
+ * Relies on Zero-Duplication Engine to prevent duplicate entries across polls.
+ */
+async function pollLivinEmails() {
+  try {
+    console.log('[FINANCE] Polling for new Livin emails...');
+    const emails = await gmailClient.getLatestEmails('from:noreply.livin@bankmandiri.co.id', 5);
+    if (!emails || emails.length === 0) return 0;
+
+    let successCount = 0;
+    for (const e of emails) {
+      const blob = `${e.subject || ''}\n${e.body || ''}\n${e.snippet || ''}`;
+      
+      // Extract Nominal
+      const nominalMatch = blob.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp?\s*([0-9][0-9\.\,]+)/i);
+      if (!nominalMatch) continue;
+      const nominal = parseFloat(String(nominalMatch[1]).replace(/\./g, '').replace(',', '.'));
+      if (isNaN(nominal) || nominal <= 0) continue;
+
+      // Extract Merchant/Destination
+      let destination = 'Livin Transaction';
+      const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
+      if (merchantMatch?.[1]) {
+        destination = merchantMatch[1].trim().substring(0, 80);
+      }
+
+      // Date parsing
+      let dateIso = new Date().toISOString();
+      if (e.date) {
+        const d = new Date(e.date);
+        if (!isNaN(d.getTime())) dateIso = d.toISOString();
+      }
+
+      const tx = {
+        nominal,
+        type: 'EXPENSE',
+        destination,
+        category: 'Livin Auto-Poll',
+        description: (e.subject || 'Auto-Polled Livin Transaction').substring(0, 100),
+        time: dateIso
+      };
+
+      try {
+        const res = await processTransaction(tx, 'GMAIL_POLLING');
+        if (res && res.status !== 'DUPLICATE') {
+          successCount++;
+        }
+      } catch (err) {
+        // Skip on error, e.g. sheet issues
+        console.error(`[FINANCE] Auto-poll insert failed for ${destination}:`, err.message);
+      }
+    }
+    return successCount;
+  } catch (error) {
+    console.error('[FINANCE] Auto-poll Livin emails failed:', error.message);
+    return 0;
+  }
+}
+
+module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction, pollLivinEmails };

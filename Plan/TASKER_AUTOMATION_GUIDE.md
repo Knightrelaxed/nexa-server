@@ -15,92 +15,17 @@ Dokumen ini adalah panduan lengkap untuk melakukan *setup* aplikasi **Tasker** d
 
 ---
 
-## 📋 DAFTAR SEMUA PROFILE TASKER
-
 | # | Profile | Pemicu | Fungsi |
 |---|---|---|---|
-| 1 | Sensor Keuangan Livin' | Notifikasi Livin' by Mandiri | Kirim data transaksi ke N.E.X.A |
-| 2 | Buffer Fallback Keuangan | Sensor Keuangan gagal POST | Kirim via Telegram sebagai backup |
-| 3 | Sensor Screen-Time | Buka TikTok/Instagram >30 menit | Trigger God Mode |
-| 4 | God Mode Executor | Event ntfy pesan masuk | Matikan WiFi, Data, Kunci Layar |
-| 5 | Alarm Dismissed Briefing | Alarm HP dimatikan | Request Morning Briefing ke N.E.X.A |
-| 6 | Watchdog (Lapisan 3) | Setiap 2 jam | Cek kesehatan server, alert jika mati |
+| 1 | Sensor Screen-Time | Buka TikTok/Instagram >30 menit | Trigger God Mode |
+| 2 | God Mode Executor | Event ntfy pesan masuk | Matikan WiFi, Data, Kunci Layar |
+| 3 | Alarm Dismissed Briefing | Alarm HP dimatikan | Request Morning Briefing ke N.E.X.A |
+
+> **Catatan:** Automasi tracking keuangan (Livin') tidak lagi menggunakan Tasker karena *rawan data terpotong oleh limitasi notifikasi Android*. N.E.X.A kini **secara otomatis memindai Gmail Anda setiap 10 menit** untuk mengekstrak transaksi Livin' secara 100% akurat tanpa memerlukan campur tangan Tasker. Watchdog ping juga telah dihapus karena Hugging Face memiliki Uptime Robot tersendiri.
 
 ---
 
-## 1. 💰 SENSOR KEUANGAN LIVIN' (Auto-Track Transaksi)
-
-Membaca notifikasi transaksi Livin' by Mandiri dan mengirimkan datanya ke N.E.X.A secara real-time.
-
-### A. Membuat Profile (Pemicu Notifikasi)
-1. Buka Tasker → Tab **Profiles** → klik `+`
-2. Pilih **Event** → **Plugin** → **AutoNotification** → **Intercept**
-3. Klik ikon pensil (Configuration)
-4. **Action Type:** `Created`
-5. **Apps:** Pilih **Livin' by Mandiri**
-6. **Text Filter:** `Berhasil` (atau `Rp` untuk lebih sensitif)
-7. Simpan
-
-### B. Membuat Task (Kirim ke N.E.X.A)
-Buat Task baru: `Kirim Keuangan ke NEXA`
-
-**Aksi 1: HTTP Request ke Server**
-- **Method:** `POST`
-- **URL:** `<HF_URL>/webhook/tasker`
-- **Headers:**
-  - `Authorization: Bearer <GODMODE_SECRET>`
-  - `Content-Type: application/json`
-- **Body:**
-  ```json
-  {
-    "type": "FINANCE_PUSH",
-    "data": {
-      "nominal": "%antext",
-      "merchant": "%antitle",
-      "timestamp": "%TIMES"
-    }
-  }
-  ```
-  > `%antext` = isi teks notifikasi, `%antitle` = judul notifikasi, `%TIMES` = waktu ISO Tasker
-- **Timeout:** 5 (detik)
-- Simpan response code ke variabel: `%finance_http_code`
-
-**Aksi 2: If (Fallback ke Buffer jika gagal)**
-Tambahkan blok `If` setelah aksi HTTP:
-- **Kondisi:** `%finance_http_code` **Isn't Set** OR `%finance_http_code` **!~** `200`
-- **Aksi di dalam If:** Lihat **Profile #2 (Buffer Fallback)** di bawah
-
-### C. Prompt Tasker AI Agent
-> **"Buat Profile AutoNotification Intercept untuk mencegat notifikasi dari aplikasi Livin' by Mandiri yang berisi teks 'Berhasil'. Jika terpicu, buat Task dengan dua langkah: Langkah 1, kirim HTTP POST Request ke `<HF_URL>/webhook/tasker` dengan header `Authorization: Bearer <GODMODE_SECRET>` dan `Content-Type: application/json`, dengan body JSON `{"type": "FINANCE_PUSH", "data": {"nominal": "%antext", "merchant": "%antitle", "timestamp": "%TIMES"}}`, set timeout 5 detik, simpan HTTP response code ke variabel %finance_http_code. Langkah 2, tambahkan If kondisi: jika %finance_http_code tidak diset atau tidak sama dengan 200, maka kirim pesan HTTP POST ke Telegram API `https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/sendMessage` dengan body `{"chat_id": "<TELEGRAM_CHAT_ID>", "text": "[BUFFER] %antext | %antitle | %TIMES"}`."**
-
----
-
-## 2. 📦 BUFFER FALLBACK KEUANGAN (Lapisan 4 — Black Box)
-
-Jika server N.E.X.A sedang *cold start* dan tidak merespons dalam 5 detik, Tasker menggunakan jalur darurat via Telegram langsung. Server akan memproses pesan `[BUFFER]` ini saat sudah kembali hidup.
-
-**Format pesan Buffer yang dikirim Tasker:**
-```
-[BUFFER] <nominal_dari_notifikasi> | <nama_merchant> | <timestamp_ISO>
-```
-
-**Task: Kirim Buffer via Telegram API**
-- **Method:** `POST`
-- **URL:** `https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/sendMessage`
-- **Headers:** `Content-Type: application/json`
-- **Body:**
-  ```json
-  {
-    "chat_id": "6798861902",
-    "text": "[BUFFER] %antext | %antitle | %TIMES"
-  }
-  ```
-
-> Server N.E.X.A secara otomatis mendeteksi prefix `[BUFFER]`, mem-parsing nominal dan merchant, lalu mencatatnya ke Google Sheets dengan sistem deduplikasi aktif.
-
----
-
-## 3. ⏱️ SENSOR SCREEN-TIME (Pengawas Disiplin)
+## 1. ⏱️ SENSOR SCREEN-TIME (Pengawas Disiplin)
 
 Mendeteksi jika Anda membuka aplikasi hiburan terlalu lama dan melaporkan ke N.E.X.A untuk memicu God Mode.
 
@@ -134,7 +59,7 @@ Buat Task: `Monitor Screen Time NEXA`
 
 ---
 
-## 4. 🔴 GOD MODE EXECUTOR (Algojo Disiplin via ntfy.sh)
+## 2. 🔴 GOD MODE EXECUTOR (Algojo Disiplin via ntfy.sh)
 
 Menerima push instan dari N.E.X.A via ntfy.sh dan mengeksekusi intervensi sistem Android secara paksa.
 
@@ -172,7 +97,7 @@ Buat Task: `Eksekusi God Mode NEXA`
 
 ---
 
-## 5. ⏰ ALARM DISMISSED — Morning Briefing Presisi
+## 3. ⏰ ALARM DISMISSED — Morning Briefing Presisi
 
 Memicu N.E.X.A untuk mengirim *Morning Briefing* tepat di detik Anda mematikan alarm pagi — bukan jam 05:30 buta, tapi **tepat saat Anda siap menerimanya**.
 
@@ -200,44 +125,7 @@ Buat Task: `Minta Briefing ke NEXA`
 ### C. Prompt Tasker AI Agent
 > **"Buatkan Profile event Alarm Done. Jika terpicu (alarm HP dimatikan), jalankan Task HTTP POST Request ke `<HF_URL>/webhook/tasker` dengan header `Authorization: Bearer <GODMODE_SECRET>` dan `Content-Type: application/json`. Isi body JSON: `{"type": "ALARM_DISMISSED", "data": {"timestamp": "%TIMES"}}`."**
 
----
 
-## 6. 🏥 WATCHDOG PING (Lapisan 3 — Dokter Jaga Android)
-
-Mengirim sinyal kesehatan ke server N.E.X.A setiap 2 jam. Jika server tidak merespons, Tasker akan membangunkan server dan memberi notifikasi kepada Anda.
-
-### A. Membuat Profile
-1. Buat Profile `+` → **Time** → **Time** → Set: **Repeat every 2 hours**
-
-### B. Membuat Task
-Buat Task: `NEXA Watchdog Ping`
-
-**Aksi 1: HTTP POST ke server**
-- **Method:** `POST`
-- **URL:** `<HF_URL>/webhook/tasker`
-- **Headers:** `Authorization: Bearer <GODMODE_SECRET>`, `Content-Type: application/json`
-- **Body:**
-  ```json
-  {
-    "type": "WATCHDOG_PING",
-    "data": {
-      "source": "tasker_watchdog"
-    }
-  }
-  ```
-- **Timeout:** 10 detik
-- Simpan HTTP code ke: `%watchdog_code`
-
-**Aksi 2: If server mati (response bukan 200)**
-- **If** `%watchdog_code` **!~** `200`:
-  1. **HTTP GET** ke `<HF_URL>` (URL Space langsung, bukan /webhook) — ini membangunkan container
-  2. **Wait:** 30 detik (tunggu cold start selesai)
-  3. **Notify:** "⚠️ N.E.X.A Offline terdeteksi! Server sedang dibangunkan..."
-
-### C. Prompt Tasker AI Agent
-> **"Buat Profile Time dengan repeat setiap 2 jam. Jalankan Task: kirim HTTP POST ke `<HF_URL>/webhook/tasker` dengan header `Authorization: Bearer <GODMODE_SECRET>` dan body JSON `{"type": "WATCHDOG_PING", "data": {"source": "tasker_watchdog"}}`, timeout 10 detik, simpan HTTP response code ke %watchdog_code. Kemudian tambahkan If kondisi: jika %watchdog_code tidak sama dengan 200, maka: lakukan HTTP GET ke `<HF_URL>`, tunggu 30 detik, lalu tampilkan notifikasi 'N.E.X.A offline terdeteksi, server sedang dibangunkan'."**
-
----
 
 ## ⚙️ RINGKASAN VARIABEL YANG DIGUNAKAN
 
@@ -250,4 +138,4 @@ Buat Task: `NEXA Watchdog Ping`
 
 ---
 
-Dengan 6 Profile di atas, Android Anda adalah **kepanjangan tangan penuh** N.E.X.A — mulai dari sensor lapangan, jantung Immortality Protocol, hingga algojo disiplin tingkat sistem.
+Dengan 3 Profile esensial di atas, Android Anda adalah **kepanjangan tangan penuh** N.E.X.A — mulai dari sensor lapangan, hingga algojo disiplin tingkat sistem.
