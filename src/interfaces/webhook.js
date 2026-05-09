@@ -1636,9 +1636,18 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             domainReply = `❌ Kesalahan memori: N.E.X.A lupa tabel mana yang ingin dihapus massal. Silakan ulangi perintah dari awal.`;
             pendingDatabaseContext = null;
           } else {
+            let driveDeletedMsg = '';
+            if (targetTable === 'nexa_vault_items') {
+              const googleWorkspace = require('../infrastructure/Google_Workspace');
+              const driveSuccess = await googleWorkspace.deleteAllVaultFiles();
+              driveDeletedMsg = driveSuccess 
+                ? '\n🗑️ Semua file fisik di Google Drive Vault juga telah dimasukkan ke Trash.'
+                : '\n⚠️ Gagal menghapus file fisik di Google Drive Vault.';
+            }
+
             const result = await supabaseMemories.deleteAllDatabaseRows(targetTable);
             domainReply = result.success
-              ? `💥 <b>Pemusnahan Massal Selesai</b>.\nSeluruh data di tabel <b>${escapeHtml(result.table)}</b> telah dihapus. Jumlah baris yang terdampak: ${result.deletedRows.length}`
+              ? `💥 <b>Pemusnahan Massal Selesai</b>.\nSeluruh data di tabel <b>${escapeHtml(result.table)}</b> telah dihapus. Jumlah baris yang terdampak: ${result.deletedRows.length}${driveDeletedMsg}`
               : `❌ Gagal memusnahkan isi tabel <b>${escapeHtml(targetTable)}</b>: ${escapeHtml(result.error)}`;
             pendingDatabaseContext = null;
           }

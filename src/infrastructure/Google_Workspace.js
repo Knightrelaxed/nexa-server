@@ -692,8 +692,32 @@ async function deleteGenericSpreadsheet(fileId) {
   return true;
 }
 
+/**
+ * Trash all files inside the Google Drive Vault Folder.
+ */
+async function deleteAllVaultFiles() {
+  const { drive } = getClients();
+  if (!env.GOOGLE_VAULT_FOLDER_ID) return false;
+  try {
+    const res = await drive.files.list({
+      q: `'${env.GOOGLE_VAULT_FOLDER_ID}' in parents and trashed = false`,
+      fields: 'files(id)'
+    });
+    const files = res.data.files || [];
+    // We will trash them sequentially to avoid rate limits, it's usually not a huge list
+    for (const f of files) {
+      await drive.files.update({ fileId: f.id, requestBody: { trashed: true } });
+    }
+    return true;
+  } catch (e) {
+    console.error('[DRIVE] Failed to delete vault files:', e.message);
+    return false;
+  }
+}
+
 module.exports = {
   uploadFileToVault,
+  deleteAllVaultFiles,
   extractOcrTextViaDriveOcr,
   appendFinanceRow,
   getFinanceSummary,

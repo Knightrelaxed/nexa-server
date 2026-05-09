@@ -11,7 +11,8 @@ const SUPABASE_TABLES = [
   'nexa_finance_dedup',
   'nexa_user_profile',
   'nexa_core_identity',
-  'nexa_2nd_brain'
+  'nexa_2nd_brain',
+  'nexa_vault_items'
 ];
 
 function resolveAllowedTableName(tableName) {
