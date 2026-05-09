@@ -351,7 +351,22 @@ async function pollLivinEmails() {
         destination = merchantMatch[1].replace(/&nbsp;/ig, ' ').replace(/\s+/g, ' ').trim().substring(0, 80);
       }
 
+      // Date parsing
+      let dateIso = new Date().toISOString();
+      const transactionTime = e.date ? new Date(e.date) : new Date();
+      if (!isNaN(transactionTime.getTime())) dateIso = transactionTime.toISOString();
+
+      const cleanMerchant = destination.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const compositeKey = `${nominal}_${cleanMerchant}`;
+
+      // Check if already pending or duplicated
+      if (pendingConfirmations.has(compositeKey)) continue;
+      const isDuplicate = await supabase.isDuplicateTransaction(compositeKey, transactionTime);
+      if (isDuplicate) continue;
+
       if (isFailed) {
+        // Log to Supabase so we don't notify again
+        await supabase.logTransactionKey(compositeKey, transactionTime, 'FAILED_TRANSFER');
         // Just notify the user and don't process it further
         if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
           const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
@@ -364,10 +379,7 @@ async function pollLivinEmails() {
         continue;
       }
 
-      // Date parsing
-      let dateIso = new Date().toISOString();
-      const transactionTime = e.date ? new Date(e.date) : new Date();
-      if (!isNaN(transactionTime.getTime())) dateIso = transactionTime.toISOString();
+      newCount++;
 
       const tx = {
         nominal,
@@ -377,16 +389,6 @@ async function pollLivinEmails() {
         description: '[Menunggu Detail User]',
         time: dateIso
       };
-
-      const cleanMerchant = (tx.destination || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const compositeKey = `${nominal}_${cleanMerchant}`;
-
-      // Check if already pending or duplicated
-      if (pendingConfirmations.has(compositeKey)) continue;
-      const isDuplicate = await supabase.isDuplicateTransaction(compositeKey, transactionTime);
-      if (isDuplicate) continue;
-
-      newCount++;
 
       const msg = await requestTransactionConfirmation(tx, 'TRANSAKSI LIVIN TERBARU');
       if (msg && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
@@ -441,7 +443,13 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
 
   const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
   const tipeStr = tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran';
-  const displayDesc = tx.description === '[Menunggu Detail User]' ? `[KOSONG - Tujuan: ${destination}]` : tx.description;
+  const isMissingDesc = tx.description === '[Menunggu Detail User]';
+  const displayDesc = isMissingDesc ? `[KOSONG - Tujuan: ${destination}]` : tx.description;
+
+  let proactiveQuestion = `Silakan balas dengan detail pengeluaran ini untuk mengisi bagian yang kosong (contoh: "buat beli sate" atau "bayar kas"). Jika dalam 5 menit tidak ada balasan, N.E.X.A akan mengotomatiskan kategori dan catatannya.`;
+  if (isMissingDesc) {
+    proactiveQuestion = `❓ <b>Anda menggunakan uang ini untuk beli apa di ${destination}, Tuan?</b>\n\nTolong jelaskan agar saya dapat mencatat keuangan Anda dengan akurat. Jika dalam 5 menit tidak ada balasan, saya akan menebaknya secara otomatis.`;
+  }
 
   const msg = `💸 <b>${sourceLabel}</b>\n\n` +
               `<b>No:</b> [Auto]\n` +
@@ -453,7 +461,7 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
               `<b>Catatan / Detail:</b> ${displayDesc}\n` +
               `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
               `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
-              `Silakan balas dengan detail pengeluaran ini untuk mengisi bagian yang kosong (contoh: "buat beli sate" atau "bayar kas"). Jika dalam 5 menit tidak ada balasan, N.E.X.A akan mengotomatiskan kategori dan catatannya.`;
+              `${proactiveQuestion}`;
 
   // Auto-save after 5 minutes
   const timeoutId = setTimeout(async () => {
