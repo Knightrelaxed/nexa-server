@@ -998,45 +998,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
       return null;
     };
-    const parseDatabaseFollowUp = (text, lastTableName) => {
-      const normalized = String(text || '').toLowerCase().trim();
-      if (!normalized) return null;
-
-      if (/list tabel|daftar tabel|tabel apa saja|overview database/.test(normalized)) {
-        return { action: 'LIST_TABLES' };
-      }
-
-      let action = null;
-      if (/(cek|periksa|lihat|baca|tampilkan)/.test(normalized)) action = 'READ_TABLE';
-      if (/(tambah|insert|buat|simpan)/.test(normalized)) action = 'INSERT_ROW';
-      if (/(ubah|edit|update|ganti)/.test(normalized)) action = 'UPDATE_ROW';
-      if (/(hapus|delete|buang|remove)/.test(normalized)) action = 'DELETE_ROW';
-      if (!action && /(baris|row|id|tabel)/.test(normalized) && isGenericContinuation(normalized)) {
-        action = 'READ_TABLE';
-      }
-      if (!action) return null;
-
-      const idMatch = normalized.match(/\bid\s*(\d+)\b/);
-      const tableMatch = normalized.match(/\b(nexa_chat_memories|nexa_finance_dedup|nexa_user_profile|nexa_core_identity|nexa_2nd_brain)\b/);
-      const tableName = tableMatch?.[1] || lastTableName || '';
-
-      // Simple data parser from "..." : "..."
-      let contentFromColon = '';
-      const colonIdx = normalized.indexOf(':');
-      if (colonIdx !== -1 && colonIdx < normalized.length - 1) {
-        contentFromColon = normalized.slice(colonIdx + 1).trim();
-      }
-
-      return {
-        action,
-        table_name: tableName,
-        row_id: idMatch ? parseInt(idMatch[1], 10) : undefined,
-        search_keyword: !idMatch && !contentFromColon ? normalized : undefined,
-        row_data: contentFromColon ? { content: contentFromColon } : undefined,
-        update_data: contentFromColon ? { content: contentFromColon } : undefined
-      };
-    };
-
+    // Database follow-up is now purely handled by AI Router's natural language comprehension
+    
     // ============================================================
     // LAPISAN 4: BLACK BOX — Emergency Telegram Buffer Parser
     // ============================================================
@@ -1180,21 +1143,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         god_mode_trigger: false
       };
       console.log('[ROUTER] Generic continuation mapped to EMAIL follow-up.');
-    } else if (
-      pendingDatabaseContext &&
-      (/(database|supabase|tabel|row|baris|id)/i.test(textInput) || isGenericContinuation(textInput)) &&
-      Date.now() - pendingDatabaseContext.askedAt < 10 * 60 * 1000
-    ) {
-      const dbFollowUp = parseDatabaseFollowUp(textInput, pendingDatabaseContext.tableName);
-      if (dbFollowUp) {
-        routingData = {
-          intent: 'DATABASE',
-          extracted_data: dbFollowUp,
-          reply_message: '',
-          god_mode_trigger: false
-        };
-        console.log('[ROUTER] Database follow-up context override activated.');
-      }
     } else if (conversationContext) {
       const globalFollowUpRouting = buildGlobalFollowUpRouting(textInput, conversationContext);
       if (globalFollowUpRouting) {

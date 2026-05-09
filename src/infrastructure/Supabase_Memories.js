@@ -244,7 +244,9 @@ function findMatchingIds(rows, searchKeyword) {
   // 4. Fallback: Keyword splitting
   const keywords = sk.split(' ').filter(w => w.length > 2);
   rows.forEach(r => {
-    const contentLower = (r.content || '').toLowerCase();
+    // Use JSON.stringify so it works across all tables, even if they don't have a 'content' column
+    const rowText = typeof r === 'object' ? JSON.stringify(r) : String(r);
+    const contentLower = rowText.toLowerCase();
     if (keywords.length > 0 && keywords.every(kw => contentLower.includes(kw))) {
       targetIds.add(r.id);
     }
@@ -373,14 +375,11 @@ async function updateDatabaseRows(tableName, updateData = {}, { rowId, searchKey
   if (!isNaN(idNum) && idNum > 0) {
     query = query.eq('id', idNum);
   } else if (searchKeyword) {
-    const keyword = String(searchKeyword).trim();
-    if (table === 'nexa_chat_memories') {
-      query = query.or(`content.ilike.%${keyword}%,role.ilike.%${keyword}%`);
-    } else if (table === 'nexa_finance_dedup') {
-      query = query.or(`composite_key.ilike.%${keyword}%,source.ilike.%${keyword}%`);
-    } else {
-      query = query.ilike('content', `%${keyword}%`);
-    }
+    // USE SMART MATCHER
+    const { data: rows } = await supabase.from(table).select('*');
+    const targetIds = findMatchingIds(rows || [], searchKeyword);
+    if (targetIds.length === 0) return { success: false, error: 'Tidak ada baris yang cocok.' };
+    query = query.in('id', targetIds);
   } else {
     return { success: false, error: 'Untuk update, berikan row_id atau search_keyword.' };
   }
@@ -400,14 +399,11 @@ async function deleteDatabaseRows(tableName, { rowId, searchKeyword } = {}) {
   if (!isNaN(idNum) && idNum > 0) {
     query = query.eq('id', idNum);
   } else if (searchKeyword) {
-    const keyword = String(searchKeyword).trim();
-    if (table === 'nexa_chat_memories') {
-      query = query.or(`content.ilike.%${keyword}%,role.ilike.%${keyword}%`);
-    } else if (table === 'nexa_finance_dedup') {
-      query = query.or(`composite_key.ilike.%${keyword}%,source.ilike.%${keyword}%`);
-    } else {
-      query = query.ilike('content', `%${keyword}%`);
-    }
+    // USE SMART MATCHER
+    const { data: rows } = await supabase.from(table).select('*');
+    const targetIds = findMatchingIds(rows || [], searchKeyword);
+    if (targetIds.length === 0) return { success: false, error: 'Tidak ada baris yang cocok.' };
+    query = query.in('id', targetIds);
   } else {
     return { success: false, error: 'Untuk delete, berikan row_id atau search_keyword.' };
   }
