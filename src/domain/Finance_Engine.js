@@ -71,14 +71,16 @@ async function recoverPendingTransactions() {
       }, remaining);
       pendingConfirmations.set(compositeKey, { tx, timeoutId });
 
-      // If Telegram was never sent — resend now
+      // If Telegram was never sent — resend now via curl+proxy (proven to work on HF)
       if (!row.telegram_sent) {
         console.log(`[FINANCE] Resending unsent Telegram alert for: ${compositeKey}`);
         const msg = await _buildConfirmationMessage(tx);
-        const sent = await sendTelegramWithRetry(msg);
-        if (sent) {
+        try {
+          const { sendTelegramOutbound } = require('../interfaces/webhook');
+          await sendTelegramOutbound(msg);
           await supabase.markPendingTransactionSent(compositeKey);
-          try { await supabase.saveChatMemory('assistant', msg); } catch (_) {}
+        } catch (e) {
+          console.warn(`[FINANCE] Recovery resend failed for ${compositeKey}:`, e.message);
         }
       }
     }
@@ -588,8 +590,10 @@ async function _autoSavePending(compositeKey, tx) {
     await supabase.deletePendingTransaction(compositeKey);
     const nominalFmt = `Rp${tx.nominal.toLocaleString('id-ID')}`;
     const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`;
-    const sent = await sendTelegramWithRetry(timeoutMsg);
-    if (sent) try { await supabase.saveChatMemory('assistant', timeoutMsg); } catch (_) {}
+    try {
+      const { sendTelegramOutbound } = require('../interfaces/webhook');
+      await sendTelegramOutbound(timeoutMsg);
+    } catch (_) {}
   } catch (e) {
     console.error('[FINANCE] Auto-save failed:', e.message);
   }
@@ -597,7 +601,8 @@ async function _autoSavePending(compositeKey, tx) {
 
 /**
  * Universally requests transaction confirmation (Email, Text, Voice, Photo).
- * Persists to Supabase FIRST, then sends Telegram with retry.
+ * Persists to Supabase FIRST, returns message for the caller to send.
+ * Does NOT send to Telegram itself — the caller (webhook.js) handles delivery.
  * Waits 5 minutes before auto-saving.
  */
 async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN KEUANGAN BARU') {
@@ -637,15 +642,8 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
 
   pendingConfirmations.set(compositeKey, { tx, timeoutId });
 
-  // 4. Send Telegram with retry — mark sent only on success
-  const sent = await sendTelegramWithRetry(msg);
-  if (sent) {
-    await supabase.markPendingTransactionSent(compositeKey);
-    try { await supabase.saveChatMemory('assistant', msg); } catch (_) {}
-  } else {
-    console.error(`[FINANCE] Telegram alert for ${compositeKey} failed after 3 retries. Will retry on next server start.`);
-  }
-
+  // 4. Return message — caller (webhook.js) will send it via the proven webhook response method
+  //    and call markPendingTransactionSent() after successful delivery.
   return msg;
 }
 

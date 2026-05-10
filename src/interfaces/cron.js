@@ -59,6 +59,7 @@ function initCronJobs() {
     try {
       const supabase = require('../infrastructure/Supabase_Memories');
       const financeEngine = require('../domain/Finance_Engine');
+      const { sendTelegramOutbound } = require('./webhook');
       const rows = await supabase.getPendingTransactions();
       const unsent = rows.filter(r => !r.telegram_sent);
       if (unsent.length === 0) { watchdogRunning = false; return; }
@@ -75,16 +76,11 @@ function initCronJobs() {
             console.log(`[WATCHDOG] Tx ${compositeKey} expired (${Math.round(ageMs/60000)}m old). Auto-saving...`);
             await financeEngine.autoSaveFromWatchdog(compositeKey, tx);
           } else {
-            // Still within window — resend the confirmation alert
+            // Still within window — resend via curl+proxy (proven to work on HF)
             const msg = await financeEngine.buildConfirmationMessage(tx, 'TRANSAKSI LIVIN TERBARU');
-            const sent = await financeEngine.sendTelegramWithRetry(msg);
-            if (sent) {
-              await supabase.markPendingTransactionSent(compositeKey);
-              try { await supabase.saveChatMemory('assistant', msg); } catch (_) {}
-              console.log(`[WATCHDOG] ✅ Alert resent successfully for: ${compositeKey}`);
-            } else {
-              console.warn(`[WATCHDOG] ❌ Still failing for: ${compositeKey}. Will retry next cycle.`);
-            }
+            await sendTelegramOutbound(msg);
+            await supabase.markPendingTransactionSent(compositeKey);
+            console.log(`[WATCHDOG] ✅ Alert resent successfully for: ${compositeKey}`);
           }
         } catch (e) {
           console.error('[WATCHDOG] Error processing pending tx:', e.message);
@@ -100,3 +96,4 @@ function initCronJobs() {
 }
 
 module.exports = { initCronJobs };
+

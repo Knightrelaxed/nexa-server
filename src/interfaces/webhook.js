@@ -1323,7 +1323,11 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           };
           const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
           if (confirmMsg) {
-             domainReply = null; // requestTransactionConfirmation already sent the message via Axios
+             domainReply = confirmMsg; // Send via webhook response method (proven to work on HF)
+             // Mark as sent in Supabase after the webhook response is delivered
+             const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+             const cKey = `${txData.nominal}_${cleanMerch}`;
+             supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
           } else {
              domainReply = '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya (duplikat) atau sedang menunggu konfirmasi.';
           }
@@ -1835,3 +1839,4 @@ router.post('/gmail', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.sendTelegramOutbound = sendTelegramOutbound;
