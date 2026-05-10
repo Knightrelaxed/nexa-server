@@ -1739,7 +1739,11 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
     }
 
     // Send reply via Webhook Response Method (ZERO outbound needed)
-    const finalReply = domainReply || routingData.reply_message;
+    let aiDraftReply = routingData.reply_message;
+    if (aiDraftReply && typeof aiDraftReply === 'object') {
+      aiDraftReply = aiDraftReply.text || aiDraftReply.message || JSON.stringify(aiDraftReply);
+    }
+    const finalReply = domainReply || aiDraftReply;
     if (finalReply) {
       // Save ONLY the actual final message that the user receives
       await supabaseMemories.saveChatMemory('nexa', finalReply).catch(() => {});

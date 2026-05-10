@@ -62,6 +62,7 @@ LOGIKA KONTEKS LANJUTAN (WAJIB):
 Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 {
   "intent": "FINANCE" | "CALENDAR" | "TASK" | "WEB_SEARCH" | "DISCIPLINE" | "2ND_BRAIN" | "USER_PROFILE" | "CORE_IDENTITY" | "SPREADSHEET" | "EMAIL" | "DATABASE" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
+  "reply_message": "String balasan natural dan luwes untuk Tuan Faqih (wajib ada jika intent NORMAL_CHAT, INCOMPLETE_INFO, atau DISCIPLINE)",
   "learned_user_facts": ["Fakta baru tentang preferensi/kebiasaan Tuan Faqih (opsional, hanya jika ada)"],
   "learned_core_identities": ["Aturan baru tentang kepribadian N.E.X.A (opsional, hanya jika ada)"],
   "extracted_data": {
