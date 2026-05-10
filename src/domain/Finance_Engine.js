@@ -677,12 +677,14 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
     proactiveQuestion = `💡 Transaksi ini siap dikunci. Jika ada koreksi tambahan, silakan balas pesan ini. Jika tidak, N.E.X.A akan meresmikannya dalam 5 menit.`;
   }
 
+  const displayCategory = tx.category === '[Menunggu Kategori AI/User]' ? '[Auto-AI]' : `${tx.category} [Auto-AI]`;
+
   return `💸 <b>${sourceLabel}</b>\n\n` +
     `<b>No:</b> [Auto]\n` +
     `<b>Tanggal:</b> ${dateStr}\n` +
     `<b>Waktu:</b> ${timeStr}\n` +
     `<b>Tipe:</b> ${tipeStr}\n` +
-    `<b>Kategori:</b> ${tx.category} [Auto-AI]\n` +
+    `<b>Kategori:</b> ${displayCategory}\n` +
     `<b>Akun:</b> Bank Mandiri Livin\n` +
     `<b>Catatan / Detail:</b> ${displayDesc}\n` +
     `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
