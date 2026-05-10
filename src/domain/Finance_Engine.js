@@ -408,6 +408,38 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
 }
 
 /**
+ * Updates a pending transaction with new details/category and re-sends a confirmation prompt.
+ * Does NOT save to Google Sheets yet.
+ */
+async function updatePendingTransaction(customDescription = null, customCategory = null) {
+  if (pendingConfirmations.size === 0) return null;
+
+  let msg = '';
+  for (const [key, pending] of pendingConfirmations.entries()) {
+    if (customDescription) pending.tx.description = customDescription;
+    if (customCategory) pending.tx.category = customCategory;
+
+    // Reset the 5-minute timeout because user interacted
+    clearTimeout(pending.timeoutId);
+    
+    // Update Supabase
+    await supabase.savePendingTransaction(key, pending.tx, true);
+
+    const newTimeoutId = setTimeout(async () => {
+      if (pendingConfirmations.has(key)) {
+        await _autoSavePending(key, pending.tx);
+      }
+    }, 5 * 60 * 1000);
+    pending.timeoutId = newTimeoutId;
+
+    msg = await _buildConfirmationMessage(pending.tx, 'KOREKSI TRANSAKSI TERTUNDA');
+    break; // only handle the first one (usually there's only 1 pending at a time)
+  }
+
+  return msg;
+}
+
+/**
  * Automatically poll Gmail for new Livin' transaction emails, parse them, and record them.
  * Relies on Zero-Duplication Engine to prevent duplicate entries across polls.
  */
@@ -632,6 +664,7 @@ module.exports = {
   editTransaction,
   pollLivinEmails,
   confirmPendingTransactions,
+  updatePendingTransaction,
   requestTransactionConfirmation,
   recoverPendingTransactions,
   // Exposed for Watchdog cron (cron.js)

@@ -1295,6 +1295,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
                domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
             }
           }
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'UPDATE_PENDING') {
+          const updatedMsg = await financeEngine.updatePendingTransaction(
+            routingData.extracted_data.description || null,
+            routingData.extracted_data.category || null
+          );
+          domainReply = updatedMsg || 'Tidak ada transaksi yang tertunda.';
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CANCEL_TRANSACTION') {
           const confirmationReply = await financeEngine.confirmPendingTransactions(false);
           domainReply = confirmationReply || 'Tidak ada transaksi yang tertunda.';
