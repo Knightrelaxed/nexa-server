@@ -71,7 +71,8 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Jika pengguna MEMBATALKAN/MENOLAK transaksi tertunda ("batalkan", "batal", "jangan"), WAJIB gunakan "CANCEL_TRANSACTION".
      //   → Jika pengguna meminta MENCATAT transaksi baru ("catat pengeluaran..."), gunakan action "RECORD".
      //     - WAKTU: Jika tidak menyebut waktu, kosongkan time (otomatis sekarang). JIKA pengguna menyebut HARI/TANGGAL ("kemarin", "lusa", "tanggal 5") TANPA menyebutkan JAM yang spesifik, Anda WAJIB mengubah root intent menjadi "INCOMPLETE_INFO" dan tanyakan jam transaksinya.
-     //   → PENTING: Untuk action RECORD/EDIT/UPDATE_PENDING, pilih kategori spesifik dari opsi berikut: "Makanan dan minuman", "Bar, kafe", "Restoran, makanan cepat saji", "Bahan makanan", "Apotek, toko obat", "Belanja", "Waktu luang", "Alat tulis, peralatan", "Hadiah, kesenangan", "Elektronik, aksesoris", "Hewan peliharaan, hewan", "Rumah, taman", "Anak-anak", "Kesehatan dan kecantikan", "Perhiasan, aksesoris", "Pakaian dan alas kaki", "Asuransi properti", "Perumahan", "Perawatan, perbaikan", "Layanan", "Energi, utilitas", "Hipotek", "Sewa", "Transportasi", "Perjalanan dinas", "Jarak jauh", "Taksis", "Transportasi umum", "Leasing", "Asuransi kendaraan", "Kendaraan", "Sewa-menyewa", "Perawatan kendaraan", "Parkir", "Bahan bakar", "Hiburan dan kehidupan", "Lotere, judi", "Alkohol, tembakau", "Amal, hadiah", "Liburan, perjalanan, hotel", "TV, streaming", "Buku, audio, langganan", "Pendidikan, pengembangan diri", "Hobi", "Peristiwa hidup", "Budaya, acara olahraga", "Olahraga aktif, kebugaran", "Kesehatan, kecantikan", "Perawatan kesehatan, dokter", "Komunikasi, PC", "Layanan pos", "Perangkat lunak, aplikasi, permainan", "Internet", "Telepon, ponsel", "Pengeluaran keuangan", "Biaya, tarif", "Konsultasi", "Denda", "Pinjaman, bunga", "Asuransi", "Pajak", "Investasi", "Koleksi", "Tabungan", "Investasi keuangan", "Kendaraan, barang bergerak", "Properti", "Pendapatan", "Hadiah", "Tunjangan anak", "Pengembalian dana pajak, pembelian", "Lotere, judi", "Cek, kupon", "Pendapatan dari meminjamkan", "Iuran & hibah", "Pendapatan sewa", "Penjualan", "Bunga, dividen", "Gaji, faktur", "Hilangan", "Lainnya".
+     //   → PENTING: Untuk action RECORD/EDIT/UPDATE_PENDING, pilih kategori spesifik dari opsi berikut: "Makanan dan minuman", "Bar, kafe", "Restoran, makanan cepat saji", "Bahan makanan", "Apotek, obat-obatan
+     // ", "Belanja", "Waktu luang", "Alat tulis, peralatan", "Hadiah, kesenangan", "Elektronik, aksesoris", "Hewan peliharaan, hewan", "Rumah, taman", "Anak-anak", "Kesehatan dan kecantikan", "Perhiasan, aksesoris", "Pakaian dan alas kaki", "Asuransi properti", "Perumahan", "Perawatan, perbaikan", "Layanan", "Energi, utilitas", "Hipotek", "Sewa", "Transportasi", "Perjalanan dinas", "Jarak jauh", "Taksis", "Transportasi umum", "Leasing", "Asuransi kendaraan", "Kendaraan", "Sewa-menyewa", "Perawatan kendaraan", "Parkir", "Bahan bakar", "Hiburan dan kehidupan", "Lotere, judi", "Alkohol, tembakau", "Amal, hadiah", "Liburan, perjalanan, hotel", "TV, streaming", "Buku, audio, langganan", "Pendidikan, pengembangan diri", "Hobi", "Peristiwa hidup", "Budaya, acara olahraga", "Olahraga aktif, kebugaran", "Kesehatan, kecantikan", "Perawatan kesehatan, dokter", "Komunikasi, PC", "Layanan pos", "Perangkat lunak, aplikasi, permainan", "Internet", "Telepon, ponsel", "Pengeluaran keuangan", "Biaya, tarif", "Konsultasi", "Denda", "Pinjaman, bunga", "Asuransi", "Pajak", "Investasi", "Koleksi", "Tabungan", "Investasi keuangan", "Kendaraan, barang bergerak", "Properti", "Pendapatan", "Hadiah", "Tunjangan anak", "Pengembalian dana pajak, pembelian", "Lotere, judi", "Cek, kupon", "Pendapatan dari meminjamkan", "Iuran & hibah", "Pendapatan sewa", "Penjualan", "Bunga, dividen", "Gaji, faktur", "Hilangan", "Lainnya".
      //   → Gunakan action "READ_ANALYTICS" jika pengguna meminta laporan total pemasukan, pengeluaran, saldo akhir, atau "analitik keuangan".
      //   → Gunakan action "EDIT" jika pengguna meminta mengubah/mengedit transaksi lama (sertakan search_keyword untuk mencari transaksi mana, dan nominal/description baru jika ada).
      //   → Gunakan action "DELETE" jika pengguna meminta menghapus transaksi (sertakan search_keyword).
@@ -135,7 +136,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const contextStr = memories.length > 0
     ? memories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n')
     : '[Tidak ada riwayat obrolan sebelumnya]';
-  
+
   // 3. Build personal facts context block (only if facts exist)
   const factsContext = personalFacts.length > 0
     ? `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${personalFacts.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
@@ -145,19 +146,19 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const _now = new Date();
   // Offset UTC→WIB (+7h) using en-US locale (guaranteed to work everywhere)
   const _jkt = new Date(_now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-  const _DAYS  = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-  const _MONTHS= ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  const _DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const _MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
   const currentJakartaTime =
     `${_DAYS[_jkt.getDay()]}, ${_jkt.getDate()} ${_MONTHS[_jkt.getMonth()]} ${_jkt.getFullYear()} ` +
-    `pukul ${String(_jkt.getHours()).padStart(2,'0')}:${String(_jkt.getMinutes()).padStart(2,'0')} WIB`;
+    `pukul ${String(_jkt.getHours()).padStart(2, '0')}:${String(_jkt.getMinutes()).padStart(2, '0')} WIB`;
   // ISO date string in Jakarta (for AI date arithmetic in TASK/CALENDAR intents)
-  const currentJakartaISO = `${_jkt.getFullYear()}-${String(_jkt.getMonth()+1).padStart(2,'0')}-${String(_jkt.getDate()).padStart(2,'0')}`;
+  const currentJakartaISO = `${_jkt.getFullYear()}-${String(_jkt.getMonth() + 1).padStart(2, '0')}-${String(_jkt.getDate()).padStart(2, '0')}`;
 
   // Build next-7-days mini-calendar for reliable day→date mapping by the AI
   const _miniCal = [];
   for (let i = 0; i <= 7; i++) {
     const d = new Date(_jkt.getTime() + i * 86400000);
-    const ds = `${_jkt.getFullYear() === d.getFullYear() ? '' : d.getFullYear() + '-'}${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const ds = `${_jkt.getFullYear() === d.getFullYear() ? '' : d.getFullYear() + '-'}${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const dayFull = `${_DAYS[d.getDay()]}, ${d.getDate()} ${_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
     _miniCal.push(`  +${i} hari: ${dayFull} (ISO: ${ds})`);
   }
@@ -190,13 +191,13 @@ Tentukan intent dan ekstrak data!
 
   // 4. Execute Cognitive Routing (Medium Temperature = 0.3)
   let resultJsonStr = await executeWithFallback(prompt, ROUTER_SYSTEM_PROMPT, 0.3);
-  
+
   // Clean markdown block if GenAI decides to return it despite instructions
   resultJsonStr = resultJsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
 
   try {
     const routingData = JSON.parse(resultJsonStr);
-    
+
     // 5. Save new memory ONLY after successful parse (symmetric context)
     await supabaseMemories.saveChatMemory('user', textInput);
     if (routingData.reply_message) {

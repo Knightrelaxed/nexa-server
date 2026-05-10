@@ -606,11 +606,24 @@ async function pollLivinEmails() {
 
       newCount++;
 
+      // Let AI make an initial guess for the category based on the destination name
+      let guessedCategory = '[Menunggu Kategori AI/User]';
+      try {
+        const aiRouter = require('../core/AI_Router');
+        const autoQuery = `catat pengeluaran ${nominal} ke ${destination}`;
+        const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
+        if (routingData?.extracted_data?.category && routingData.extracted_data.category !== 'Uncategorized') {
+          guessedCategory = routingData.extracted_data.category;
+        }
+      } catch (e) {
+        console.warn('[FINANCE] Pre-categorization failed:', e.message);
+      }
+
       const tx = {
         nominal,
         type: 'EXPENSE',
         destination,
-        category: '[Menunggu Kategori AI/User]',
+        category: guessedCategory,
         description: '[Menunggu Detail User]',
         time: dateIso
       };
@@ -669,7 +682,7 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
     `<b>Tanggal:</b> ${dateStr}\n` +
     `<b>Waktu:</b> ${timeStr}\n` +
     `<b>Tipe:</b> ${tipeStr}\n` +
-    `<b>Kategori:</b> [Auto-AI]\n` +
+    `<b>Kategori:</b> ${tx.category} [Auto-AI]\n` +
     `<b>Akun:</b> Bank Mandiri Livin\n` +
     `<b>Catatan / Detail:</b> ${displayDesc}\n` +
     `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
