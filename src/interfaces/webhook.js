@@ -1323,7 +1323,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           };
           const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
           if (confirmMsg) {
-             domainReply = confirmMsg; // Send the confirmation prompt back to the user
+             domainReply = null; // requestTransactionConfirmation already sent the message via Axios
           } else {
              domainReply = '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya (duplikat) atau sedang menunggu konfirmasi.';
           }
