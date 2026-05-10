@@ -50,7 +50,7 @@ async function recoverPendingTransactions() {
       if (ageMs >= TIMEOUT_MS) {
         console.log(`[FINANCE] Recovered tx ${compositeKey} is expired. Auto-saving now...`);
         try {
-          const aiRouter = require('./AI_Router');
+          const aiRouter = require('../core/AI_Router');
           const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
           const autoQuery = `catat ${tipeStr} ${tx.nominal} ke ${tx.destination}`;
           const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
@@ -400,6 +400,8 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
       }
     }
     pendingConfirmations.delete(key);
+    // Clean up Supabase persistent store
+    try { await supabase.deletePendingTransaction(key); } catch (_) {}
   }
 
   if (isYes) {
@@ -666,7 +668,6 @@ module.exports = {
   requestTransactionConfirmation,
   recoverPendingTransactions,
   // Exposed for Watchdog cron (cron.js)
-  sendTelegramWithRetry,
   buildConfirmationMessage: _buildConfirmationMessage,
   autoSaveFromWatchdog
 };
