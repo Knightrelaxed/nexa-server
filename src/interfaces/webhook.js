@@ -1741,11 +1741,8 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
     // Send reply via Webhook Response Method (ZERO outbound needed)
     const finalReply = domainReply || routingData.reply_message;
     if (finalReply) {
-      // Keep memory aligned with the ACTUAL final reply (domain execution output),
-      // not only the router's draft reply_message.
-      if (domainReply && domainReply !== routingData.reply_message) {
-        await supabaseMemories.saveChatMemory('nexa', finalReply).catch(() => {});
-      }
+      // Save ONLY the actual final message that the user receives
+      await supabaseMemories.saveChatMemory('nexa', finalReply).catch(() => {});
       console.log('[TELEGRAM] Replying with intent:', routingData.intent);
       conversationContext = {
         ...(conversationContext || {}),

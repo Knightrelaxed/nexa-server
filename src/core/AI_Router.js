@@ -199,10 +199,9 @@ Tentukan intent dan ekstrak data!
     const routingData = JSON.parse(resultJsonStr);
 
     // 5. Save new memory ONLY after successful parse (symmetric context)
+    // We only save the user's input here. The final reply (domainReply or reply_message)
+    // will be saved by the caller (e.g. webhook.js) to ensure we don't save duplicate "draft" messages.
     await supabaseMemories.saveChatMemory('user', textInput);
-    if (routingData.reply_message) {
-      await supabaseMemories.saveChatMemory('nexa', routingData.reply_message);
-    }
 
     return routingData;
   } catch (err) {
