@@ -11,7 +11,6 @@ function initCronJobs() {
     console.log('[CRON] Executing Morning Briefing...');
     try {
       const briefingText = await intelligenceBrief.generateMorningBriefing();
-      
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
         await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
           chat_id: env.TELEGRAM_CHAT_ID,
@@ -26,19 +25,13 @@ function initCronJobs() {
     } catch (e) {
       console.error('[CRON] Morning briefing failed:', e.message);
     }
-  }, {
-    scheduled: true,
-    timezone: "Asia/Jakarta"
-  });
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // 2. Scholarship / Competition Radar (Every Sunday 08:00 WIB)
   cron.schedule('0 8 * * 0', async () => {
     console.log('[CRON] Executing Scholarship Radar (Placeholder)...');
     // Future expansion: RSS/Scraping for opportunities
-  }, {
-    scheduled: true,
-    timezone: "Asia/Jakarta"
-  });
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // 3. Livin' Auto-Sync (Every 3 minutes)
   cron.schedule('*/3 * * * *', async () => {
@@ -52,10 +45,58 @@ function initCronJobs() {
     } catch (e) {
       console.error('[CRON] Livin Auto-Sync failed:', e.message);
     }
-  }, {
-    scheduled: true,
-    timezone: "Asia/Jakarta"
-  });
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
+  // 4. Telegram Alert Watchdog (Every 90 seconds)
+  // Scans Supabase for pending transactions where telegram_sent = false.
+  // Retries sending the alert. If > 5 minutes old, auto-saves instead.
+  // This ensures TLS blips (which last seconds to minutes) never silently
+  // swallow a Livin notification.
+  let watchdogRunning = false;
+  setInterval(async () => {
+    if (watchdogRunning) return; // prevent overlap if previous run is slow
+    watchdogRunning = true;
+    try {
+      const supabase = require('../infrastructure/Supabase_Memories');
+      const financeEngine = require('../domain/Finance_Engine');
+      const rows = await supabase.getPendingTransactions();
+      const unsent = rows.filter(r => !r.telegram_sent);
+      if (unsent.length === 0) { watchdogRunning = false; return; }
+
+      console.log(`[WATCHDOG] Found ${unsent.length} unsent Telegram alert(s). Retrying...`);
+      for (const row of unsent) {
+        try {
+          const tx = row.tx_data;
+          const compositeKey = row.composite_key;
+          const ageMs = Date.now() - new Date(row.created_at).getTime();
+
+          if (ageMs >= 5 * 60 * 1000) {
+            // Expired — auto-save without asking user
+            console.log(`[WATCHDOG] Tx ${compositeKey} expired (${Math.round(ageMs/60000)}m old). Auto-saving...`);
+            await financeEngine.autoSaveFromWatchdog(compositeKey, tx);
+          } else {
+            // Still within window — resend the confirmation alert
+            const msg = await financeEngine.buildConfirmationMessage(tx, 'TRANSAKSI LIVIN TERBARU');
+            const sent = await financeEngine.sendTelegramWithRetry(msg);
+            if (sent) {
+              await supabase.markPendingTransactionSent(compositeKey);
+              try { await supabase.saveChatMemory('assistant', msg); } catch (_) {}
+              console.log(`[WATCHDOG] ✅ Alert resent successfully for: ${compositeKey}`);
+            } else {
+              console.warn(`[WATCHDOG] ❌ Still failing for: ${compositeKey}. Will retry next cycle.`);
+            }
+          }
+        } catch (e) {
+          console.error('[WATCHDOG] Error processing pending tx:', e.message);
+        }
+      }
+    } catch (e) {
+      console.error('[WATCHDOG] Watchdog error:', e.message);
+    }
+    watchdogRunning = false;
+  }, 90 * 1000);
+
+  console.log('[CRON] 🛡️ Telegram Alert Watchdog active (90s interval).');
 }
 
 module.exports = { initCronJobs };

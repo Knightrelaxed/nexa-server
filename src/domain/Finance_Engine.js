@@ -617,6 +617,27 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
   return msg;
 }
 
-module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction, pollLivinEmails, confirmPendingTransactions, requestTransactionConfirmation, recoverPendingTransactions };
+/**
+ * Public alias used by the Watchdog cron to auto-save an expired pending tx.
+ */
+async function autoSaveFromWatchdog(compositeKey, tx) {
+  return _autoSavePending(compositeKey, tx);
+}
+
+module.exports = {
+  processTransaction,
+  getRecentTransactions,
+  getFinanceAnalytics,
+  deleteTransaction,
+  editTransaction,
+  pollLivinEmails,
+  confirmPendingTransactions,
+  requestTransactionConfirmation,
+  recoverPendingTransactions,
+  // Exposed for Watchdog cron (cron.js)
+  sendTelegramWithRetry,
+  buildConfirmationMessage: _buildConfirmationMessage,
+  autoSaveFromWatchdog
+};
 
 
