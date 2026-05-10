@@ -1275,6 +1275,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'DELETE') {
           const result = await financeEngine.deleteTransaction(routingData.extracted_data.search_keyword);
           domainReply = result.message;
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'UNDO_DELETE') {
+          const result = await financeEngine.undoDeleteTransaction();
+          domainReply = result.message;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CONFIRM_TRANSACTION') {
           const confirmationReply = await financeEngine.confirmPendingTransactions(
             true, 

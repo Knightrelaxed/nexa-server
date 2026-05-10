@@ -273,10 +273,14 @@ async function getFinanceAnalytics() {
   }
 }
 
+// In-memory undo cache: { deletedRow, deletedIndex, expireTimerId }
+let lastDeletedTransaction = null;
+
 /**
  * Delete a specific transaction matching a keyword (usually description or amount).
  * Search priority: (1) Exact match on transaction No (column 0), (2) Exact match on description,
  * (3) Partial match on description/nominal. This prevents "299" from matching "604091793299".
+ * Stores the deleted row for 10-minute undo window.
  */
 async function deleteTransaction(keyword) {
   try {
@@ -309,21 +313,85 @@ async function deleteTransaction(keyword) {
       return { status: 'FAILED', message: `Tidak ada transaksi yang cocok dengan "${keyword}".` };
     }
 
-    const deletedRow = rows[indexToDelete];
-    const cat = deletedRow[6] || '-';
-    
+    const deletedRow = [...rows[indexToDelete]]; // clone
+
+    // Extract details for confirmation message
+    const no = deletedRow[0] || '-';
+    const tanggal = deletedRow[1] || '-';
+    const waktu = deletedRow[2] || '-';
+    const tipe = deletedRow[3] || '-';
+    const kategori = deletedRow[4] || '-';
+    const akun = deletedRow[5] || '-';
+    const catatan = deletedRow[6] || '-';
+    const nominalRaw = parseFloat(String(deletedRow[7]).replace(/[^0-9.-]/g, ''));
+    const nominalFmt = isNaN(nominalRaw) ? deletedRow[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
+
     // Remove the row from the array
     rows.splice(indexToDelete, 1);
     
     // Overwrite the sheet to recalculate formulas
     await googleWorkspace.overwriteFinanceSheet(rows);
 
-    return { status: 'SUCCESS', message: `🗑️ Transaksi "${cat}" berhasil dihapus. Semua rumus dan nomor urut telah disesuaikan ulang.` };
+    // Store for undo (10-minute window)
+    if (lastDeletedTransaction?.expireTimerId) clearTimeout(lastDeletedTransaction.expireTimerId);
+    const expireTimerId = setTimeout(() => {
+      lastDeletedTransaction = null;
+      console.log('[FINANCE] Undo window expired (10 min). Deleted transaction can no longer be restored.');
+    }, 10 * 60 * 1000);
+    lastDeletedTransaction = { deletedRow, deletedIndex: indexToDelete, expireTimerId };
+
+    const msg = `🗑️ <b>TRANSAKSI DIHAPUS</b>\n\n` +
+      `<b>No:</b> ${no}\n` +
+      `<b>Tanggal:</b> ${tanggal}\n` +
+      `<b>Waktu:</b> ${waktu}\n` +
+      `<b>Tipe:</b> ${tipe}\n` +
+      `<b>Kategori:</b> ${kategori}\n` +
+      `<b>Akun:</b> ${akun}\n` +
+      `<b>Catatan / Detail:</b> ${catatan}\n` +
+      `<b>Nominal (Rp):</b> ${nominalFmt}\n\n` +
+      `💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
+
+    return { status: 'SUCCESS', message: msg };
   } catch (error) {
     console.error('[FINANCE] Failed to delete transaction:', error.message);
     return { status: 'FAILED', message: `Gagal menghapus transaksi: ${error.message}` };
   }
 }
+
+/**
+ * Undo the last deleted transaction (within 10-minute window).
+ * Re-inserts the row at its original position and rewrites the sheet.
+ */
+async function undoDeleteTransaction() {
+  if (!lastDeletedTransaction) {
+    return { status: 'FAILED', message: '⚠️ Tidak ada transaksi yang bisa di-undo. Mungkin sudah lebih dari 10 menit atau belum ada penghapusan.' };
+  }
+
+  try {
+    const { deletedRow, deletedIndex, expireTimerId } = lastDeletedTransaction;
+    clearTimeout(expireTimerId);
+
+    const rows = await googleWorkspace.getAllFinanceRows();
+    
+    // Re-insert at original position (or end if sheet shrunk)
+    const insertAt = Math.min(deletedIndex, rows.length);
+    rows.splice(insertAt, 0, deletedRow);
+
+    await googleWorkspace.overwriteFinanceSheet(rows);
+
+    const catatan = deletedRow[6] || '-';
+    const nominalRaw = parseFloat(String(deletedRow[7]).replace(/[^0-9.-]/g, ''));
+    const nominalFmt = isNaN(nominalRaw) ? deletedRow[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
+
+    lastDeletedTransaction = null; // Clear undo cache
+
+    return { status: 'SUCCESS', message: `↩️ <b>Transaksi dikembalikan!</b>\n\n"${catatan}" sebesar <b>${nominalFmt}</b> telah dipulihkan ke sheet keuangan Tuan. Semua nomor urut telah disesuaikan kembali.` };
+  } catch (error) {
+    console.error('[FINANCE] Failed to undo delete:', error.message);
+    return { status: 'FAILED', message: `Gagal mengembalikan transaksi: ${error.message}` };
+  }
+}
+
 
 /**
  * Edit a specific transaction matching a keyword.
@@ -694,6 +762,7 @@ module.exports = {
   getRecentTransactions,
   getFinanceAnalytics,
   deleteTransaction,
+  undoDeleteTransaction,
   editTransaction,
   pollLivinEmails,
   confirmPendingTransactions,
