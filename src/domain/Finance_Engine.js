@@ -4,7 +4,88 @@ const gmailClient = require('../infrastructure/Gmail_Client');
 const axios = require('axios');
 const env = require('../config/env');
 
+// In-memory cache of pending confirmations (source of truth = Supabase)
+// key: compositeKey, value: { tx, timeoutId }
 const pendingConfirmations = new Map();
+
+/**
+ * Send Telegram message with retry logic (3 attempts)
+ */
+async function sendTelegramWithRetry(msg, retries = 3) {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        chat_id: env.TELEGRAM_CHAT_ID,
+        text: msg,
+        parse_mode: 'HTML'
+      });
+      return true;
+    } catch (e) {
+      console.warn(`[FINANCE] Telegram send attempt ${i}/${retries} failed: ${e.message}`);
+      if (i < retries) await new Promise(r => setTimeout(r, 2000 * i));
+    }
+  }
+  return false;
+}
+
+/**
+ * On startup: recover any pending transactions from Supabase that were
+ * never sent to Telegram (e.g. server crashed mid-send).
+ * Re-registers their 5-min timeout from remaining time.
+ */
+async function recoverPendingTransactions() {
+  try {
+    const rows = await supabase.getPendingTransactions();
+    if (!rows || rows.length === 0) return;
+    console.log(`[FINANCE] Recovering ${rows.length} pending transaction(s) from Supabase...`);
+
+    for (const row of rows) {
+      const tx = row.tx_data;
+      const compositeKey = row.composite_key;
+      const createdAt = new Date(row.created_at);
+      const ageMs = Date.now() - createdAt.getTime();
+      const TIMEOUT_MS = 5 * 60 * 1000;
+
+      // If already older than 5 minutes — auto-save immediately
+      if (ageMs >= TIMEOUT_MS) {
+        console.log(`[FINANCE] Recovered tx ${compositeKey} is expired. Auto-saving now...`);
+        try {
+          const aiRouter = require('./AI_Router');
+          const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
+          const autoQuery = `catat ${tipeStr} ${tx.nominal} ke ${tx.destination}`;
+          const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
+          tx.category = routingData?.extracted_data?.category || 'Lainnya';
+          if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
+          await processTransaction(tx, 'GMAIL_POLLING');
+        } catch (_) {}
+        await supabase.deletePendingTransaction(compositeKey);
+        continue;
+      }
+
+      // Register in-memory map
+      const remaining = TIMEOUT_MS - ageMs;
+      const timeoutId = setTimeout(async () => {
+        if (pendingConfirmations.has(compositeKey)) {
+          await _autoSavePending(compositeKey, tx);
+        }
+      }, remaining);
+      pendingConfirmations.set(compositeKey, { tx, timeoutId });
+
+      // If Telegram was never sent — resend now
+      if (!row.telegram_sent) {
+        console.log(`[FINANCE] Resending unsent Telegram alert for: ${compositeKey}`);
+        const msg = await _buildConfirmationMessage(tx);
+        const sent = await sendTelegramWithRetry(msg);
+        if (sent) {
+          await supabase.markPendingTransactionSent(compositeKey);
+          try { await supabase.saveChatMemory('assistant', msg); } catch (_) {}
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[FINANCE] Recovery failed:', e.message);
+  }
+}
 
 /**
  * Handle a finance transaction (Deduplication & Recording)
@@ -415,30 +496,18 @@ async function pollLivinEmails() {
 }
 
 /**
- * Universally requests transaction confirmation (Email, Text, Voice, Photo).
- * Waits 5 minutes before auto-saving.
+ * Build the Telegram confirmation message text for a pending transaction.
+ * Extracted as a shared helper so recovery and new confirmations use the same format.
  */
-async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN KEUANGAN BARU') {
-  const nominal = txData.nominal;
-  const destination = txData.destination || 'Unknown';
-  
-  const tx = {
-    nominal,
-    type: txData.type || 'EXPENSE',
-    destination,
-    category: txData.category && txData.category !== 'Uncategorized' ? txData.category : '[Menunggu Kategori AI/User]',
-    description: txData.description && txData.description !== '-' ? txData.description : '[Menunggu Detail User]',
-    time: txData.time || new Date().toISOString()
-  };
-
+async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERBARU') {
   const transactionTime = new Date(tx.time);
-  const cleanMerchant = (tx.destination).toLowerCase().replace(/[^a-z0-9]/g, '');
-  const compositeKey = `${nominal}_${cleanMerchant}`;
-
-  // Formatting for Telegram
   const dateStr = transactionTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' });
   const timeStr = transactionTime.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.');
-  
+  const nominalFmt = `Rp${tx.nominal.toLocaleString('id-ID')}`;
+  const tipeStr = tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran';
+  const isMissingDesc = tx.description === '[Menunggu Detail User]';
+  const displayDesc = isMissingDesc ? `[KOSONG - Tujuan: ${tx.destination}]` : tx.description;
+
   let currentSaldo = '-';
   try {
     const recentRows = await googleWorkspace.getFinanceSummary(1);
@@ -449,67 +518,105 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
     }
   } catch (_) {}
 
-  const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
-  const tipeStr = tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran';
-  const isMissingDesc = tx.description === '[Menunggu Detail User]';
-  const displayDesc = isMissingDesc ? `[KOSONG - Tujuan: ${destination}]` : tx.description;
-
   let proactiveQuestion = '';
   if (isMissingDesc) {
-    if (tx.type === 'INCOME') {
-      proactiveQuestion = `❓ <b>Terdapat dana masuk dari ${destination}.</b>\n\nKira-kira uang ini masuk dalam rangka apa, Tuan? Mohon berikan detail singkatnya agar saya dapat merapikan laporan pemasukan Anda. <i>(Tanpa balasan, N.E.X.A akan menyimpannya dengan kategori otomatis dalam 5 menit).</i>`;
-    } else {
-      proactiveQuestion = `❓ <b>N.E.X.A mencatat pengeluaran ke ${destination}.</b>\n\nTuan, uang ini digunakan untuk keperluan apa ya? Mohon arahannya agar saya dapat melengkapi buku kas Anda dengan akurat. <i>(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).</i>`;
-    }
+    proactiveQuestion = tx.type === 'INCOME'
+      ? `❓ <b>Terdapat dana masuk dari ${tx.destination}.</b>\n\nKira-kira uang ini masuk dalam rangka apa, Tuan? <i>(Tanpa balasan, N.E.X.A akan menyimpannya dengan kategori otomatis dalam 5 menit).</i>`
+      : `❓ <b>N.E.X.A mencatat pengeluaran ke ${tx.destination}.</b>\n\nTuan, uang ini digunakan untuk keperluan apa ya? <i>(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).</i>`;
   } else {
-    proactiveQuestion = `💡 Transaksi ini siap dikunci. Jika ada koreksi tambahan pada detail di atas, silakan balas pesan ini. Jika tidak, N.E.X.A akan meresmikannya ke dalam Sheet secara otomatis dalam 5 menit.`;
+    proactiveQuestion = `💡 Transaksi ini siap dikunci. Jika ada koreksi tambahan, silakan balas pesan ini. Jika tidak, N.E.X.A akan meresmikannya dalam 5 menit.`;
   }
 
-  const msg = `💸 <b>${sourceLabel}</b>\n\n` +
-              `<b>No:</b> [Auto]\n` +
-              `<b>Tanggal:</b> ${dateStr}\n` +
-              `<b>Waktu:</b> ${timeStr}\n` +
-              `<b>Tipe:</b> ${tipeStr}\n` +
-              `<b>Kategori:</b> [Auto-AI]\n` +
-              `<b>Akun:</b> Bank Mandiri Livin\n` +
-              `<b>Catatan / Detail:</b> ${displayDesc}\n` +
-              `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
-              `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
-              `${proactiveQuestion}`;
+  return `💸 <b>${sourceLabel}</b>\n\n` +
+    `<b>No:</b> [Auto]\n` +
+    `<b>Tanggal:</b> ${dateStr}\n` +
+    `<b>Waktu:</b> ${timeStr}\n` +
+    `<b>Tipe:</b> ${tipeStr}\n` +
+    `<b>Kategori:</b> [Auto-AI]\n` +
+    `<b>Akun:</b> Bank Mandiri Livin\n` +
+    `<b>Catatan / Detail:</b> ${displayDesc}\n` +
+    `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
+    `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
+    `${proactiveQuestion}`;
+}
 
-  // Auto-save after 5 minutes
+/**
+ * Auto-save a pending transaction (called by timeout or recovery).
+ */
+async function _autoSavePending(compositeKey, tx) {
+  try {
+    const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
+    const aiRouter = require('../core/AI_Router');
+    const autoQuery = `catat ${tipeStr} ${tx.nominal} ke ${tx.destination}`;
+    const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
+    tx.category = routingData?.extracted_data?.category || 'Lainnya';
+    if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
+    await processTransaction(tx, 'GMAIL_POLLING');
+    pendingConfirmations.delete(compositeKey);
+    await supabase.deletePendingTransaction(compositeKey);
+    const nominalFmt = `Rp${tx.nominal.toLocaleString('id-ID')}`;
+    const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`;
+    const sent = await sendTelegramWithRetry(timeoutMsg);
+    if (sent) try { await supabase.saveChatMemory('assistant', timeoutMsg); } catch (_) {}
+  } catch (e) {
+    console.error('[FINANCE] Auto-save failed:', e.message);
+  }
+}
+
+/**
+ * Universally requests transaction confirmation (Email, Text, Voice, Photo).
+ * Persists to Supabase FIRST, then sends Telegram with retry.
+ * Waits 5 minutes before auto-saving.
+ */
+async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN KEUANGAN BARU') {
+  const nominal = txData.nominal;
+  const destination = txData.destination || 'Unknown';
+
+  const tx = {
+    nominal,
+    type: txData.type || 'EXPENSE',
+    destination,
+    category: txData.category && txData.category !== 'Uncategorized' ? txData.category : '[Menunggu Kategori AI/User]',
+    description: txData.description && txData.description !== '-' ? txData.description : '[Menunggu Detail User]',
+    time: txData.time || new Date().toISOString()
+  };
+
+  const cleanMerchant = tx.destination.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const compositeKey = `${nominal}_${cleanMerchant}`;
+
+  // Idempotency: if this key is already pending in memory, don't re-register
+  if (pendingConfirmations.has(compositeKey)) {
+    console.log(`[FINANCE] Transaction ${compositeKey} is already pending. Skipping.`);
+    return null;
+  }
+
+  // 1. Persist to Supabase FIRST (telegram_sent = false)
+  await supabase.savePendingTransaction(compositeKey, tx, false);
+
+  // 2. Build message
+  const msg = await _buildConfirmationMessage(tx, sourceLabel);
+
+  // 3. Auto-save timeout
   const timeoutId = setTimeout(async () => {
     if (pendingConfirmations.has(compositeKey)) {
-      try {
-        const aiRouter = require('../core/AI_Router');
-        const autoQuery = `catat ${tipeStr.toLowerCase()} ${nominal} ke ${tx.destination} dengan catatan ${tx.description}`;
-        const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
-        
-        tx.category = routingData?.extracted_data?.category || 'Lainnya';
-        if (tx.description === '[Menunggu Detail User]') {
-            tx.description = `${tipeStr} ke ${tx.destination}`;
-        }
-
-        await processTransaction(tx, sourceLabel.includes('LIVIN') ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL');
-        pendingConfirmations.delete(compositeKey);
-        
-        if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-          const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`;
-          await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: env.TELEGRAM_CHAT_ID,
-            text: timeoutMsg,
-            parse_mode: 'HTML'
-          });
-          try { await supabase.saveChatMemory('assistant', timeoutMsg); } catch(e) {}
-        }
-      } catch (e) {
-        console.error('[FINANCE] Auto-save timeout failed:', e.message);
-      }
+      await _autoSavePending(compositeKey, tx);
     }
   }, 5 * 60 * 1000);
 
   pendingConfirmations.set(compositeKey, { tx, timeoutId });
+
+  // 4. Send Telegram with retry — mark sent only on success
+  const sent = await sendTelegramWithRetry(msg);
+  if (sent) {
+    await supabase.markPendingTransactionSent(compositeKey);
+    try { await supabase.saveChatMemory('assistant', msg); } catch (_) {}
+  } else {
+    console.error(`[FINANCE] Telegram alert for ${compositeKey} failed after 3 retries. Will retry on next server start.`);
+  }
+
   return msg;
 }
 
-module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction, pollLivinEmails, confirmPendingTransactions, requestTransactionConfirmation };
+module.exports = { processTransaction, getRecentTransactions, getFinanceAnalytics, deleteTransaction, editTransaction, pollLivinEmails, confirmPendingTransactions, requestTransactionConfirmation, recoverPendingTransactions };
+
+

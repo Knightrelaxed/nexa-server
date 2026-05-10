@@ -12,7 +12,8 @@ const SUPABASE_TABLES = [
   'nexa_user_profile',
   'nexa_core_identity',
   'nexa_2nd_brain',
-  'nexa_vault_items'
+  'nexa_vault_items',
+  'nexa_pending_transactions'
 ];
 
 function resolveAllowedTableName(tableName) {
@@ -471,6 +472,62 @@ async function updateVaultItemById(id, patch = {}) {
   return { success: true, row: data?.[0] || null };
 }
 
+/**
+ * Save a pending transaction to Supabase (survives server restarts)
+ */
+async function savePendingTransaction(compositeKey, txData, telegramSent = false) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('nexa_pending_transactions')
+    .upsert([{
+      composite_key: compositeKey,
+      tx_data: txData,
+      telegram_sent: telegramSent,
+      created_at: new Date().toISOString()
+    }], { onConflict: 'composite_key' });
+  if (error) console.error('[SUPABASE] Error saving pending transaction:', error.message);
+}
+
+/**
+ * Get all pending transactions (for recovery after server restart)
+ */
+async function getPendingTransactions() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('nexa_pending_transactions')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.error('[SUPABASE] Error fetching pending transactions:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Delete a resolved/cancelled pending transaction from Supabase
+ */
+async function deletePendingTransaction(compositeKey) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('nexa_pending_transactions')
+    .delete()
+    .eq('composite_key', compositeKey);
+  if (error) console.error('[SUPABASE] Error deleting pending transaction:', error.message);
+}
+
+/**
+ * Mark a pending transaction as telegram_sent = true
+ */
+async function markPendingTransactionSent(compositeKey) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('nexa_pending_transactions')
+    .update({ telegram_sent: true })
+    .eq('composite_key', compositeKey);
+  if (error) console.error('[SUPABASE] Error marking pending transaction as sent:', error.message);
+}
+
 module.exports = {
   supabase,
   saveChatMemory,
@@ -492,5 +549,9 @@ module.exports = {
   deleteDatabaseRows,
   deleteAllDatabaseRows,
   saveVaultItem,
-  updateVaultItemById
+  updateVaultItemById,
+  savePendingTransaction,
+  getPendingTransactions,
+  deletePendingTransaction,
+  markPendingTransactionSent
 };

@@ -84,6 +84,13 @@ if (require.main === module) {
     // node-cron will run Morning Briefing at 05:30 WIB
     cronInterface.initCronJobs();
     console.log('[N.E.X.A] ⏰ Cron jobs initialized (Morning Briefing: 05:30 WIB)');
+    // Recover pending transactions that were never sent to Telegram (e.g. after server restart)
+    const financeEngine = require('./domain/Finance_Engine');
+    financeEngine.recoverPendingTransactions().then(() => {
+      console.log('[N.E.X.A] 🔄 Pending transaction recovery complete.');
+    }).catch(e => {
+      console.error('[N.E.X.A] Pending transaction recovery error:', e.message);
+    });
   });
 }
 
