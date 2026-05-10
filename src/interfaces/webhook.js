@@ -1301,7 +1301,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'UPDATE_PENDING') {
           const updatedMsg = await financeEngine.updatePendingTransaction(
             routingData.extracted_data.description || null,
-            routingData.extracted_data.category || null
+            routingData.extracted_data.category || null,
+            routingData.extracted_data.nominal || null
           );
           domainReply = updatedMsg || 'Tidak ada transaksi yang tertunda.';
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CANCEL_TRANSACTION') {

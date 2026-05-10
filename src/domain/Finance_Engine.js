@@ -516,13 +516,14 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
  * Updates a pending transaction with new details/category and re-sends a confirmation prompt.
  * Does NOT save to Google Sheets yet.
  */
-async function updatePendingTransaction(customDescription = null, customCategory = null) {
+async function updatePendingTransaction(customDescription = null, customCategory = null, customNominal = null) {
   if (pendingConfirmations.size === 0) return null;
 
   let msg = '';
   for (const [key, pending] of pendingConfirmations.entries()) {
     if (customDescription) pending.tx.description = customDescription;
     if (customCategory) pending.tx.category = customCategory;
+    if (customNominal) pending.tx.nominal = customNominal;
 
     // Reset the 5-minute timeout because user interacted
     clearTimeout(pending.timeoutId);

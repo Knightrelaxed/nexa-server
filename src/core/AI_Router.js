@@ -67,7 +67,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
   "extracted_data": {
      // FINANCE: { action: "RECORD"|"READ_LATEST"|"READ_ANALYTICS"|"EDIT"|"DELETE"|"UNDO_DELETE"|"IMPORT_FROM_EMAIL"|"CONFIRM_TRANSACTION"|"UPDATE_PENDING"|"CANCEL_TRANSACTION", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO), search_keyword: string }
      //   → Jika pengguna MENGKONFIRMASI ("masukkan", "ya", "benar", "simpan") untuk menanggapi transaksi tertunda, WAJIB gunakan "CONFIRM_TRANSACTION". Ini akan LANGSUNG menyimpan data.
-     //   → Jika pengguna MENGOREKSI/MENAMBAH DETAIL transaksi tertunda ("koreksi: itu buat beli sate", "kategorinya charity"), WAJIB gunakan "UPDATE_PENDING" beserta field "description" dan/atau "category". Ini akan mengupdate data tertunda dan memberikan konfirmasi ulang.
+     //   → Jika pengguna MENGOREKSI/MENAMBAH DETAIL/NOMINAL transaksi tertunda ("koreksi: itu buat beli sate", "kategorinya charity", "salah, harusnya 60rb"), WAJIB gunakan "UPDATE_PENDING" beserta field "description", "category", dan/atau "nominal" yang diubah. Ini akan mengupdate data tertunda.
      //   → Jika pengguna MEMBATALKAN/MENOLAK transaksi tertunda ("batalkan", "batal", "jangan"), WAJIB gunakan "CANCEL_TRANSACTION".
      //   → Jika pengguna meminta MENCATAT transaksi baru ("catat pengeluaran..."), gunakan action "RECORD".
      //     - WAKTU: Jika tidak menyebut waktu, kosongkan time (otomatis sekarang). JIKA pengguna menyebut HARI/TANGGAL ("kemarin", "lusa", "tanggal 5") TANPA menyebutkan JAM yang spesifik, Anda WAJIB mengubah root intent menjadi "INCOMPLETE_INFO" dan tanyakan jam transaksinya.
