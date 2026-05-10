@@ -18,7 +18,7 @@ async function sendTelegramWithRetry(msg, retries = 3) {
         chat_id: env.TELEGRAM_CHAT_ID,
         text: msg,
         parse_mode: 'HTML'
-      });
+      }, { timeout: 10000 });
       return true;
     } catch (e) {
       console.warn(`[FINANCE] Telegram send attempt ${i}/${retries} failed: ${e.message}`);

@@ -15,7 +15,7 @@ function initCronJobs() {
         await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
           chat_id: env.TELEGRAM_CHAT_ID,
           text: briefingText
-        });
+        }, { timeout: 10000 });
         const supabase = require('../infrastructure/Supabase_Memories');
         try { await supabase.saveChatMemory('assistant', briefingText); } catch(e) {}
         console.log('[CRON] Morning Briefing delivered successfully.');
