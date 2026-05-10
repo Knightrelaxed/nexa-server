@@ -275,18 +275,35 @@ async function getFinanceAnalytics() {
 
 /**
  * Delete a specific transaction matching a keyword (usually description or amount).
+ * Search priority: (1) Exact match on transaction No (column 0), (2) Exact match on description,
+ * (3) Partial match on description/nominal. This prevents "299" from matching "604091793299".
  */
 async function deleteTransaction(keyword) {
   try {
     const rows = await googleWorkspace.getAllFinanceRows();
     if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel bulan ini masih kosong.' };
 
-    const kw = String(keyword).toLowerCase();
-    const indexToDelete = rows.findIndex(r => {
-      const cat = (r[6] || '').toLowerCase(); // Catatan
-      const nom = (r[7] || '').toLowerCase(); // Nominal
-      return cat.includes(kw) || nom.includes(kw);
-    });
+    const kw = String(keyword).toLowerCase().trim();
+    let indexToDelete = -1;
+
+    // Priority 1: Exact match on transaction number (column 0 = "No")
+    if (/^\d+$/.test(kw)) {
+      indexToDelete = rows.findIndex(r => String(r[0]).trim() === kw);
+    }
+
+    // Priority 2: Exact match on description (column 6)
+    if (indexToDelete === -1) {
+      indexToDelete = rows.findIndex(r => (r[6] || '').toLowerCase().trim() === kw);
+    }
+
+    // Priority 3: Partial match on description or nominal (last resort)
+    if (indexToDelete === -1) {
+      indexToDelete = rows.findIndex(r => {
+        const cat = (r[6] || '').toLowerCase();
+        const nom = (r[7] || '').toLowerCase();
+        return cat.includes(kw) || nom.includes(kw);
+      });
+    }
 
     if (indexToDelete === -1) {
       return { status: 'FAILED', message: `Tidak ada transaksi yang cocok dengan "${keyword}".` };
@@ -310,18 +327,34 @@ async function deleteTransaction(keyword) {
 
 /**
  * Edit a specific transaction matching a keyword.
+ * Same search priority as deleteTransaction: No column → exact desc → partial match.
  */
 async function editTransaction(keyword, newNominal, newDescription, newCategory) {
   try {
     const rows = await googleWorkspace.getAllFinanceRows();
     if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel bulan ini masih kosong.' };
 
-    const kw = String(keyword).toLowerCase();
-    const indexToEdit = rows.findIndex(r => {
-      const cat = (r[6] || '').toLowerCase();
-      const nom = (r[7] || '').toLowerCase();
-      return cat.includes(kw) || nom.includes(kw);
-    });
+    const kw = String(keyword).toLowerCase().trim();
+    let indexToEdit = -1;
+
+    // Priority 1: Exact match on transaction number (column 0 = "No")
+    if (/^\d+$/.test(kw)) {
+      indexToEdit = rows.findIndex(r => String(r[0]).trim() === kw);
+    }
+
+    // Priority 2: Exact match on description (column 6)
+    if (indexToEdit === -1) {
+      indexToEdit = rows.findIndex(r => (r[6] || '').toLowerCase().trim() === kw);
+    }
+
+    // Priority 3: Partial match on description or nominal (last resort)
+    if (indexToEdit === -1) {
+      indexToEdit = rows.findIndex(r => {
+        const cat = (r[6] || '').toLowerCase();
+        const nom = (r[7] || '').toLowerCase();
+        return cat.includes(kw) || nom.includes(kw);
+      });
+    }
 
     if (indexToEdit === -1) {
       return { status: 'FAILED', message: `Tidak ada transaksi yang cocok dengan "${keyword}".` };
