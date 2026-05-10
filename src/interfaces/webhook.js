@@ -1281,7 +1281,20 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             routingData.extracted_data.description || null,
             routingData.extracted_data.category || null
           );
-          domainReply = confirmationReply || 'Tidak ada transaksi yang tertunda.';
+          if (confirmationReply) {
+            domainReply = confirmationReply;
+          } else {
+            // Fallback if timeout already triggered and pending queue is empty
+            const googleWorkspace = require('../infrastructure/Google_Workspace');
+            const recent = await googleWorkspace.getFinanceSummary(1);
+            if (recent && recent.length > 0) {
+               const lastCat = recent[0][6]; // cat/desc
+               const result = await financeEngine.editTransaction(lastCat, null, routingData.extracted_data.description, routingData.extracted_data.category);
+               domainReply = `⏳ Waktu konfirmasi 5 menit telah habis sehingga transaksi otomatis terkunci. N.E.X.A melakukan *fallback* ke mode Edit:\n${result.message}`;
+            } else {
+               domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
+            }
+          }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CANCEL_TRANSACTION') {
           const confirmationReply = await financeEngine.confirmPendingTransactions(false);
           domainReply = confirmationReply || 'Tidak ada transaksi yang tertunda.';
@@ -1289,7 +1302,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           const result = await financeEngine.editTransaction(
             routingData.extracted_data.search_keyword,
             routingData.extracted_data.nominal,
-            routingData.extracted_data.description || routingData.extracted_data.destination
+            routingData.extracted_data.description || routingData.extracted_data.destination,
+            routingData.extracted_data.category
           );
           domainReply = result.message;
         } else if (routingData.extracted_data && (routingData.extracted_data.nominal || routingData.extracted_data.action === 'RECORD')) {

@@ -228,7 +228,7 @@ async function deleteTransaction(keyword) {
 /**
  * Edit a specific transaction matching a keyword.
  */
-async function editTransaction(keyword, newNominal, newDescription) {
+async function editTransaction(keyword, newNominal, newDescription, newCategory) {
   try {
     const rows = await googleWorkspace.getAllFinanceRows();
     if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel bulan ini masih kosong.' };
@@ -261,11 +261,16 @@ async function editTransaction(keyword, newNominal, newDescription) {
     if (newDescription) {
       oldRow[6] = newDescription;
     }
+
+    // Update category if provided
+    if (newCategory && newCategory !== 'Uncategorized') {
+      oldRow[4] = newCategory;
+    }
     
     // Overwrite the sheet
     await googleWorkspace.overwriteFinanceSheet(rows);
 
-    return { status: 'SUCCESS', message: `✏️ Transaksi "${oldCat}" berhasil diubah. Semua rumus dan saldo telah disesuaikan ulang.` };
+    return { status: 'SUCCESS', message: `✏️ Transaksi "${oldCat}" berhasil diubah. Semua rumus dan data telah disesuaikan ulang.` };
   } catch (error) {
     console.error('[FINANCE] Failed to edit transaction:', error.message);
     return { status: 'FAILED', message: `Gagal mengubah transaksi: ${error.message}` };
