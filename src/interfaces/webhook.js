@@ -1155,6 +1155,31 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       }
     }
 
+    // ============================================================
+    // PENDING TASK CONFIRMATION (Fase 2)
+    // ============================================================
+    const chatId = String(message.chat.id);
+    if (taskManager.pendingTaskCategories.has(chatId)) {
+      const normalized = textInput.toLowerCase().trim();
+      let overrideList = null;
+
+      if (normalized === 'ya' || normalized === 'ok' || normalized === 'oke' || normalized === 'siap') {
+        overrideList = null; // Use the suggested one
+      } else if (normalized === 'tidak' || normalized === 'no' || normalized === 'ga' || normalized === 'gak') {
+        overrideList = 'Tugas Saya';
+      } else {
+        // Assume user typed a different list name
+        overrideList = textInput.trim();
+      }
+
+      const resTask = await taskManager.executePendingTask(chatId, overrideList);
+      if (resTask && resTask.message) {
+        await respondToTelegram(resTask.message);
+        clearTimeout(safetyTimer);
+        return;
+      }
+    }
+
     // Email follow-up override: keep intent in EMAIL context to avoid misrouting to CALENDAR/NORMAL_CHAT
     let routingData;
     if (pendingEmailContext && isEmailHistoryFollowUp(textInput)) {
