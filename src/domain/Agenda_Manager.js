@@ -194,8 +194,11 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       if (!targetEventId) {
         return { status: 'FAILED', message: `Gagal menghapus: event '${escapeHtml(summary || '(tanpa judul)')}' tidak ditemukan di kalender.` };
       }
-      await googleWorkspace.deleteCalendarEvent(targetEventId);
-      return { status: 'SUCCESS', message: `Jadwal '${escapeHtml(summary || targetEventId)}' berhasil dihapus dari kalender.` };
+      
+      // Default to deleting the entire series (mode: ALL) to easily clean up old college semesters
+      const res = await googleWorkspace.deleteCalendarEvent(targetEventId, 'ALL');
+      const extraMsg = res.mode === 'ALL' ? ' beserta seluruh jadwal ulangannya (jika ada)' : '';
+      return { status: 'SUCCESS', message: `Jadwal '${escapeHtml(summary || targetEventId)}'${extraMsg} berhasil dihapus dari kalender.` };
     }
     else if (action === 'READ') {
       let events;
