@@ -7,6 +7,7 @@ const env = require('../config/env');
 // In-memory cache of pending confirmations (source of truth = Supabase)
 // key: compositeKey, value: { tx, timeoutId }
 const pendingConfirmations = new Map();
+let isPollingLivin = false;
 
 /**
  * Send Telegram message with retry logic (3 attempts)
@@ -550,6 +551,11 @@ async function updatePendingTransaction(customDescription = null, customCategory
  * Relies on Zero-Duplication Engine to prevent duplicate entries across polls.
  */
 async function pollLivinEmails() {
+  if (isPollingLivin) {
+    console.log('[FINANCE] Polling skipped: Another instance is already polling.');
+    return 0;
+  }
+  isPollingLivin = true;
   try {
     console.log('[FINANCE] Polling for new Livin emails...');
     const emails = await gmailClient.getLatestEmails('from:noreply.livin@bankmandiri.co.id', 15);
@@ -629,20 +635,27 @@ async function pollLivinEmails() {
         time: dateIso
       };
 
-      const msg = await requestTransactionConfirmation(tx, 'TRANSAKSI LIVIN TERBARU');
-      if (msg && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-        await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          chat_id: env.TELEGRAM_CHAT_ID,
-          text: msg,
-          parse_mode: 'HTML'
-        });
-        try { await supabase.saveChatMemory('assistant', msg); } catch(e) {}
+      try {
+        const msg = await requestTransactionConfirmation(tx, 'TRANSAKSI LIVIN TERBARU');
+        if (msg && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+          await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: env.TELEGRAM_CHAT_ID,
+            text: msg,
+            parse_mode: 'HTML'
+          });
+          try { await supabase.saveChatMemory('assistant', msg); } catch(e) {}
+        }
+      } catch (err) {
+        console.error('[FINANCE] Confirmation failed:', err.message);
       }
     }
+
     return newCount;
   } catch (error) {
-    console.error('[FINANCE] Auto-poll Livin emails failed:', error.message);
+    console.error('[FINANCE] Polling failed:', error.message);
     return 0;
+  } finally {
+    isPollingLivin = false;
   }
 }
 
