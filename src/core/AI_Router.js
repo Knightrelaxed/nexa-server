@@ -79,12 +79,23 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Gunakan action "DELETE" jika pengguna meminta menghapus transaksi (sertakan search_keyword).
      //   → Gunakan action "UNDO_DELETE" jika pengguna meminta membatalkan/mengembalikan transaksi yang baru dihapus ("batalkan hapus", "undo", "kembalikan yang dihapus").
      //   → Gunakan action "IMPORT_FROM_EMAIL" jika user meminta mengambil/memasukkan transaksi dari email Livin ke catatan keuangan.
-     // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string (ISO 8601 +07:00), end: string (ISO 8601 +07:00), description: string, eventId: string }
+     // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ"|"READ_TODAY"|"READ_UPCOMING", summary: string, start: string (ISO 8601 +07:00), end: string (ISO 8601 +07:00), description: string, eventId: string, location: string, reminder_minutes: number[], recurrence: string }
      //   → FORMAT WAJIB: 'start' dan 'end' HARUS ISO 8601 LENGKAP dengan offset +07:00.
      //     Contoh BENAR: "2026-05-07T19:00:00+07:00" | Contoh SALAH: "19:00", "jam 7 malam", null
      //
      //   → CREATE: Buat jadwal baru. Wajib: summary + start. Kosongkan 'end' jika durasi tidak disebutkan.
      //     Tanggal default = HARI INI. Jika user menyebut "besok", "Senin", "tanggal 20" → hitung dari tanggal saat ini.
+     //     Field opsional:
+     //     - location: "di Gedung A lt 3", "online via Zoom" → isi field location jika ada informasi tempat
+     //     - reminder_minutes: array angka menit sebelum event → [30, 10] = ingatkan 30 menit dan 10 menit sebelum
+     //       Default jika tidak disebutkan: [] (gunakan default kalender)
+     //       Contoh: "ingatkan saya 1 jam sebelumnya" → reminder_minutes: [60]
+     //     - recurrence: RRULE string untuk jadwal berulang.
+     //       Contoh: "setiap Senin" → "RRULE:FREQ=WEEKLY;BYDAY=MO"
+     //               "setiap Selasa dan Kamis" → "RRULE:FREQ=WEEKLY;BYDAY=TU,TH"
+     //               "setiap hari kerja" → "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+     //               "setiap hari" → "RRULE:FREQ=DAILY"
+     //               "setiap bulan tanggal 15" → "RRULE:FREQ=MONTHLY;BYMONTHDAY=15"
      //
      //   → READ: Baca jadwal kalender. Isi sesuai konteks:
      //     - "jadwal hari ini" → tidak perlu isi start/end (default ke hari ini)
@@ -94,12 +105,12 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //     - "jam berapa matkul X?" / "matkul X sampai jam berapa?" → isi summary = "X" (kata kunci nama acara), TIDAK perlu start/end
      //     - "cari jadwal X" → isi summary = kata kunci nama acara
      //
-     //   → UPDATE: Ubah jadwal yang sudah ada. Isi summary = nama acara untuk dicari, plus field yang diubah (start/end/description).
+     //   → UPDATE: Ubah jadwal yang sudah ada. Isi summary = nama acara untuk dicari, plus field yang diubah (start/end/description/location).
      //     Jika hanya ganti jam mulai → isi start baru saja. Jika hanya ganti nama → isi summary baru saja.
      //
-     //   → DELETE: Hapus jadwal. Wajib: summary = nama acara yang akan dihapus (untuk pencarian).
-     //   → READ_TODAY: Gunakan KHUSUS untuk "hari ini apa saja?", "agenda hari ini", "jadwal dan tugas hari ini" — menampilkan GABUNGAN kalender + tugas dalam satu dashboard. PRIORITASKAN intent CALENDAR + READ_TODAY untuk pertanyaan holistik tentang hari ini.
-     //   → READ_UPCOMING: Gunakan untuk "minggu ini apa aja?", "7 hari ke depan", "jadwal dan tugas minggu ini" — menampilkan GABUNGAN kalender + tugas 7 hari ke depan.
+     //   → DELETE: Hapus jadwal (termasuk semua perulangan jika jadwal recurring). Wajib: summary = nama acara.
+     //   → READ_TODAY: KHUSUS untuk "hari ini apa saja?", "agenda hari ini" — GABUNGAN kalender + tugas satu dashboard.
+     //   → READ_UPCOMING: Untuk "minggu ini apa aja?", "7 hari ke depan" — GABUNGAN kalender + tugas 7 hari.
      // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, search_keyword: string }
      //   → Gunakan untuk menyimpan ide, draft, ringkasan, atau catatan kerja yang akan disinkronkan dengan Google Docs.
      // USER_PROFILE: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
@@ -107,16 +118,25 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Untuk penemuan fakta secara OTOMATIS/PASIF dari obrolan, JANGAN gunakan intent ini. Gunakan array "learned_user_facts" di *root* JSON agar Anda tetap bisa mengeksekusi intent utama (misalnya FINANCE).
      // CORE_IDENTITY: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
      //   → Sama seperti atas, gunakan HANYA jika disuruh eksplisit. Untuk pembelajaran pasif, gunakan array "learned_core_identities" di *root* JSON.
-     // TASK: { action: "CREATE"|"READ"|"READ_TODAY"|"READ_UPCOMING"|"READ_OVERDUE"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"CLEAR_DONE", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string }
+     // TASK: { action: "CREATE"|"CREATE_SUBTASK"|"READ"|"READ_LIST"|"READ_LISTS"|"READ_TODAY"|"READ_UPCOMING"|"READ_OVERDUE"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"CLEAR_DONE", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string, list_name: string, parent_task_keyword: string }
      //   → CREATE: "Catat tugas: selesaikan essay sebelum Jumat", "tambahkan ke daftar belanja: beras"
-     //   → READ: "tampilkan tugasku", "apa saja task yang belum selesai?" (menampilkan SEMUA task aktif, dikelompokkan: terlambat/hari ini/mendatang)
+     //     Field opsional:
+     //     - list_name: Nama list Google Tasks jika disebutkan eksplisit (misal: "masukkan ke list Kuliah").
+     //       Jika tidak disebutkan, N.E.X.A akan auto-kategorikan dan konfirmasi ke Tuan.
+     //   → CREATE_SUBTASK: Buat sub-tugas di bawah tugas lain.
+     //     - title: nama sub-tugas baru
+     //     - parent_task_keyword: kata kunci nama tugas utama (akan dicari di Google Tasks)
+     //     Contoh: "tambahkan sub-tugas 'buat PPT' ke dalam tugas 'persiapan seminar'"
+     //   → READ: "tampilkan tugasku" (SEMUA task aktif, dikelompokkan: terlambat/hari ini/mendatang)
+     //   → READ_LIST: "tampilkan list Tugas Kuliah", "apa isi list Belanja?" → isi list_name
+     //   → READ_LISTS: "tampilkan semua list tugasku", "daftar list apa saja?"
      //   → READ_TODAY: "tugas hari ini", "apa yang harus saya kerjakan hari ini?" (hanya task jatuh tempo hari ini)
      //   → READ_UPCOMING: "tugas minggu ini", "apa saja deadline minggu depan?" (task 7 hari ke depan, dikelompokkan per tanggal)
      //   → READ_OVERDUE: "tugas apa yang terlambat?", "overdue task" (task melewati deadline)
      //   → READ_DONE: "tugas apa yang sudah selesai?"
      //   → COMPLETE: "tandai tugas essay sebagai selesai" (gunakan search_keyword)
      //   → DELETE: "hapus tugas essay Arab" (gunakan search_keyword)
-     //   → EDIT: "ubah deadline tugas essay jadi Senin" (gunakan search_keyword untuk cari, due_date untuk nilai baru)
+     //   → EDIT: "ubah deadline tugas essay jadi Senin" (gunakan search_keyword untuk cari, due_date/title/notes untuk nilai baru)
      //   → CLEAR_DONE: "bersihkan semua tugas selesai"
      // WEB_SEARCH: { query: string, type: "search"|"news" }
      //   → Gunakan jika pengguna menanyakan fakta real-time, berita terkini, nilai tukar, cuaca, atau informasi yang butuh penelusuran internet.

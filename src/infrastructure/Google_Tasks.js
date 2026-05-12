@@ -187,9 +187,70 @@ async function getUpcomingTasks(daysAhead = 7, listId = DEFAULT_LIST) {
   });
 }
 
+/**
+ * Find a task list by name, or create it if it doesn't exist.
+ * Returns the list object { id, title }.
+ */
+async function findOrCreateList(name) {
+  const client = getTasksClient();
+  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
+  const res = await client.tasklists.list({ maxResults: 50 });
+  const lists = res.data.items || [];
+  const found = lists.find(l => l.title && l.title.toLowerCase() === name.toLowerCase());
+  if (found) return found;
+  // Create new list
+  const created = await client.tasklists.insert({ requestBody: { title: name } });
+  return created.data;
+}
+
+/**
+ * Create a subtask under a parent task.
+ * @param {{ title, notes, dueDate, parentId, listId }}
+ */
+async function createSubtask({ title, notes = '', dueDate = null, parentId, listId = DEFAULT_LIST }) {
+  const client = getTasksClient();
+  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
+  const task = { title, notes };
+  if (dueDate) {
+    const localDateStr = String(dueDate).split('T')[0];
+    task.due = `${localDateStr}T00:00:00.000Z`;
+  }
+  const res = await client.tasks.insert({
+    tasklist: listId,
+    parent: parentId,
+    requestBody: task
+  });
+  return res.data;
+}
+
+/**
+ * Get all subtasks (children) of a given parent task.
+ */
+async function getSubtasks(parentId, listId = DEFAULT_LIST) {
+  const tasks = await getActiveTasks(listId);
+  return tasks.filter(t => t.parent === parentId);
+}
+
+/**
+ * Get tasks from a specific named list (find list first).
+ */
+async function getTasksFromList(listName) {
+  const client = getTasksClient();
+  if (!client) return [];
+  const res = await client.tasklists.list({ maxResults: 50 });
+  const lists = res.data.items || [];
+  const found = lists.find(l => l.title && l.title.toLowerCase() === listName.toLowerCase());
+  if (!found) return [];
+  return getActiveTasks(found.id);
+}
+
 module.exports = {
   getTaskLists,
+  findOrCreateList,
   createTask,
+  createSubtask,
+  getSubtasks,
+  getTasksFromList,
   getActiveTasks,
   getCompletedTasks,
   getTasksDueToday,

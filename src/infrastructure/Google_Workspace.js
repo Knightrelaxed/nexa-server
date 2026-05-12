@@ -405,16 +405,39 @@ async function findEventByTitle(summaryKeyword, daysAhead = 60) {
 }
 
 /**
- * Delete a calendar event
+ * Delete a calendar event.
+ * @param {string} eventId - The event ID to delete
+ * @param {'THIS_ONLY'|'ALL_FOLLOWING'|'ALL'} mode
+ *   - THIS_ONLY (default): delete only this one occurrence
+ *   - ALL: delete the master recurring event (removes all future occurrences of the series)
+ *   - ALL_FOLLOWING: cut recurrence from this date forward (not used often, reserved)
  */
-async function deleteCalendarEvent(eventId) {
+async function deleteCalendarEvent(eventId, mode = 'THIS_ONLY') {
   const { calendar } = getClients();
-  
+
+  // First, fetch the event to check if it is a recurring event instance
+  let targetId = eventId;
+  if (mode === 'ALL') {
+    try {
+      const ev = await calendar.events.get({
+        calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
+        eventId: eventId
+      });
+      // If this is a recurring instance, its recurringEventId points to the master event
+      if (ev.data.recurringEventId) {
+        targetId = ev.data.recurringEventId;
+        console.log(`[CALENDAR] Recurring event detected. Deleting master ID: ${targetId}`);
+      }
+    } catch (e) {
+      console.warn('[CALENDAR] Could not fetch event before delete:', e.message);
+    }
+  }
+
   await calendar.events.delete({
     calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
-    eventId: eventId
+    eventId: targetId
   });
-  return true;
+  return { deleted: targetId, mode };
 }
 
 /**

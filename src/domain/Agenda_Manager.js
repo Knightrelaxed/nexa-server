@@ -105,7 +105,7 @@ async function parseDurationMinutes(text) {
 }
 
 async function handleCalendarIntent(extractedData, rawUserText = '') {
-  const { action, summary, start, end, eventId, description } = extractedData;
+  const { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence } = extractedData;
   console.log(`[AGENDA] Executing Calendar Intent: ${action}`);
 
   try {
@@ -128,8 +128,11 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         if (durationMins) {
           startDate.setMinutes(startDate.getMinutes() + durationMins);
           const computedEnd = startDate.toISOString();
-          const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '');
-          return { status: 'SUCCESS', message: `✅ Jadwal '<b>${escapeHtml(summary)}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).`, eventId: result.id };
+        const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '', location || '', reminder_minutes || [], recurrence || '');
+          let successMsg = `✅ Jadwal '<b>${escapeHtml(summary)}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).`;
+          if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
+          if (recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
+          return { status: 'SUCCESS', message: successMsg, eventId: result.id };
         }
 
         // No duration in text → return PENDING_END and schedule auto-create after 15 min
@@ -161,8 +164,11 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         }
       }
 
-      const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '');
-      return { status: 'SUCCESS', message: `✅ Jadwal '${escapeHtml(summary)}' berhasil ditambahkan ke kalender.`, eventId: result.id };
+      const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '', location || '', reminder_minutes || [], recurrence || '');
+      let successMsg = `✅ Jadwal '${escapeHtml(summary)}' berhasil ditambahkan ke kalender.`;
+      if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
+      if (recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
+      return { status: 'SUCCESS', message: successMsg, eventId: result.id };
     }
     else if (action === 'UPDATE') {
       // If we have eventId directly from AI, use it. Otherwise, find the event by title.

@@ -1410,8 +1410,40 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
       case 'TASK':
         if (routingData.extracted_data) {
-          const taskResult = await taskManager.handleTaskIntent(routingData.extracted_data);
-          if (taskResult && taskResult.message) domainReply = taskResult.message;
+          const chatId = String(ctx?.chatId || ctx?.from?.id || '');
+          const taskResult = await taskManager.handleTaskIntent(routingData.extracted_data, chatId);
+          if (taskResult && taskResult.status === 'PENDING_CONFIRM') {
+            // Set up 5-minute auto-confirm timer
+            const { pendingTaskCategories, executePendingTask } = taskManager;
+            const pendingId = chatId || 'default';
+            // Clear any old pending for this chat
+            const old = pendingTaskCategories.get(pendingId);
+            if (old && old.timerId) clearTimeout(old.timerId);
+
+            const timerId = setTimeout(async () => {
+              if (pendingTaskCategories.has(pendingId)) {
+                try {
+                  const res = await executePendingTask(pendingId);
+                  if (res && res.message) {
+                    await sendTelegramMessage(res.message + '\n\n<i>(Dikategorikan otomatis karena tidak ada konfirmasi dalam 5 menit)</i>');
+                  }
+                } catch (e) { console.error('[TASK] Auto-confirm failed:', e.message); }
+              }
+            }, 5 * 60 * 1000);
+
+            pendingTaskCategories.set(pendingId, {
+              title: taskResult.title,
+              notes: taskResult.notes,
+              dueDate: taskResult.due_date,
+              listName: taskResult.pendingListName,
+              timerId,
+              chatId: pendingId
+            });
+
+            domainReply = `📋 Tugas '<b>${taskResult.title}</b>' akan saya masukkan ke list <b>${taskResult.pendingListName}</b>.\n\nKonfirmasi? Balas:\n• <b>ya</b> — masukkan sekarang\n• <b>nama list lain</b> — pindah ke list tersebut\n• <b>tidak</b> — masukkan ke Tugas Saya\n\n<i>⏱️ Auto-masuk dalam 5 menit jika tidak ada respons.</i>`;
+          } else if (taskResult && taskResult.message) {
+            domainReply = taskResult.message;
+          }
         }
         break;
 
