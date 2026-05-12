@@ -244,6 +244,54 @@ async function getTasksFromList(listName) {
   return getActiveTasks(found.id);
 }
 
+/**
+ * Move a task to a different task list
+ * Google Tasks API doesn't have a direct "move" operation, so we:
+ * 1. Read the task details
+ * 2. Create a new task in the target list
+ * 3. Delete the original task
+ * @param {string} taskId - The task ID to move
+ * @param {string} targetListName - The name of the target list
+ * @param {string} sourceListId - The source list ID (optional, defaults to @default)
+ */
+async function moveTaskToList(taskId, targetListName, sourceListId = DEFAULT_LIST) {
+  const client = getTasksClient();
+  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
+
+  // 1. Get the original task details
+  const originalTask = await client.tasks.get({
+    tasklist: sourceListId,
+    task: taskId
+  });
+
+  // 2. Find or create the target list
+  const targetList = await findOrCreateList(targetListName);
+
+  // 3. Create the task in the target list
+  const newTask = {
+    title: originalTask.data.title,
+    notes: originalTask.data.notes || '',
+    status: originalTask.data.status || 'needsAction'
+  };
+
+  if (originalTask.data.due) {
+    newTask.due = originalTask.data.due;
+  }
+
+  const created = await client.tasks.insert({
+    tasklist: targetList.id,
+    requestBody: newTask
+  });
+
+  // 4. Delete the original task
+  await client.tasks.delete({
+    tasklist: sourceListId,
+    task: taskId
+  });
+
+  return created.data;
+}
+
 module.exports = {
   getTaskLists,
   findOrCreateList,
@@ -260,5 +308,6 @@ module.exports = {
   deleteTask,
   editTask,
   findTasksByKeyword,
-  clearCompletedTasks
+  clearCompletedTasks,
+  moveTaskToList
 };

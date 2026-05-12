@@ -118,7 +118,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Untuk penemuan fakta secara OTOMATIS/PASIF dari obrolan, JANGAN gunakan intent ini. Gunakan array "learned_user_facts" di *root* JSON agar Anda tetap bisa mengeksekusi intent utama (misalnya FINANCE).
      // CORE_IDENTITY: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
      //   → Sama seperti atas, gunakan HANYA jika disuruh eksplisit. Untuk pembelajaran pasif, gunakan array "learned_core_identities" di *root* JSON.
-     // TASK: { action: "CREATE"|"CREATE_SUBTASK"|"READ"|"READ_LIST"|"READ_LISTS"|"READ_TODAY"|"READ_UPCOMING"|"READ_OVERDUE"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"CLEAR_DONE", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string, list_name: string, parent_task_keyword: string }
+     // TASK: { action: "CREATE"|"CREATE_SUBTASK"|"READ"|"READ_LIST"|"READ_LISTS"|"READ_TODAY"|"READ_UPCOMING"|"READ_OVERDUE"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"MOVE"|"CLEAR_DONE", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string, list_name: string, parent_task_keyword: string }
      //   → CREATE: "Catat tugas: selesaikan essay sebelum Jumat", "tambahkan ke daftar belanja: beras"
      //     Field opsional:
      //     - list_name: Nama list Google Tasks jika disebutkan eksplisit (misal: "masukkan ke list Kuliah").
@@ -137,6 +137,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → COMPLETE: "tandai tugas essay sebagai selesai" (gunakan search_keyword)
      //   → DELETE: "hapus tugas essay Arab" (gunakan search_keyword)
      //   → EDIT: "ubah deadline tugas essay jadi Senin" (gunakan search_keyword untuk cari, due_date/title/notes untuk nilai baru)
+     //   → MOVE: "pindahkan tugas essay ke list Tugas Kuliah" (gunakan search_keyword untuk cari tugas, list_name untuk tujuan)
      //   → CLEAR_DONE: "bersihkan semua tugas selesai"
      // WEB_SEARCH: { query: string, type: "search"|"news" }
      //   → Gunakan jika pengguna menanyakan fakta real-time, berita terkini, nilai tukar, cuaca, atau informasi yang butuh penelusuran internet.

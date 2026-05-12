@@ -351,17 +351,36 @@ async function getFinanceAnalytics() {
 /**
  * Create a new event in Google Calendar
  */
-async function createCalendarEvent(summary, startTime, endTime, description = '') {
+async function createCalendarEvent(summary, startTime, endTime, description = '', location = '', reminderMinutes = [], recurrence = '') {
   const { calendar } = getClients();
+
+  const requestBody = {
+    summary,
+    description,
+    location,
+    start: { dateTime: startTime, timeZone: 'Asia/Jakarta' },
+    end: { dateTime: endTime, timeZone: 'Asia/Jakarta' }
+  };
+
+  // Add reminders if provided
+  if (reminderMinutes && reminderMinutes.length > 0) {
+    requestBody.reminders = {
+      useDefault: false,
+      overrides: reminderMinutes.map(minutes => ({
+        method: 'popup',
+        minutes: minutes
+      }))
+    };
+  }
+
+  // Add recurrence if provided (RRULE string)
+  if (recurrence) {
+    requestBody.recurrence = [recurrence];
+  }
 
   const response = await calendar.events.insert({
     calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
-    requestBody: {
-      summary,
-      description,
-      start: { dateTime: startTime, timeZone: 'Asia/Jakarta' },
-      end: { dateTime: endTime, timeZone: 'Asia/Jakarta' }
-    }
+    requestBody
   });
   return response.data;
 }
@@ -485,6 +504,53 @@ async function getEventsByDateRange(timeMin, timeMax) {
     orderBy: 'startTime'
   });
   return response.data.items || [];
+}
+
+/**
+ * Check for calendar conflicts within a specific time range
+ * Returns array of conflicting events
+ */
+async function checkCalendarConflicts(startTime, endTime, excludeEventId = null) {
+  const { calendar } = getClients();
+  
+  // Expand search window by 1 hour on each side to catch nearby events
+  const searchStart = new Date(new Date(startTime).getTime() - 60 * 60 * 1000).toISOString();
+  const searchEnd = new Date(new Date(endTime).getTime() + 60 * 60 * 1000).toISOString();
+
+  const response = await calendar.events.list({
+    calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
+    timeMin: searchStart,
+    timeMax: searchEnd,
+    singleEvents: true,
+    orderBy: 'startTime'
+  });
+
+  const events = response.data.items || [];
+  const conflicts = [];
+
+  const newStart = new Date(startTime);
+  const newEnd = new Date(endTime);
+
+  for (const event of events) {
+    // Skip the event we're checking (for updates)
+    if (excludeEventId && event.id === excludeEventId) continue;
+
+    const eventStart = new Date(event.start?.dateTime || event.start?.date);
+    const eventEnd = new Date(event.end?.dateTime || event.end?.date);
+
+    // Check for overlap: (StartA < EndB) and (EndA > StartB)
+    if (newStart < eventEnd && newEnd > eventStart) {
+      conflicts.push({
+        id: event.id,
+        summary: event.summary || '(Tanpa judul)',
+        start: eventStart,
+        end: eventEnd,
+        location: event.location || ''
+      });
+    }
+  }
+
+  return conflicts;
 }
 
 /**
@@ -774,6 +840,7 @@ module.exports = {
   deleteCalendarEvent,
   getTodaysEvents,
   getEventsByDateRange,
+  checkCalendarConflicts,
   appendToIdeaDoc,
   readIdeaDoc,
   editIdeaDoc,

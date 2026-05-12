@@ -23,6 +23,9 @@ const googleWorkspace = require('../infrastructure/Google_Workspace');
 // Pending Calendar Context: holds an incomplete calendar CREATE until user provides missing info
 // Structure: { summary, start, askedAt }
 let pendingCalendarContext = null;
+// Pending Conflict Event: holds a conflicting calendar event waiting for user confirmation
+// Structure: { pendingEvent: { summary, start, end, description, location, reminder_minutes, recurrence }, askedAt }
+let pendingConflictEvent = null;
 // Pending Email Context: keeps last email search context for follow-up commands
 // Structure: { searchKeyword, lastLimit, cursorIndex, lastBatch, askedAt }
 let pendingEmailContext = null;
@@ -1180,6 +1183,39 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       }
     }
 
+    // ============================================================
+    // PENDING CONFLICT CONFIRMATION — intercept "ya"/"batal" reply
+    // ============================================================
+    if (pendingConflictEvent && (Date.now() - (pendingConflictEvent.askedAt || 0)) < 10 * 60 * 1000) {
+      const normalized = textInput.toLowerCase().trim();
+      const isYes = /^(ya|iya|lanjut|lanjutkan|ok|oke|tambahkan|tetap)/.test(normalized);
+      const isNo  = /^(batal|tidak|cancel|ga|gak|jangan)/.test(normalized);
+
+      if (isYes || isNo) {
+        if (isYes) {
+          // Force-create the event despite the conflict
+          try {
+            const ev = pendingConflictEvent;
+            const result = await googleWorkspace.createCalendarEvent(
+              ev.summary, ev.start, ev.end, ev.description || '',
+              ev.location || '', ev.reminder_minutes || [], ev.recurrence || ''
+            );
+            let successMsg = `✅ Jadwal '<b>${ev.summary}</b>' berhasil ditambahkan (meskipun ada bentrok).`;
+            if (ev.location) successMsg += `\n📍 Lokasi: ${ev.location}`;
+            if (ev.recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
+            await respondToTelegram(successMsg);
+          } catch (e) {
+            await respondToTelegram(`❌ Gagal menambahkan jadwal: ${e.message}`);
+          }
+        } else {
+          await respondToTelegram('🚫 Baik Tuan, penambahan jadwal dibatalkan karena ada bentrok.');
+        }
+        pendingConflictEvent = null;
+        clearTimeout(safetyTimer);
+        return;
+      }
+    }
+
     // Email follow-up override: keep intent in EMAIL context to avoid misrouting to CALENDAR/NORMAL_CHAT
     let routingData;
     if (pendingEmailContext && isEmailHistoryFollowUp(textInput)) {
@@ -1413,10 +1449,13 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           const calResult = await agendaManager.handleCalendarIntent(calData, textInput);
 
           if (calResult && calResult.status === 'PENDING_END') {
-            // Store context so the NEXT message can resolve it directly
             pendingCalendarContext = { summary: calData.summary, start: calData.start, askedAt: Date.now() };
+          } else if (calResult && calResult.status === 'CONFLICT_DETECTED') {
+            // Store the conflicting event for user confirmation
+            pendingConflictEvent = { ...calResult.pendingEvent, askedAt: Date.now() };
           } else if (calResult && calResult.status === 'SUCCESS') {
             pendingCalendarContext = null;
+            pendingConflictEvent = null;
           }
 
           if (calResult && calResult.message) {
@@ -1435,7 +1474,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
       case 'TASK':
         if (routingData.extracted_data) {
-          const chatId = String(ctx?.chatId || ctx?.from?.id || '');
+          const chatId = String(message.chat.id);
           const taskResult = await taskManager.handleTaskIntent(routingData.extracted_data, chatId);
           if (taskResult && taskResult.status === 'PENDING_CONFIRM') {
             // Set up 5-minute auto-confirm timer
@@ -1450,7 +1489,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
                 try {
                   const res = await executePendingTask(pendingId);
                   if (res && res.message) {
-                    await sendTelegramMessage(res.message + '\n\n<i>(Dikategorikan otomatis karena tidak ada konfirmasi dalam 5 menit)</i>');
+                    await sendTelegramOutbound(res.message + '\n\n<i>(Dikategorikan otomatis karena tidak ada konfirmasi dalam 5 menit)</i>');
                   }
                 } catch (e) { console.error('[TASK] Auto-confirm failed:', e.message); }
               }

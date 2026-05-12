@@ -128,7 +128,24 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         if (durationMins) {
           startDate.setMinutes(startDate.getMinutes() + durationMins);
           const computedEnd = startDate.toISOString();
-        const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '', location || '', reminder_minutes || [], recurrence || '');
+
+          // Check for conflicts before creating
+          const conflicts = await googleWorkspace.checkCalendarConflicts(start, computedEnd);
+          if (conflicts.length > 0) {
+            const conflictList = conflicts.map(c => {
+              const sTime = new Date(c.start).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+              const eTime = new Date(c.end).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+              return `   ⚠️ ${sTime}-${eTime}: ${c.summary}${c.location ? ` (${c.location})` : ''}`;
+            }).join('\n');
+            return {
+              status: 'CONFLICT_DETECTED',
+              message: `⚠️ <b>Konflik Jadwal Terdeteksi!</b>\n\nKegiatan '<b>${escapeHtml(summary)}</b>' bentrok dengan:\n${conflictList}\n\nApakah tetap ingin ditambahkan? (Balas: "ya" untuk lanjut, "batal" untuk membatalkan)`,
+              conflicts: conflicts,
+              pendingEvent: { summary, start, end: computedEnd, description, location, reminder_minutes, recurrence }
+            };
+          }
+
+          const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '', location || '', reminder_minutes || [], recurrence || '');
           let successMsg = `✅ Jadwal '<b>${escapeHtml(summary)}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).`;
           if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
           if (recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
@@ -143,13 +160,13 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
             if (pendingAgendas.has(pendingId)) {
               try {
                 const d = pendingAgendas.get(pendingId);
-                await googleWorkspace.createCalendarEvent(d.summary, d.start, d.end, d.description || '');
+                await googleWorkspace.createCalendarEvent(d.summary, d.start, d.end, d.description || '', d.location || '', d.reminder_minutes || [], d.recurrence || '');
                 sendTelegramOutbound(`⏳ Waktu konfirmasi habis! Jadwal '<b>${escapeHtml(d.summary)}</b>' otomatis ditambahkan ke kalender (durasi standar 1 jam).`);
               } catch (e) { console.error('[AGENDA] Auto-create failed:', e); }
               pendingAgendas.delete(pendingId);
             }
           }, 15 * 60 * 1000);
-          pendingAgendas.set(pendingId, { summary, start, end: autoEnd, description, timer });
+          pendingAgendas.set(pendingId, { summary, start, end: autoEnd, description, location, reminder_minutes, recurrence, timer });
         }
         return { status: 'PENDING_END', message: `❓ Kira-kira berapa lama durasi untuk '<b>${escapeHtml(summary)}</b>' ini, Tuan?
 
@@ -162,6 +179,22 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
           clearTimeout(data.timer);
           pendingAgendas.delete(id);
         }
+      }
+
+      // Check for conflicts before creating when end is provided
+      const conflicts = await googleWorkspace.checkCalendarConflicts(start, end);
+      if (conflicts.length > 0) {
+        const conflictList = conflicts.map(c => {
+          const sTime = new Date(c.start).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+          const eTime = new Date(c.end).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+          return `   ⚠️ ${sTime}-${eTime}: ${c.summary}${c.location ? ` (${c.location})` : ''}`;
+        }).join('\n');
+        return {
+          status: 'CONFLICT_DETECTED',
+          message: `⚠️ <b>Konflik Jadwal Terdeteksi!</b>\n\nKegiatan '<b>${escapeHtml(summary)}</b>' bentrok dengan:\n${conflictList}\n\nApakah tetap ingin ditambahkan? (Balas: "ya" untuk lanjut, "batal" untuk membatalkan)`,
+          conflicts: conflicts,
+          pendingEvent: { summary, start, end, description, location, reminder_minutes, recurrence }
+        };
       }
 
       const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '', location || '', reminder_minutes || [], recurrence || '');
@@ -310,14 +343,14 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
     }
     else if (action === 'READ_UPCOMING') {
       // ── 7-DAY FORWARD VIEW: Calendar + Tasks ──────────────
-      const jakartaOffsetMs = 7 * 60 * 60 * 1000;
-      const nowUtc = new Date();
-      const nowJakarta = new Date(nowUtc.getTime() + jakartaOffsetMs);
+      // Use locale-aware date calculation for Jakarta timezone
+      const nowJakarta = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
       const startOfToday = new Date(nowJakarta); startOfToday.setHours(0, 0, 0, 0);
       const endOf7Days = new Date(nowJakarta); endOf7Days.setDate(endOf7Days.getDate() + 7); endOf7Days.setHours(23, 59, 59, 999);
 
-      const timeMin = new Date(startOfToday.getTime() - jakartaOffsetMs).toISOString();
-      const timeMax = new Date(endOf7Days.getTime() - jakartaOffsetMs).toISOString();
+      // Convert back to UTC for Google Calendar API
+      const timeMin = new Date(startOfToday.toLocaleString('en-US', { timeZone: 'UTC' })).toISOString();
+      const timeMax = new Date(endOf7Days.toLocaleString('en-US', { timeZone: 'UTC' })).toISOString();
 
       let msg = `📆 <b>7 HARI KE DEPAN</b>\n`;
 

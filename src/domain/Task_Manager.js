@@ -133,9 +133,12 @@ async function handleTaskIntent(extractedData, chatId = null) {
       if (!resolvedList) resolvedList = suggestList(title);
 
       // If chatId is provided and we have a suggestion, set up 5-min confirmation
+      // If chatId is not provided, skip confirmation and create directly
       if (chatId && resolvedList && resolvedList !== 'Tugas Saya') {
         return { status: 'PENDING_CONFIRM', pendingListName: resolvedList, title, notes: taskNotes, due_date, chatId };
       }
+
+      // If no chatId or list is default, create directly without confirmation
 
       // Otherwise create directly in the specified or default list
       let listId = '@default';
@@ -286,6 +289,19 @@ async function handleTaskIntent(extractedData, chatId = null) {
     if (action === 'CLEAR_DONE') {
       await googleTasks.clearCompletedTasks();
       return { status: 'SUCCESS', message: '🧹 Semua tugas yang sudah selesai telah dibersihkan.' };
+    }
+
+    // ── MOVE ────────────────────────────────────────────────
+    if (action === 'MOVE') {
+      if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dipindahkan.' };
+      if (!list_name) return { status: 'FAILED', message: '❌ Sebutkan nama list tujuan.' };
+
+      const matches = await googleTasks.findTasksByKeyword(search_keyword);
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
+
+      const task = matches[0];
+      await googleTasks.moveTaskToList(task.id, list_name);
+      return { status: 'SUCCESS', message: `✅ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil dipindahkan ke list <b>${escapeHtml(list_name)}</b>.` };
     }
 
     // ── EDIT ────────────────────────────────────────────────
