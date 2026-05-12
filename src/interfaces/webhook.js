@@ -947,6 +947,16 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
       if (intent === 'FINANCE') {
         if (data.action === 'DELETE' || data.action === 'EDIT') {
+          if (!data.search_keyword) {
+            // AI Router sometimes puts the target keyword in nominal, destination, or description
+            if (data.nominal) data.search_keyword = String(data.nominal);
+            else if (data.destination) data.search_keyword = data.destination;
+            else if (data.description) data.search_keyword = data.description;
+            else {
+               // if still nothing, try to use the raw text if it looks like a short reply
+               if (lowerText.split(' ').length <= 6) data.search_keyword = originalText;
+            }
+          }
           if (!data.search_keyword || String(data.search_keyword).trim() === '') {
             return '❓ Transaksi mana yang ingin diubah/dihapus, Tuan? Sebutkan kata kunci unik, nominal, atau nomor transaksi.';
           }
