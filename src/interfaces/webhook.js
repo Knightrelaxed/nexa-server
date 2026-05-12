@@ -1395,7 +1395,15 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           }
 
           if (calResult && calResult.message) {
-            domainReply = calResult.message;
+            if (calData.action === 'READ') {
+               const { executeWithFallback } = require('../core/Fallback_Engine');
+               const { NEXA_PERSONALITY } = require('../config/personality');
+               const prompt = `Tuan Faqih bertanya tentang kalendernya: "${textInput}"\n\nData Kalender yang Ditemukan:\n${calResult.message}\n\nTugas: Jawablah pertanyaan Tuan Faqih dengan ringkas, natural, dan langsung ke intinya berdasarkan data kalender di atas. Jika data tidak menyebutkan secara spesifik apa yang ditanyakan (contoh: tidak ada di jadwal), sampaikan dengan jujur. Jangan menggunakan format JSON.`;
+               const answer = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.5, false);
+               domainReply = answer;
+            } else {
+               domainReply = calResult.message;
+            }
           }
         }
         break;

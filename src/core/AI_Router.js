@@ -83,7 +83,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → WAJIB: 'start' dan 'end' HARUS dalam format ISO 8601 LENGKAP dengan timezone offset +07:00.
      //     Contoh BENAR: "2026-05-07T19:00:00+07:00"
      //     Contoh SALAH: "19:00", "jam 7 malam", "2026-05-07T19:00", null
-     //   → Tanggal default adalah HARI INI jika tidak disebutkan.
+     //   → Tanggal default adalah HARI INI jika tidak disebutkan. Untuk action READ, jika user menyebut rentang waktu ("minggu depan", "besok"), isi 'start' dan 'end' sesuai rentang tersebut. Jika bertanya spesifik tentang satu event ("matkul X jam berapa"), isi 'summary' dengan kata kuncinya.
      //   → JANGAN PERNAH menebak waktu 'end'. Jika durasi/waktu selesai tidak disebutkan, KOSONGKAN 'end' (null atau hilangkan fieldnya).
      // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, search_keyword: string }
      //   → Gunakan untuk menyimpan ide, draft, ringkasan, atau catatan kerja yang akan disinkronkan dengan Google Docs.

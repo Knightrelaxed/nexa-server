@@ -450,6 +450,21 @@ async function getTodaysEvents() {
 }
 
 /**
+ * Get events within a specific date range
+ */
+async function getEventsByDateRange(timeMin, timeMax) {
+  const { calendar } = getClients();
+  const response = await calendar.events.list({
+    calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
+    timeMin,
+    timeMax,
+    singleEvents: true,
+    orderBy: 'startTime'
+  });
+  return response.data.items || [];
+}
+
+/**
  * Append an idea/fact to the single Master 2nd Brain Google Doc.
  * Instead of creating a new Doc per idea (blocked by Drive storage quota),
  * we append a timestamped entry to one pre-existing document.
@@ -735,6 +750,7 @@ module.exports = {
   findEventByTitle,
   deleteCalendarEvent,
   getTodaysEvents,
+  getEventsByDateRange,
   appendToIdeaDoc,
   readIdeaDoc,
   editIdeaDoc,

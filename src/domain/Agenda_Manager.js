@@ -197,19 +197,51 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       return { status: 'SUCCESS', message: `Jadwal '${escapeHtml(summary || targetEventId)}' berhasil dihapus dari kalender.` };
     }
     else if (action === 'READ') {
-      // Return today's events as a readable summary for the AI to relay
-      const events = await googleWorkspace.getTodaysEvents();
-      if (!events || events.length === 0) {
-        return { status: 'SUCCESS', message: 'Kalender hari ini kosong, Tuan.' };
+      let events;
+      let contextLabel = 'Agenda hari ini:';
+      if (start && end) {
+        events = await googleWorkspace.getEventsByDateRange(start, end);
+        contextLabel = `Agenda dari ${new Date(start).toLocaleDateString('id-ID')} sampai ${new Date(end).toLocaleDateString('id-ID')}:`;
+      } else if (start) {
+        // If only start is provided, assume that specific day
+        const startDate = new Date(start);
+        const endDate = new Date(startDate);
+        endDate.setHours(23, 59, 59, 999);
+        events = await googleWorkspace.getEventsByDateRange(start, endDate.toISOString());
+        contextLabel = `Agenda untuk tanggal ${startDate.toLocaleDateString('id-ID')}:`;
+      } else {
+        events = await googleWorkspace.getTodaysEvents();
       }
+
+      // If a summary search keyword was provided, filter the events
+      if (summary) {
+        const keyword = summary.toLowerCase();
+        events = events.filter(e => (e.summary || '').toLowerCase().includes(keyword));
+        contextLabel = `Hasil pencarian jadwal untuk '${summary}':`;
+      }
+
+      if (!events || events.length === 0) {
+        return { status: 'SUCCESS', message: `${contextLabel}\n(Kosong / Tidak ada jadwal yang ditemukan)` };
+      }
+      
       const eventList = events.map((e, i) => {
         const startRaw = e.start?.dateTime || e.start?.date;
-        const timeLabel = e.start?.dateTime
-          ? new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
-          : 'Sepanjang hari';
+        const endRaw = e.end?.dateTime || e.end?.date;
+        
+        let timeLabel = '';
+        if (e.start?.dateTime && e.end?.dateTime) {
+           const sTime = new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+           const eTime = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+           const sDate = new Date(startRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+           timeLabel = `${sDate} ${sTime} - ${eTime}`;
+        } else {
+           const sDate = new Date(startRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+           timeLabel = `${sDate} (Sepanjang hari)`;
+        }
         return `${i + 1}. ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
       }).join('\n');
-      return { status: 'SUCCESS', message: `Agenda hari ini:\n${eventList}` };
+      
+      return { status: 'SUCCESS', message: `${contextLabel}\n${eventList}` };
     }
     else {
       return { status: 'FAILED', message: `Aksi kalender tidak dikenali: ${action}` };
