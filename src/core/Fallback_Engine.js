@@ -30,91 +30,44 @@ const groqKeys = [
  * Tier 11  : OpenRouter Gemma 2 27B       (The Last Resort)
  */
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Groq Llama 3.3 70B (Key 1)
-  if (groqKeys[0]) {
-    try {
-      return await callGroq(groqKeys[0], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 1 (Groq Key 1) failed:', e.message); }
-  }
+  // Build tier list dynamically based on available keys
+  const tiers = [
+    // Tier 1-4: Groq Llama 3.3 70B
+    ...groqKeys.map((key, i) => key ? {
+      name: `Tier ${i + 1} (Groq Key ${i + 1})`,
+      fn: () => callGroq(key, prompt, systemInstruction, temperature, jsonMode)
+    } : null).filter(Boolean),
 
-  // Tier 2: Groq Llama 3.3 70B (Key 2)
-  if (groqKeys[1]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 2 (Groq Key 2)...');
-      return await callGroq(groqKeys[1], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 2 (Groq Key 2) failed:', e.message); }
-  }
+    // Tier 5-6: Gemini 2.5 Flash
+    ...(geminiClients[0] ? [{ name: `Tier 5 (Gemini 2.5 Flash Key 1)`, fn: () => callGeminiWithRetry(geminiClients[0], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode) }] : []),
+    ...(geminiClients[1] ? [{ name: `Tier 6 (Gemini 2.5 Flash Key 2)`, fn: () => callGeminiWithRetry(geminiClients[1], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode) }] : []),
 
-  // Tier 3: Groq Llama 3.3 70B (Key 3)
-  if (groqKeys[2]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 3 (Groq Key 3)...');
-      return await callGroq(groqKeys[2], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 3 (Groq Key 3) failed:', e.message); }
-  }
+    // Tier 7: Cerebras Llama 3.3 70B
+    ...(env.CEREBRAS_API_KEY ? [{ name: `Tier 7 (Cerebras Llama 3.3 70B)`, fn: () => callCerebras(prompt, systemInstruction, temperature, jsonMode) }] : []),
 
-  // Tier 4: Groq Llama 3.3 70B (Key 4)
-  if (groqKeys[3]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 4 (Groq Key 4)...');
-      return await callGroq(groqKeys[3], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 4 (Groq Key 4) failed:', e.message); }
-  }
+    // Tier 8-9: Gemini 2.0 Flash
+    ...(geminiClients[2] ? [{ name: `Tier 8 (Gemini 2.0 Flash Key 3)`, fn: () => callGeminiWithRetry(geminiClients[2], 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode) }] : []),
+    ...(geminiClients[3] ? [{ name: `Tier 9 (Gemini 2.0 Flash Key 4)`, fn: () => callGeminiWithRetry(geminiClients[3], 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode) }] : []),
 
-  // Tier 5: Gemini 2.5 Flash (Key 1)
-  if (geminiClients[0]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 5 (Gemini 2.5 Flash Key 1)...');
-      return await callGeminiWithRetry(geminiClients[0], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 5 (Gemini 2.5 Key 1) failed:', e.message); }
-  }
+    // Tier 10: Mistral Pixtral 12B
+    ...(env.MISTRAL_API_KEY ? [{ name: `Tier 10 (Mistral Pixtral 12B)`, fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode) }] : []),
 
-  // Tier 6: Gemini 2.5 Flash (Key 2)
-  if (geminiClients[1]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 6 (Gemini 2.5 Flash Key 2)...');
-      return await callGeminiWithRetry(geminiClients[1], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 6 (Gemini 2.5 Key 2) failed:', e.message); }
-  }
+    // Tier 11: OpenRouter Gemma 2
+    ...(env.OPENROUTER_API_KEY ? [{ name: `Tier 11 (OpenRouter)`, fn: () => callOpenRouter(prompt, systemInstruction, temperature, jsonMode) }] : [])
+  ];
 
-  // Tier 7: Cerebras Llama 3.3 70B
-  if (env.CEREBRAS_API_KEY) {
+  // Execute fallback chain
+  for (const tier of tiers) {
     try {
-      console.log('[FALLBACK] Switching to Tier 7 (Cerebras Llama 3.3 70B)...');
-      return await callCerebras(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 7 (Cerebras) failed:', e.message); }
-  }
-
-  // Tier 8: Gemini 2.0 Flash (Key 3)
-  if (geminiClients[2]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 8 (Gemini 2.0 Flash Key 3)...');
-      return await callGeminiWithRetry(geminiClients[2], 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 8 (Gemini 2.0 Key 3) failed:', e.message); }
-  }
-
-  // Tier 9: Gemini 2.0 Flash (Key 4)
-  if (geminiClients[3]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 9 (Gemini 2.0 Flash Key 4)...');
-      return await callGeminiWithRetry(geminiClients[3], 'gemini-2.0-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 9 (Gemini 2.0 Key 4) failed:', e.message); }
-  }
-
-  // Tier 10: Mistral API (Pixtral 12B)
-  if (env.MISTRAL_API_KEY) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 10 (Mistral Pixtral 12B)...');
-      return await callMistral(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 10 (Mistral) failed:', e.message); }
-  }
-
-  // Tier 11: OpenRouter (Gemma 2 27B)
-  if (env.OPENROUTER_API_KEY) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 11 (OpenRouter)...');
-      return await callOpenRouter(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 11 (OpenRouter) failed:', e.message); }
+      console.log(`[FALLBACK] Trying ${tier.name}...`);
+      const result = await tier.fn();
+      
+      console.log(`[FALLBACK] ✅ ${tier.name} SUCCESS.`);
+      console.log(`[FALLBACK] 📄 Response Preview: ${result.substring(0, 500).replace(/\\n/g, ' ')}...`);
+      return result;
+    } catch (e) {
+      console.warn(`[FALLBACK] ❌ ${tier.name} failed:`, e.message);
+    }
   }
 
   // Fallback Final
