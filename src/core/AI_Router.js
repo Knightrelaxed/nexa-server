@@ -79,12 +79,25 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Gunakan action "DELETE" jika pengguna meminta menghapus transaksi (sertakan search_keyword).
      //   → Gunakan action "UNDO_DELETE" jika pengguna meminta membatalkan/mengembalikan transaksi yang baru dihapus ("batalkan hapus", "undo", "kembalikan yang dihapus").
      //   → Gunakan action "IMPORT_FROM_EMAIL" jika user meminta mengambil/memasukkan transaksi dari email Livin ke catatan keuangan.
-     // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string (ISO 8601 offset +07:00), end: string (ISO 8601 offset +07:00) }
-     //   → WAJIB: 'start' dan 'end' HARUS dalam format ISO 8601 LENGKAP dengan timezone offset +07:00.
-     //     Contoh BENAR: "2026-05-07T19:00:00+07:00"
-     //     Contoh SALAH: "19:00", "jam 7 malam", "2026-05-07T19:00", null
-     //   → Tanggal default adalah HARI INI jika tidak disebutkan. Untuk action READ, jika user menyebut rentang waktu ("minggu depan", "besok"), isi 'start' dan 'end' sesuai rentang tersebut. Jika bertanya spesifik tentang satu event ("matkul X jam berapa"), isi 'summary' dengan kata kuncinya.
-     //   → JANGAN PERNAH menebak waktu 'end'. Jika durasi/waktu selesai tidak disebutkan, KOSONGKAN 'end' (null atau hilangkan fieldnya).
+     // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ", summary: string, start: string (ISO 8601 +07:00), end: string (ISO 8601 +07:00), description: string, eventId: string }
+     //   → FORMAT WAJIB: 'start' dan 'end' HARUS ISO 8601 LENGKAP dengan offset +07:00.
+     //     Contoh BENAR: "2026-05-07T19:00:00+07:00" | Contoh SALAH: "19:00", "jam 7 malam", null
+     //
+     //   → CREATE: Buat jadwal baru. Wajib: summary + start. Kosongkan 'end' jika durasi tidak disebutkan.
+     //     Tanggal default = HARI INI. Jika user menyebut "besok", "Senin", "tanggal 20" → hitung dari tanggal saat ini.
+     //
+     //   → READ: Baca jadwal kalender. Isi sesuai konteks:
+     //     - "jadwal hari ini" → tidak perlu isi start/end (default ke hari ini)
+     //     - "jadwal besok" / "jadwal Jumat" → isi start = awal hari itu, end = akhir hari itu (23:59:59)
+     //     - "jadwal minggu ini" / "minggu depan" → isi start = Senin, end = Minggu rentang tersebut
+     //     - "jadwal bulan ini" / "bulan Juni" → isi start = tgl 1 bulan itu, end = tgl terakhir bulan itu
+     //     - "jam berapa matkul X?" / "matkul X sampai jam berapa?" → isi summary = "X" (kata kunci nama acara), TIDAK perlu start/end
+     //     - "cari jadwal X" → isi summary = kata kunci nama acara
+     //
+     //   → UPDATE: Ubah jadwal yang sudah ada. Isi summary = nama acara untuk dicari, plus field yang diubah (start/end/description).
+     //     Jika hanya ganti jam mulai → isi start baru saja. Jika hanya ganti nama → isi summary baru saja.
+     //
+     //   → DELETE: Hapus jadwal. Wajib: summary = nama acara yang akan dihapus (untuk pencarian).
      // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, search_keyword: string }
      //   → Gunakan untuk menyimpan ide, draft, ringkasan, atau catatan kerja yang akan disinkronkan dengan Google Docs.
      // USER_PROFILE: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
