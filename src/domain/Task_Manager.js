@@ -9,15 +9,37 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+// ── PENDING TASK CATEGORY CONFIRMATIONS ─────────────────────────────────────
+// When N.E.X.A suggests a category auto-classification, it goes here.
+// Auto-confirmed after 5 minutes if no response from Tuan.
+const pendingTaskCategories = new Map();
+
 /**
- * Format a task for display in Telegram (HTML)
+ * Format a task for Telegram display, with overdue highlighting.
  */
 function formatTask(task, index) {
-  const isDone = task.status === 'completed';
-  const icon = isDone ? '✅' : '🔲';
-  let line = `${icon} <b>${index + 1}. ${escapeHtml(task.title || '(Tanpa judul)')}</b>`;
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+
+  let icon = '🔲';
+  let overdueTag = '';
+
   if (task.due) {
-    const due = new Date(task.due);
+    const dueStr = task.due.split('T')[0];
+    if (dueStr < todayStr) {
+      // Overdue
+      const daysLate = Math.floor((now - new Date(dueStr + 'T00:00:00+07:00')) / (1000 * 60 * 60 * 24));
+      icon = '🔴';
+      overdueTag = ` ⚠️ <b>TERLAMBAT ${daysLate} HARI!</b>`;
+    } else if (dueStr === todayStr) {
+      icon = '🟡';
+      overdueTag = ' (Hari ini!)';
+    }
+  }
+
+  let line = `${icon} <b>${index + 1}. ${escapeHtml(task.title || '(Tanpa judul)')}</b>${overdueTag}`;
+  if (task.due) {
+    const due = new Date(task.due.split('T')[0] + 'T00:00:00+07:00');
     line += `\n   📅 Deadline: ${due.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
   }
   if (task.notes) line += `\n   📝 ${escapeHtml(task.notes)}`;
@@ -51,7 +73,7 @@ async function handleTaskIntent(extractedData) {
       }
 
       const task = await googleTasks.createTask({ title, notes: taskNotes, dueDate: due_date || null });
-      let msg = `✅ Tugas '<b>${task.title}</b>' berhasil ditambahkan ke Google Tasks.`;
+      let msg = `✅ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil ditambahkan ke Google Tasks.`;
       if (due_date) {
         const dueDate = new Date(due_date.split('T')[0] + 'T00:00:00+07:00');
         msg += `\n📅 Deadline: ${dueDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
@@ -60,12 +82,38 @@ async function handleTaskIntent(extractedData) {
       return { status: 'SUCCESS', message: msg };
     }
 
-    // ── READ (active tasks) ─────────────────────────────────
+    // ── READ (active tasks + overdue detection) ────────────
     if (action === 'READ') {
       const tasks = await googleTasks.getActiveTasks();
       if (tasks.length === 0) return { status: 'SUCCESS', message: '✅ Tidak ada tugas yang tertunda, Tuan. Kalender bersih!' };
-      const list = tasks.map((t, i) => formatTask(t, i)).join('\n\n');
-      return { status: 'SUCCESS', message: `📋 <b>Tugas Aktif (${tasks.length}):</b>\n\n${list}` };
+
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+
+      // Split into groups for cleaner display
+      const overdue = tasks.filter(t => t.due && t.due.split('T')[0] < todayStr);
+      const dueToday = tasks.filter(t => t.due && t.due.split('T')[0] === todayStr);
+      const upcoming = tasks.filter(t => !t.due || t.due.split('T')[0] > todayStr);
+
+      let msg = `📋 <b>Tugas Aktif (${tasks.length}):</b>`;
+
+      if (overdue.length > 0) {
+        msg += `\n\n🔴 <b>TERLAMBAT (${overdue.length}):</b>\n`;
+        msg += overdue.map((t, i) => formatTask(t, i)).join('\n\n');
+      }
+      if (dueToday.length > 0) {
+        msg += `\n\n🟡 <b>HARI INI (${dueToday.length}):</b>\n`;
+        msg += dueToday.map((t, i) => formatTask(t, i)).join('\n\n');
+      }
+      if (upcoming.length > 0) {
+        msg += `\n\n🔲 <b>MENDATANG (${upcoming.length}):</b>\n`;
+        msg += upcoming.map((t, i) => formatTask(t, i)).join('\n\n');
+      }
+
+      if (overdue.length > 0) {
+        msg += `\n\n⚠️ <i>Tuan memiliki ${overdue.length} tugas yang melewati deadline!</i>`;
+      }
+
+      return { status: 'SUCCESS', message: msg };
     }
 
     // ── READ_DONE (completed tasks) ─────────────────────────
@@ -76,6 +124,47 @@ async function handleTaskIntent(extractedData) {
       return { status: 'SUCCESS', message: `✅ <b>Tugas Selesai (${tasks.length}):</b>\n\n${list}` };
     }
 
+    // ── READ_OVERDUE ─────────────────────────────────────────
+    if (action === 'READ_OVERDUE') {
+      const tasks = await googleTasks.getOverdueTasks();
+      if (tasks.length === 0) return { status: 'SUCCESS', message: '🎉 Tidak ada tugas yang terlambat, Tuan. Semua on-track!' };
+      const list = tasks.map((t, i) => formatTask(t, i)).join('\n\n');
+      return { status: 'SUCCESS', message: `🔴 <b>Tugas Terlambat (${tasks.length}):</b>\n\n${list}\n\n⚠️ <i>Segera selesaikan tugas-tugas di atas, Tuan!</i>` };
+    }
+
+    // ── READ_TODAY (tasks due today only) ───────────────────
+    if (action === 'READ_TODAY') {
+      const tasks = await googleTasks.getTasksDueToday();
+      if (tasks.length === 0) return { status: 'SUCCESS', message: '✅ Tidak ada tugas yang jatuh tempo hari ini, Tuan.' };
+      const list = tasks.map((t, i) => formatTask(t, i)).join('\n\n');
+      return { status: 'SUCCESS', message: `🟡 <b>Tugas Hari Ini (${tasks.length}):</b>\n\n${list}` };
+    }
+
+    // ── READ_UPCOMING (tasks in next 7 days) ────────────────
+    if (action === 'READ_UPCOMING') {
+      const tasks = await googleTasks.getUpcomingTasks(7);
+      if (tasks.length === 0) return { status: 'SUCCESS', message: '✅ Tidak ada tugas dalam 7 hari ke depan.' };
+
+      // Group by date
+      const byDate = {};
+      for (const t of tasks) {
+        const d = (t.due || '').split('T')[0];
+        if (!byDate[d]) byDate[d] = [];
+        byDate[d].push(t);
+      }
+
+      let msg = `📅 <b>Tugas 7 Hari ke Depan (${tasks.length}):</b>`;
+      for (const [date, group] of Object.entries(byDate).sort()) {
+        const label = new Date(date + 'T00:00:00+07:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short' });
+        msg += `\n\n📌 <b>${label}:</b>`;
+        for (const t of group) {
+          msg += `\n   🔲 ${escapeHtml(t.title)}`;
+          if (t.notes) msg += `\n      📝 ${escapeHtml(t.notes.split('\n')[0])}`;
+        }
+      }
+      return { status: 'SUCCESS', message: msg };
+    }
+
     // ── COMPLETE ────────────────────────────────────────────
     if (action === 'COMPLETE') {
       if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin ditandai selesai.' };
@@ -84,7 +173,7 @@ async function handleTaskIntent(extractedData) {
 
       for (const t of matches) await googleTasks.completeTask(t.id);
       const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
-      return { status: 'SUCCESS', message: `✅ Tugas ${names} berhasil ditandai sebagai <b>Selesai</b>!` };
+      return { status: 'SUCCESS', message: `✅ Tugas ${names} berhasil ditandai sebagai <b>Selesai</b>! 🎉` };
     }
 
     // ── DELETE ──────────────────────────────────────────────
@@ -124,4 +213,4 @@ async function handleTaskIntent(extractedData) {
   }
 }
 
-module.exports = { handleTaskIntent };
+module.exports = { handleTaskIntent, pendingTaskCategories };

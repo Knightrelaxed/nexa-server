@@ -153,11 +153,48 @@ async function clearCompletedTasks(listId = DEFAULT_LIST) {
   return true;
 }
 
+/**
+ * Get tasks due specifically today (Jakarta timezone)
+ */
+async function getTasksDueToday(listId = DEFAULT_LIST) {
+  const tasks = await getActiveTasks(listId);
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
+  return tasks.filter(t => t.due && t.due.startsWith(todayStr));
+}
+
+/**
+ * Get tasks past their due date (overdue, still active)
+ */
+async function getOverdueTasks(listId = DEFAULT_LIST) {
+  const tasks = await getActiveTasks(listId);
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  return tasks.filter(t => t.due && t.due.split('T')[0] < todayStr);
+}
+
+/**
+ * Get active tasks due within the next N days
+ */
+async function getUpcomingTasks(daysAhead = 7, listId = DEFAULT_LIST) {
+  const tasks = await getActiveTasks(listId);
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  const futureDate = new Date();
+  futureDate.setDate(futureDate.getDate() + daysAhead);
+  const futureStr = futureDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  return tasks.filter(t => {
+    if (!t.due) return false;
+    const d = t.due.split('T')[0];
+    return d >= todayStr && d <= futureStr;
+  });
+}
+
 module.exports = {
   getTaskLists,
   createTask,
   getActiveTasks,
   getCompletedTasks,
+  getTasksDueToday,
+  getOverdueTasks,
+  getUpcomingTasks,
   completeTask,
   deleteTask,
   editTask,

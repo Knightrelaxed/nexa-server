@@ -1,4 +1,5 @@
 const googleWorkspace = require('../infrastructure/Google_Workspace');
+const googleTasks = require('../infrastructure/Google_Tasks');
 const env = require('../config/env');
 const { exec } = require('child_process');
 const util = require('util');
@@ -242,6 +243,112 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       }).join('\n');
       
       return { status: 'SUCCESS', message: `${contextLabel}\n${eventList}` };
+    }
+    else if (action === 'READ_TODAY') {
+      // ── UNIFIED DAILY DASHBOARD: Calendar + Tasks ─────────
+      const todayLabel = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+      let msg = `🗓️ <b>DASHBOARD HARI INI</b>\n<i>${todayLabel}</i>\n`;
+
+      // 1. Calendar events today
+      try {
+        const events = await googleWorkspace.getTodaysEvents();
+        if (events && events.length > 0) {
+          msg += `\n📅 <b>JADWAL (${events.length}):</b>\n`;
+          msg += events.map(e => {
+            const startRaw = e.start?.dateTime || e.start?.date;
+            const endRaw = e.end?.dateTime || e.end?.date;
+            let timeLabel = 'Sepanjang hari';
+            if (e.start?.dateTime && e.end?.dateTime) {
+              const s = new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+              const en = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+              timeLabel = `${s} - ${en}`;
+            }
+            return `   ▸ ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
+          }).join('\n');
+        } else {
+          msg += `\n📅 <b>JADWAL:</b> Tidak ada jadwal hari ini.\n`;
+        }
+      } catch (e) {
+        msg += `\n📅 <b>JADWAL:</b> Gagal memuat (${e.message})\n`;
+      }
+
+      // 2. Overdue tasks alert
+      try {
+        const overdue = await googleTasks.getOverdueTasks();
+        if (overdue.length > 0) {
+          msg += `\n🔴 <b>TUGAS TERLAMBAT (${overdue.length}):</b>\n`;
+          msg += overdue.map(t => {
+            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+            const dueStr = t.due.split('T')[0];
+            const days = Math.floor((new Date() - new Date(dueStr + 'T00:00:00+07:00')) / (1000 * 60 * 60 * 24));
+            return `   🔴 ${t.title} <i>(terlambat ${days} hari)</i>`;
+          }).join('\n');
+        }
+      } catch (e) { /* ignore */ }
+
+      // 3. Tasks due today
+      try {
+        const todayTasks = await googleTasks.getTasksDueToday();
+        if (todayTasks.length > 0) {
+          msg += `\n\n🟡 <b>TUGAS HARI INI (${todayTasks.length}):</b>\n`;
+          msg += todayTasks.map(t => `   🔲 ${t.title}${t.notes ? `\n      📝 ${t.notes.split('\n')[0]}` : ''}`).join('\n');
+        } else {
+          msg += `\n\n📋 <b>TUGAS HARI INI:</b> Tidak ada tugas jatuh tempo hari ini.`;
+        }
+      } catch (e) { /* ignore */ }
+
+      return { status: 'SUCCESS', message: msg };
+    }
+    else if (action === 'READ_UPCOMING') {
+      // ── 7-DAY FORWARD VIEW: Calendar + Tasks ──────────────
+      const jakartaOffsetMs = 7 * 60 * 60 * 1000;
+      const nowUtc = new Date();
+      const nowJakarta = new Date(nowUtc.getTime() + jakartaOffsetMs);
+      const startOfToday = new Date(nowJakarta); startOfToday.setHours(0, 0, 0, 0);
+      const endOf7Days = new Date(nowJakarta); endOf7Days.setDate(endOf7Days.getDate() + 7); endOf7Days.setHours(23, 59, 59, 999);
+
+      const timeMin = new Date(startOfToday.getTime() - jakartaOffsetMs).toISOString();
+      const timeMax = new Date(endOf7Days.getTime() - jakartaOffsetMs).toISOString();
+
+      let msg = `📆 <b>7 HARI KE DEPAN</b>\n`;
+
+      // Calendar events
+      try {
+        const events = await googleWorkspace.getEventsByDateRange(timeMin, timeMax);
+        if (events && events.length > 0) {
+          msg += `\n📅 <b>JADWAL (${events.length} acara):</b>\n`;
+          msg += events.map(e => {
+            const startRaw = e.start?.dateTime || e.start?.date;
+            const dayLabel = new Date(startRaw).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' });
+            const timeStr = e.start?.dateTime ? new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '';
+            return `   ▸ ${dayLabel}${timeStr ? ' ' + timeStr : ''} — ${e.summary || '(Tanpa judul)'}`;
+          }).join('\n');
+        } else {
+          msg += `\n📅 Tidak ada jadwal dalam 7 hari ke depan.\n`;
+        }
+      } catch (e) { msg += `\n📅 Gagal memuat jadwal (${e.message})\n`; }
+
+      // Upcoming tasks
+      try {
+        const upTasks = await googleTasks.getUpcomingTasks(7);
+        if (upTasks.length > 0) {
+          msg += `\n\n📋 <b>TUGAS MENDATANG (${upTasks.length}):</b>\n`;
+          const byDate = {};
+          for (const t of upTasks) {
+            const d = (t.due || '').split('T')[0];
+            if (!byDate[d]) byDate[d] = [];
+            byDate[d].push(t);
+          }
+          for (const [date, group] of Object.entries(byDate).sort()) {
+            const label = new Date(date + 'T00:00:00+07:00').toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+            msg += `   📌 <b>${label}:</b> ${group.map(t => t.title).join(', ')}\n`;
+          }
+        } else {
+          msg += `\n\n📋 Tidak ada tugas dalam 7 hari ke depan.`;
+        }
+      } catch (e) { /* ignore */ }
+
+      return { status: 'SUCCESS', message: msg };
     }
     else {
       return { status: 'FAILED', message: `Aksi kalender tidak dikenali: ${action}` };

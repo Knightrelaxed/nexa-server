@@ -98,6 +98,8 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //     Jika hanya ganti jam mulai → isi start baru saja. Jika hanya ganti nama → isi summary baru saja.
      //
      //   → DELETE: Hapus jadwal. Wajib: summary = nama acara yang akan dihapus (untuk pencarian).
+     //   → READ_TODAY: Gunakan KHUSUS untuk "hari ini apa saja?", "agenda hari ini", "jadwal dan tugas hari ini" — menampilkan GABUNGAN kalender + tugas dalam satu dashboard. PRIORITASKAN intent CALENDAR + READ_TODAY untuk pertanyaan holistik tentang hari ini.
+     //   → READ_UPCOMING: Gunakan untuk "minggu ini apa aja?", "7 hari ke depan", "jadwal dan tugas minggu ini" — menampilkan GABUNGAN kalender + tugas 7 hari ke depan.
      // 2ND_BRAIN: { action: "APPEND"|"READ"|"EDIT"|"DELETE", title: string, content: string, search_keyword: string }
      //   → Gunakan untuk menyimpan ide, draft, ringkasan, atau catatan kerja yang akan disinkronkan dengan Google Docs.
      // USER_PROFILE: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
@@ -105,9 +107,12 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Untuk penemuan fakta secara OTOMATIS/PASIF dari obrolan, JANGAN gunakan intent ini. Gunakan array "learned_user_facts" di *root* JSON agar Anda tetap bisa mengeksekusi intent utama (misalnya FINANCE).
      // CORE_IDENTITY: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
      //   → Sama seperti atas, gunakan HANYA jika disuruh eksplisit. Untuk pembelajaran pasif, gunakan array "learned_core_identities" di *root* JSON.
-     // TASK: { action: "CREATE"|"READ"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"CLEAR_DONE", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string }
+     // TASK: { action: "CREATE"|"READ"|"READ_TODAY"|"READ_UPCOMING"|"READ_OVERDUE"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"CLEAR_DONE", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string }
      //   → CREATE: "Catat tugas: selesaikan essay sebelum Jumat", "tambahkan ke daftar belanja: beras"
-     //   → READ: "tampilkan tugasku", "apa saja task yang belum selesai?"
+     //   → READ: "tampilkan tugasku", "apa saja task yang belum selesai?" (menampilkan SEMUA task aktif, dikelompokkan: terlambat/hari ini/mendatang)
+     //   → READ_TODAY: "tugas hari ini", "apa yang harus saya kerjakan hari ini?" (hanya task jatuh tempo hari ini)
+     //   → READ_UPCOMING: "tugas minggu ini", "apa saja deadline minggu depan?" (task 7 hari ke depan, dikelompokkan per tanggal)
+     //   → READ_OVERDUE: "tugas apa yang terlambat?", "overdue task" (task melewati deadline)
      //   → READ_DONE: "tugas apa yang sudah selesai?"
      //   → COMPLETE: "tandai tugas essay sebagai selesai" (gunakan search_keyword)
      //   → DELETE: "hapus tugas essay Arab" (gunakan search_keyword)
