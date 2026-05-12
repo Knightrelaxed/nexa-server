@@ -1304,7 +1304,25 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             routingData.extracted_data.category || null,
             routingData.extracted_data.nominal || null
           );
-          domainReply = updatedMsg || 'Tidak ada transaksi yang tertunda.';
+          if (updatedMsg) {
+            domainReply = updatedMsg;
+          } else {
+            // Fallback: the transaction is no longer pending (already saved). Edit the latest row.
+            const googleWorkspace = require('../infrastructure/Google_Workspace');
+            const recent = await googleWorkspace.getFinanceSummary(1);
+            if (recent && recent.length > 0) {
+               const lastCat = recent[0][6]; // cat/desc
+               const result = await financeEngine.editTransaction(
+                 lastCat, 
+                 routingData.extracted_data.nominal,
+                 routingData.extracted_data.description, 
+                 routingData.extracted_data.category
+               );
+               domainReply = `⏳ Transaksi sudah tidak tertunda (telah dimasukkan ke sheet). N.E.X.A otomatis melakukan *fallback* ke mode Edit:\n${result.message}`;
+            } else {
+               domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
+            }
+          }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CANCEL_TRANSACTION') {
           const confirmationReply = await financeEngine.confirmPendingTransactions(false);
           domainReply = confirmationReply || 'Tidak ada transaksi yang tertunda.';
