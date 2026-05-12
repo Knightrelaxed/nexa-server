@@ -388,15 +388,15 @@ async function updateCalendarEvent(eventId, summary, startTime, endTime, descrip
 /**
  * Find events by summary text (for UPDATE flow when no eventId is known)
  */
-async function findEventByTitle(summaryKeyword) {
+async function findEventByTitle(summaryKeyword, daysAhead = 60) {
   const { calendar } = getClients();
 
   const now = new Date();
-  const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const future = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
   const response = await calendar.events.list({
     calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
     timeMin: now.toISOString(),
-    timeMax: nextWeek.toISOString(),
+    timeMax: future.toISOString(),
     q: summaryKeyword,
     singleEvents: true,
     orderBy: 'startTime'
