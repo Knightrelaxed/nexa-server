@@ -315,9 +315,11 @@ async function processTelegramImage(fileId, caption = '', systemPromptOverride =
       console.log(`[VISION] ${tier.name} SUCCESS. Output length:`, result.length);
       return result;
     } catch (e) {
-      const status = e.response?.status || 'net';
-      const errMsg = e.response?.data?.error?.message || e.message;
-      console.warn(`[VISION] ${tier.name} FAILED (${status}): ${errMsg.substring(0, 150)}`);
+      const status = e.status || e.response?.status || 'NET';
+      const apiData = e.response?.data ? JSON.stringify(e.response.data) : '';
+      const errMsg = e.response?.data?.error?.message || e.message || 'Unknown error';
+      console.warn(`[VISION] ${tier.name} FAILED (${status}): ${errMsg} ${apiData ? '| ' + apiData : ''}`.substring(0, 500));
+
       // 500ms cooling before trying next tier
       await new Promise(r => setTimeout(r, 500));
     }
