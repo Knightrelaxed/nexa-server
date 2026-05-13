@@ -56,18 +56,51 @@ async function createTask({ title, notes = '', dueDate = null, listId = DEFAULT_
 }
 
 /**
- * Get all active (incomplete) tasks
+ * Get all task lists
  */
-async function getActiveTasks(listId = DEFAULT_LIST) {
+async function getAllLists() {
   const client = getTasksClient();
   if (!client) return [];
-  const res = await client.tasks.list({
-    tasklist: listId,
-    showCompleted: false,
-    showHidden: false,
-    maxResults: 50
-  });
+  const res = await client.tasklists.list({ maxResults: 50 });
   return res.data.items || [];
+}
+
+/**
+ * Get all active (incomplete) tasks
+ */
+async function getActiveTasks(listId = null) {
+  const client = getTasksClient();
+  if (!client) return [];
+
+  if (listId) {
+    const res = await client.tasks.list({
+      tasklist: listId,
+      showCompleted: false,
+      showHidden: false,
+      maxResults: 50
+    });
+    const items = res.data.items || [];
+    items.forEach(t => t.listId = listId);
+    return items;
+  }
+
+  // Fetch from ALL lists
+  const lists = await getAllLists();
+  let allTasks = [];
+  for (const list of lists) {
+    try {
+      const res = await client.tasks.list({
+        tasklist: list.id,
+        showCompleted: false,
+        showHidden: false,
+        maxResults: 50
+      });
+      const items = res.data.items || [];
+      items.forEach(t => t.listId = list.id);
+      allTasks = allTasks.concat(items);
+    } catch (e) {}
+  }
+  return allTasks;
 }
 
 /**
@@ -135,7 +168,7 @@ async function editTask({ taskId, newTitle, newNotes, newDueDate, listId = DEFAU
 /**
  * Find tasks by keyword (fuzzy match against title)
  */
-async function findTasksByKeyword(keyword, listId = DEFAULT_LIST) {
+async function findTasksByKeyword(keyword, listId = null) {
   const tasks = await getActiveTasks(listId);
   const words = keyword.toLowerCase().split(/\s+/).filter(Boolean);
   return tasks.filter(t =>
@@ -146,17 +179,29 @@ async function findTasksByKeyword(keyword, listId = DEFAULT_LIST) {
 /**
  * Delete all completed tasks
  */
-async function clearCompletedTasks(listId = DEFAULT_LIST) {
+async function clearCompletedTasks(listId = null) {
   const client = getTasksClient();
   if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
-  await client.tasks.clear({ tasklist: listId });
+  
+  if (listId) {
+    await client.tasks.clear({ tasklist: listId });
+    return true;
+  }
+  
+  // Clear completed tasks from ALL lists
+  const lists = await getAllLists();
+  for (const list of lists) {
+    try {
+      await client.tasks.clear({ tasklist: list.id });
+    } catch (e) {}
+  }
   return true;
 }
 
 /**
  * Get tasks due specifically today (Jakarta timezone)
  */
-async function getTasksDueToday(listId = DEFAULT_LIST) {
+async function getTasksDueToday(listId = null) {
   const tasks = await getActiveTasks(listId);
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
   return tasks.filter(t => t.due && t.due.startsWith(todayStr));
@@ -165,7 +210,7 @@ async function getTasksDueToday(listId = DEFAULT_LIST) {
 /**
  * Get tasks past their due date (overdue, still active)
  */
-async function getOverdueTasks(listId = DEFAULT_LIST) {
+async function getOverdueTasks(listId = null) {
   const tasks = await getActiveTasks(listId);
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
   return tasks.filter(t => t.due && t.due.split('T')[0] < todayStr);
@@ -174,7 +219,7 @@ async function getOverdueTasks(listId = DEFAULT_LIST) {
 /**
  * Get active tasks due within the next N days
  */
-async function getUpcomingTasks(daysAhead = 7, listId = DEFAULT_LIST) {
+async function getUpcomingTasks(daysAhead = 7, listId = null) {
   const tasks = await getActiveTasks(listId);
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
   const futureDate = new Date();
