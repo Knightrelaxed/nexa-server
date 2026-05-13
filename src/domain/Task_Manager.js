@@ -1,4 +1,5 @@
 const googleTasks = require('../infrastructure/Google_Tasks');
+const googleWorkspace = require('../infrastructure/Google_Workspace');
 
 // ── CATEGORY KEYWORDS → LIST NAME MAPPING ──────────────────────────────────
 // Used for auto-categorization suggestion
@@ -71,6 +72,33 @@ function formatTask(task, index, indent = 0) {
 }
 
 /**
+ * Helper to auto-create a Calendar event for tasks with a specific deadline time
+ */
+async function autoCreateCalendarBlock(title, due_date) {
+  if (!due_date) return false;
+  const dueMs = new Date(due_date);
+  if (isNaN(dueMs.getTime())) return false;
+  const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+  if (h && h !== '00:00' && h !== '24:00') {
+    // Time is explicitly set. Create a 30-min calendar block for the deadline.
+    const startIso = dueMs.toISOString();
+    const endIso = new Date(dueMs.getTime() + 30 * 60000).toISOString();
+    try {
+      await googleWorkspace.createCalendarEvent(
+        `⏰ DEADLINE: ${title}`,
+        startIso,
+        endIso,
+        'Otomatis dibuat oleh N.E.X.A berdasarkan tugas.'
+      );
+      return true;
+    } catch (e) {
+      console.warn('[TASKS] Failed to auto-create calendar block:', e.message);
+    }
+  }
+  return false;
+}
+
+/**
  * Execute pending task creation (called after confirmation OR after 5-min timeout).
  */
 async function executePendingTask(chatId, overrideListName = null) {
@@ -99,6 +127,12 @@ async function executePendingTask(chatId, overrideListName = null) {
   if (dueDate) {
     const d = new Date(dueDate.split('T')[0] + 'T00:00:00+07:00');
     msg += `\n📅 Deadline: ${d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
+    
+    // Auto-create calendar block if time is specified
+    const hasCalBlock = await autoCreateCalendarBlock(title, dueDate);
+    if (hasCalBlock) {
+      msg += `\n📅 Otomatis menambahkan blok waktu di Google Calendar!`;
+    }
   }
   return { status: 'SUCCESS', message: msg };
 }
@@ -154,9 +188,15 @@ async function handleTaskIntent(extractedData, chatId = null) {
       const task = await googleTasks.createTask({ title, notes: taskNotes, dueDate: due_date || null, listId });
       let msg = `✅ Tugas '<b>${escapeHtml(task.title)}</b>' ditambahkan ke <b>${escapeHtml(resolvedList || 'Tugas Saya')}</b>.`;
       if (due_date) {
-        const dueDate = new Date(due_date.split('T')[0] + 'T00:00:00+07:00');
-        msg += `\n📅 Deadline: ${dueDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
+        const dueDateObj = new Date(due_date.split('T')[0] + 'T00:00:00+07:00');
+        msg += `\n📅 Deadline: ${dueDateObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
         if (timeLabel) msg += ` jam ${timeLabel}`;
+        
+        // Auto-create calendar block if time is specified
+        const hasCalBlock = await autoCreateCalendarBlock(title, due_date);
+        if (hasCalBlock) {
+          msg += `\n📅 Otomatis menambahkan blok waktu di Google Calendar!`;
+        }
       }
       return { status: 'SUCCESS', message: msg };
     }

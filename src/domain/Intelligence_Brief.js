@@ -73,7 +73,6 @@ async function generateMorningBriefing() {
     console.warn('[INTELLIGENCE] Failed to get news', err.message);
   }
 
-  // 5. Synthesize with LLM (High Temperature for natural prose)
   const prompt = `
 [DATA MENTAH HARI INI]
 Agenda Kalender:
@@ -90,6 +89,7 @@ ${newsStr}
 
 Buatkan The Diplomat's Morning Briefing yang elegan, proaktif, dan presisi untuk Tuan Faqih. 
 Beri salam hormat, sampaikan laporan cuaca, peta jadwal hari ini, status tugas mendesak (terutama jika ada yang terlambat), lalu ringkas implikasi geopolitiknya.
+Tambahkan SATU kalimat rekomendasi tegas di akhir briefing mengenai apa prioritas utama Tuan hari ini berdasarkan jadwal dan tugas yang ada (misal: "Prioritas utama Tuan hari ini: Selesaikan essay Arab!").
 Gunakan nada seorang Chief of Staff senior yang melayani seorang calon diplomat elit.
 Penting: Output langsung berupa teks naratif panjang, jangan berikan JSON.
 `;

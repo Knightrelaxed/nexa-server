@@ -87,6 +87,35 @@ function initCronJobs() {
     watchdogRunning = false;
   }, 90 * 1000);
 
+  // 5. Overdue Task Alert (07:00 WIB)
+  cron.schedule('0 7 * * *', async () => {
+    console.log('[CRON] Executing Overdue Task Alert...');
+    try {
+      const googleTasks = require('../infrastructure/Google_Tasks');
+      const overdueTasks = await googleTasks.getOverdueTasks();
+      
+      if (overdueTasks && overdueTasks.length > 0) {
+        let alertMsg = `🔴 <b>REMINDER: ${overdueTasks.length} tugas Tuan sudah terlambat:</b>\n`;
+        overdueTasks.forEach((t, i) => {
+          const d = new Date(t.due);
+          // Calculate diff days correctly based on start of days
+          const now = new Date();
+          now.setHours(0,0,0,0);
+          d.setHours(0,0,0,0);
+          const diffDays = Math.max(1, Math.ceil((now - d) / (1000 * 60 * 60 * 24)));
+          alertMsg += `${i + 1}. ${t.title} (terlambat ${diffDays} hari)\n`;
+        });
+        
+        if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+          const { sendTelegramOutbound } = require('./webhook');
+          await sendTelegramOutbound(alertMsg);
+        }
+      }
+    } catch (e) {
+      console.error('[CRON] Overdue Task Alert failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   console.log('[CRON] 🛡️ Telegram Alert Watchdog active (90s interval).');
 }
 
