@@ -1152,6 +1152,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         // Clear the pending context and cancel the 15-min timeout
         agendaManager.cancelPending(pendingCalendarContext.summary);
         pendingCalendarContext = null;
+        
+        if (resolved.status === 'CONFLICT_DETECTED') {
+          // Store the conflicting event for user confirmation
+          pendingConflictEvent = { ...resolved.pendingEvent, askedAt: Date.now() };
+        }
+        
         await respondToTelegram(resolved.message);
         clearTimeout(safetyTimer);
         return;

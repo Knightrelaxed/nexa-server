@@ -422,7 +422,29 @@ async function tryResolvePending(userText, pendingCtx) {
       };
     }
     startDate.setMinutes(startDate.getMinutes() + durationMins);
-    const computedEnd = startDate.toISOString();
+    const computedEnd = new Date(startDate.getTime() + durationMins * 60000).toISOString();
+    
+    // Check for conflicts
+    const conflicts = await googleWorkspace.checkCalendarConflicts(pendingCtx.start, computedEnd);
+    if (conflicts.length > 0) {
+      const conflictList = conflicts.map(c => {
+        const sTime = new Date(c.start).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+        const eTime = new Date(c.end).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+        return `   ⚠️ ${sTime}-${eTime}: ${c.summary}${c.location ? ` (${c.location})` : ''}`;
+      }).join('\n');
+      
+      const summary = pendingCtx.summary;
+      const start = pendingCtx.start;
+      const end = computedEnd;
+      
+      return {
+        status: 'CONFLICT_DETECTED',
+        message: `⚠️ <b>Konflik Jadwal Terdeteksi!</b>\n\nKegiatan '<b>${escapeHtml(summary)}</b>' bentrok dengan:\n${conflictList}\n\nApakah tetap ingin ditambahkan? (Balas: "ya" untuk lanjut, "batal" untuk membatalkan)`,
+        conflicts: conflicts,
+        pendingEvent: { summary, start, end }
+      };
+    }
+
     await googleWorkspace.createCalendarEvent(pendingCtx.summary, pendingCtx.start, computedEnd, '');
     return { status: 'SUCCESS', message: `✅ Jadwal '<b>${escapeHtml(pendingCtx.summary)}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).` };
   } catch (e) {
