@@ -124,9 +124,9 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      // CORE_IDENTITY: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
      //   → Sama seperti atas, gunakan HANYA jika disuruh eksplisit. Untuk pembelajaran pasif, gunakan array "learned_core_identities" di *root* JSON.
      // TASK: { action: "CREATE"|"CREATE_SUBTASK"|"CREATE_MULTIPLE"|"READ"|"READ_LIST"|"READ_LISTS"|"READ_TODAY"|"READ_UPCOMING"|"READ_OVERDUE"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"MOVE"|"CLEAR_DONE"|"SET_PRIORITY", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string, list_name: string, parent_task_keyword: string, priority: "HIGH"|"NORMAL", tasks: [{title, notes, due_date, list_name}] }
-     //   → SET_PRIORITY: Tandai tugas sebagai prioritas tinggi ("ini sangat penting", "prioritaskan", "bintangi"). Gunakan search_keyword untuk cari tugas.
+     //   → SET_PRIORITY: Tandai tugas YANG SUDAH ADA sebagai prioritas tinggi ("ini sangat penting", "prioritaskan", "bintangi"). Wajib isi search_keyword = kata kunci nama tugas. JANGAN gunakan CREATE jika pengguna hanya meminta memprioritaskan.
      //   → COMPLETE: Selesaikan tugas yang SUDAH ADA ("selesaikan tugas", "tandai selesai", "sudah dikerjakan", "centang"). Wajib isi search_keyword = kata kunci nama tugas.
-     //   → CREATE: Buat tugas BARU ("Catat tugas: kerjakan essay sebelum Jumat", "tambahkan ke daftar belanja: beras")
+     //   → CREATE: Buat tugas BARU ("Catat tugas: kerjakan essay", "tambahkan ke daftar belanja: beras"). JANGAN gunakan ini untuk mengubah prioritas atau menyelesaikan tugas yang sudah ada.
      //   → CREATE_MULTIPLE: Buat BEBERAPA tugas sekaligus. Gunakan HANYA jika ada lebih dari 1 tugas yang jelas disebutkan (misal: setelah saran proaktif "1. Siapkan materi 2. Review slides"). Wajib isi array "tasks": [{"title": "...", "notes": "...", "due_date": null, "list_name": "..."}]
      //     Field opsional:
      //     - list_name: Nama list Google Tasks jika disebutkan eksplisit (misal: "masukkan ke list Kuliah").
