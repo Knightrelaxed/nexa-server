@@ -28,7 +28,8 @@ async function loadPersonalFactsWithCache() {
   const facts = await supabaseMemories.getPersonalFacts();
   _personalFactsCache = facts;
   _personalFactsCacheTime = now;
-  console.log(`[ROUTER] Personal facts cache refreshed. Count: ${facts.length}`);
+  const count = (facts.userProfile?.length || 0) + (facts.coreIdentity?.length || 0);
+  console.log(`[ROUTER] Personal facts cache refreshed. Count: ${count}`);
   return facts;
 }
 
@@ -59,12 +60,18 @@ LOGIKA KONTEKS LANJUTAN (WAJIB):
 - Frasa "sebelum itu/sebelumnya" setelah membaca email HARUS tetap menjadi intent EMAIL (minta email yang lebih lama), bukan intent lain.
 - Jika user bilang "periksa database" tanpa tabel/aksi rinci, gunakan INCOMPLETE_INFO dan tanya tabel Supabase yang dimaksud.
 
+LOGIKA PEMBELAJARAN PASIF (PASSIVE BACKGROUND LEARNING) - SANGAT PENTING:
+Sebagai AI yang super pintar, Anda harus tajam membedakan informasi berharga jangka panjang vs percakapan kasual/sementara. Ekstrak informasi ke array "learned_user_facts" atau "learned_core_identities" HANYA jika memenuhi syarat:
+1. "learned_user_facts": Fakta PERMANEN tentang Tuan Faqih. Contoh: Makanan favorit, jam tidur rutin, nama keluarga, tujuan hidup, prinsip kerja. JANGAN simpan hal sementara seperti "Tuan Faqih sedang makan siang" atau "Tuan sedang lelah hari ini".
+2. "learned_core_identities": Aturan PERMANEN tentang cara N.E.X.A bersikap, atau dinamika hubungan/interaksi kalian. Contoh: "N.E.X.A harus memanggil dengan nada lebih santai di akhir pekan", "Tuan Faqih suka jika penjelasan teknis dipersingkat".
+3. ANTI-DUPLIKASI: Jika informasi sudah ada di bagian [FAKTA PERMANEN TENTANG TUAN FAQIH] di prompt bawah, JANGAN menambahkannya lagi! KOSONGKAN array jika tidak ada hal krusial yang perlu dipelajari.
+
 Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 {
   "intent": "FINANCE" | "CALENDAR" | "TASK" | "WEB_SEARCH" | "DISCIPLINE" | "2ND_BRAIN" | "USER_PROFILE" | "CORE_IDENTITY" | "SPREADSHEET" | "EMAIL" | "DATABASE" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
   "reply_message": "String balasan natural dan luwes untuk Tuan Faqih (wajib ada jika intent NORMAL_CHAT, INCOMPLETE_INFO, atau DISCIPLINE)",
-  "learned_user_facts": ["Fakta baru tentang preferensi/kebiasaan Tuan Faqih (opsional, hanya jika ada)"],
-  "learned_core_identities": ["Aturan baru tentang kepribadian N.E.X.A (opsional, hanya jika ada)"],
+  "learned_user_facts": ["Fakta BARU & PERMANEN tentang Tuan Faqih. KOSONGKAN array ini jika hanya obrolan biasa/sementara atau sudah pernah diingat."],
+  "learned_core_identities": ["Aturan BARU tentang diri N.E.X.A atau dinamika hubungan kalian. KOSONGKAN array ini jika tidak ada instruksi/pembelajaran baru."],
   "extracted_data": {
      // FINANCE: { action: "RECORD"|"RECORD_MULTIPLE"|"READ_LATEST"|"READ_ANALYTICS"|"EDIT"|"DELETE"|"UNDO_DELETE"|"IMPORT_FROM_EMAIL"|"CONFIRM_TRANSACTION"|"UPDATE_PENDING"|"CANCEL_TRANSACTION", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO), search_keyword: string, transactions: [{"nominal": number, "type": "INCOME"|"EXPENSE", "destination": "string", "category": "string", "description": "string", "time": "string"}] }
      //   → Jika pengguna MENGKONFIRMASI ("masukkan", "ya", "benar", "simpan") untuk menanggapi transaksi tertunda, WAJIB gunakan "CONFIRM_TRANSACTION". Ini akan LANGSUNG menyimpan data.
@@ -185,10 +192,14 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     ? memories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n')
     : '[Tidak ada riwayat obrolan sebelumnya]';
 
-  // 3. Build personal facts context block (only if facts exist)
-  const factsContext = personalFacts.length > 0
-    ? `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${personalFacts.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
-    : '';
+  // 3. Build personal facts context block
+  let factsContext = '';
+  if (personalFacts.userProfile && personalFacts.userProfile.length > 0) {
+    factsContext += `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${personalFacts.userProfile.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+  }
+  if (personalFacts.coreIdentity && personalFacts.coreIdentity.length > 0) {
+    factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${personalFacts.coreIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+  }
 
   // 3.5. Inject Current Jakarta Time — manually built to be runtime-safe on any Node/Bun version
   const _now = new Date();

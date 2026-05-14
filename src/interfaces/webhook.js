@@ -97,14 +97,14 @@ function parseJsonObjectFromText(raw) {
   try {
     const parsed = JSON.parse(text);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
-  } catch (_) {}
+  } catch (_) { }
 
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced?.[1]) {
     try {
       const parsed = JSON.parse(fenced[1].trim());
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
-    } catch (_) {}
+    } catch (_) { }
   }
 
   const first = text.indexOf('{');
@@ -113,7 +113,7 @@ function parseJsonObjectFromText(raw) {
     try {
       const parsed = JSON.parse(text.slice(first, last + 1));
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
-    } catch (_) {}
+    } catch (_) { }
   }
   return null;
 }
@@ -136,10 +136,10 @@ function toCleanSingleLine(value, maxLen = 160) {
 
 // Field yang secara alami bisa panjang — TIDAK dibuang ke catatan
 const LONG_VALUE_WHITELIST = new Set([
-  'alamat','address','keterangan','catatan','deskripsi',
-  'lokasi','uraian','penjelasan','tujuan','nama_jalan',
-  'tempat_tinggal','domisili','perihal','isi_surat',
-  'nama_pemegang','nama_peserta','atas_nama',
+  'alamat', 'address', 'keterangan', 'catatan', 'deskripsi',
+  'lokasi', 'uraian', 'penjelasan', 'tujuan', 'nama_jalan',
+  'tempat_tinggal', 'domisili', 'perihal', 'isi_surat',
+  'nama_pemegang', 'nama_peserta', 'atas_nama',
 ]);
 
 // Sinyal bahwa string adalah DATA terstruktur, bukan narasi
@@ -193,13 +193,13 @@ function _smartKVSweep(text) {
 
   // Pola deterministik universal (apapun tipe dokumennya)
   const UNIVERSAL_PATTERNS = {
-    nik:           /\b(\d{16})\b/,
-    nomor_polisi:  /\b([A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3})\b/,
+    nik: /\b(\d{16})\b/,
+    nomor_polisi: /\b([A-Z]{1,2}\s?\d{1,4}\s?[A-Z]{1,3})\b/,
     nomor_telepon: /(?:Tel|Telp|HP|Phone)?\.?\s*(\+?62[\d\s-]{9,14}|0[\d\s-]{9,12})/i,
-    website:       /(www\.[a-z0-9.-]+\.[a-z]{2,}|https?:\/\/[^\s]+)/i,
-    email:         /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,})/i,
-    tanggal:       /(\d{1,2}\s+(?:Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+\d{4})/i,
-    nomor_npwp:    /(\d{2}\.\d{3}\.\d{3}\.\d{1}-\d{3}\.\d{3})/,
+    website: /(www\.[a-z0-9.-]+\.[a-z]{2,}|https?:\/\/[^\s]+)/i,
+    email: /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,})/i,
+    tanggal: /(\d{1,2}\s+(?:Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+\d{4})/i,
+    nomor_npwp: /(\d{2}\.\d{3}\.\d{3}\.\d{1}-\d{3}\.\d{3})/,
   };
 
   // Format 1: "Label: Value"
@@ -235,11 +235,11 @@ function extractOrphanText(visionText, existingMetadata) {
   );
   const ORPHAN_PATTERNS = [
     { key: 'kontak_hotline', regex: /\b(1\d{5,6}|1500\d{3})\b/g },
-    { key: 'website',        regex: /(www\.[a-z0-9.-]+\.[a-z]{2,}(?:\.[a-z]{2,})?)/gi },
-    { key: 'email',          regex: /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,})/gi },
-    { key: 'nomor_telepon',  regex: /(?<!\d)(\+?62[\d\s-]{9,13}|0[\d\s-]{9,12})(?!\d)/g },
-    { key: 'nama_lembaga',   regex: /([A-Z][a-z]+ (?:[A-Z][a-z]+ ){1,4}(?:Indonesia|Nasional|Kota|Kabupaten|Republik))/g },
-    { key: 'nomor_referensi',regex: /(?:No\.|Nomor)\s*:?\s*([A-Z0-9\/.-]{5,20})/gi },
+    { key: 'website', regex: /(www\.[a-z0-9.-]+\.[a-z]{2,}(?:\.[a-z]{2,})?)/gi },
+    { key: 'email', regex: /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,})/gi },
+    { key: 'nomor_telepon', regex: /(?<!\d)(\+?62[\d\s-]{9,13}|0[\d\s-]{9,12})(?!\d)/g },
+    { key: 'nama_lembaga', regex: /([A-Z][a-z]+ (?:[A-Z][a-z]+ ){1,4}(?:Indonesia|Nasional|Kota|Kabupaten|Republik))/g },
+    { key: 'nomor_referensi', regex: /(?:No\.|Nomor)\s*:?\s*([A-Z0-9\/.-]{5,20})/gi },
   ];
   for (const { key, regex } of ORPHAN_PATTERNS) {
     const matches = [...visionText.matchAll(regex)];
@@ -385,7 +385,7 @@ async function sendTelegramOutbound(text, skipMemory = false) {
   try {
     if (!skipMemory) {
       // Save ALL outbound Telegram messages to memory by default
-      await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => {});
+      await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => { });
     }
 
     if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
@@ -443,7 +443,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
   const respondToTelegram = async (text, skipMemory = false) => {
     if (!skipMemory) {
-      await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => {});
+      await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => { });
     }
 
     if (hasResponded) {
@@ -481,7 +481,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     if (textInput) {
       const isY = /^(y|ya|yes|simpan|ok|oke)$/i.test(textInput.trim());
       const isN = /^(n|no|tidak|batal|cancel)$/i.test(textInput.trim());
-      
+
       if (isY || isN) {
         const financeEngine = require('../domain/Finance_Engine');
         const confirmationReply = await financeEngine.confirmPendingTransactions(isY);
@@ -509,7 +509,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             metadata_json: pendingVaultContext.metadata,
             confirmed_at: new Date().toISOString()
           }).catch((e) => console.error('[VAULT] Confirm update failed:', e.message));
-          
+
           await supabaseMemories.saveChatMemory('user', textInput);
           pendingVaultContext = null;
           await respondToTelegram('✅ Baik, Tuan. Metadata Vault dikonfirmasi dan disimpan.');
@@ -536,10 +536,10 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               `${escapeHtml(formatVaultMetadata(pendingVaultContext.metadata))}\n\n` +
               `Balas: <b>KONFIRM</b> / <b>EKSTRAK ULANG</b> / <b>EDIT key: value; key2: value2</b>`
             );
-            
+
             await supabaseMemories.saveChatMemory('user', textInput);
             await supabaseMemories.saveChatMemory('nexa', `[SISTEM: HASIL EKSTRAKSI ULANG VISION]\n${JSON.stringify(pendingVaultContext.metadata, null, 2)}`);
-            
+
             clearTimeout(safetyTimer);
             return;
           } catch (e) {
@@ -554,7 +554,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           pendingVaultContext.metadata = { ...(pendingVaultContext.metadata || {}), ...edits, source: 'USER_EDIT' };
           if (edits.category) pendingVaultContext.category = String(edits.category).toUpperCase();
           pendingVaultContext.askedAt = Date.now();
-          
+
           await supabaseMemories.saveChatMemory('user', textInput);
           await supabaseMemories.saveChatMemory('nexa', `[SISTEM: DRAFT METADATA DIUPDATE MANUAL]\n${JSON.stringify(pendingVaultContext.metadata, null, 2)}`);
 
@@ -669,7 +669,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EKSTRAK ULANG</b>\n- <b>EDIT key: value; key2: value2</b>`
           );
         } finally {
-          try { if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath); } catch (_) {}
+          try { if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath); } catch (_) { }
         }
 
         clearTimeout(safetyTimer);
@@ -956,8 +956,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             else if (data.destination) data.search_keyword = data.destination;
             else if (data.description) data.search_keyword = data.description;
             else {
-               // if still nothing, try to use the raw text if it looks like a short reply
-               if (lowerText.split(' ').length <= 6) data.search_keyword = originalText;
+              // if still nothing, try to use the raw text if it looks like a short reply
+              if (lowerText.split(' ').length <= 6) data.search_keyword = originalText;
             }
           }
           if (!data.search_keyword || String(data.search_keyword).trim() === '') {
@@ -1046,7 +1046,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       return null;
     };
     // Database follow-up is now purely handled by AI Router's natural language comprehension
-    
+
     // ============================================================
     // LAPISAN 4: BLACK BOX — Emergency Telegram Buffer Parser
     // ============================================================
@@ -1152,13 +1152,13 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         // Clear the pending context and cancel the 15-min timeout
         agendaManager.cancelPending(pendingCalendarContext.summary);
         pendingCalendarContext = null;
-        
+
         if (resolved.status === 'CONFLICT_DETECTED') {
           // Store the conflicting event for user confirmation
           pendingConflictEvent = { ...resolved.pendingEvent, askedAt: Date.now() };
         }
-        
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => { });
         await respondToTelegram(resolved.message);
         clearTimeout(safetyTimer);
         return;
@@ -1179,7 +1179,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         overrideList = 'Tugas Saya';
       } else if (normalized === 'batal' || normalized === 'batalkan' || normalized === 'cancel') {
         taskManager.cancelPendingTask(chatId);
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => { });
         await respondToTelegram('🚫 Penambahan tugas dibatalkan.');
         clearTimeout(safetyTimer);
         return;
@@ -1190,7 +1190,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
       const resTask = await taskManager.executePendingTask(chatId, overrideList);
       if (resTask && resTask.message) {
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => { });
         await respondToTelegram(resTask.message);
         clearTimeout(safetyTimer);
         return;
@@ -1203,10 +1203,10 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     if (pendingConflictEvent && (Date.now() - (pendingConflictEvent.askedAt || 0)) < 10 * 60 * 1000) {
       const normalized = textInput.toLowerCase().trim();
       const isYes = /^(ya|iya|lanjut|lanjutkan|ok|oke|tambahkan|tetap)/.test(normalized);
-      const isNo  = /^(batal|tidak|cancel|ga|gak|jangan)/.test(normalized);
+      const isNo = /^(batal|tidak|cancel|ga|gak|jangan)/.test(normalized);
 
       if (isYes || isNo) {
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => { });
         if (isYes) {
           // Force-create the event despite the conflict
           try {
@@ -1303,7 +1303,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       }
       invalidatePersonalFactsCache();
     }
-    
+
     if (routingData.learned_core_identities && Array.isArray(routingData.learned_core_identities) && routingData.learned_core_identities.length > 0) {
       for (const fact of routingData.learned_core_identities) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
@@ -1363,7 +1363,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           domainReply = result.message;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CONFIRM_TRANSACTION') {
           const confirmationReply = await financeEngine.confirmPendingTransactions(
-            true, 
+            true,
             routingData.extracted_data.description || null,
             routingData.extracted_data.category || null
           );
@@ -1374,11 +1374,11 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             const googleWorkspace = require('../infrastructure/Google_Workspace');
             const recent = await googleWorkspace.getFinanceSummary(1);
             if (recent && recent.length > 0) {
-               const lastCat = recent[0][6]; // cat/desc
-               const result = await financeEngine.editTransaction(lastCat, null, routingData.extracted_data.description, routingData.extracted_data.category);
-               domainReply = `⏳ Waktu konfirmasi 5 menit telah habis sehingga transaksi otomatis terkunci. N.E.X.A melakukan *fallback* ke mode Edit:\n${result.message}`;
+              const lastCat = recent[0][6]; // cat/desc
+              const result = await financeEngine.editTransaction(lastCat, null, routingData.extracted_data.description, routingData.extracted_data.category);
+              domainReply = `⏳ Waktu konfirmasi 5 menit telah habis sehingga transaksi otomatis terkunci. N.E.X.A melakukan *fallback* ke mode Edit:\n${result.message}`;
             } else {
-               domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
+              domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
             }
           }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'UPDATE_PENDING') {
@@ -1394,16 +1394,16 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             const googleWorkspace = require('../infrastructure/Google_Workspace');
             const recent = await googleWorkspace.getFinanceSummary(1);
             if (recent && recent.length > 0) {
-               const lastCat = recent[0][6]; // cat/desc
-               const result = await financeEngine.editTransaction(
-                 lastCat, 
-                 routingData.extracted_data.nominal,
-                 routingData.extracted_data.description, 
-                 routingData.extracted_data.category
-               );
-               domainReply = `⏳ Transaksi sudah tidak tertunda (telah dimasukkan ke sheet). N.E.X.A otomatis melakukan *fallback* ke mode Edit:\n${result.message}`;
+              const lastCat = recent[0][6]; // cat/desc
+              const result = await financeEngine.editTransaction(
+                lastCat,
+                routingData.extracted_data.nominal,
+                routingData.extracted_data.description,
+                routingData.extracted_data.category
+              );
+              domainReply = `⏳ Transaksi sudah tidak tertunda (telah dimasukkan ke sheet). N.E.X.A otomatis melakukan *fallback* ke mode Edit:\n${result.message}`;
             } else {
-               domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
+              domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
             }
           }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CANCEL_TRANSACTION') {
@@ -1430,12 +1430,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             };
             const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
             if (confirmMsg) {
-               replies.push(confirmMsg);
-               const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
-               const cKey = `${txData.nominal}_${cleanMerch}`;
-               supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
+              replies.push(confirmMsg);
+              const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+              const cKey = `${txData.nominal}_${cleanMerch}`;
+              supabaseMemories.markPendingTransactionSent(cKey).catch(() => { });
             } else {
-               replies.push(`⚠️ Transaksi ${txData.nominal} ke ${txData.destination} tampaknya sudah dicatat atau tertunda.`);
+              replies.push(`⚠️ Transaksi ${txData.nominal} ke ${txData.destination} tampaknya sudah dicatat atau tertunda.`);
             }
           }
           domainReply = replies.join('\n\n---\n\n');
@@ -1450,13 +1450,13 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           };
           const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
           if (confirmMsg) {
-             domainReply = confirmMsg; // Send via webhook response method (proven to work on HF)
-             // Mark as sent in Supabase after the webhook response is delivered
-             const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
-             const cKey = `${txData.nominal}_${cleanMerch}`;
-             supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
+            domainReply = confirmMsg; // Send via webhook response method (proven to work on HF)
+            // Mark as sent in Supabase after the webhook response is delivered
+            const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const cKey = `${txData.nominal}_${cleanMerch}`;
+            supabaseMemories.markPendingTransactionSent(cKey).catch(() => { });
           } else {
-             domainReply = '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya (duplikat) atau sedang menunggu konfirmasi.';
+            domainReply = '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya (duplikat) atau sedang menunggu konfirmasi.';
           }
         }
         break;
@@ -1495,13 +1495,13 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
           if (calResult && calResult.message) {
             if (calData.action === 'READ') {
-               const { executeWithFallback } = require('../core/Fallback_Engine');
-               const { NEXA_PERSONALITY } = require('../config/personality');
-               const prompt = `Tuan Faqih bertanya tentang kalendernya: "${textInput}"\n\nData Kalender yang Ditemukan:\n${calResult.message}\n\nTugas: Jawablah pertanyaan Tuan Faqih dengan ringkas, natural, dan langsung ke intinya berdasarkan data kalender di atas. Jika data tidak menyebutkan secara spesifik apa yang ditanyakan (contoh: tidak ada di jadwal), sampaikan dengan jujur. Jangan menggunakan format JSON.`;
-               const answer = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.5, false);
-               domainReply = answer;
+              const { executeWithFallback } = require('../core/Fallback_Engine');
+              const { NEXA_PERSONALITY } = require('../config/personality');
+              const prompt = `Tuan Faqih bertanya tentang kalendernya: "${textInput}"\n\nData Kalender yang Ditemukan:\n${calResult.message}\n\nTugas: Jawablah pertanyaan Tuan Faqih dengan ringkas, natural, dan langsung ke intinya berdasarkan data kalender di atas. Jika data tidak menyebutkan secara spesifik apa yang ditanyakan (contoh: tidak ada di jadwal), sampaikan dengan jujur. Jangan menggunakan format JSON.`;
+              const answer = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.5, false);
+              domainReply = answer;
             } else {
-               domainReply = calResult.message;
+              domainReply = calResult.message;
             }
           }
         }
@@ -1552,7 +1552,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         const searchType = searchData.type || 'search';
         console.log(`[SEARCH] Searching web: "${query}" [type: ${searchType}]`);
         const searchResult = await webSearch.searchWeb(query, searchType);
-        
+
         console.log('[SEARCH] Synthesizing response with AI...');
         const prompt = `Sebagai N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh, Anda baru saja melakukan penelusuran web untuk menjawab pernyataannya.
         
@@ -1562,7 +1562,7 @@ Hasil Penelusuran Web:
 ${searchResult}
 
 Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil penelusuran di atas. Berikan jawaban yang informatif seolah Anda sedang berdiskusi. Jangan sekadar menyalin ulang hasil pencariannya. Berikan kesimpulan atau opini jika relevan.`;
-        
+
         const synthesizedReply = await aiRouter.callAI(prompt);
         domainReply = synthesizedReply;
         break;
@@ -1593,7 +1593,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               // Fallback
               docsSuccess = await googleWorkspace.editIdeaDoc(routingData.extracted_data.search_keyword, routingData.extracted_data.content);
             }
-            
+
             invalidatePersonalFactsCache();
             domainReply = (vaultRes?.success || docsSuccess) ? `✅ Arsip berhasil diubah di Database (dan sinkronisasi Docs).` : `❌ Gagal menemukan/mengubah arsip.`;
           } else if (brainAction === 'DELETE') {
@@ -1609,7 +1609,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             } else {
               docsSuccess = await googleWorkspace.deleteIdeaDoc(routingData.extracted_data.search_keyword);
             }
-            
+
             invalidatePersonalFactsCache();
             domainReply = (vaultRes?.success || docsSuccess) ? `🗑️ Arsip berhasil dihapus dari Database (dan sinkronisasi Docs).` : `❌ Gagal menemukan/menghapus arsip.`;
           } else if (routingData.extracted_data.content) { // APPEND
@@ -1884,7 +1884,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             if (targetTable === 'nexa_vault_items') {
               const googleWorkspace = require('../infrastructure/Google_Workspace');
               const driveSuccess = await googleWorkspace.deleteAllVaultFiles();
-              driveDeletedMsg = driveSuccess 
+              driveDeletedMsg = driveSuccess
                 ? '\n🗑️ Semua file fisik di Google Drive Vault juga telah dimasukkan ke Trash.'
                 : '\n⚠️ Gagal menghapus file fisik di Google Drive Vault.';
             }
@@ -1913,7 +1913,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
     const finalReply = domainReply || aiDraftReply;
     if (finalReply) {
       // Save ONLY the actual final message that the user receives
-      await supabaseMemories.saveChatMemory('nexa', finalReply).catch(() => {});
+      await supabaseMemories.saveChatMemory('nexa', finalReply).catch(() => { });
       console.log('[TELEGRAM] Replying with intent:', routingData.intent);
       conversationContext = {
         ...(conversationContext || {}),
@@ -1994,7 +1994,7 @@ router.post('/gmail', async (req, res) => {
   }
 
   console.log('[GMAIL WEBHOOK] Received push notification from Pub/Sub');
-  
+
   // Acknowledge the webhook immediately so Google doesn't retry
   res.status(200).send('OK');
 

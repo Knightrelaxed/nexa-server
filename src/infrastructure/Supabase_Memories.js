@@ -271,11 +271,10 @@ async function getPersonalFacts() {
     supabase.from('nexa_core_identity').select('content').order('created_at', { ascending: true })
   ]);
 
-  const facts = [];
-  if (profileRes.data) profileRes.data.forEach(r => facts.push(r.content));
-  if (identityRes.data) identityRes.data.forEach(r => facts.push(r.content));
-
-  return facts;
+  return {
+    userProfile: profileRes.data ? profileRes.data.map(r => r.content) : [],
+    coreIdentity: identityRes.data ? identityRes.data.map(r => r.content) : []
+  };
 }
 
 async function getDatabaseOverview() {
