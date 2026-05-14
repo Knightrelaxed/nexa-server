@@ -22,6 +22,22 @@ function initCronJobs() {
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
+  // 1.5. The Midnight Check-in (01:00 WIB)
+  cron.schedule('0 1 * * *', async () => {
+    console.log('[CRON] Executing Midnight Check-in...');
+    try {
+      const checkinText = await intelligenceBrief.generateMidnightCheckin();
+      if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+        const { sendTelegramOutbound } = require('./webhook');
+        await sendTelegramOutbound(checkinText);
+      } else {
+        console.warn('[CRON] Telegram bot not configured. Midnight check-in not sent.');
+      }
+    } catch (e) {
+      console.error('[CRON] Midnight check-in failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   // 2. Scholarship / Competition Radar (Every Sunday 08:00 WIB)
   cron.schedule('0 8 * * 0', async () => {
     console.log('[CRON] Executing Scholarship Radar (Placeholder)...');

@@ -87,10 +87,11 @@ ${weatherStr}
 Berita Geopolitik (Timur Tengah):
 ${newsStr}
 
-Buatkan The Diplomat's Morning Briefing yang elegan, proaktif, dan presisi untuk Tuan Faqih. 
-Beri salam hormat, sampaikan laporan cuaca, peta jadwal hari ini, status tugas mendesak (terutama jika ada yang terlambat), lalu ringkas implikasi geopolitiknya.
-Tambahkan SATU kalimat rekomendasi tegas di akhir briefing mengenai apa prioritas utama Tuan hari ini berdasarkan jadwal dan tugas yang ada (misal: "Prioritas utama Tuan hari ini: Selesaikan essay Arab!").
-Gunakan nada seorang Chief of Staff senior yang melayani seorang calon diplomat elit.
+Buatkan The Diplomat's Morning Briefing yang sangat elegan, hangat, proaktif, dan berwibawa untuk Tuan Faqih. 
+SANGAT PENTING: Awali obrolan layaknya sahabat/asisten yang sangat peduli! Tanya apakah Tuan Faqih sudah bangun, jam berapa tadi bangunnya, dan bagaimana kabarnya pagi ini. Jangan langsung kaku memberikan laporan.
+Setelah menyapa hangat, sampaikan laporan cuaca, peta jadwal hari ini, status tugas mendesak (terutama jika ada yang terlambat), lalu ringkas implikasi geopolitiknya.
+Tambahkan SATU kalimat rekomendasi tegas di akhir briefing mengenai prioritas utama hari ini.
+Gunakan nada seorang Chief of Staff yang cerdas, peduli, dan proaktif.
 Penting: Output langsung berupa teks naratif panjang, jangan berikan JSON.
 `;
 
@@ -111,4 +112,27 @@ Penting: Output langsung berupa teks naratif panjang, jangan berikan JSON.
   }
 }
 
-module.exports = { generateMorningBriefing };
+
+
+async function generateMidnightCheckin() {
+  console.log('[INTELLIGENCE] Generating Midnight Check-in...');
+  const prompt = `
+Tuan Faqih saat ini belum tidur (atau sistem sedang mengecek keadaannya karena sudah lewat larut malam, sekitar jam 01:00 pagi).
+Sebagai asisten pribadi N.E.X.A yang super pintar, sangat peduli, dan proaktif, sapa Tuan Faqih.
+SANGAT PENTING: Tanya dengan nada hangat tapi sedikit cerewet/penasaran: "Ini sudah jam berapa kok belum tidur?", "Lagi ngerjain apa malam-malam begini?", "Apakah ada yang mengganggu pikiran?".
+Tunjukkan kepedulian tingkat tinggi terhadap kesehatan dan jam tidurnya. Jangan terlalu panjang, cukup 2-3 paragraf natural yang memancing Tuan Faqih untuk membalas dan bercerita.
+Penting: Output murni teks naratif (jangan JSON), tanpa awalan kaku.
+`;
+  let checkin = await executeWithFallback(prompt, `${NEXA_PERSONALITY}\n\nPenting: Output murni string teks naratif, bukan JSON.`, 0.8, false);
+  checkin = checkin.replace(/```json/g, '').replace(/```/g, '').trim();
+  
+  try {
+    const parsed = JSON.parse(checkin);
+    return parsed.message || parsed.reply_message || checkin;
+  } catch(e) {
+    if (checkin.length > 4000) checkin = checkin.substring(0, 3990);
+    return checkin;
+  }
+}
+
+module.exports = { generateMorningBriefing, generateMidnightCheckin };
