@@ -1158,6 +1158,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           pendingConflictEvent = { ...resolved.pendingEvent, askedAt: Date.now() };
         }
         
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(resolved.message);
         clearTimeout(safetyTimer);
         return;
@@ -1178,6 +1179,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         overrideList = 'Tugas Saya';
       } else if (normalized === 'batal' || normalized === 'batalkan' || normalized === 'cancel') {
         taskManager.cancelPendingTask(chatId);
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram('🚫 Penambahan tugas dibatalkan.');
         clearTimeout(safetyTimer);
         return;
@@ -1188,6 +1190,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
       const resTask = await taskManager.executePendingTask(chatId, overrideList);
       if (resTask && resTask.message) {
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(resTask.message);
         clearTimeout(safetyTimer);
         return;
@@ -1203,6 +1206,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       const isNo  = /^(batal|tidak|cancel|ga|gak|jangan)/.test(normalized);
 
       if (isYes || isNo) {
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         if (isYes) {
           // Force-create the event despite the conflict
           try {

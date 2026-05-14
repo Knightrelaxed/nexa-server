@@ -16,19 +16,7 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-async function sendTelegramOutbound(text) {
-  try {
-    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
-    const botToken = env.TELEGRAM_BOT_TOKEN.trim();
-    const chatId = env.TELEGRAM_CHAT_ID.trim();
-    const safeText = String(text).substring(0, 4000);
-    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}`;
-    const targetUrl = env.TELEGRAM_PROXY_URL ? `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(telegramUrl)}` : telegramUrl;
-    await execPromise(`curl -sS --ipv4 --connect-timeout 10 --max-time 15 "${targetUrl}"`, { maxBuffer: 1 * 1024 * 1024 });
-  } catch (e) {
-    console.error('[AGENDA] Failed to send outbound telegram:', e.message);
-  }
-}
+
 
 /**
  * Parse natural language duration into minutes.
@@ -162,6 +150,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
               try {
                 const d = pendingAgendas.get(pendingId);
                 await googleWorkspace.createCalendarEvent(d.summary, d.start, d.end, d.description || '', d.location || '', d.reminder_minutes || [], d.recurrence || '', d.color_id || '');
+                const { sendTelegramOutbound } = require('../interfaces/webhook');
                 sendTelegramOutbound(`⏳ Waktu konfirmasi habis! Jadwal '<b>${escapeHtml(d.summary)}</b>' otomatis ditambahkan ke kalender (durasi standar 1 jam).`);
               } catch (e) { console.error('[AGENDA] Auto-create failed:', e); }
               pendingAgendas.delete(pendingId);
