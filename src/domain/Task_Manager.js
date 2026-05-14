@@ -402,6 +402,38 @@ async function handleTaskIntent(extractedData, chatId = null) {
       return { status: 'SUCCESS', message: `⭐ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil ditandai sebagai <b>Prioritas Tinggi</b>!` };
     }
 
+    // ── CREATE_MULTIPLE ──────────────────────────────────────
+    if (action === 'CREATE_MULTIPLE') {
+      const tasks = extractedData.tasks || [];
+      if (tasks.length === 0) return { status: 'FAILED', message: '❌ Tidak ada tugas yang disebutkan untuk dibuat.' };
+
+      const results = [];
+      for (const t of tasks) {
+        try {
+          const taskTitle = t.title || t;
+          if (!taskTitle) continue;
+          const taskNotes = t.notes || '';
+          const taskDue = t.due_date || null;
+          let resolvedList = t.list_name || suggestList(taskTitle) || 'Tugas Saya';
+
+          let listId = '@default';
+          if (resolvedList && resolvedList !== 'Tugas Saya') {
+            try {
+              const list = await googleTasks.findOrCreateList(resolvedList);
+              listId = list.id;
+            } catch (e) {
+              console.warn('[TASKS] List lookup failed for multi-create, using default:', e.message);
+            }
+          }
+          const created = await googleTasks.createTask({ title: taskTitle, notes: taskNotes, dueDate: taskDue, listId });
+          results.push(`✅ <b>${escapeHtml(created.title)}</b> → <i>${escapeHtml(resolvedList)}</i>`);
+        } catch (e) {
+          results.push(`❌ Gagal membuat tugas: ${e.message}`);
+        }
+      }
+      return { status: 'SUCCESS', message: `📋 <b>${results.length} tugas berhasil dibuat:</b>\n${results.join('\n')}` };
+    }
+
     return { status: 'FAILED', message: `Aksi task tidak dikenali: ${action}` };
 
   } catch (error) {
