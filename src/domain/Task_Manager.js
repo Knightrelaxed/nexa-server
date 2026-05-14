@@ -175,11 +175,15 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
       // Determine target list
       let resolvedList = list_name || null;
-      if (!resolvedList) resolvedList = suggestList(title);
+      let isSuggested = false;
+      if (!resolvedList) {
+        resolvedList = suggestList(title);
+        isSuggested = !!resolvedList;
+      }
 
-      // If chatId is provided and we have a suggestion, set up 5-min confirmation
-      // If chatId is not provided, skip confirmation and create directly
-      if (chatId && resolvedList && resolvedList !== 'Tugas Saya') {
+      // If chatId is provided and we auto-suggested a list (not explicitly asked), set up 5-min confirmation
+      // If the user explicitly provided list_name, or if it's default, create directly without confirmation
+      if (chatId && resolvedList && resolvedList !== 'Tugas Saya' && isSuggested) {
         return { status: 'PENDING_CONFIRM', pendingListName: resolvedList, title, notes: taskNotes, due_date, chatId };
       }
 
@@ -318,9 +322,10 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
     // ── COMPLETE ────────────────────────────────────────────
     if (action === 'COMPLETE') {
-      if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin ditandai selesai.' };
-      const matches = await googleTasks.findTasksByKeyword(search_keyword);
-      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
+      const keyword = search_keyword || title;
+      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin ditandai selesai.' };
+      const matches = await googleTasks.findTasksByKeyword(keyword);
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
       
       let syncedEvents = 0;
       for (const t of matches) {
@@ -348,9 +353,10 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
     // ── DELETE ──────────────────────────────────────────────
     if (action === 'DELETE') {
-      if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dihapus.' };
-      const matches = await googleTasks.findTasksByKeyword(search_keyword);
-      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
+      const keyword = search_keyword || title;
+      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dihapus.' };
+      const matches = await googleTasks.findTasksByKeyword(keyword);
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
       for (const t of matches) await googleTasks.deleteTask(t.id, t.listId);
       const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
       return { status: 'SUCCESS', message: `🗑️ Tugas ${names} berhasil dihapus.` };
@@ -364,11 +370,12 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
     // ── MOVE ────────────────────────────────────────────────
     if (action === 'MOVE') {
-      if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dipindahkan.' };
+      const keyword = search_keyword || title;
+      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dipindahkan.' };
       if (!list_name) return { status: 'FAILED', message: '❌ Sebutkan nama list tujuan.' };
 
-      const matches = await googleTasks.findTasksByKeyword(search_keyword);
-      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
+      const matches = await googleTasks.findTasksByKeyword(keyword);
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
 
       const task = matches[0];
       await googleTasks.moveTaskToList(task.id, list_name, task.listId);
@@ -377,9 +384,10 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
     // ── EDIT ────────────────────────────────────────────────
     if (action === 'EDIT') {
-      if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin diubah.' };
-      const matches = await googleTasks.findTasksByKeyword(search_keyword);
-      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
+      const keyword = search_keyword || title;
+      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin diubah.' };
+      const matches = await googleTasks.findTasksByKeyword(keyword);
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
       for (const t of matches) {
         await googleTasks.editTask({ taskId: t.id, newTitle: title || t.title, newNotes: notes, newDueDate: due_date, listId: t.listId });
       }
@@ -388,9 +396,10 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
     // ── SET_PRIORITY ─────────────────────────────────────────
     if (action === 'SET_PRIORITY') {
-      if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin diprioritaskan, Tuan.' };
-      const matches = await googleTasks.findTasksByKeyword(search_keyword);
-      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
+      const keyword = search_keyword || title;
+      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin diprioritaskan, Tuan.' };
+      const matches = await googleTasks.findTasksByKeyword(keyword);
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
 
       const task = matches[0];
       const alreadyPriority = task.title.startsWith('⭐ [PRIORITAS]');
@@ -402,20 +411,6 @@ async function handleTaskIntent(extractedData, chatId = null) {
       return { status: 'SUCCESS', message: `⭐ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil ditandai sebagai <b>Prioritas Tinggi</b>!` };
     }
 
-    // ── MOVE ─────────────────────────────────────────────────
-    if (action === 'MOVE') {
-      const keyword = search_keyword || title;
-      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dipindahkan, Tuan.' };
-      if (!list_name) return { status: 'FAILED', message: '❌ Sebutkan nama list tujuannya, Tuan.' };
-
-      const matches = await googleTasks.findTasksByKeyword(keyword);
-      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
-
-      const task = matches[0];
-      const sourceListId = task.listId || '@default';
-      const moved = await googleTasks.moveTaskToList(task.id, list_name, sourceListId);
-      return { status: 'SUCCESS', message: `✅ Tugas '<b>${escapeHtml(moved.title)}</b>' berhasil dipindahkan ke list <b>${escapeHtml(list_name)}</b>.` };
-    }
 
     // ── CREATE_MULTIPLE ──────────────────────────────────────
     if (action === 'CREATE_MULTIPLE') {
