@@ -402,6 +402,21 @@ async function handleTaskIntent(extractedData, chatId = null) {
       return { status: 'SUCCESS', message: `⭐ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil ditandai sebagai <b>Prioritas Tinggi</b>!` };
     }
 
+    // ── MOVE ─────────────────────────────────────────────────
+    if (action === 'MOVE') {
+      const keyword = search_keyword || title;
+      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dipindahkan, Tuan.' };
+      if (!list_name) return { status: 'FAILED', message: '❌ Sebutkan nama list tujuannya, Tuan.' };
+
+      const matches = await googleTasks.findTasksByKeyword(keyword);
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
+
+      const task = matches[0];
+      const sourceListId = task.listId || '@default';
+      const moved = await googleTasks.moveTaskToList(task.id, list_name, sourceListId);
+      return { status: 'SUCCESS', message: `✅ Tugas '<b>${escapeHtml(moved.title)}</b>' berhasil dipindahkan ke list <b>${escapeHtml(list_name)}</b>.` };
+    }
+
     // ── CREATE_MULTIPLE ──────────────────────────────────────
     if (action === 'CREATE_MULTIPLE') {
       const tasks = extractedData.tasks || [];
