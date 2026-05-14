@@ -81,10 +81,10 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Gunakan action "UNDO_DELETE" jika pengguna meminta membatalkan/mengembalikan transaksi yang baru dihapus ("batalkan hapus", "undo", "kembalikan yang dihapus").
      //   → Gunakan action "IMPORT_FROM_EMAIL" jika user meminta mengambil/memasukkan transaksi dari email Livin ke catatan keuangan.
      // CALENDAR: { action: "CREATE"|"DELETE"|"UPDATE"|"READ"|"READ_TODAY"|"READ_UPCOMING", summary: string, start: string (ISO 8601 +07:00), end: string (ISO 8601 +07:00), description: string, eventId: string, location: string, reminder_minutes: number[], recurrence: string, color_id: string }
-     //   → color_id: ID warna event Google Calendar. Isi HANYA jika user menyebut warna atau urgensi eksplisit:
+     //   → color_id: ID warna event Google Calendar (WAJIB diisi jika user menyebutkan warna). Mapping:
      //     "merah"/"penting banget"/"kritis" → "11" | "biru" → "9" | "hijau" → "2" | "kuning"/"perhatian" → "5"
      //     "ungu" → "3" | "pink" → "4" | "oranye" → "6" | "abu-abu"/"santai" → "8"
-     //     Jika tidak disebutkan, biarkan kosong "" (warna default kalender).
+     //     Jika tidak disebutkan warna atau urgensinya, biarkan kosong "" (string kosong).
      //   → FORMAT WAJIB: 'start' dan 'end' HARUS ISO 8601 LENGKAP dengan offset +07:00.
      //     Contoh BENAR: "2026-05-07T19:00:00+07:00" | Contoh SALAH: "19:00", "jam 7 malam", null
      //
@@ -125,7 +125,8 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Sama seperti atas, gunakan HANYA jika disuruh eksplisit. Untuk pembelajaran pasif, gunakan array "learned_core_identities" di *root* JSON.
      // TASK: { action: "CREATE"|"CREATE_SUBTASK"|"READ"|"READ_LIST"|"READ_LISTS"|"READ_TODAY"|"READ_UPCOMING"|"READ_OVERDUE"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"MOVE"|"CLEAR_DONE"|"SET_PRIORITY", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string, list_name: string, parent_task_keyword: string, priority: "HIGH"|"NORMAL" }
      //   → SET_PRIORITY: Tandai tugas sebagai prioritas tinggi ("ini sangat penting", "prioritaskan", "bintangi"). Gunakan search_keyword untuk cari tugas.
-     //   → CREATE: "Catat tugas: selesaikan essay sebelum Jumat", "tambahkan ke daftar belanja: beras"
+     //   → COMPLETE: Selesaikan tugas yang SUDAH ADA ("selesaikan tugas", "tandai selesai", "sudah dikerjakan", "centang"). Wajib isi search_keyword = kata kunci nama tugas.
+     //   → CREATE: Buat tugas BARU ("Catat tugas: kerjakan essay sebelum Jumat", "tambahkan ke daftar belanja: beras")
      //     Field opsional:
      //     - list_name: Nama list Google Tasks jika disebutkan eksplisit (misal: "masukkan ke list Kuliah").
      //       Jika tidak disebutkan, N.E.X.A akan auto-kategorikan dan konfirmasi ke Tuan.

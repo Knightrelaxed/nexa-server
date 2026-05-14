@@ -1176,6 +1176,11 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         overrideList = null; // Use the suggested one
       } else if (normalized === 'tidak' || normalized === 'no' || normalized === 'ga' || normalized === 'gak') {
         overrideList = 'Tugas Saya';
+      } else if (normalized === 'batal' || normalized === 'batalkan' || normalized === 'cancel') {
+        taskManager.cancelPendingTask(chatId);
+        await respondToTelegram('🚫 Penambahan tugas dibatalkan.');
+        clearTimeout(safetyTimer);
+        return;
       } else {
         // Assume user typed a different list name
         overrideList = textInput.trim();
@@ -1464,7 +1469,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       case 'CALENDAR':
         if (routingData.extracted_data) {
           const agendaManager = require('../domain/Agenda_Manager');
-          const calData = routingData.extracted_data;
+          // AI Router nests calendar data under 'CALENDAR' key — unwrap it for Agenda_Manager
+          const calData = routingData.extracted_data.CALENDAR || routingData.extracted_data;
 
           // If there's a pending calendar and the current CREATE has an end time + matching summary, merge!
           if (pendingCalendarContext && calData.action === 'CREATE' && calData.end && !calData.summary) {

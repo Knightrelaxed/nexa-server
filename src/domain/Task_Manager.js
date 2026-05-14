@@ -99,6 +99,17 @@ async function autoCreateCalendarBlock(title, due_date) {
 }
 
 /**
+ * Cancel a pending task creation.
+ */
+function cancelPendingTask(chatId) {
+  const pending = pendingTaskCategories.get(chatId);
+  if (!pending) return false;
+  if (pending.timerId) clearTimeout(pending.timerId);
+  pendingTaskCategories.delete(chatId);
+  return true;
+}
+
+/**
  * Execute pending task creation (called after confirmation OR after 5-min timeout).
  */
 async function executePendingTask(chatId, overrideListName = null) {
@@ -399,4 +410,4 @@ async function handleTaskIntent(extractedData, chatId = null) {
   }
 }
 
-module.exports = { handleTaskIntent, pendingTaskCategories, executePendingTask, suggestList };
+module.exports = { handleTaskIntent, pendingTaskCategories, executePendingTask, cancelPendingTask, suggestList };
