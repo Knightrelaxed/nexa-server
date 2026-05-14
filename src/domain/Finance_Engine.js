@@ -406,23 +406,28 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
     const kw = String(keyword).toLowerCase().trim();
     let indexToEdit = -1;
 
-    // Priority 1: Exact match on transaction number (column 0 = "No")
-    if (/^\d+$/.test(kw)) {
-      indexToEdit = rows.findIndex(r => String(r[0]).trim() === kw);
-    }
+    if (kw === '') {
+      // If no keyword provided, default to the most recent transaction (last row)
+      indexToEdit = rows.length - 1;
+    } else {
+      // Priority 1: Exact match on transaction number (column 0 = "No")
+      if (/^\d+$/.test(kw)) {
+        indexToEdit = rows.findIndex(r => String(r[0]).trim() === kw);
+      }
 
-    // Priority 2: Exact match on description (column 6)
-    if (indexToEdit === -1) {
-      indexToEdit = rows.findIndex(r => (r[6] || '').toLowerCase().trim() === kw);
-    }
+      // Priority 2: Exact match on description (column 6)
+      if (indexToEdit === -1) {
+        indexToEdit = rows.findIndex(r => (r[6] || '').toLowerCase().trim() === kw);
+      }
 
-    // Priority 3: Partial match on description or nominal (last resort)
-    if (indexToEdit === -1) {
-      indexToEdit = rows.findIndex(r => {
-        const cat = (r[6] || '').toLowerCase();
-        const nom = (r[7] || '').toLowerCase();
-        return cat.includes(kw) || nom.includes(kw);
-      });
+      // Priority 3: Partial match on description or nominal (last resort)
+      if (indexToEdit === -1) {
+        indexToEdit = rows.findIndex(r => {
+          const cat = (r[6] || '').toLowerCase();
+          const nom = (r[7] || '').toLowerCase();
+          return cat.includes(kw) || nom.includes(kw);
+        });
+      }
     }
 
     if (indexToEdit === -1) {

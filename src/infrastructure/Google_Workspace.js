@@ -351,7 +351,7 @@ async function getFinanceAnalytics() {
 /**
  * Create a new event in Google Calendar
  */
-async function createCalendarEvent(summary, startTime, endTime, description = '', location = '', reminderMinutes = [], recurrence = '') {
+async function createCalendarEvent(summary, startTime, endTime, description = '', location = '', reminderMinutes = [], recurrence = '', colorId = '') {
   const { calendar } = getClients();
 
   const requestBody = {
@@ -361,6 +361,11 @@ async function createCalendarEvent(summary, startTime, endTime, description = ''
     start: { dateTime: startTime, timeZone: 'Asia/Jakarta' },
     end: { dateTime: endTime, timeZone: 'Asia/Jakarta' }
   };
+
+  // Add color if provided (Google Calendar colorId: 1-11)
+  if (colorId && colorId !== '') {
+    requestBody.colorId = String(colorId);
+  }
 
   // Add reminders if provided
   if (reminderMinutes && reminderMinutes.length > 0) {
@@ -399,6 +404,23 @@ async function updateCalendarEvent(eventId, summary, startTime, endTime, descrip
       description,
       start: { dateTime: startTime, timeZone: 'Asia/Jakarta' },
       end: { dateTime: endTime, timeZone: 'Asia/Jakarta' }
+    }
+  });
+  return response.data;
+}
+
+/**
+ * Update the color of an existing Google Calendar event.
+ * Color ID '8' is Graphite/Grey, often used for completed/inactive events.
+ */
+async function updateCalendarEventColor(eventId, colorId = '8') {
+  const { calendar } = getClients();
+
+  const response = await calendar.events.patch({
+    calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
+    eventId: eventId,
+    requestBody: {
+      colorId: String(colorId)
     }
   });
   return response.data;
@@ -849,7 +871,8 @@ module.exports = {
   createGenericSpreadsheet,
   getSpreadsheetHeaders,
   appendGenericRow,
-  deleteGenericSpreadsheet
+  deleteGenericSpreadsheet,
+  updateCalendarEventColor
   // Note: raw clients (sheets, calendar, docs, drive) not exported.
   // Use the functions above. Clients are lazy-initialized via getClients().
 };

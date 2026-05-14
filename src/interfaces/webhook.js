@@ -1411,6 +1411,28 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             routingData.extracted_data.category
           );
           domainReply = result.message;
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'RECORD_MULTIPLE' && Array.isArray(routingData.extracted_data.transactions)) {
+          let replies = [];
+          for (const tx of routingData.extracted_data.transactions) {
+            const txData = {
+              nominal: tx.nominal,
+              type: tx.type || 'EXPENSE',
+              destination: tx.destination || tx.merchant || 'Unknown',
+              category: tx.category || 'Uncategorized',
+              description: tx.description || '-',
+              time: tx.time || new Date().toISOString()
+            };
+            const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
+            if (confirmMsg) {
+               replies.push(confirmMsg);
+               const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+               const cKey = `${txData.nominal}_${cleanMerch}`;
+               supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
+            } else {
+               replies.push(`⚠️ Transaksi ${txData.nominal} ke ${txData.destination} tampaknya sudah dicatat atau tertunda.`);
+            }
+          }
+          domainReply = replies.join('\n\n---\n\n');
         } else if (routingData.extracted_data && (routingData.extracted_data.nominal || routingData.extracted_data.action === 'RECORD')) {
           const txData = {
             nominal: routingData.extracted_data.nominal,

@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 const env = require('../config/env');
 
 let gmailClient = null;
+let _invalidGrantAlerted = false; // Prevent spamming Telegram with the same alert
 
 function decodeBase64Url(data = '') {
   if (!data) return '';
@@ -109,6 +110,27 @@ async function getLatestEmails(query = '', maxResults = 5) {
       return emails; // Success!
     } catch (error) {
       console.error(`[GMAIL] Error reading emails (Retries left: ${retries - 1}):`, error.message);
+
+      // Detect expired/revoked OAuth2 refresh token
+      if (error.message && error.message.includes('invalid_grant')) {
+        console.error('[GMAIL] ❌ CRITICAL: Refresh Token is EXPIRED or REVOKED. Email polling is dead until token is refreshed.');
+        // Reset cached client so a new token (if updated via env) can take effect
+        gmailClient = null;
+        // Send one-time Telegram alert
+        if (!_invalidGrantAlerted) {
+          _invalidGrantAlerted = true;
+          try {
+            const { sendTelegramOutbound } = require('../interfaces/webhook');
+            await sendTelegramOutbound(
+              '🔴 <b>ALERT: Gmail OAuth Token Expired!</b>\n\n' +
+              'N.E.X.A tidak dapat mengakses email Tuan karena Refresh Token OAuth2 telah kadaluarsa.\n\n' +
+              '<b>Solusi:</b> Generate refresh token baru dengan menjalankan <code>node generate_token.js</code>, lalu update di HF Secrets → <code>GMAIL_REFRESH_TOKEN</code> dan restart Space.'
+            );
+          } catch (_) { /* best effort */ }
+        }
+        return []; // Don't retry — it will always fail until token is replaced
+      }
+
       retries--;
       if (retries === 0) return [];
       await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
@@ -197,9 +219,19 @@ async function watchMailbox(topicName) {
   }
 }
 
+/**
+ * Reset the cached Gmail client (e.g. after updating refresh token at runtime).
+ */
+function resetGmailClient() {
+  gmailClient = null;
+  _invalidGrantAlerted = false;
+  console.log('[GMAIL] Client reset. Will re-initialize on next call.');
+}
+
 module.exports = {
   getLatestEmails,
   deleteEmail,
   sendEmail,
-  watchMailbox
+  watchMailbox,
+  resetGmailClient
 };

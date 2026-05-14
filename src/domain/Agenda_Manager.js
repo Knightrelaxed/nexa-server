@@ -105,7 +105,7 @@ async function parseDurationMinutes(text) {
 }
 
 async function handleCalendarIntent(extractedData, rawUserText = '') {
-  const { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence } = extractedData;
+  const { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence, color_id } = extractedData;
   console.log(`[AGENDA] Executing Calendar Intent: ${action}`);
 
   try {
@@ -141,14 +141,15 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
               status: 'CONFLICT_DETECTED',
               message: `⚠️ <b>Konflik Jadwal Terdeteksi!</b>\n\nKegiatan '<b>${escapeHtml(summary)}</b>' bentrok dengan:\n${conflictList}\n\nApakah tetap ingin ditambahkan? (Balas: "ya" untuk lanjut, "batal" untuk membatalkan)`,
               conflicts: conflicts,
-              pendingEvent: { summary, start, end: computedEnd, description, location, reminder_minutes, recurrence }
+              pendingEvent: { summary, start, end: computedEnd, description, location, reminder_minutes, recurrence, color_id }
             };
           }
 
-          const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '', location || '', reminder_minutes || [], recurrence || '');
+          const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '', location || '', reminder_minutes || [], recurrence || '', color_id || '');
           let successMsg = `✅ Jadwal '<b>${escapeHtml(summary)}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).`;
           if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
           if (recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
+          if (color_id) successMsg += `\n🎨 Warna event disesuaikan.`;
           return { status: 'SUCCESS', message: successMsg, eventId: result.id };
         }
 
@@ -160,13 +161,13 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
             if (pendingAgendas.has(pendingId)) {
               try {
                 const d = pendingAgendas.get(pendingId);
-                await googleWorkspace.createCalendarEvent(d.summary, d.start, d.end, d.description || '', d.location || '', d.reminder_minutes || [], d.recurrence || '');
+                await googleWorkspace.createCalendarEvent(d.summary, d.start, d.end, d.description || '', d.location || '', d.reminder_minutes || [], d.recurrence || '', d.color_id || '');
                 sendTelegramOutbound(`⏳ Waktu konfirmasi habis! Jadwal '<b>${escapeHtml(d.summary)}</b>' otomatis ditambahkan ke kalender (durasi standar 1 jam).`);
               } catch (e) { console.error('[AGENDA] Auto-create failed:', e); }
               pendingAgendas.delete(pendingId);
             }
           }, 15 * 60 * 1000);
-          pendingAgendas.set(pendingId, { summary, start, end: autoEnd, description, location, reminder_minutes, recurrence, timer });
+          pendingAgendas.set(pendingId, { summary, start, end: autoEnd, description, location, reminder_minutes, recurrence, color_id, timer });
         }
         return { status: 'PENDING_END', message: `❓ Kira-kira berapa lama durasi untuk '<b>${escapeHtml(summary)}</b>' ini, Tuan?
 
@@ -193,14 +194,28 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
           status: 'CONFLICT_DETECTED',
           message: `⚠️ <b>Konflik Jadwal Terdeteksi!</b>\n\nKegiatan '<b>${escapeHtml(summary)}</b>' bentrok dengan:\n${conflictList}\n\nApakah tetap ingin ditambahkan? (Balas: "ya" untuk lanjut, "batal" untuk membatalkan)`,
           conflicts: conflicts,
-          pendingEvent: { summary, start, end, description, location, reminder_minutes, recurrence }
+          pendingEvent: { summary, start, end, description, location, reminder_minutes, recurrence, color_id }
         };
       }
 
-      const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '', location || '', reminder_minutes || [], recurrence || '');
+      const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '', location || '', reminder_minutes || [], recurrence || '', color_id || '');
       let successMsg = `✅ Jadwal '${escapeHtml(summary)}' berhasil ditambahkan ke kalender.`;
       if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
       if (recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
+      if (color_id) successMsg += `\n🎨 Warna event disesuaikan.`;
+
+      // [PHASE 4: Proactive Calendar-to-Task Generation]
+      try {
+        const { callAI } = require('../core/AI_Router');
+        const aiPrompt = `Acara kalender baru ditambahkan: "${summary}". Apakah acara ini (rapat, seminar, ujian, dll) umumnya membutuhkan 1-2 tugas persiapan yang terukur (seperti menyiapkan dokumen, membaca materi)? Jawab HANYA dengan "Ya, saya rekomendasikan tugas persiapan: 1. [Tugas 1] 2. [Tugas 2]" ATAU jawab "Tidak" jika acaranya kasual/tidak butuh persiapan. Jangan bertele-tele.`;
+        const aiResponse = await callAI(aiPrompt);
+        if (aiResponse.toLowerCase().startsWith('ya')) {
+          successMsg += `\n\n💡 <b>Saran Proaktif N.E.X.A:</b>\n${escapeHtml(aiResponse)}\n<i>(Jika Tuan setuju, balas: "Buatkan tugas untuk persiapan agenda tersebut")</i>`;
+        }
+      } catch (e) {
+        console.warn('[AGENDA] Failed to generate proactive tasks:', e.message);
+      }
+
       return { status: 'SUCCESS', message: successMsg, eventId: result.id };
     }
     else if (action === 'UPDATE') {

@@ -310,9 +310,29 @@ async function handleTaskIntent(extractedData, chatId = null) {
       if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin ditandai selesai.' };
       const matches = await googleTasks.findTasksByKeyword(search_keyword);
       if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
-      for (const t of matches) await googleTasks.completeTask(t.id, t.listId);
+      
+      let syncedEvents = 0;
+      for (const t of matches) {
+        await googleTasks.completeTask(t.id, t.listId);
+        
+        // [PHASE 4: Two-Way Status Sync]
+        try {
+          const events = await googleWorkspace.findEventByTitle(`⏰ DEADLINE: ${t.title}`);
+          if (events && events.length > 0) {
+            await googleWorkspace.updateCalendarEventColor(events[0].id, '8'); // 8 = Graphite
+            syncedEvents++;
+          }
+        } catch (e) {
+          console.warn('[TASKS] Failed to sync calendar color on task completion:', e.message);
+        }
+      }
+      
       const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
-      return { status: 'SUCCESS', message: `✅ Tugas ${names} ditandai <b>Selesai</b>! 🎉` };
+      let msg = `✅ Tugas ${names} ditandai <b>Selesai</b>! 🎉`;
+      if (syncedEvents > 0) {
+        msg += `\n📅 ${syncedEvents} jadwal deadline di Kalender otomatis diredupkan (abu-abu).`;
+      }
+      return { status: 'SUCCESS', message: msg };
     }
 
     // ── DELETE ──────────────────────────────────────────────
@@ -353,6 +373,22 @@ async function handleTaskIntent(extractedData, chatId = null) {
         await googleTasks.editTask({ taskId: t.id, newTitle: title || t.title, newNotes: notes, newDueDate: due_date, listId: t.listId });
       }
       return { status: 'SUCCESS', message: `✏️ Tugas '<b>${escapeHtml(matches[0].title)}</b>' berhasil diperbarui.` };
+    }
+
+    // ── SET_PRIORITY ─────────────────────────────────────────
+    if (action === 'SET_PRIORITY') {
+      if (!search_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin diprioritaskan, Tuan.' };
+      const matches = await googleTasks.findTasksByKeyword(search_keyword);
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(search_keyword)}</b>".` };
+
+      const task = matches[0];
+      const alreadyPriority = task.title.startsWith('⭐ [PRIORITAS]');
+      if (alreadyPriority) {
+        return { status: 'SUCCESS', message: `⭐ Tugas '<b>${escapeHtml(task.title)}</b>' sudah ditandai sebagai prioritas tinggi, Tuan.` };
+      }
+      const newTitle = `⭐ [PRIORITAS] ${task.title}`;
+      await googleTasks.editTask({ taskId: task.id, newTitle, listId: task.listId });
+      return { status: 'SUCCESS', message: `⭐ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil ditandai sebagai <b>Prioritas Tinggi</b>!` };
     }
 
     return { status: 'FAILED', message: `Aksi task tidak dikenali: ${action}` };
