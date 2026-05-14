@@ -2,8 +2,8 @@ const { executeWithFallback } = require('./Fallback_Engine');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 const { NEXA_PERSONALITY } = require('../config/personality');
 
-const CONTEXT_EXCHANGES = 4;
-const CONTEXT_MESSAGES_LIMIT = CONTEXT_EXCHANGES * 2; // 4 exchange = 8 messages (user+nexa)
+const CONTEXT_EXCHANGES = 10;
+const CONTEXT_MESSAGES_LIMIT = CONTEXT_EXCHANGES * 2; // 10 exchanges = 20 messages (user+nexa)
 
 // ============================================================
 // PERSONAL FACTS CACHE (Module-level — lives as long as server runs)
@@ -211,9 +211,28 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     _miniCal.push(`  +${i} hari: ${dayFull} (ISO: ${ds})`);
   }
   const miniCalStr = _miniCal.join('\n');
-  const runtimeContextBlock = runtimeHints && Object.keys(runtimeHints).length > 0
-    ? `\n[KONTEKS RUNTIME PRIORITAS]\n${JSON.stringify(runtimeHints, null, 2)}\n`
-    : '';
+  let runtimeContextBlock = '';
+  if (runtimeHints && Object.keys(runtimeHints).length > 0) {
+    const lines = [];
+    if (runtimeHints.pendingEmailContext) {
+      lines.push(`- Status: Sedang membaca kotak masuk Email Livin. Kata kunci: "${runtimeHints.pendingEmailContext.searchKeyword || 'Semua'}".`);
+    }
+    if (runtimeHints.pendingDatabaseContext) {
+      lines.push(`- Status: Sedang memanipulasi tabel database Supabase "${runtimeHints.pendingDatabaseContext.tableName}". Aksi terakhir: ${runtimeHints.pendingDatabaseContext.lastAction}.`);
+    }
+    if (runtimeHints.pendingCalendarContext) {
+      lines.push(`- Status: Sedang memproses pembuatan jadwal kalender "${runtimeHints.pendingCalendarContext.summary}".`);
+    }
+    if (runtimeHints.pendingVaultContext) {
+      lines.push(`- Status: Sedang memproses unggahan dokumen/gambar ke 2nd Brain Vault.`);
+    }
+    if (runtimeHints.conversationContext && runtimeHints.conversationContext.lastAssistantReply) {
+      lines.push(`- INGAT BAIK-BAIK, pesan N.E.X.A yang paling terakhir dikirim ke user adalah:\n  "${runtimeHints.conversationContext.lastAssistantReply}"`);
+    }
+    if (lines.length > 0) {
+      runtimeContextBlock = `\n[STATUS AKTIF N.E.X.A SAAT INI (SANGAT PENTING UNTUK FOLLOW-UP)]\n${lines.join('\n')}\n`;
+    }
+  }
 
   const prompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]

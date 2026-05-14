@@ -1272,19 +1272,16 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     } else {
       // Send to AI Router
       routingData = await aiRouter.routeUserMessage(textInput, {
-        last_intent: conversationContext?.intent || null,
-        last_user_text: conversationContext?.lastUserText || null,
-        last_assistant_reply: conversationContext?.lastAssistantReply || null,
-        has_pending_calendar: Boolean(pendingCalendarContext),
-        has_pending_email: Boolean(pendingEmailContext),
-        has_pending_database: Boolean(pendingDatabaseContext)
+        conversationContext,
+        pendingCalendarContext,
+        pendingEmailContext,
+        pendingDatabaseContext,
+        pendingVaultContext
       });
     }
     if (!routingData) {
       routingData = await aiRouter.routeUserMessage(textInput, {
-        last_intent: conversationContext?.intent || null,
-        last_user_text: conversationContext?.lastUserText || null,
-        last_assistant_reply: conversationContext?.lastAssistantReply || null
+        conversationContext
       });
     }
     console.log('[ROUTER] Intent identified:', routingData.intent);
