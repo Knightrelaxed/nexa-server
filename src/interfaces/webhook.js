@@ -1424,7 +1424,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             const isLatestOnly = /(terakhir|terbaru|barusan|tadi|satu saja|1 saja)$/i.test(textInput);
             
             recentData = await financeEngine.searchTransactions({
-              date_text: ed.date_text   || null,
+              date_text: ed.date_text || ed.time || null,
               keyword:   ed.search_keyword || null,
               type:      ed.type        || null,
               category:  ed.category    || null,

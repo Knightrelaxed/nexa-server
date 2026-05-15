@@ -285,6 +285,16 @@ function _parseRelativeDateFilter(text) {
     d.setDate(parseInt(slashMatch[1]));
     return d;
   }
+  // ISO Date from AI_Router (e.g., "2026-05-13T00:00:00")
+  const isoMatch = lower.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+  }
+  // Fallback for standalone day number (e.g., "13")
+  const numMatch = lower.match(/^(\d{1,2})$/);
+  if (numMatch) {
+    const d = new Date(today); d.setDate(parseInt(numMatch[1])); return d;
+  }
   return null;
 }
 
