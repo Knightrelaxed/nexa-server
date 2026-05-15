@@ -1420,15 +1420,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           const hasFilter = ed.date_text || ed.search_keyword || ed.type || ed.category;
           let recentData;
           if (hasFilter) {
-            // Cek apakah user secara eksplisit minta yang 'terakhir'
-            const isLatestOnly = /\b(terakhir|terkahir|terbaru|barusan|tadi|satu saja|1 saja)\b/i.test(textInput);
-            
             recentData = await financeEngine.searchTransactions({
               date_text: ed.date_text || ed.time || null,
               keyword:   ed.search_keyword || null,
               type:      ed.type        || null,
               category:  ed.category    || null,
-              limit: isLatestOnly ? 1 : 30
+              limit:     ed.limit       || 30
             });
           } else {
             recentData = await financeEngine.getRecentTransactions(5);
