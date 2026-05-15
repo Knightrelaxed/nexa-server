@@ -102,8 +102,11 @@ async function recoverPendingTransactions() {
  * @param {string} source - 'TASKER_LIVIN' | 'GMAIL_POLLING' | 'TELEGRAM_MANUAL'
  */
 async function processTransaction(data, source) {
-  // CRITICAL: nominal may arrive as string. Always coerce to float. Reject if invalid.
-  const nominal = parseFloat(data.nominal);
+  // CRITICAL: nominal may arrive as string in various formats (IDR: "3.600.000", plain: 3600000).
+  // Always use _parseFlexibleCurrency to handle all formats correctly.
+  const nominal = typeof data.nominal === 'number' && !isNaN(data.nominal)
+    ? data.nominal
+    : _parseFlexibleCurrency(String(data.nominal));
   if (isNaN(nominal) || nominal <= 0) {
     console.error(`[FINANCE] Invalid nominal value: ${data.nominal}`);
     throw new Error(`Nominal tidak valid: "${data.nominal}". Harus berupa angka positif.`);
@@ -194,29 +197,9 @@ async function getRecentTransactions(limit = 5) {
     if (!rows || rows.length === 0) return '📭 Tidak ada transaksi yang tercatat di sheet bulan ini.';
 
     let response = `💸 <b>${rows.length} Transaksi Terakhir (Sheet Bulan Ini):</b>\n\n`;
-    rows.forEach(row => {
-      // Columns: A(No) B(Tanggal) C(Waktu) D(Tipe) E(Kategori) F(Akun) G(Catatan) H(Nominal) I(Saldo) J(Nominal+)
-      const no       = row[0] || '-';
-      const tanggal  = row[1] || '-';
-      const waktu    = row[2] || '';
-      const tipe     = row[3] || '-';
-      const kategori = row[4] || '-';
-      const catatan  = row[6] || '-';
-      const nominal  = row[7] || '0';
-      const saldo    = row[8] || '-';
-
-      const nominalNum = _parseFlexibleCurrency(nominal);
-      const nominalFmt = isNaN(nominalNum) ? nominal : `Rp${Math.abs(nominalNum).toLocaleString('id-ID')}`;
-      const saldoNum = _parseFlexibleCurrency(saldo);
-      const saldoFmt = isNaN(saldoNum) ? saldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
-      const tipeIcon = tipe === 'Pemasukan' ? '🟢' : '🔴';
-
-      response += `<b>No. ${no}</b> — ${tanggal} ${waktu}\n`;
-      response += `${tipeIcon} ${tipe} | 🏷️ ${kategori}\n`;
-      response += `📝 <i>${catatan}</i>\n`;
-      response += `💰 ${nominalFmt} | 🏦 Saldo: ${saldoFmt}\n`;
-      response += `──────────────\n`;
-    });
+    // BUG FIX #6: Use _formatRowAsCard for consistent formatting with searchTransactions
+    const cards = rows.map(row => _formatRowAsCard(row)).join('\n──────────────\n');
+    response += cards + '\n──────────────';
     return response;
   } catch (err) {
     console.error('[FINANCE] Failed to fetch recent transactions:', err.message);
@@ -431,9 +414,18 @@ async function searchTransactions(filters = {}) {
       return `📭 Tidak ada ${desc} yang ditemukan di sheet bulan ini.`;
     }
 
-    // Build header
+    // Build header — BUG FIX #4: format date_text humanely (avoid raw ISO string in output)
+    const _formatDateLabel = (dt) => {
+      if (!dt) return null;
+      const isoMatch = dt.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (isoMatch) {
+        const d = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+        return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      }
+      return dt; // Return as-is for natural language ("kemarin", "hari ini", etc.)
+    };
     let header = `🔍 <b>Ditemukan ${matched.length} transaksi`;
-    if (filters.date_text) header += ` pada ${filters.date_text}`;
+    if (filters.date_text) header += ` pada ${_formatDateLabel(filters.date_text)}`;
     if (filters.type)      header += ` (${filters.type})`;
     if (filters.keyword)   header += ` — "${filters.keyword}"`;
     header += `:</b>\n\n`;
@@ -698,7 +690,9 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
     }
 
     const oldRow = rows[indexToEdit];
-    const oldCat = oldRow[6] || '-';
+    // BUG FIX #3: Corrected variable naming — row[6] is Catatan (notes), row[4] is Kategori
+    const oldCatatan = oldRow[6] || '-';
+    const oldKategori = oldRow[4] || '-';
     
     // Update nominal if provided
     if (newNominal !== undefined && newNominal !== null && String(newNominal).trim() !== '') {
@@ -723,7 +717,7 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
     // Overwrite the sheet
     await googleWorkspace.overwriteFinanceSheet(rows);
 
-    return { status: 'SUCCESS', message: `✏️ Transaksi "${oldCat}" berhasil diubah. Semua rumus dan data telah disesuaikan ulang.` };
+    return { status: 'SUCCESS', message: `✏️ <b>Transaksi berhasil diubah!</b>\nCatatan: "${oldCatatan}" | Kategori: "${oldKategori}"\n\nSemua rumus dan data telah disesuaikan ulang.` };
   } catch (error) {
     console.error('[FINANCE] Failed to edit transaction:', error.message);
     return { status: 'FAILED', message: `Gagal mengubah transaksi: ${error.message}` };
@@ -748,10 +742,11 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
         if (customDescription) pending.tx.description = customDescription;
         if (customCategory) pending.tx.category = customCategory;
         
-        // If it's still uncategorized but has a user description, auto-categorize it via AI Router
+        // BUG FIX #7: Use correct type (INCOME/EXPENSE) when inferring category
         if (!customCategory && pending.tx.description !== '[Menunggu Detail User]') {
           const aiRouter = require('../core/AI_Router');
-          const autoQuery = `catat pengeluaran ${pending.tx.nominal} untuk ${pending.tx.description} di ${pending.tx.destination}`;
+          const tipeStr = pending.tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
+          const autoQuery = `catat ${tipeStr} ${pending.tx.nominal} untuk ${pending.tx.description} dari/ke ${pending.tx.destination}`;
           const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
           pending.tx.category = routingData?.extracted_data?.category || 'Lainnya';
         }
@@ -857,10 +852,10 @@ async function pollLivinEmails() {
     for (const e of emails) {
       const blob = `${e.subject || ''}\n${e.body || ''}\n${e.snippet || ''}`;
       
-      // Extract Nominal
+      // BUG FIX #2: Extract Nominal using _parseFlexibleCurrency for robustness
       const nominalMatch = blob.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp?\s*([0-9][0-9\.\,]+)/i);
       if (!nominalMatch) continue;
-      const nominal = parseFloat(String(nominalMatch[1]).replace(/\./g, '').replace(',', '.'));
+      const nominal = _parseFlexibleCurrency(nominalMatch[1]);
       if (isNaN(nominal) || nominal <= 0) continue;
 
       // Check for failed transactions
@@ -959,7 +954,9 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
   const transactionTime = new Date(tx.time);
   const dateStr = transactionTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' });
   const timeStr = transactionTime.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.');
-  const nominalFmt = `Rp${tx.nominal.toLocaleString('id-ID')}`;
+  // BUG FIX #5: Safely parse nominal whether it comes as number or string (e.g., from Supabase recovery)
+  const nominalNum = typeof tx.nominal === 'number' ? tx.nominal : _parseFlexibleCurrency(String(tx.nominal));
+  const nominalFmt = isNaN(nominalNum) ? String(tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
   const tipeStr = tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran';
   const isMissingDesc = tx.description === '[Menunggu Detail User]';
   const displayDesc = isMissingDesc ? `[KOSONG - Tujuan: ${tx.destination}]` : tx.description;
