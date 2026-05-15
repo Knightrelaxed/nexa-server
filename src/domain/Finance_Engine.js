@@ -792,19 +792,58 @@ async function autoSaveFromWatchdog(compositeKey, tx) {
 }
 
 /**
- * Expose pending confirmations context for AI Router to understand the user's reply.
+ * Expose pending confirmations context.
+ * ASYNC: checks in-memory map first, falls back to Supabase if empty
+ * (handles server restarts where in-memory map is wiped).
  */
-function getPendingConfirmationsContext() {
-  if (pendingConfirmations.size === 0) return null;
-  let contextStr = "STATUS FINANCE TERTUNDA (MENUNGGU RESPON USER):\n";
-  for (const [key, pending] of pendingConfirmations.entries()) {
-    const tx = pending.tx;
-    contextStr += `- Ada transaksi tertunda: ${tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran'} Rp${tx.nominal} ke/dari ${tx.destination}.\n`;
-    if (tx.description === '[Menunggu Detail User]' || tx.category === '[Menunggu Kategori AI/User]') {
-      contextStr += `  User mungkin sedang mencoba memberi tahu rincian/kategori untuk transaksi ini!\n`;
+async function getPendingConfirmationsContext() {
+  // 1. Check in-memory map first (fast path)
+  if (pendingConfirmations.size > 0) {
+    let contextStr = "STATUS FINANCE TERTUNDA (MENUNGGU RESPON USER):\n";
+    for (const [key, pending] of pendingConfirmations.entries()) {
+      const tx = pending.tx;
+      contextStr += `- Ada transaksi tertunda: ${tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran'} Rp${tx.nominal} ke/dari ${tx.destination}.\n`;
+      if (tx.description === '[Menunggu Detail User]' || tx.category === '[Menunggu Kategori AI/User]') {
+        contextStr += `  User mungkin sedang mencoba memberi tahu rincian/kategori untuk transaksi ini!\n`;
+      }
     }
+    return contextStr;
   }
-  return contextStr;
+
+  // 2. Fallback: check Supabase (handles server restart scenario)
+  try {
+    const rows = await supabase.getPendingTransactions();
+    const fresh = rows.filter(r => {
+      const ageMs = Date.now() - new Date(r.created_at).getTime();
+      return ageMs < 5 * 60 * 1000; // only still-active ones
+    });
+    if (fresh.length === 0) return null;
+
+    // Re-register recovered transactions into in-memory map so future calls are fast
+    for (const row of fresh) {
+      const tx = row.tx_data;
+      const key = row.composite_key;
+      if (!pendingConfirmations.has(key)) {
+        const ageMs = Date.now() - new Date(row.created_at).getTime();
+        const remaining = (5 * 60 * 1000) - ageMs;
+        const timeoutId = setTimeout(async () => {
+          if (pendingConfirmations.has(key)) await _autoSavePending(key, tx);
+        }, remaining);
+        pendingConfirmations.set(key, { tx, timeoutId });
+        console.log(`[FINANCE] Re-registered pending tx from Supabase (post-restart): ${key}`);
+      }
+    }
+
+    let contextStr = "STATUS FINANCE TERTUNDA (MENUNGGU RESPON USER — dipulihkan dari Supabase setelah restart):\n";
+    for (const row of fresh) {
+      const tx = row.tx_data;
+      contextStr += `- Ada transaksi tertunda: ${tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran'} Rp${tx.nominal} ke/dari ${tx.destination}.\n`;
+    }
+    return contextStr;
+  } catch (e) {
+    console.error('[FINANCE] getPendingConfirmationsContext Supabase fallback failed:', e.message);
+    return null;
+  }
 }
 
 module.exports = {

@@ -1171,7 +1171,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     // at a hanging Livin transaction confirmation — BEFORE the AI Router
     // gets a chance to misinterpret them as a new RECORD intent.
     // ============================================================
-    const pendingFinanceCtx = financeEngine.getPendingConfirmationsContext();
+    const pendingFinanceCtx = await financeEngine.getPendingConfirmationsContext();
     if (pendingFinanceCtx) {
       const normText = textInput.toLowerCase().trim();
       const isConfirm = /^(ya|iya|ok|oke|siap|benar|catat|simpan|lanjut|lanjutkan|masukkan|ya catat|gas|setuju)/.test(normText);
