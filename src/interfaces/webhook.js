@@ -1421,7 +1421,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           let recentData;
           if (hasFilter) {
             // Cek apakah user secara eksplisit minta yang 'terakhir'
-            const isLatestOnly = /(terakhir|terbaru|barusan|tadi|satu saja|1 saja)$/i.test(textInput);
+            const isLatestOnly = /\b(terakhir|terkahir|terbaru|barusan|tadi|satu saja|1 saja)\b/i.test(textInput);
             
             recentData = await financeEngine.searchTransactions({
               date_text: ed.date_text || ed.time || null,
