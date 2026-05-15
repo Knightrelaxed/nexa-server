@@ -964,12 +964,15 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             return '❓ Transaksi mana yang ingin diubah/dihapus, Tuan? Sebutkan kata kunci unik, nominal, atau nomor transaksi.';
           }
         }
+        const actionsRequiringNominal = ['RECORD', 'RECORD_MULTIPLE'];
         if (
-          data.action !== 'IMPORT_FROM_EMAIL' &&
-          (data.action === 'RECORD' || data.nominal !== undefined) &&
-          (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0)
+          actionsRequiringNominal.includes(data.action) ||
+          (data.action === 'UPDATE_PENDING' && data.nominal != null) ||
+          (data.action === 'EDIT' && data.nominal != null)
         ) {
-          return '❓ Nominal transaksi belum valid. Mohon sebutkan angka positifnya, Tuan.';
+          if (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0) {
+            return '❓ Nominal transaksi belum valid. Mohon sebutkan angka positifnya, Tuan.';
+          }
         }
       }
 
