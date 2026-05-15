@@ -1,12 +1,12 @@
 # Panduan Arsitektur & Alur Keuangan N.E.X.A
 
-Dokumen ini menjelaskan secara menyeluruh (*Deep Dive*) bagaimana "Otak Keuangan" N.E.X.A bekerja, dari hulu (input masuk) hingga hilir (penyimpanan ke Google Sheets), termasuk penanganan berbagai skenario ekstrem (seperti peladen mati, pesan duplikat, dan tebakan kecerdasan buatan).
+Dokumen ini menjelaskan secara menyeluruh (*Deep Dive*) bagaimana "Otak Keuangan" N.E.X.A bekerja, dari hulu (input masuk) hingga hilir (penyimpanan ke Google Sheets), termasuk penanganan berbagai skenario ekstrem dan *edge case* yang sudah divalidasi.
 
 ---
 
 ## 1. Sumber Input (Multi-Channel Intake)
 N.E.X.A mampu menangkap transaksi dari berbagai jalur secara bersamaan:
-1. **Otomatis via Livin' (Gmail Polling/Tasker):** Setiap ada transfer/pembayaran dari Mandiri Livin', email notifikasi ditangkap oleh n8n/Tasker dan diteruskan ke webhook N.E.X.A, atau N.E.X.A melakukan *polling* otomatis ke Gmail.
+1. **Otomatis via Livin' (Gmail Polling):** Setiap ada transfer/pembayaran dari Mandiri Livin', N.E.X.A melakukan *polling* otomatis ke Gmail setiap 3 menit.
 2. **Manual Teks (Telegram):** Tuan mengetik langsung (misal: "Catat pengeluaran 15rb buat beli soto").
 3. **Voice Note (Telegram):** Melalui *6-Tier God Mode Voice Engine*, N.E.X.A mentranskrip suara Tuan menjadi teks.
 4. **Foto/Struk (Telegram):** Melalui *11-Tier Vision Engine*, N.E.X.A membaca rincian struk belanja atau tangkapan layar transfer.
@@ -14,81 +14,92 @@ N.E.X.A mampu menangkap transaksi dari berbagai jalur secara bersamaan:
 ---
 
 ## 2. Pemrosesan Awal & Ekstraksi Data (AI Router)
-Semua input mentah akan dilempar ke `AI_Router` untuk diekstrak menjadi format JSON terstruktur:
-- **Nominal:** Dikonversi ke angka absolut.
+Semua input mentah dilempar ke `AI_Router` untuk diekstrak menjadi format JSON terstruktur:
+
+- **Nominal:** Dikonversi ke angka absolut positif.
 - **Tipe:** Pemasukan atau Pengeluaran.
-- **Waktu:** N.E.X.A akan menggunakan waktu saat pesan masuk. **TETAPI**, jika Tuan memberi keterangan waktu (misal: "kemarin", "tadi malam", "jam 2 siang tadi"), N.E.X.A akan menghitung mundur dan menyesuaikan jam/tanggalnya secara cerdas. Jika Tuan menyebut tanggal tanpa jam (misal: "tanggal 5 kemarin"), N.E.X.A akan menghentikan proses dan membalas untuk menanyakan *"Jam berapa transaksinya?"* (Status `INCOMPLETE_INFO`).
-- **Kategori & Catatan:** N.E.X.A mencoba menebak kategori dari 70+ kategori *default*. Jika tidak ada keterangan (hanya nominal dan tujuan), catatan diset ke `[Menunggu Detail User]`.
+- **Waktu:** N.E.X.A menggunakan waktu tepat saat pesan masuk. **TETAPI**, jika Tuan memberi keterangan waktu abstrak (misal: "kemarin", "tadi malam", "jam 2 siang tadi", "jam 3 subuh"), N.E.X.A akan menghitung mundur dan menyesuaikan jam/tanggalnya secara cerdas. N.E.X.A kemudian **wajib membalas** dengan menyebutkan jam/tanggal yang telah disesuaikan ke kartu konfirmasi. Data pada Google Sheets juga ditulis dengan waktu yang telah disesuaikan (bukan waktu saat pesan dikirim). Jika Tuan menyebut tanggal tanpa jam (misal: "tanggal 5"), N.E.X.A akan menghentikan proses dan bertanya: *"Jam berapa transaksinya?"* (Status `INCOMPLETE_INFO`).
+
+- **Kategori & Catatan — Alur Hierarki 2 Lapisan:**
+  1. **Lapisan 1 (dari nama tujuan):** Untuk transaksi Livin', N.E.X.A membaca nama tujuan transfer dan menebak kategori secara otomatis (misal: "STEAM" → "Perangkat lunak, aplikasi"; "GOFOOD" → "Makanan dan minuman").
+  2. **Lapisan 2 (dari keterangan Tuan):** Jika Tuan memberikan keterangan tujuan ("untuk beli soto", "buat bayar kos"), N.E.X.A menggunakannya untuk mengisi `Catatan/Detail` dan menyimpulkan kategori yang lebih presisi.
+
+- **Alur Perintah Tidak Lengkap (Wajib Tanya Dulu):**
+  Jika Tuan hanya berkata *"catat pengeluaran 10000"* tanpa menyebutkan tujuan atau keterangan apapun, N.E.X.A **wajib bertanya** terlebih dahulu: *"Tuan, uang ini digunakan untuk keperluan apa?"*. Baru setelah Tuan membalas (misal: "beli buku"), N.E.X.A menebak kategori dan mengirimkan kartu konfirmasi yang sudah **lengkap** dengan `Catatan/Detail` dan Kategori yang terisi.
 
 ---
 
 ## 3. Zero-Duplication Engine (Pencegah Duplikat)
-Sebelum sebuah transaksi diproses lebih lanjut, N.E.X.A membuat **Composite Key** (Kunci Unik) yang terdiri dari `Nominal + Tujuan/Merchant` (contoh: `13000_waroengemdje`).
+N.E.X.A membuat **Composite Key** dari `Nominal + Tujuan/Merchant` (contoh: `13000_waroengemdje`).
+
 N.E.X.A mengecek database (`nexa_finance_dedup`):
-- Jika transaksi otomatis (Livin') ini **sudah pernah masuk** di hari/jam yang berdekatan, transaksi akan langsung **dibuang/diabaikan** tanpa mengganggu Tuan.
+- Jika ada data dengan nominal dan tujuan **yang sama** dalam kurun waktu **24 jam terakhir**, transaksi baru dari *polling* akan dibuang/diabaikan.
+- Jika **tidak ada** dalam 24 jam terakhir, proses dilanjutkan.
+
+> **Catatan Penting:** Window 24 jam dipilih karena Tuan Faqih sering melakukan transaksi dengan nominal dan tujuan yang sama namun pada hari yang berbeda (misalnya beli makan siang di tempat yang sama setiap hari). Transaksi seperti ini harus tetap tercatat, bukan dianggap duplikat.
 
 ---
 
 ## 4. Sistem Konfirmasi Tertunda (The 5-Minute Window)
-N.E.X.A tidak pernah asal mencatat data buta ke dalam Google Sheets. Jika input lolos pengecekan duplikat, N.E.X.A akan meletakkannya di **Ruang Tunggu (Pending Confirmations)** di RAM dan disalin ke database Supabase.
 
-N.E.X.A kemudian mengirim kartu konfirmasi ke Telegram Tuan:
+Setelah lolos dedup, transaksi masuk ke **Ruang Tunggu (Pending Confirmations)** di RAM dan disalin ke Supabase. N.E.X.A mengirim kartu konfirmasi:
 
 > 💸 **TRANSAKSI LIVIN TERBARU**
-> 
+>
 > **No:** [Auto]
 > **Tanggal:** 15 Mei 2026
-> **Waktu:** 15.37
+> **Waktu:** 07.58
 > **Tipe:** Pengeluaran
-> **Kategori:** [Auto-AI]
+> **Kategori:** Makanan dan minuman
 > **Akun:** Bank Mandiri Livin
-> **Catatan / Detail:** [KOSONG - Tujuan: Waroeng Emdje]
+> **Catatan / Detail:** pengeluaran ke Waroeng Emdje
 > **Nominal (Rp):** Rp13.000
-> **Saldo (Rp) Saat Ini:** Rp4,019
-> 
+> **Saldo (Rp) Saat Ini:** Rp4.019 *(selalu dihitung ulang saat kartu dikirim)*
+>
 > ❓ **N.E.X.A mencatat pengeluaran ke Waroeng Emdje.**
 > Tuan, uang ini digunakan untuk keperluan apa ya? *(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).*
 
+> **Catatan:** Kolom `Saldo (Rp) Saat Ini` **selalu dihitung ulang secara real-time** saat kartu konfirmasi dikirimkan ke Tuan (bukan nilai statis).
+
 ### Mekanisme Interceptor (Menangkap Balasan Tuan)
-Ketika transaksi sedang di Ruang Tunggu (maksimal 5 menit), sistem masuk ke status bersiaga. Apapun balasan Tuan selanjutnya akan dicegat (*intercept*) oleh N.E.X.A **sebelum** dipikirkan sebagai topik obrolan baru.
+Semua balasan Tuan dicegat (*intercept*) **SEBELUM** dipikirkan sebagai topik obrolan baru oleh AI Router.
 
 **Skenario Balasan Tuan:**
-1. **Konfirmasi Langsung ("ya", "catat", "oke", "gas"):**
-   N.E.X.A segera mengeluarkan data dari ruang tunggu, menghitung saldo, dan mencatatnya ke baris Google Sheets.
+1. **Konfirmasi Langsung ("ya", "catat", "oke", "gas", "masukkan"):**
+   N.E.X.A segera mengeluarkan data dari ruang tunggu dan mencatatnya ke baris baru di Google Sheets.
 2. **Pembatalan ("batal", "tidak", "jangan", "hapus"):**
-   N.E.X.A membatalkan transaksi dan menghapusnya dari ruang tunggu.
-3. **Koreksi / Penambahan Detail ("untuk beli soto bro", "salah, itu 15rb", "kategorinya amal"):**
-   N.E.X.A akan memperbarui memori yang tertunda dengan deskripsi baru. Kartu konfirmasi di atas akan dikirim ulang dengan `Catatan / Detail` yang sudah Tuan sebutkan. Waktu hitung mundur 5 menit di-reset ulang dari awal.
+   N.E.X.A membatalkan transaksi dan membersihkannya dari ruang tunggu.
+3. **Penambahan Detail / Deskripsi ("untuk beli soto bro", "buat bayar listrik"):**
+   N.E.X.A menyimpan teks tersebut sebagai `Catatan/Detail`, sekaligus **menebak ulang kategori** berdasarkan deskripsi yang diberikan. Kartu konfirmasi dikirim ulang dengan data yang sudah diperbarui. Timer 5 menit di-reset ulang dari awal.
+4. **Koreksi Kategori ("kategorinya amal", "kategori: transportasi"):**
+   N.E.X.A mendeteksi kata kunci "kategorinya/kategori:" dan mengubah kategori sesuai instruksi. Kartu konfirmasi dikirim ulang.
 
 ---
 
 ## 5. Skenario Ekstrem & Self-Healing (Kemampuan Pemulihan)
 
-Apa yang terjadi jika hal tak terduga terjadi saat transaksi sedang berada di Ruang Tunggu?
-
 ### Skenario A: Tuan Tidak Membalas Selama 5 Menit (Timeout)
-Jika Tuan sedang sibuk (rapat/tidur) dan mengabaikan kartu konfirmasi, fungsi otomatis (*timeout*) akan berjalan. N.E.X.A akan:
-1. Membaca nama *Merchant* / Tujuan transfer.
-2. Menggunakan AI Router untuk **menebak secara cerdas** apa kategori transaksi tersebut. (Misal: Jika tujuannya "Steam", dikategorikan "Perangkat lunak, aplikasi, permainan". Jika "Indomaret", dikategorikan "Bahan makanan").
-3. Menyimpan otomatis ke Google Sheets.
-4. Mengirim notifikasi: *"⏳ Waktu habis. Transaksi Rp13.000 telah disimpan otomatis."*
+Fungsi otomatis akan berjalan. N.E.X.A akan:
+1. Membaca nama *Merchant* / tujuan transfer.
+2. Menggunakan AI Router untuk **menebak kategori** secara cerdas.
+3. Menyimpan ke Google Sheets dengan kolom `No` diisi `[Auto]`.
+4. Mengirim notifikasi ke Telegram: *"⏳ Waktu habis. Transaksi Rp13.000 telah disimpan otomatis. Kategori AI: Makanan dan minuman."*
 
-### Skenario B: Server Mati/Restart Saat Menunggu Konfirmasi (Fatal Crash)
-Inilah letak kecanggihan N.E.X.A. Jika peladen (Hugging Face) tiba-tiba mati karena kehabisan RAM atau *restart*, ruang tunggu di RAM akan terhapus. Tuan membalas "untuk beli soto", tapi peladen baru saja nyala dan tidak tahu ada transaksi yang menunggu.
-**Cara N.E.X.A Mengatasinya:**
-- Saat fungsi *interceptor* berjalan, ia akan mengecek RAM. Jika kosong, ia bersifat *Async* dan **langsung mengecek ke *database* Supabase**. 
-- Jika di Supabase ada transaksi yang usianya masih di bawah 5 menit, N.E.X.A akan **membangkitkan (re-register)** transaksi tersebut kembali ke RAM.
-- Balasan "untuk beli soto" Tuan tetap berhasil memperbarui catatan transaksi secara ajaib tanpa menimbulkan *error* duplikat.
+### Skenario B: Server Restart Saat Menunggu Konfirmasi
+Jika peladen (Hugging Face) restart, RAM terhapus. Ketika Tuan membalas, interceptor akan:
+1. Cek RAM → kosong.
+2. **Fallback ke Supabase** secara otomatis.
+3. Menemukan transaksi yang usianya < 5 menit → **bangkitkan ulang ke RAM**.
+4. Balasan Tuan tetap diproses seolah server tidak pernah restart.
 
-### Skenario C: Timeout Tapi Server Sedang Mati
-Jika waktu 5 menit habis tapi peladen sedang mati (sehingga *timeout* gagal terpicu), N.E.X.A memiliki fitur **Watchdog (Anjing Penjaga)** di modul `cron.js`.
-Setiap 90 detik, Watchdog akan berpatroli ke database Supabase. Jika ia menemukan transaksi menggantung yang usianya sudah lebih dari 5 menit, Watchdog akan mengambil alih, menebak kategorinya, menyimpan ke Google Sheets secara paksa, dan membersihkan database Supabase.
+### Skenario C: Timeout + Server Sedang Mati
+**Watchdog** di `cron.js` berpatroli setiap **90 detik**. Jika menemukan transaksi menggantung berusia > 5 menit di Supabase, Watchdog mengambil alih: menebak kategori → simpan ke Sheets → bersihkan Supabase.
 
 ---
 
 ## Kesimpulan UX (Pengalaman Pengguna)
-Dengan arsitektur ini, N.E.X.A bertindak seolah ia tidak pernah mati. Tuan Faqih bisa:
-1. Membayar Livin' di kasir tanpa harus membuka Telegram.
-2. Jika Tuan mau transaksinya rapi, Tuan cukup membalas pesan N.E.X.A dengan santai ("buat bayar kos", "beli makan siang").
-3. Jika Tuan lelah atau sibuk, abaikan saja pesannya. N.E.X.A akan merapikan dan memasukkannya sendiri.
-4. Semua duplikasi, kesalahan jaringan, atau *crash* server ditangani sepenuhnya di latar belakang. Anda hanya melihat hasil akhirnya: Laporan Keuangan yang selalu seimbang (*Balance*).
+Tuan Faqih bisa:
+1. Membayar di kasir Livin' tanpa menyentuh Telegram — N.E.X.A mencatat otomatis.
+2. Jika ingin rapi, balas pesan N.E.X.A dengan santai ("buat beli makan siang") → kartu diperbarui otomatis.
+3. Jika sibuk/lelah, abaikan → N.E.X.A menyimpan otomatis dengan kategori tebakan AI.
+4. Tidak ada duplikat, tidak ada transaksi hilang meski server mati.

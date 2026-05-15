@@ -61,15 +61,18 @@ async function getRecentMemories(limit = 10) {
 async function isDuplicateTransaction(compositeKey, transactionTime) {
   if (!supabase) return false;
   
-  const timeMinus10 = new Date(transactionTime.getTime() - 10 * 60000).toISOString();
-  const timePlus10 = new Date(transactionTime.getTime() + 10 * 60000).toISOString();
+  // Dedup window: 24 hours. Same nominal+merchant is allowed on different days.
+  // This prevents double-recording from Livin email re-polling, but allows
+  // Tuan Faqih to record the same purchase (e.g. "Indomaret, Rp13.000") on two separate days.
+  const windowStart = new Date(transactionTime.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const windowEnd   = new Date(transactionTime.getTime() + 24 * 60 * 60 * 1000).toISOString();
 
   const { data, error } = await supabase
     .from('nexa_finance_dedup')
     .select('id')
     .eq('composite_key', compositeKey)
-    .gte('transaction_time', timeMinus10)
-    .lte('transaction_time', timePlus10);
+    .gte('transaction_time', windowStart)
+    .lte('transaction_time', windowEnd);
 
   if (error) {
     console.error('[SUPABASE] Error checking duplicate:', error.message);

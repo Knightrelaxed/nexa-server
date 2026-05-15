@@ -519,33 +519,54 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
 }
 
 /**
- * Updates a pending transaction with new details/category and re-sends a confirmation prompt.
+ * Updates a pending transaction with new details/category/nominal and re-sends a confirmation prompt.
+ * Smart auto-detection: pass raw user text and it will figure out what to update.
  * Does NOT save to Google Sheets yet.
  */
-async function updatePendingTransaction(customDescription = null, customCategory = null, customNominal = null) {
+async function updatePendingTransaction(rawUserText = null, customCategory = null, customNominal = null) {
   if (pendingConfirmations.size === 0) return null;
 
   let msg = '';
   for (const [key, pending] of pendingConfirmations.entries()) {
-    if (customDescription) pending.tx.description = customDescription;
+    if (rawUserText) {
+      const lower = rawUserText.toLowerCase().trim();
+
+      // 1. Detect explicit category keyword ("kategorinya amal", "kategori: makanan")
+      const catMatch = lower.match(/kategori(?:nya)?[:\s]+(.+)/);
+      if (catMatch) {
+        pending.tx.category = catMatch[1].trim();
+      } else {
+        // 2. Everything else → treat as description/purpose text
+        pending.tx.description = rawUserText.trim();
+        // Attempt AI-based category inference from the description + destination
+        try {
+          const aiRouter = require('../core/AI_Router');
+          const inferQuery = `catat pengeluaran ke ${pending.tx.destination} untuk ${rawUserText}`;
+          const r = await aiRouter.routeUserMessage(inferQuery, { last_intent: null });
+          if (r && r.extracted_data && r.extracted_data.category && r.extracted_data.category !== 'Lainnya') {
+            pending.tx.category = r.extracted_data.category;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Apply explicit overrides if provided directly
     if (customCategory) pending.tx.category = customCategory;
-    if (customNominal) pending.tx.nominal = customNominal;
+    if (customNominal && !isNaN(parseFloat(customNominal))) pending.tx.nominal = parseFloat(customNominal);
 
     // Reset the 5-minute timeout because user interacted
     clearTimeout(pending.timeoutId);
-    
+
     // Update Supabase
     await supabase.savePendingTransaction(key, pending.tx, true);
 
     const newTimeoutId = setTimeout(async () => {
-      if (pendingConfirmations.has(key)) {
-        await _autoSavePending(key, pending.tx);
-      }
+      if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
     }, 5 * 60 * 1000);
     pending.timeoutId = newTimeoutId;
 
-    msg = await _buildConfirmationMessage(pending.tx, 'KOREKSI TRANSAKSI TERTUNDA');
-    break; // only handle the first one (usually there's only 1 pending at a time)
+    msg = await _buildConfirmationMessage(pending.tx, 'DETAIL TRANSAKSI DIPERBARUI ✏️');
+    break; // only handle the first one
   }
 
   return msg;
