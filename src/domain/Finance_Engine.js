@@ -170,7 +170,7 @@ async function processTransaction(data, source) {
     const nominalFormatted = `Rp${nominal.toLocaleString('id-ID')}`;
     return {
       status: 'SUCCESS',
-      message: `✅ Transaksi **${tipeLabel}** sebesar **${nominalFormatted}** (${txData.catatan}) berhasil dicatat di baris No. ${result.noValue} — Sheet *${result.sheetName}*.`
+      message: `✅ Transaksi <b>${tipeLabel}</b> sebesar <b>${nominalFormatted}</b> (${txData.catatan}) berhasil dicatat di baris No. ${result.noValue} — Sheet <i>${result.sheetName}</i>.`
     };
   } catch (error) {
     console.error('[FINANCE] Failed to record transaction:', error.message);
@@ -178,7 +178,7 @@ async function processTransaction(data, source) {
       throw new Error('File buku kas Tuan berformat Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli. Silakan buka file tersebut di Google Drive, klik "File > Save as Google Sheets", lalu masukkan ID file yang baru ke konfigurasi sistem Tuan.');
     }
     if (error.message && error.message.includes('Unable to parse range')) {
-      throw new Error(`⚠️ **Tab Bulan Ini Belum Dibuat!**\nN.E.X.A mencoba mencari tab (sheet) dengan nama bulan ini (misal: "Mei 2026"), tetapi tidak menemukannya.\n\n*Solusi:*\nBuka file Google Sheets Anda, lalu duplikat tab "Februari 2026" (atau tab sebelumnya) dan ubah nama tab hasil duplikatnya menjadi nama bulan ini (contoh: "Mei 2026").`);
+      throw new Error(`⚠️ <b>Tab Bulan Ini Belum Dibuat!</b>\nN.E.X.A mencoba mencari tab (sheet) dengan nama bulan ini (misal: "Mei 2026"), tetapi tidak menemukannya.\n\n<b>Solusi:</b>\nBuka file Google Sheets Anda, lalu duplikat tab "Februari 2026" (atau tab sebelumnya) dan ubah nama tab hasil duplikatnya menjadi nama bulan ini (contoh: "Mei 2026").`);
     }
     throw error;
   }
@@ -193,7 +193,7 @@ async function getRecentTransactions(limit = 5) {
     const rows = await googleWorkspace.getFinanceSummary(limit);
     if (!rows || rows.length === 0) return '📭 Tidak ada transaksi yang tercatat di sheet bulan ini.';
 
-    let response = `💸 *${rows.length} Transaksi Terakhir (Sheet Bulan Ini):*\n\n`;
+    let response = `💸 <b>${rows.length} Transaksi Terakhir (Sheet Bulan Ini):</b>\n\n`;
     rows.forEach(row => {
       // Columns: A(No) B(Tanggal) C(Waktu) D(Tipe) E(Kategori) F(Akun) G(Catatan) H(Nominal) I(Saldo) J(Nominal+)
       const no       = row[0] || '-';
@@ -224,7 +224,7 @@ async function getRecentTransactions(limit = 5) {
       return `⚠️ <b>Gagal mengambil data:</b> Format dokumen tidak didukung.\n\nTuan, file buku kas saat ini berformat Microsoft Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli.\n\n<b>Cara Perbaikan:</b>\n1. Buka file tersebut di Google Drive\n2. Klik "File" > "Save as Google Sheets"\n3. Copy ID dari file baru tersebut dan perbarui di setelan (GOOGLE_SHEET_ID).`;
     }
     if (err.message && err.message.includes('Unable to parse range')) {
-      return `⚠️ **Tab Bulan Ini Belum Dibuat!**\nN.E.X.A tidak dapat menemukan tab (sheet) dengan nama bulan ini di Google Sheets Tuan. Silakan buat atau duplikat tab sebelumnya, dan beri nama sesuai bulan ini (contoh: "Mei 2026").`;
+      return `⚠️ <b>Tab Bulan Ini Belum Dibuat!</b>\nN.E.X.A tidak dapat menemukan tab (sheet) dengan nama bulan ini di Google Sheets Tuan. Silakan buat atau duplikat tab sebelumnya, dan beri nama sesuai bulan ini (contoh: "Mei 2026").`;
     }
     return `⚠️ Gagal mengambil data keuangan: ${err.message}`;
   }
@@ -485,10 +485,10 @@ async function getFinanceAnalytics() {
   } catch (err) {
     console.error('[FINANCE] Failed to fetch analytics:', err.message);
     if (err.message && err.message.includes('Office file')) {
-      return `⚠️ **Gagal membaca analitik:** File buku kas Tuan berformat Excel (.xlsx). Silakan ubah ke format Google Sheets (File > Save as Google Sheets) dan perbarui ID filenya.`;
+      return `⚠️ <b>Gagal membaca analitik:</b> File buku kas Tuan berformat Excel (.xlsx). Silakan ubah ke format Google Sheets (File > Save as Google Sheets) dan perbarui ID filenya.`;
     }
     if (err.message && err.message.includes('Unable to parse range')) {
-      return `⚠️ **Tab Bulan Ini Belum Dibuat!**\nN.E.X.A tidak dapat menemukan tab bulan ini untuk membaca analitik. Silakan buat/duplikat tab di Google Sheets Anda dengan nama bulan ini (contoh: "Mei 2026").`;
+      return `⚠️ <b>Tab Bulan Ini Belum Dibuat!</b>\nN.E.X.A tidak dapat menemukan tab bulan ini untuk membaca analitik. Silakan buat/duplikat tab di Google Sheets Anda dengan nama bulan ini (contoh: "Mei 2026").`;
     }
     return `⚠️ Gagal membaca tabel analitik: ${err.message}`;
   }
