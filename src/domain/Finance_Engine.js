@@ -791,6 +791,22 @@ async function autoSaveFromWatchdog(compositeKey, tx) {
   return _autoSavePending(compositeKey, tx);
 }
 
+/**
+ * Expose pending confirmations context for AI Router to understand the user's reply.
+ */
+function getPendingConfirmationsContext() {
+  if (pendingConfirmations.size === 0) return null;
+  let contextStr = "STATUS FINANCE TERTUNDA (MENUNGGU RESPON USER):\n";
+  for (const [key, pending] of pendingConfirmations.entries()) {
+    const tx = pending.tx;
+    contextStr += `- Ada transaksi tertunda: ${tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran'} Rp${tx.nominal} ke/dari ${tx.destination}.\n`;
+    if (tx.description === '[Menunggu Detail User]' || tx.category === '[Menunggu Kategori AI/User]') {
+      contextStr += `  User mungkin sedang mencoba memberi tahu rincian/kategori untuk transaksi ini!\n`;
+    }
+  }
+  return contextStr;
+}
+
 module.exports = {
   processTransaction,
   getRecentTransactions,
@@ -805,7 +821,8 @@ module.exports = {
   recoverPendingTransactions,
   // Exposed for Watchdog cron (cron.js)
   buildConfirmationMessage: _buildConfirmationMessage,
-  autoSaveFromWatchdog
+  autoSaveFromWatchdog,
+  getPendingConfirmationsContext
 };
 
 

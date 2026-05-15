@@ -1166,7 +1166,45 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     }
 
     // ============================================================
-    // PENDING TASK CONFIRMATION (Fase 2)
+    // PENDING FINANCE REPLY INTERCEPTOR
+    // Catches user replies (descriptions, "ya", "oke", "catat") aimed
+    // at a hanging Livin transaction confirmation — BEFORE the AI Router
+    // gets a chance to misinterpret them as a new RECORD intent.
+    // ============================================================
+    const pendingFinanceCtx = financeEngine.getPendingConfirmationsContext();
+    if (pendingFinanceCtx) {
+      const normText = textInput.toLowerCase().trim();
+      const isConfirm = /^(ya|iya|ok|oke|siap|benar|catat|simpan|lanjut|lanjutkan|masukkan|ya catat|gas|setuju)/.test(normText);
+      const isCancel  = /^(batal|batalkan|cancel|tidak|jangan|ga|gak|hapus|no)$/.test(normText);
+
+      if (isConfirm) {
+        console.log('[FINANCE INTERCEPTOR] User confirmed pending transaction.');
+        const confirmReply = await financeEngine.confirmPendingTransactions(true);
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+        await respondToTelegram(confirmReply || '✅ Transaksi telah dicatat.');
+        clearTimeout(safetyTimer);
+        return;
+      } else if (isCancel) {
+        console.log('[FINANCE INTERCEPTOR] User cancelled pending transaction.');
+        const cancelReply = await financeEngine.confirmPendingTransactions(false);
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+        await respondToTelegram(cancelReply || '❌ Transaksi dibatalkan.');
+        clearTimeout(safetyTimer);
+        return;
+      } else if (textInput.length > 2 && !normText.startsWith('[buffer]')) {
+        // Anything else while a transaction is pending = treat as description/category update
+        console.log('[FINANCE INTERCEPTOR] User provided description for pending transaction:', textInput);
+        const updatedMsg = await financeEngine.updatePendingTransaction(textInput, null, null);
+        if (updatedMsg) {
+          await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+          await respondToTelegram(updatedMsg);
+          clearTimeout(safetyTimer);
+          return;
+        }
+        // If updatePendingTransaction returned null (already auto-saved), fall through to normal routing
+      }
+    }
+
     // ============================================================
     const chatId = String(message.chat.id);
     if (taskManager.pendingTaskCategories.has(chatId)) {
