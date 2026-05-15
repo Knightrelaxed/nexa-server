@@ -291,23 +291,29 @@ async function deleteTransaction(keyword) {
     const kw = String(keyword).toLowerCase().trim();
     let indexToDelete = -1;
 
-    // Priority 1: Exact match on transaction number (column 0 = "No")
-    if (/^\d+$/.test(kw)) {
-      indexToDelete = rows.findIndex(r => String(r[0]).trim() === kw);
-    }
+    // Priority 0: Generic "last transaction" keywords
+    const isGenericLast = kw === '' || /^(barusan|tadi|terakhir|terbaru|sebelumnya)$/.test(kw) || /transaksi (barusan|tadi|terakhir|terbaru)/.test(kw);
+    if (isGenericLast) {
+      indexToDelete = rows.length - 1;
+    } else {
+      // Priority 1: Exact match on transaction number (column 0 = "No")
+      if (/^\d+$/.test(kw)) {
+        indexToDelete = rows.findIndex(r => String(r[0]).trim() === kw);
+      }
 
-    // Priority 2: Exact match on description (column 6)
-    if (indexToDelete === -1) {
-      indexToDelete = rows.findIndex(r => (r[6] || '').toLowerCase().trim() === kw);
-    }
+      // Priority 2: Exact match on description (column 6)
+      if (indexToDelete === -1) {
+        indexToDelete = rows.findIndex(r => (r[6] || '').toLowerCase().trim() === kw);
+      }
 
-    // Priority 3: Partial match on description or nominal (last resort)
-    if (indexToDelete === -1) {
-      indexToDelete = rows.findIndex(r => {
-        const cat = (r[6] || '').toLowerCase();
-        const nom = (r[7] || '').toLowerCase();
-        return cat.includes(kw) || nom.includes(kw);
-      });
+      // Priority 3: Partial match on description or nominal (last resort)
+      if (indexToDelete === -1) {
+        indexToDelete = rows.findIndex(r => {
+          const cat = (r[6] || '').toLowerCase();
+          const nom = (r[7] || '').toLowerCase();
+          return cat.includes(kw) || nom.includes(kw);
+        });
+      }
     }
 
     if (indexToDelete === -1) {
@@ -406,8 +412,9 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
     const kw = String(keyword).toLowerCase().trim();
     let indexToEdit = -1;
 
-    if (kw === '') {
-      // If no keyword provided, default to the most recent transaction (last row)
+    // Priority 0: Generic "last transaction" keywords
+    const isGenericLast = kw === '' || /^(barusan|tadi|terakhir|terbaru|sebelumnya)$/.test(kw) || /transaksi (barusan|tadi|terakhir|terbaru)/.test(kw);
+    if (isGenericLast) {
       indexToEdit = rows.length - 1;
     } else {
       // Priority 1: Exact match on transaction number (column 0 = "No")
@@ -476,6 +483,7 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
 
   let processedCount = 0;
   let skippedCount = 0;
+  let successMessages = [];
 
   for (const [key, pending] of pendingConfirmations.entries()) {
     clearTimeout(pending.timeoutId);
@@ -492,7 +500,8 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
           pending.tx.category = routingData?.extracted_data?.category || 'Lainnya';
         }
 
-        await processTransaction(pending.tx, 'GMAIL_POLLING');
+        const res = await processTransaction(pending.tx, 'GMAIL_POLLING');
+        if (res && res.message) successMessages.push(res.message);
         processedCount++;
       } catch (e) {
         console.error(`[FINANCE] Failed to save confirmed tx:`, e.message);
@@ -512,6 +521,7 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
   }
 
   if (isYes) {
+    if (successMessages.length > 0) return successMessages.join('\n\n');
     return `✅ <b>Berhasil dicatat!</b> ${processedCount} transaksi telah dimasukkan ke dalam sheet keuangan Tuan.`;
   } else {
     return `❌ <b>Dibatalkan.</b> ${skippedCount} transaksi Livin' diabaikan dan tidak dimasukkan ke dalam sheet.`;
