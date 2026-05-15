@@ -231,6 +231,184 @@ async function getRecentTransactions(limit = 5) {
 }
 
 /**
+ * Parse relative date text to an actual Date object (WIB).
+ * Supports: "kemarin", "hari ini", "tanggal 14", "14 mei", day names.
+ */
+function _parseRelativeDateFilter(text) {
+  if (!text) return null;
+  const lower = text.toLowerCase().trim();
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (lower.includes('hari ini') || lower.includes('today')) return today;
+  if (lower.includes('kemarin') || lower.includes('yesterday')) {
+    const d = new Date(today); d.setDate(d.getDate() - 1); return d;
+  }
+  // "tanggal 14", "tgl 14"
+  const tglMatch = lower.match(/(?:tanggal|tgl)\s*(\d{1,2})/);
+  if (tglMatch) {
+    const d = new Date(today); d.setDate(parseInt(tglMatch[1])); return d;
+  }
+  // "14/5" or "14-5"
+  const slashMatch = lower.match(/(\d{1,2})[\/\-](\d{1,2})/);
+  if (slashMatch) {
+    const d = new Date(today);
+    d.setMonth(parseInt(slashMatch[2]) - 1);
+    d.setDate(parseInt(slashMatch[1]));
+    return d;
+  }
+  return null;
+}
+
+/**
+ * Parse Indonesian date string to Date object.
+ * Handles: "14 Mei 2026", "14 May 2026"
+ */
+function _parseIndonesianDateString(str) {
+  if (!str) return null;
+  const MONTHS = {
+    januari:0, februari:1, maret:2, april:3, mei:4, juni:5,
+    juli:6, agustus:7, september:8, oktober:9, november:10, desember:11,
+    january:0, february:1, march:2, april:3, may:4, june:5,
+    july:6, august:7, september:8, october:9, november:10, december:11
+  };
+  const m = str.toLowerCase().match(/(\d{1,2})\s+([a-z]+)\s+(\d{4})/);
+  if (m) {
+    const day   = parseInt(m[1]);
+    const month = MONTHS[m[2]];
+    const year  = parseInt(m[3]);
+    if (month !== undefined && !isNaN(day) && !isNaN(year)) {
+      return new Date(year, month, day);
+    }
+  }
+  const iso = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2])-1, parseInt(iso[3]));
+  return null;
+}
+
+/**
+ * Format a single row as a rich card for Telegram.
+ * Columns: A(No) B(Tanggal) C(Waktu) D(Tipe) E(Kategori) F(Akun) G(Catatan) H(Nominal) I(Saldo)
+ */
+function _formatRowAsCard(row) {
+  const no       = row[0] || '-';
+  const tanggal  = row[1] || '-';
+  const waktu    = row[2] || '-';
+  const tipe     = row[3] || '-';
+  const kategori = row[4] || '-';
+  const akun     = row[5] || 'Bank Mandiri Livin';
+  const catatan  = row[6] || '-';
+  const nominal  = row[7] || '0';
+  const saldo    = row[8] || '-';
+
+  const nominalNum = parseFloat(String(nominal).replace(/[^0-9.-]/g, ''));
+  const nominalFmt = isNaN(nominalNum) ? nominal : `Rp${Math.abs(nominalNum).toLocaleString('id-ID')}`;
+  const saldoNum   = parseFloat(String(saldo).replace(/[^0-9.-]/g, ''));
+  const saldoFmt   = isNaN(saldoNum) ? saldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
+  const tipeIcon   = tipe === 'Pemasukan' ? '🟢' : '🔴';
+
+  return `${tipeIcon} <b>No. ${no}</b>\n` +
+    `<b>Tanggal:</b> ${tanggal}\n` +
+    `<b>Waktu:</b> ${waktu}\n` +
+    `<b>Tipe:</b> ${tipe}\n` +
+    `<b>Kategori:</b> ${kategori}\n` +
+    `<b>Akun:</b> ${akun}\n` +
+    `<b>Catatan / Detail:</b> ${catatan}\n` +
+    `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
+    `<b>Saldo yang Anda punya:</b> ${saldoFmt}`;
+}
+
+/**
+ * Search and display transactions with precise multi-attribute filtering.
+ * @param {Object} filters
+ * @param {string} [filters.date_text]  - "kemarin", "hari ini", "tanggal 14", etc.
+ * @param {string} [filters.keyword]    - description / merchant keyword (e.g. "jardine")
+ * @param {string} [filters.type]       - "Pemasukan" or "Pengeluaran"
+ * @param {string} [filters.category]   - category keyword
+ * @param {number} [filters.limit]      - max results (default 20)
+ */
+async function searchTransactions(filters = {}) {
+  try {
+    const rows = await googleWorkspace.getAllFinanceRows();
+    if (!rows || rows.length === 0) return '📭 Tidak ada transaksi yang tercatat di sheet bulan ini.';
+
+    const targetDate = filters.date_text ? _parseRelativeDateFilter(filters.date_text) : null;
+    const kwLower    = filters.keyword   ? filters.keyword.toLowerCase().trim()  : null;
+    const typeLower  = filters.type      ? filters.type.toLowerCase().trim()     : null;
+    const catLower   = filters.category  ? filters.category.toLowerCase().trim() : null;
+    const limit      = filters.limit || 20;
+
+    const matched = [];
+    // Scan from newest to oldest
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (matched.length >= limit) break;
+      const row = rows[i];
+      if (!row || row.length < 7) continue;
+
+      // Date filter
+      if (targetDate) {
+        const cellDate = _parseIndonesianDateString(String(row[1] || ''));
+        if (!cellDate) continue;
+        if (cellDate.getFullYear() !== targetDate.getFullYear() ||
+            cellDate.getMonth()    !== targetDate.getMonth()    ||
+            cellDate.getDate()     !== targetDate.getDate()) continue;
+      }
+
+      // Type filter  
+      if (typeLower) {
+        const cellType = (row[3] || '').toLowerCase();
+        const wantIncome  = typeLower.includes('masuk') || typeLower === 'pemasukan' || typeLower === 'income';
+        const wantExpense = typeLower.includes('keluar') || typeLower === 'pengeluaran' || typeLower === 'expense';
+        if (wantIncome  && cellType !== 'pemasukan') continue;
+        if (wantExpense && cellType !== 'pengeluaran') continue;
+      }
+
+      // Category filter
+      if (catLower) {
+        const cellCat = (row[4] || '').toLowerCase();
+        if (!cellCat.includes(catLower)) continue;
+      }
+
+      // Keyword filter: search description (col 6) and category (col 4)
+      if (kwLower) {
+        const cellDesc = (row[6] || '').toLowerCase();
+        const cellCat2 = (row[4] || '').toLowerCase();
+        const kwTokens = kwLower.split(/\s+/).filter(t => t.length > 2);
+        const match = kwTokens.some(t => cellDesc.includes(t) || cellCat2.includes(t))
+                      || cellDesc.includes(kwLower);
+        if (!match) continue;
+      }
+
+      matched.push(row);
+    }
+
+    // Reverse to chronological order for display
+    matched.reverse();
+
+    if (matched.length === 0) {
+      let desc = 'transaksi';
+      if (filters.date_text) desc += ` pada ${filters.date_text}`;
+      if (filters.keyword)   desc += ` dengan kata kunci "${filters.keyword}"`;
+      if (filters.type)      desc += ` (${filters.type})`;
+      return `📭 Tidak ada ${desc} yang ditemukan di sheet bulan ini.`;
+    }
+
+    // Build header
+    let header = `🔍 <b>Ditemukan ${matched.length} transaksi`;
+    if (filters.date_text) header += ` pada ${filters.date_text}`;
+    if (filters.type)      header += ` (${filters.type})`;
+    if (filters.keyword)   header += ` — "${filters.keyword}"`;
+    header += `:</b>\n\n`;
+
+    const cards = matched.map(row => _formatRowAsCard(row)).join('\n──────────────\n');
+    return header + cards;
+  } catch (err) {
+    console.error('[FINANCE] searchTransactions failed:', err.message);
+    return `⚠️ Gagal mencari data transaksi: ${err.message}`;
+  }
+}
+
+/**
  * Fetch and format the Analytics Table (L5:S9) from the current month's sheet.
  */
 async function getFinanceAnalytics() {
@@ -920,6 +1098,7 @@ async function getPendingConfirmationsContext() {
 module.exports = {
   processTransaction,
   getRecentTransactions,
+  searchTransactions,
   getFinanceAnalytics,
   deleteTransaction: requestDeleteConfirmation,
   confirmDeleteTransaction,

@@ -1415,8 +1415,22 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           }
           domainReply = `✅ Sinkronisasi Livin selesai.\n- Berhasil dicatat: <b>${success}</b>\n- Duplikasi diabaikan: <b>${duplicate}</b>\n- Sumber dianalisis: <b>${txRows.length}</b> transaksi email`;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'READ_LATEST') {
-          const recentData = await financeEngine.getRecentTransactions(5);
-          domainReply = (routingData.reply_message ? routingData.reply_message + '\n\n' : '') + recentData;
+          const ed = routingData.extracted_data;
+          // Use precise search if any filter is present
+          const hasFilter = ed.date_text || ed.search_keyword || ed.type || ed.category;
+          let recentData;
+          if (hasFilter) {
+            recentData = await financeEngine.searchTransactions({
+              date_text: ed.date_text   || null,
+              keyword:   ed.search_keyword || null,
+              type:      ed.type        || null,
+              category:  ed.category    || null,
+              limit: 30
+            });
+          } else {
+            recentData = await financeEngine.getRecentTransactions(5);
+          }
+          domainReply = recentData;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'READ_ANALYTICS') {
           const analyticsData = await financeEngine.getFinanceAnalytics();
           domainReply = (routingData.reply_message ? routingData.reply_message + '\n\n' : '') + analyticsData;
