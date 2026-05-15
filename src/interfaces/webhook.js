@@ -749,7 +749,17 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       const blob = `${email?.subject || ''}\n${email?.body || ''}\n${email?.snippet || ''}`;
       const nominalMatch = blob.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp?\s*([0-9][0-9\.\,]+)/i);
       if (!nominalMatch) return null;
-      const nominal = parseFloat(String(nominalMatch[1]).replace(/\./g, '').replace(',', '.'));
+      // AUDIT FIX (CRITICAL-2): Use robust IDR/USD-aware parser — mirrors Finance_Engine._parseFlexibleCurrency
+      const raw = String(nominalMatch[1]).trim();
+      const dots = (raw.match(/\./g) || []).length;
+      const commas = (raw.match(/,/g) || []).length;
+      let cleaned = raw;
+      if (dots > 0 && commas === 1)       cleaned = raw.replace(/\./g, '').replace(',', '.'); // IDR with decimal
+      else if (commas > 0 && dots === 1)  cleaned = raw.replace(/,/g, '');                   // USD with decimal
+      else if (dots > 0 && commas === 0)  cleaned = raw.replace(/\./g, '');                  // IDR thousands only
+      else if (commas > 0 && dots === 0)  cleaned = raw.replace(/,/g, '');                   // USD thousands only
+      cleaned = cleaned.replace(/[^0-9.]/g, '');
+      const nominal = parseFloat(cleaned);
       return isNaN(nominal) || nominal <= 0 ? null : nominal;
     };
     const extractLivinTransactionsFromEmails = (emails) => {
@@ -2085,12 +2095,30 @@ router.post('/tasker', security.webhookAuth, async (req, res) => {
 // GMAIL WEBHOOK (Google Cloud Pub/Sub → N.E.X.A Server)
 // ============================================================
 router.post('/gmail', async (req, res) => {
+  // AUDIT FIX (CRITICAL-1): Require a secret token query param to prevent unauthorized
+  // API quota drain. Add ?token=<NEXA_GODMODE_SECRET> to the Pub/Sub push URL in GCP.
+  const providedToken = String(req.query?.token || '').trim();
+  const expectedToken = String(env.NEXA_GODMODE_SECRET || '').trim();
+  if (!expectedToken) {
+    console.error('[GMAIL WEBHOOK] NEXA_GODMODE_SECRET not configured — rejecting request.');
+    return res.status(500).send('Server auth not configured');
+  }
+  // Timing-safe comparison to prevent token enumeration
+  const { timingSafeEqual } = require('crypto');
+  const tokA = Buffer.from(providedToken, 'utf8');
+  const tokB = Buffer.from(expectedToken, 'utf8');
+  const isValidToken = tokA.length === tokB.length && timingSafeEqual(tokA, tokB);
+  if (!isValidToken) {
+    console.warn('[GMAIL WEBHOOK] Rejected: invalid or missing token query param.');
+    return res.status(403).send('Forbidden');
+  }
+
   // Google Pub/Sub sends data in req.body.message
   if (!req.body || !req.body.message) {
     return res.status(400).send('Invalid Pub/Sub payload');
   }
 
-  console.log('[GMAIL WEBHOOK] Received push notification from Pub/Sub');
+  console.log('[GMAIL WEBHOOK] Received authenticated push notification from Pub/Sub');
 
   // Acknowledge the webhook immediately so Google doesn't retry
   res.status(200).send('OK');
