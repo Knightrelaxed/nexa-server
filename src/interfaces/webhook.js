@@ -964,14 +964,29 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             return '❓ Transaksi mana yang ingin diubah/dihapus, Tuan? Sebutkan kata kunci unik, nominal, atau nomor transaksi.';
           }
         }
-        const actionsRequiringNominal = ['RECORD', 'RECORD_MULTIPLE'];
+        // Only block if action explicitly requires a nominal AND none was provided
         if (
-          actionsRequiringNominal.includes(data.action) ||
-          (data.action === 'UPDATE_PENDING' && data.nominal != null) ||
-          (data.action === 'EDIT' && data.nominal != null)
+          data.action !== 'IMPORT_FROM_EMAIL' &&
+          data.action !== 'READ_LATEST' &&
+          data.action !== 'READ_ANALYTICS' &&
+          data.action !== 'DELETE' &&
+          data.action !== 'UNDO_DELETE' &&
+          data.action !== 'CANCEL_TRANSACTION' &&
+          data.action !== 'EDIT' &&
+          data.action !== 'UPDATE_PENDING' &&
+          (data.action === 'RECORD' || data.action === 'RECORD_MULTIPLE') &&
+          (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0)
         ) {
-          if (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0) {
-            return '❓ Nominal transaksi belum valid. Mohon sebutkan angka positifnya, Tuan.';
+          return '❓ Nominal transaksi belum valid. Mohon sebutkan angka positifnya, Tuan.';
+        }
+        // Guard: EDIT must have a proper numeric or short keyword, not a descriptive sentence
+        if (data.action === 'EDIT' && data.search_keyword) {
+          const sk = String(data.search_keyword).trim();
+          const wordCount = sk.split(/\s+/).length;
+          const hasVerb = /\b(untuk|buat|ke|dari|beli|pembelian|pengeluaran|pemasukan)\b/i.test(sk);
+          if (wordCount > 4 && hasVerb) {
+            // Looks like a descriptive sentence, not a real search keyword — block this EDIT
+            return null; // fall through to normal routing which will produce better reply
           }
         }
       }
