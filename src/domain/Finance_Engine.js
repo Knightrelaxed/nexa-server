@@ -205,9 +205,9 @@ async function getRecentTransactions(limit = 5) {
       const nominal  = row[7] || '0';
       const saldo    = row[8] || '-';
 
-      const nominalNum = parseFloat(String(nominal).replace(/[^0-9.-]/g, ''));
+      const nominalNum = _parseFlexibleCurrency(nominal);
       const nominalFmt = isNaN(nominalNum) ? nominal : `Rp${Math.abs(nominalNum).toLocaleString('id-ID')}`;
-      const saldoNum = parseFloat(String(saldo).replace(/[^0-9.-]/g, ''));
+      const saldoNum = _parseFlexibleCurrency(saldo);
       const saldoFmt = isNaN(saldoNum) ? saldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
       const tipeIcon = tipe === 'Pemasukan' ? '🟢' : '🔴';
 
@@ -228,6 +228,34 @@ async function getRecentTransactions(limit = 5) {
     }
     return `⚠️ Gagal mengambil data keuangan: ${err.message}`;
   }
+}
+
+/**
+ * Safely parse localized currency strings into numbers (handles thousands separators).
+ */
+function _parseFlexibleCurrency(val) {
+  if (typeof val === 'number') return val;
+  const str = String(val).trim();
+  if (!str || str === '-') return NaN;
+  
+  const dots = (str.match(/\./g) || []).length;
+  const commas = (str.match(/,/g) || []).length;
+  
+  let cleaned = str;
+  if (dots > 0 && commas === 1) {
+    cleaned = str.replace(/\./g, '').replace(',', '.'); // IDR with decimal
+  } else if (commas > 0 && dots === 1) {
+    cleaned = str.replace(/,/g, ''); // USD with decimal
+  } else if (dots > 0 && commas === 0) {
+    cleaned = str.replace(/\./g, ''); // IDR thousands only
+  } else if (commas > 0 && dots === 0) {
+    cleaned = str.replace(/,/g, ''); // USD thousands only
+  } else {
+    cleaned = str.replace(/,/g, '.'); // fallback
+  }
+  
+  cleaned = cleaned.replace(/[^0-9.-]/g, '');
+  return parseFloat(cleaned);
 }
 
 /**
@@ -301,9 +329,9 @@ function _formatRowAsCard(row) {
   const nominal  = row[7] || '0';
   const saldo    = row[8] || '-';
 
-  const nominalNum = parseFloat(String(nominal).replace(/[^0-9.-]/g, ''));
+  const nominalNum = _parseFlexibleCurrency(nominal);
   const nominalFmt = isNaN(nominalNum) ? nominal : `Rp${Math.abs(nominalNum).toLocaleString('id-ID')}`;
-  const saldoNum   = parseFloat(String(saldo).replace(/[^0-9.-]/g, ''));
+  const saldoNum   = _parseFlexibleCurrency(saldo);
   const saldoFmt   = isNaN(saldoNum) ? saldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
   const tipeIcon   = tipe === 'Pemasukan' ? '🟢' : '🔴';
 
@@ -428,7 +456,7 @@ async function getFinanceAnalytics() {
 
     // Helper to format currency
     const formatRp = (val) => {
-      const num = parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+      const num = _parseFlexibleCurrency(val);
       return isNaN(num) ? val : `Rp${Math.abs(num).toLocaleString('id-ID')}`;
     };
 
@@ -538,7 +566,7 @@ async function requestDeleteConfirmation(keyword) {
     const tipe = row[3] || '-';
     const kategori = row[4] || '-';
     const catatan = row[6] || '-';
-    const nominalRaw = parseFloat(String(row[7]).replace(/[^0-9.-]/g, ''));
+    const nominalRaw = _parseFlexibleCurrency(row[7]);
     const nominalFmt = isNaN(nominalRaw) ? row[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
 
     // Store in pending deletions with a 3-minute timeout
@@ -596,7 +624,7 @@ async function confirmDeleteTransaction(isYes) {
         }, 10 * 60 * 1000);
         lastDeletedTransaction = { deletedRow, deletedIndex: actualIndex, expireTimerId };
 
-        const nominalRaw = parseFloat(String(deletedRow[7]).replace(/[^0-9.-]/g, ''));
+        const nominalRaw = _parseFlexibleCurrency(deletedRow[7]);
         const nominalFmt = isNaN(nominalRaw) ? deletedRow[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
 
         return `🗑️ <b>TRANSAKSI DIHAPUS</b>\n\n"${deletedRow[6] || '-'}" sebesar ${nominalFmt} telah dihapus dari sheet keuangan.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
@@ -631,7 +659,7 @@ async function undoDeleteTransaction() {
     await googleWorkspace.overwriteFinanceSheet(rows);
 
     const catatan = deletedRow[6] || '-';
-    const nominalRaw = parseFloat(String(deletedRow[7]).replace(/[^0-9.-]/g, ''));
+    const nominalRaw = _parseFlexibleCurrency(deletedRow[7]);
     const nominalFmt = isNaN(nominalRaw) ? deletedRow[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
 
     lastDeletedTransaction = null; // Clear undo cache
@@ -930,8 +958,10 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
   try {
     const recentRows = await googleWorkspace.getFinanceSummary(1);
     if (recentRows && recentRows.length > 0) {
-      const rawSaldo = recentRows[0][8];
-      const saldoNum = parseFloat(String(rawSaldo).replace(/[^0-9.-]/g, ''));
+      const recent = recentRows[0];
+      const lastCat = recent[6] || '-';
+      const rawSaldo = recent[8] || 0;
+      const saldoNum = _parseFlexibleCurrency(rawSaldo);
       currentSaldo = isNaN(saldoNum) ? rawSaldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
     }
   } catch (_) {}
