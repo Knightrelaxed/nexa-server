@@ -1166,6 +1166,33 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     }
 
     // ============================================================
+    // PENDING DELETION REPLY INTERCEPTOR
+    // Catches user replies to a deletion confirmation prompt
+    // ============================================================
+    const pendingDelCtx = financeEngine.getPendingDeletionsContext();
+    if (pendingDelCtx) {
+      const normText = textInput.toLowerCase().trim();
+      const isConfirm = /^(ya|iya|ok|oke|siap|benar|hapus|lanjut|lanjutkan|gas|setuju)/.test(normText);
+      const isCancel  = /^(batal|batalkan|cancel|tidak|jangan|ga|gak|no)$/.test(normText);
+
+      if (isConfirm) {
+        console.log('[FINANCE INTERCEPTOR] User confirmed pending deletion.');
+        const reply = await financeEngine.confirmDeleteTransaction(true);
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+        await respondToTelegram(reply || '✅ Transaksi telah dihapus.');
+        clearTimeout(safetyTimer);
+        return;
+      } else if (isCancel) {
+        console.log('[FINANCE INTERCEPTOR] User cancelled pending deletion.');
+        const reply = await financeEngine.confirmDeleteTransaction(false);
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+        await respondToTelegram(reply || '✅ Penghapusan dibatalkan.');
+        clearTimeout(safetyTimer);
+        return;
+      }
+    }
+
+    // ============================================================
     // PENDING FINANCE REPLY INTERCEPTOR
     // Catches user replies (descriptions, "ya", "oke", "catat") aimed
     // at a hanging Livin transaction confirmation — BEFORE the AI Router

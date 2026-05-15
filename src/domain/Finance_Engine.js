@@ -7,6 +7,10 @@ const env = require('../config/env');
 // In-memory cache of pending confirmations (source of truth = Supabase)
 // key: compositeKey, value: { tx, timeoutId }
 const pendingConfirmations = new Map();
+
+// In-memory cache for deletion confirmations
+const pendingDeletions = new Map();
+
 let isPollingLivin = false;
 
 /**
@@ -278,90 +282,152 @@ async function getFinanceAnalytics() {
 let lastDeletedTransaction = null;
 
 /**
- * Delete a specific transaction matching a keyword (usually description or amount).
- * Search priority: (1) Exact match on transaction No (column 0), (2) Exact match on description,
- * (3) Partial match on description/nominal. This prevents "299" from matching "604091793299".
- * Stores the deleted row for 10-minute undo window.
+ * Finds the best matching transaction row based on robust multi-attribute token scoring.
  */
-async function deleteTransaction(keyword) {
+function _findBestTransactionMatch(rows, keyword) {
+  const kw = String(keyword).toLowerCase().trim();
+  
+  if (kw === '' || /^(barusan|tadi|terakhir|terbaru|sebelumnya)$/.test(kw) || /transaksi (barusan|tadi|terakhir|terbaru)/.test(kw)) {
+    return rows.length - 1;
+  }
+  
+  if (/^\d+$/.test(kw)) {
+    const idx = rows.findIndex(r => String(r[0]).trim() === kw);
+    if (idx !== -1) return idx;
+  }
+
+  const tokens = kw.split(/\s+/).filter(t => t.length > 2 || /^\d+$/.test(t));
+  if (tokens.length === 0) tokens.push(kw);
+
+  let bestIndex = -1;
+  let maxScore = 0;
+
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (!r || r.length < 8) continue;
+    
+    const tanggal = (r[1] || '').toLowerCase();
+    const waktu = (r[2] || '').toLowerCase();
+    const kategori = (r[4] || '').toLowerCase();
+    const desc = (r[6] || '').toLowerCase();
+    const nominalRaw = String(r[7] || '').replace(/[^0-9]/g, '');
+    const nominalKw = kw.replace(/[^0-9]/g, '');
+
+    let score = 0;
+    
+    if (nominalKw && nominalRaw && nominalRaw === nominalKw) score += 50;
+    else if (nominalKw && nominalKw.length > 3 && nominalRaw.includes(nominalKw)) score += 20;
+
+    if (desc === kw) score += 100;
+    
+    for (const t of tokens) {
+      if (desc.includes(t)) score += 10;
+      if (kategori.includes(t)) score += 5;
+      if (tanggal.includes(t) || waktu.includes(t)) score += 5;
+    }
+
+    if (score > maxScore && score > 0) {
+      maxScore = score;
+      bestIndex = i;
+    }
+  }
+
+  return bestIndex;
+}
+
+function getPendingDeletionsContext() {
+  return pendingDeletions.size > 0 ? pendingDeletions : null;
+}
+
+/**
+ * Initiates a deletion request. Finds the transaction and stores it in pendingDeletions.
+ */
+async function requestDeleteConfirmation(keyword) {
   try {
     const rows = await googleWorkspace.getAllFinanceRows();
     if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel bulan ini masih kosong.' };
 
-    const kw = String(keyword).toLowerCase().trim();
-    let indexToDelete = -1;
-
-    // Priority 0: Generic "last transaction" keywords
-    const isGenericLast = kw === '' || /^(barusan|tadi|terakhir|terbaru|sebelumnya)$/.test(kw) || /transaksi (barusan|tadi|terakhir|terbaru)/.test(kw);
-    if (isGenericLast) {
-      indexToDelete = rows.length - 1;
-    } else {
-      // Priority 1: Exact match on transaction number (column 0 = "No")
-      if (/^\d+$/.test(kw)) {
-        indexToDelete = rows.findIndex(r => String(r[0]).trim() === kw);
-      }
-
-      // Priority 2: Exact match on description (column 6)
-      if (indexToDelete === -1) {
-        indexToDelete = rows.findIndex(r => (r[6] || '').toLowerCase().trim() === kw);
-      }
-
-      // Priority 3: Partial match on description or nominal (last resort)
-      if (indexToDelete === -1) {
-        indexToDelete = rows.findIndex(r => {
-          const cat = (r[6] || '').toLowerCase();
-          const nom = (r[7] || '').toLowerCase();
-          return cat.includes(kw) || nom.includes(kw);
-        });
-      }
-    }
+    const indexToDelete = _findBestTransactionMatch(rows, keyword);
 
     if (indexToDelete === -1) {
       return { status: 'FAILED', message: `Tidak ada transaksi yang cocok dengan "${keyword}".` };
     }
 
-    const deletedRow = [...rows[indexToDelete]]; // clone
+    const row = rows[indexToDelete];
+    const no = row[0] || '-';
+    const tanggal = row[1] || '-';
+    const waktu = row[2] || '-';
+    const tipe = row[3] || '-';
+    const kategori = row[4] || '-';
+    const catatan = row[6] || '-';
+    const nominalRaw = parseFloat(String(row[7]).replace(/[^0-9.-]/g, ''));
+    const nominalFmt = isNaN(nominalRaw) ? row[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
 
-    // Extract details for confirmation message
-    const no = deletedRow[0] || '-';
-    const tanggal = deletedRow[1] || '-';
-    const waktu = deletedRow[2] || '-';
-    const tipe = deletedRow[3] || '-';
-    const kategori = deletedRow[4] || '-';
-    const akun = deletedRow[5] || '-';
-    const catatan = deletedRow[6] || '-';
-    const nominalRaw = parseFloat(String(deletedRow[7]).replace(/[^0-9.-]/g, ''));
-    const nominalFmt = isNaN(nominalRaw) ? deletedRow[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
-
-    // Remove the row from the array
-    rows.splice(indexToDelete, 1);
+    // Store in pending deletions with a 3-minute timeout
+    const delKey = `del_${Date.now()}`;
+    const timeoutId = setTimeout(() => {
+      pendingDeletions.delete(delKey);
+    }, 3 * 60 * 1000);
     
-    // Overwrite the sheet to recalculate formulas
-    await googleWorkspace.overwriteFinanceSheet(rows);
+    pendingDeletions.set(delKey, { index: indexToDelete, rowData: row, timeoutId });
 
-    // Store for undo (10-minute window)
-    if (lastDeletedTransaction?.expireTimerId) clearTimeout(lastDeletedTransaction.expireTimerId);
-    const expireTimerId = setTimeout(() => {
-      lastDeletedTransaction = null;
-      console.log('[FINANCE] Undo window expired (10 min). Deleted transaction can no longer be restored.');
-    }, 10 * 60 * 1000);
-    lastDeletedTransaction = { deletedRow, deletedIndex: indexToDelete, expireTimerId };
-
-    const msg = `🗑️ <b>TRANSAKSI DIHAPUS</b>\n\n` +
+    const msg = `⚠️ <b>KONFIRMASI PENGHAPUSAN TRANSAKSI</b>\n\n` +
+      `N.E.X.A menemukan data berikut:\n` +
       `<b>No:</b> ${no}\n` +
-      `<b>Tanggal:</b> ${tanggal}\n` +
-      `<b>Waktu:</b> ${waktu}\n` +
-      `<b>Tipe:</b> ${tipe}\n` +
-      `<b>Kategori:</b> ${kategori}\n` +
-      `<b>Akun:</b> ${akun}\n` +
-      `<b>Catatan / Detail:</b> ${catatan}\n` +
-      `<b>Nominal (Rp):</b> ${nominalFmt}\n\n` +
-      `💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
+      `<b>Tanggal:</b> ${tanggal} ${waktu}\n` +
+      `<b>Tipe/Kategori:</b> ${tipe} - ${kategori}\n` +
+      `<b>Catatan:</b> ${catatan}\n` +
+      `<b>Nominal:</b> ${nominalFmt}\n\n` +
+      `❓ Apakah ini transaksi yang ingin Tuan hapus? (Balas <b>ya/hapus</b> atau <b>batal</b>)`;
 
     return { status: 'SUCCESS', message: msg };
   } catch (error) {
-    console.error('[FINANCE] Failed to delete transaction:', error.message);
-    return { status: 'FAILED', message: `Gagal menghapus transaksi: ${error.message}` };
+    console.error('[FINANCE] Failed to request delete:', error.message);
+    return { status: 'FAILED', message: `Gagal mencari transaksi: ${error.message}` };
+  }
+}
+
+/**
+ * Confirms or cancels a pending deletion.
+ */
+async function confirmDeleteTransaction(isYes) {
+  if (pendingDeletions.size === 0) return null;
+
+  for (const [key, pending] of pendingDeletions.entries()) {
+    clearTimeout(pending.timeoutId);
+    pendingDeletions.delete(key);
+
+    if (isYes) {
+      try {
+        const rows = await googleWorkspace.getAllFinanceRows();
+        // Recalculate index just in case rows shifted, match by No (col 0)
+        const noToDel = pending.rowData[0];
+        const actualIndex = rows.findIndex(r => r[0] === noToDel);
+        
+        if (actualIndex === -1) {
+          return `❌ Transaksi tidak ditemukan di sheet. Mungkin sudah terhapus.`;
+        }
+
+        const deletedRow = rows.splice(actualIndex, 1)[0];
+        await googleWorkspace.overwriteFinanceSheet(rows);
+
+        // Store for undo (10-minute window)
+        if (lastDeletedTransaction?.expireTimerId) clearTimeout(lastDeletedTransaction.expireTimerId);
+        const expireTimerId = setTimeout(() => {
+          lastDeletedTransaction = null;
+        }, 10 * 60 * 1000);
+        lastDeletedTransaction = { deletedRow, deletedIndex: actualIndex, expireTimerId };
+
+        const nominalRaw = parseFloat(String(deletedRow[7]).replace(/[^0-9.-]/g, ''));
+        const nominalFmt = isNaN(nominalRaw) ? deletedRow[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
+
+        return `🗑️ <b>TRANSAKSI DIHAPUS</b>\n\n"${deletedRow[6] || '-'}" sebesar ${nominalFmt} telah dihapus dari sheet keuangan.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
+      } catch (error) {
+        return `❌ Gagal menghapus transaksi dari sheet: ${error.message}`;
+      }
+    } else {
+      return `✅ Penghapusan dibatalkan. Data tetap aman.`;
+    }
   }
 }
 
@@ -409,33 +475,7 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
     const rows = await googleWorkspace.getAllFinanceRows();
     if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel bulan ini masih kosong.' };
 
-    const kw = String(keyword).toLowerCase().trim();
-    let indexToEdit = -1;
-
-    // Priority 0: Generic "last transaction" keywords
-    const isGenericLast = kw === '' || /^(barusan|tadi|terakhir|terbaru|sebelumnya)$/.test(kw) || /transaksi (barusan|tadi|terakhir|terbaru)/.test(kw);
-    if (isGenericLast) {
-      indexToEdit = rows.length - 1;
-    } else {
-      // Priority 1: Exact match on transaction number (column 0 = "No")
-      if (/^\d+$/.test(kw)) {
-        indexToEdit = rows.findIndex(r => String(r[0]).trim() === kw);
-      }
-
-      // Priority 2: Exact match on description (column 6)
-      if (indexToEdit === -1) {
-        indexToEdit = rows.findIndex(r => (r[6] || '').toLowerCase().trim() === kw);
-      }
-
-      // Priority 3: Partial match on description or nominal (last resort)
-      if (indexToEdit === -1) {
-        indexToEdit = rows.findIndex(r => {
-          const cat = (r[6] || '').toLowerCase();
-          const nom = (r[7] || '').toLowerCase();
-          return cat.includes(kw) || nom.includes(kw);
-        });
-      }
-    }
+    const indexToEdit = _findBestTransactionMatch(rows, keyword);
 
     if (indexToEdit === -1) {
       return { status: 'FAILED', message: `Tidak ada transaksi yang cocok dengan "${keyword}".` };
@@ -881,7 +921,9 @@ module.exports = {
   processTransaction,
   getRecentTransactions,
   getFinanceAnalytics,
-  deleteTransaction,
+  deleteTransaction: requestDeleteConfirmation,
+  confirmDeleteTransaction,
+  getPendingDeletionsContext,
   undoDeleteTransaction,
   editTransaction,
   pollLivinEmails,
