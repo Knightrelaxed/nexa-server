@@ -1231,60 +1231,59 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     }
 
     // ============================================================
-    // PENDING FINANCE REPLY INTERCEPTOR
-    // Catches user replies (descriptions, "ya", "oke", "catat") aimed
-    // at a hanging Livin transaction confirmation — BEFORE the AI Router
-    // gets a chance to misinterpret them as a new RECORD intent.
+    // PENDING FINANCE REPLY INTERCEPTOR (AI-Powered)
+    // Catches user replies aimed at a hanging Livin transaction
+    // confirmation — BEFORE the AI Router gets a chance to
+    // misinterpret them as a new RECORD intent.
+    // Uses classifyPendingTransactionIntent() instead of rigid regex.
     // ============================================================
     const pendingFinanceCtx = await financeEngine.getPendingConfirmationsContext();
     if (pendingFinanceCtx) {
-      const normText = textInput.toLowerCase().trim();
-      const isConfirm = /^(ya|iya|yap|yak|yoi|ok|oke|okay|siap|benar|bener|catat|simpan|lanjut|lanjutkan|masukkan|masukan|masuk|input|konfirmasi|save|rekam|iya catat|ya catat|dicatat|acc|gas|setuju|done)/.test(normText);
-      const isCancel  = /^(batal|batalkan|cancel|tidak|jangan|ga|gak|hapus|no|nggak|ngga|skip)$/.test(normText);
+      // Extract the first pending tx for context to give the AI classifier
+      let pendingTxContext = {};
+      try {
+        const pendingRows = await supabaseMemories.getPendingTransactions();
+        if (pendingRows && pendingRows.length > 0) {
+          const first = pendingRows[0].tx_data || {};
+          pendingTxContext = { nominal: first.nominal, destination: first.destination, type: first.type };
+        }
+      } catch (_) {}
 
-      if (isConfirm) {
-        console.log('[FINANCE INTERCEPTOR] User confirmed pending transaction.');
+      const { classifyPendingTransactionIntent } = require('../core/AI_Router');
+      const intent = await classifyPendingTransactionIntent(textInput, pendingTxContext);
+      console.log(`[FINANCE INTERCEPTOR] AI classified intent: "${intent}" for input: "${textInput}"`);
+
+      if (intent === 'CONFIRM') {
         const confirmReply = await financeEngine.confirmPendingTransactions(true);
         await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(confirmReply || '✅ Transaksi telah dicatat.');
         clearTimeout(safetyTimer);
         return;
-      } else if (isCancel) {
-        console.log('[FINANCE INTERCEPTOR] User cancelled pending transaction.');
+      } else if (intent === 'CANCEL') {
         const cancelReply = await financeEngine.confirmPendingTransactions(false);
         await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(cancelReply || '❌ Transaksi dibatalkan.');
         clearTimeout(safetyTimer);
         return;
-      } else if (textInput.length > 2 && !normText.startsWith('[buffer]')) {
-        // BUG FIX: Only treat as description if it looks like a meaningful phrase:
-        // >= 2 words (multi-word description) OR >= 8 chars (long single word).
-        // This prevents short/ambiguous words like "Masukan!" from corrupting the tx description.
-        const hasMultipleWords = normText.split(/\s+/).length >= 2;
-        const looksLikeDescription = hasMultipleWords || textInput.length >= 8;
-
-        if (looksLikeDescription) {
-          console.log('[FINANCE INTERCEPTOR] User provided description for pending transaction:', textInput);
-          const updatedMsg = await financeEngine.updatePendingTransaction(textInput, null, null);
-          if (updatedMsg) {
-            await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
-            await respondToTelegram(updatedMsg);
-            clearTimeout(safetyTimer);
-            return;
-          }
-          // If updatePendingTransaction returned null (already auto-saved), fall through to normal routing
-        } else {
-          // Short single-word — warn user instead of silently corrupting description
-          console.log(`[FINANCE INTERCEPTOR] Ambiguous short input "${textInput}" while tx pending — asking for clarification.`);
-          await respondToTelegram(
-            `❓ Masih ada transaksi yang menunggu konfirmasi Tuan. Balas:\n` +
-            `• <b>ya / masukkan / catat</b> → simpan transaksi\n` +
-            `• <b>batal</b> → batalkan transaksi\n` +
-            `• <b>Kalimat deskripsi</b> (min. 2 kata) → ubah catatan transaksi`
-          );
+      } else if (intent === 'DESCRIPTION') {
+        const updatedMsg = await financeEngine.updatePendingTransaction(textInput, null, null);
+        if (updatedMsg) {
+          await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+          await respondToTelegram(updatedMsg);
           clearTimeout(safetyTimer);
           return;
         }
+        // If updatePendingTransaction returned null (already auto-saved), fall through to normal routing
+      } else {
+        // AMBIGUOUS — ask for clarification without touching the pending transaction
+        await respondToTelegram(
+          `❓ Masih ada transaksi yang menunggu konfirmasi Tuan. Balas:\n` +
+          `• <b>ya / masukkan / catat</b> → simpan transaksi\n` +
+          `• <b>batal</b> → batalkan transaksi\n` +
+          `• <b>Kalimat deskripsi</b> → ubah catatan transaksi`
+        );
+        clearTimeout(safetyTimer);
+        return;
       }
     }
 

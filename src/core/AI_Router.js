@@ -300,29 +300,57 @@ Tentukan intent dan ekstrak data!
 }
 
 /**
- * Lightweight one-shot AI call for synthesis and extraction tasks.
- * Uses a plain-text system prompt — NOT the JSON router system prompt.
- * Safe for use in: duration parsing, web search synthesis, etc.
- * @param {string} prompt - The user/task prompt
- * @returns {Promise<string>} - Plain text response from AI
+ * Lightweight AI classifier for Finance Interceptor.
+ * When there's a pending transaction waiting for user confirmation,
+ * this determines the user's INTENT from their reply without regex.
+ *
+ * Returns one of:
+ *   'CONFIRM'      — user wants to save/confirm the transaction
+ *   'CANCEL'       — user wants to cancel/discard the transaction
+ *   'DESCRIPTION'  — user is providing a new description or category for the transaction
+ *   'AMBIGUOUS'    — unclear, ask for clarification
+ *
+ * Designed to be FAST and CHEAP: minimal prompt, low temp, no memory/context.
+ *
+ * @param {string} userText - The raw message from the user
+ * @param {object} pendingTx - The pending transaction context { nominal, destination, type }
+ * @returns {Promise<'CONFIRM'|'CANCEL'|'DESCRIPTION'|'AMBIGUOUS'>}
  */
-const PLAIN_TEXT_SYSTEM_PROMPT = `Anda adalah N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh. 
-Jawab dengan bahasa Indonesia yang natural, cerdas, luwes, sopan, dan hangat (gaya asisten premium ala Jarvis).
-Balas HANYA dengan teks biasa. JANGAN gunakan format JSON. JANGAN gunakan markdown **bold** atau *italic*.
-Berikan jawaban yang informatif dan ringkas.`;
+async function classifyPendingTransactionIntent(userText, pendingTx = {}) {
+  const txSummary = pendingTx.nominal && pendingTx.destination
+    ? `Rp${pendingTx.nominal} ke/dari ${pendingTx.destination}`
+    : '(transaksi tidak diketahui)';
 
-async function callAI(prompt) {
-  const result = await executeWithFallback(prompt, PLAIN_TEXT_SYSTEM_PROMPT, 0.5);
-  // Strip any accidental JSON wrapping that might still appear
-  let text = String(result).trim();
-  // If the model wrapped its answer in JSON anyway, extract the value
+  const systemPrompt = `Kamu adalah classifier niat yang sangat akurat.
+User baru saja menerima notifikasi transaksi keuangan senilai ${txSummary} yang MENUNGGU KONFIRMASI.
+User kemudian membalas dengan pesan singkat.
+Tugasmu: Tentukan NIAT user dari balasannya.
+
+Aturan:
+- CONFIRM  → user ingin MENYIMPAN / mengkonfirmasi transaksi tersebut.
+  Contoh: "ya", "oke", "masukkan", "masukan", "catat", "simpan", "lanjut", "gas", "done", "save", "acc", dll.
+- CANCEL   → user ingin MEMBATALKAN / menolak transaksi tersebut.
+  Contoh: "batal", "jangan", "tidak", "ga", "gak", "hapus", "cancel", "skip", dll.
+- DESCRIPTION → user memberikan deskripsi, keterangan, atau kategori BARU untuk transaksi tersebut.
+  Biasanya berupa kalimat 2+ kata atau penjelasan tujuan transaksi.
+  Contoh: "untuk beli makan siang", "bayar parkir kampus", "kategori transportasi", dll.
+- AMBIGUOUS → tidak jelas / tidak relevan / pertanyaan baru yang tidak berhubungan dengan transaksi ini.
+
+BALAS HANYA dengan satu kata: CONFIRM, CANCEL, DESCRIPTION, atau AMBIGUOUS. Jangan tambahkan penjelasan apapun.`;
+
   try {
-    const parsed = JSON.parse(text);
-    // Grab the first string value found in the object
-    const firstVal = Object.values(parsed).find(v => typeof v === 'string');
-    if (firstVal) text = firstVal;
-  } catch (_) { /* Not JSON, already plain text — good */ }
-  return text;
+    const result = await executeWithFallback(userText, systemPrompt, 0.0); // temp=0 for determinism
+    const clean = String(result).trim().toUpperCase().replace(/[^A-Z]/g, '');
+    if (['CONFIRM', 'CANCEL', 'DESCRIPTION', 'AMBIGUOUS'].includes(clean)) {
+      return clean;
+    }
+    // If AI returned something unexpected, fall back to AMBIGUOUS
+    console.warn(`[CLASSIFIER] Unexpected classification result: "${result}". Defaulting to AMBIGUOUS.`);
+    return 'AMBIGUOUS';
+  } catch (e) {
+    console.error('[CLASSIFIER] classifyPendingTransactionIntent failed:', e.message);
+    return 'AMBIGUOUS'; // Safe fallback — won't corrupt anything
+  }
 }
 
-module.exports = { routeUserMessage, invalidatePersonalFactsCache, callAI };
+module.exports = { routeUserMessage, invalidatePersonalFactsCache, callAI, classifyPendingTransactionIntent };
