@@ -2015,6 +2015,8 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         } else if (dbAction === 'CANCEL_ACTION') {
           domainReply = '✅ Aksi database dibatalkan, Tuan.';
           pendingDatabaseContext = null;
+        } else if (dbAction === 'DELETE_ROWS') {
+          domainReply = `❌ Penghapusan banyak baris secara otomatis belum didukung. Jika ini tabel keuangan (Google Sheets), hapus satu per satu menggunakan kata kunci (contoh: "Hapus transaksi 150000"). Jika ini tabel Supabase, silakan buat skrip khusus.`;
         } else {
           domainReply = `❌ Aksi database tidak dikenali: ${escapeHtml(dbAction)}`;
         }

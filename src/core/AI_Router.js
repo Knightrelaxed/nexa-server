@@ -166,8 +166,10 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Gunakan action "SEND" jika pengguna meminta mengirim email (wajib ada "to", "subject", dan "content").
      //   → Gunakan action "DELETE" jika meminta menghapus email (sertakan search_keyword).
      // DATABASE: { action: "LIST_TABLES"|"READ_TABLE"|"INSERT_ROW"|"UPDATE_ROW"|"DELETE_ROW"|"DELETE_ALL_ROWS"|"DELETE_ALL_ROWS_CONFIRMED"|"CANCEL_ACTION", table_name: string, row_id: number, search_keyword: string, max_results: number, row_data: object, update_data: object }
-     //   → Gunakan intent DATABASE untuk perintah terkait Supabase/database (cek tabel, lihat data tabel, tambah/edit/hapus baris).
-     //   → Jika user secara eksplisit meminta menghapus "seluruh" atau "semua" data di sebuah tabel, gunakan action "DELETE_ALL_ROWS".
+     //   → Gunakan intent DATABASE HANYA untuk perintah terkait Supabase (cek tabel, lihat data tabel, tambah/edit/hapus baris di nexa_vault_items, nexa_behavior_log, dll).
+     //   → PENTING: DILARANG KERAS menggunakan intent DATABASE untuk kata kunci "Tabel keuangan", "Buku kas", "Spreadsheet", atau "Google Sheet". Gunakan intent FINANCE atau SPREADSHEET untuk itu!
+     //   → PENTING: DILARANG MENGARANG ACTION. "DELETE_ROWS" (jamak) TIDAK ADA. Jika diminta menghapus banyak baris, gunakan "DELETE_ROW" untuk satu, atau tolak.
+     //   → Jika user secara eksplisit meminta menghapus "seluruh" atau "semua" data di sebuah tabel Supabase, gunakan action "DELETE_ALL_ROWS".
      //   → PENTING: Jika asisten sebelumnya telah meminta konfirmasi untuk menghapus seluruh tabel (PERINGATAN), dan jawaban terbaru user bermakna MENYETUJUI (misal: "ya", "gas", "lakukan", "oke", "silakan"), Anda WAJIB mempertahankan intent DATABASE dan menggunakan action "DELETE_ALL_ROWS_CONFIRMED".
      //   → Jika jawaban user bermakna MENOLAK/MEMBATALKAN (misal: "tidak", "batal", "jangan", "cancel"), gunakan action "CANCEL_ACTION".
      //   → PENTING: Jika user meminta menghapus atau mengelola "nexa vault", "folder vault", atau "metadata vault", WAJIB gunakan intent DATABASE dengan table_name "nexa_vault_items". JANGAN PERNAH mengarang intent seperti "FILE_MANAGEMENT".
