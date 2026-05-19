@@ -361,7 +361,7 @@ Aturan:
 BALAS HANYA dengan satu kata: CONFIRM, CANCEL, DESCRIPTION, atau AMBIGUOUS. Jangan tambahkan penjelasan apapun.`;
 
   try {
-    const result = await executeWithFallback(userText, systemPrompt, 0.0);
+    const result = await executeWithFallback(userText, systemPrompt, 0.0, false); // jsonMode=false: classifiers return plain text, not JSON
     const clean = String(result).trim().toUpperCase().replace(/[^A-Z]/g, '');
     if (['CONFIRM', 'CANCEL', 'DESCRIPTION', 'AMBIGUOUS'].includes(clean)) return clean;
     console.warn(`[CLASSIFIER] Unexpected classification result: "${result}". Defaulting to AMBIGUOUS.`);
@@ -397,7 +397,7 @@ User membalas dengan teks berikut. Tugasmu: tentukan apakah user MENYETUJUI atau
 BALAS HANYA dengan satu kata: YES, NO, atau AMBIGUOUS. Tanpa penjelasan apapun.`;
 
   try {
-    const result = await executeWithFallback(userText, systemPrompt, 0.0);
+    const result = await executeWithFallback(userText, systemPrompt, 0.0, false); // jsonMode=false: classifiers return plain text, not JSON
     const clean = String(result).trim().toUpperCase().replace(/[^A-Z]/g, '');
     if (['YES', 'NO', 'AMBIGUOUS'].includes(clean)) return clean;
     console.warn(`[CLASSIFIER] classifyYesNo unexpected result: "${result}". Defaulting to AMBIGUOUS.`);

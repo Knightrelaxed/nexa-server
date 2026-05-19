@@ -960,6 +960,10 @@ async function pollLivinEmails() {
             text: msg,
             parse_mode: 'HTML'
           });
+          // CRITICAL FIX: Mark as sent so Watchdog doesn't resend 90s later!
+          const cleanMerchant = destination.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const compositeKey = `${nominal}_${cleanMerchant}`;
+          await supabase.markPendingTransactionSent(compositeKey);
           try { await supabase.saveChatMemory('assistant', msg); } catch(e) {}
         }
       } catch (err) {
