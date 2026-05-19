@@ -847,6 +847,66 @@ async function deleteAllVaultFiles() {
   }
 }
 
+/**
+ * [PHASE 6 — Pilar 8.1] Get events starting within the next N minutes.
+ * Used by the Proximity Alert cron to notify 30 minutes before an event.
+ * Only returns events with a specific dateTime (not all-day events).
+ * @param {number} withinMinutes - Look-ahead window in minutes (default: 30)
+ * @param {number} maxResults - Maximum events to return (default: 3)
+ */
+async function getUpcomingEvents(withinMinutes = 30, maxResults = 3) {
+  const { calendar } = getClients();
+
+  // Use precise UTC now → UTC future window
+  const now = new Date();
+  const future = new Date(now.getTime() + withinMinutes * 60 * 1000);
+
+  const response = await calendar.events.list({
+    calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
+    timeMin: now.toISOString(),
+    timeMax: future.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+    maxResults
+  });
+
+  // Filter out all-day events (those only have event.start.date, not event.start.dateTime)
+  return (response.data.items || []).filter(e => !!e.start?.dateTime);
+}
+
+/**
+ * [PHASE 6 — Pilar 8.1] Get all events for tomorrow (Jakarta timezone).
+ * Used by the Tomorrow Prep cron at 21:00 WIB.
+ */
+async function getTomorrowEvents() {
+  const { calendar } = getClients();
+
+  const jakartaOffsetMs = 7 * 60 * 60 * 1000;
+  const nowUtc = new Date();
+  const nowJakarta = new Date(nowUtc.getTime() + jakartaOffsetMs);
+
+  // Tomorrow start/end in Jakarta time, then converted back to UTC for the API
+  const tomorrowJakarta = new Date(nowJakarta);
+  tomorrowJakarta.setDate(tomorrowJakarta.getDate() + 1);
+  tomorrowJakarta.setHours(0, 0, 0, 0);
+  const tomorrowEndJakarta = new Date(tomorrowJakarta);
+  tomorrowEndJakarta.setHours(23, 59, 59, 999);
+
+  const timeMin = new Date(tomorrowJakarta.getTime() - jakartaOffsetMs).toISOString();
+  const timeMax = new Date(tomorrowEndJakarta.getTime() - jakartaOffsetMs).toISOString();
+
+  const response = await calendar.events.list({
+    calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
+    timeMin,
+    timeMax,
+    singleEvents: true,
+    orderBy: 'startTime',
+    maxResults: 10
+  });
+
+  return response.data.items || [];
+}
+
 module.exports = {
   uploadFileToVault,
   deleteAllVaultFiles,
@@ -872,7 +932,9 @@ module.exports = {
   getSpreadsheetHeaders,
   appendGenericRow,
   deleteGenericSpreadsheet,
-  updateCalendarEventColor
+  updateCalendarEventColor,
+  getUpcomingEvents,   // [PHASE 6] Proximity Alert
+  getTomorrowEvents    // [PHASE 6] Tomorrow Prep
   // Note: raw clients (sheets, calendar, docs, drive) not exported.
   // Use the functions above. Clients are lazy-initialized via getClients().
 };

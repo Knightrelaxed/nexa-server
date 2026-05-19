@@ -140,3 +140,188 @@ N.E.X.A mencapai tingkat ketahanan setara dengan infrastruktur *Enterprise* bern
 
 **Dampak Signifikan:**
 Pengembangan fitur pihak ketiga akan 100x lebih cepat (hitungan menit di n8n vs berhari-hari *coding* API manual). Kode inti N.E.X.A tetap ramping, aman, dan hanya berfokus pada kecerdasan serta *human-interaction*.
+
+---
+
+## 8. 🤖 PHASE 6 — Project Jarvis: Proactive Intelligence Upgrade (100% Free)
+
+**Konsep:** Transformasi N.E.X.A dari asisten *reaktif* (menunggu perintah) menjadi asisten *proaktif* sejati layaknya J.A.R.V.I.S. milik Iron Man — yang mengantisipasi kebutuhan, memantau lingkungan, dan berinisiatif berbicara lebih dahulu.
+
+**Gap saat ini vs Target Jarvis:**
+
+| Aspek | N.E.X.A Sekarang | Target Jarvis |
+|---|---|---|
+| Inisiasi | Reaktif (tunggu pesan) | Proaktif (inisiasi duluan) |
+| Awareness | Hanya saat di-chat | 24/7 sadar konteks |
+| Prediksi | Tidak ada | Prediksi kebutuhan & masalah |
+| Pola Perilaku | Tidak dilacak | Belajar rutinitas harian |
+| Adaptasi | Statis | Menyesuaikan gaya per situasi |
+
+---
+
+### 8.1 Proactive Cron Expansion
+
+**Tambahkan cron baru di `src/interfaces/cron.js`:**
+
+| Waktu (WIB) | Nama | Fungsi |
+|---|---|---|
+| `08:00` | Agenda Sentinel | Kirim jadwal 2 jam ke depan proaktif |
+| `12:00` | Midday Pulse | Ringkasan spending + tugas belum selesai |
+| `17:00` | Evening Debrief | Recap hari ini, tanyakan catatan malam |
+| `21:00` | Tomorrow Prep | Preview jadwal besok + deadline |
+| `*/30 * * * *` | Event Proximity Alert | Notif 30 menit sebelum event kalender |
+
+**Kode Proximity Alert (tambahkan ke `cron.js`):**
+```js
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    const events = await googleWorkspace.getUpcomingEvents(30);
+    if (events && events.length > 0) {
+      const e = events[0];
+      const time = new Date(e.start.dateTime).toLocaleTimeString('id-ID', {
+        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta'
+      });
+      const { sendTelegramOutbound } = require('./webhook');
+      await sendTelegramOutbound(
+        `⏰ Tuan, <b>${e.summary}</b> dimulai pukul ${time} (30 menit lagi). Sudah siap?`
+      );
+    }
+  } catch (e) { console.error('[CRON] Proximity alert error:', e.message); }
+}, { scheduled: true, timezone: 'Asia/Jakarta' });
+```
+
+**Fungsi baru di `Google_Workspace.js`:**
+```js
+async function getUpcomingEvents(withinMinutes = 30) {
+  const now = new Date();
+  const future = new Date(now.getTime() + withinMinutes * 60 * 1000);
+  const res = await calendar.events.list({
+    calendarId: env.GOOGLE_CALENDAR_ID,
+    timeMin: now.toISOString(),
+    timeMax: future.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+    maxResults: 3
+  });
+  return res.data.items || [];
+}
+```
+
+---
+
+### 8.2 Behavioral Pattern Engine
+
+**Tabel Supabase baru** (`nexa_behavior_log`):
+```sql
+CREATE TABLE nexa_behavior_log (
+  id BIGSERIAL PRIMARY KEY,
+  event_type TEXT NOT NULL,  -- 'WAKE_UP', 'MOOD_DETECTED', 'FINANCE_RECORD', dst
+  event_data JSONB DEFAULT '{}',
+  day_of_week INT,           -- 0=Minggu, 6=Sabtu
+  hour_of_day INT,           -- 0-23
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_behavior_type ON nexa_behavior_log(event_type);
+CREATE INDEX idx_behavior_created ON nexa_behavior_log(created_at);
+```
+
+**Log otomatis:** jam bangun pertama (WAKE_UP), mood terdeteksi, transaksi keuangan, tugas selesai. Weekly AI analysis setiap Minggu 20:00 WIB untuk insight pola perilaku.
+
+---
+
+### 8.3 Context-Aware Situational System (Tasker Events Baru)
+
+Perluas handler `/webhook/tasker` di `webhook.js` dengan event:
+
+| Event Tasker | N.E.X.A Response |
+|---|---|
+| `LOCATION_CAMPUS` | Kirim agenda hari ini proaktif (sekali per hari) |
+| `LOCATION_HOME` | Catat pola, tidak kirim notif |
+| `BATTERY_LOW` | "Tuan, baterai X%. Segera charge." |
+| `CHARGING_START` | Log waktu charge untuk analisis pola |
+
+---
+
+### 8.4 Predictive Finance Intelligence
+
+**Spending Velocity Alert** (cron 20:00 harian): Jika pengeluaran hari ini > 150% rata-rata harian bulan ini → kirim peringatan ke Telegram.
+
+**Budget Projection**: Hitung berapa hari tersisa sebelum budget habis berdasarkan kecepatan spending saat ini.
+
+**Recurring Pattern Detection** (cron Minggu 09:00): Deteksi merchant yang muncul ≥ 3x dalam 30 hari, lapor ke Tuan.
+
+---
+
+### 8.5 Scholarship & Opportunity Radar
+
+**Aktifkan placeholder** cron Minggu 08:00 di `cron.js` dengan Web Search via Serper.dev:
+
+```js
+cron.schedule('0 8 * * 0', async () => {
+  const queries = [
+    'beasiswa S2 luar negeri 2026 pendaftaran',
+    'Jardine Matheson scholarship 2026',
+    'program diplomat muda Indonesia 2026',
+    'lomba esai mahasiswa sastra 2026'
+  ];
+  // Jalankan searchWeb() untuk tiap query
+  // Sintesis hasil dengan callAI()
+  // Kirim ringkasan "Radar Peluang Mingguan" ke Telegram
+}, { scheduled: true, timezone: 'Asia/Jakarta' });
+```
+
+**Konsumsi**: 4 query/minggu = 16/bulan dari 2500 free tier Serper.dev.
+
+---
+
+### 8.6 Adaptive Mood & Personality
+
+Tambahkan 2 field ke output JSON `AI_Router.js`:
+```json
+"detected_mood": "STRESSED|HAPPY|TIRED|FOCUSED|BORED|NEUTRAL",
+"response_energy": "high|medium|low"
+```
+
+Log mood ke `nexa_behavior_log`. Jika terdeteksi `STRESSED` 3x berturut-turut → sisipkan kalimat dukungan di respons N.E.X.A secara otomatis.
+
+---
+
+### 8.7 Self-Healing & System Awareness
+
+**Cron diagnostik setiap 6 jam** di `cron.js`:
+- Cek penggunaan RAM (warning jika > 450MB dari batas HF 512MB)
+- Verifikasi konektivitas Google Calendar & Supabase
+- Kirim notif milestone uptime (setiap 24 jam online)
+- Hanya lapor ke Telegram jika ada warning atau milestone
+
+---
+
+### 8.8 Weekly Strategic Review
+
+**Cron Minggu 21:00 WIB** — Laporan eksekutif mingguan berisi:
+1. Ringkasan eksekutif (2-3 kalimat)
+2. Status tugas & deadline kritis
+3. Pola yang perlu diperhatikan
+4. 3 prioritas strategis minggu depan
+5. Skor produktivitas minggu ini (1-10) dengan alasan
+
+---
+
+### 💰 Cost Summary Phase 6: Rp 0
+
+Semua 8 pilar di atas hanya menggunakan layanan yang **sudah aktif dan gratis**: Gemini/Groq (sudah ada 4 key masing-masing), Supabase (500MB gratis), Google APIs (sudah aktif), Serper.dev (2500/bulan gratis), node-cron (sudah terinstall), Tasker (sudah dimiliki).
+
+### 🗺️ Urutan Implementasi yang Disarankan
+
+| Urutan | Pilar | Kompleksitas | Dampak |
+|---|---|---|---|
+| 1 | 8.1 Proactive Cron | Rendah | ⭐⭐⭐⭐⭐ |
+| 2 | 8.5 Scholarship Radar | Rendah | ⭐⭐⭐⭐ |
+| 3 | 8.4 Predictive Finance | Rendah | ⭐⭐⭐⭐⭐ |
+| 4 | 8.7 Self-Healing | Rendah | ⭐⭐⭐ |
+| 5 | 8.8 Weekly Review | Sedang | ⭐⭐⭐⭐⭐ |
+| 6 | 8.2 Behavior Engine | Sedang | ⭐⭐⭐⭐ |
+| 7 | 8.6 Adaptive Mood | Sedang | ⭐⭐⭐ |
+| 8 | 8.3 Tasker Context | Sedang | ⭐⭐⭐⭐ |
+
+> *"The difference between a tool and a partner is initiative. Phase 6 transforms N.E.X.A from a reactive tool into a proactive partner."*

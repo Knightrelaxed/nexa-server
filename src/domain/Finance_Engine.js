@@ -168,6 +168,16 @@ async function processTransaction(data, source) {
     // Log composite key to dedup table (prevents cross-channel duplicates)
     await supabase.logTransactionKey(compositeKey, transactionTime, source);
 
+    // [PHASE 6 — Pilar 8.2] Log finance activity for behavioral tracking (fire-and-forget)
+    try {
+      const behaviorEngine = require('./Behavior_Engine');
+      await behaviorEngine.logFinanceRecord({
+        type: isIncome ? 'INCOME' : 'EXPENSE',
+        nominal,
+        category: data.category || 'Lainnya'
+      });
+    } catch (_) { /* Never let behavior logging crash the finance flow */ }
+
     console.log(`[FINANCE] Transaction saved → Sheet "${result.sheetName}", Row ${result.rowNumber}, No ${result.noValue}`);
 
     const nominalFormatted = `Rp${nominal.toLocaleString('id-ID')}`;
@@ -264,8 +274,9 @@ function _parseRelativeDateFilter(text) {
   const slashMatch = lower.match(/(\d{1,2})[\/\-](\d{1,2})/);
   if (slashMatch) {
     const d = new Date(today);
-    d.setMonth(parseInt(slashMatch[2]) - 1);
-    d.setDate(parseInt(slashMatch[1]));
+    // BUG FIX: Passing day as second argument prevents JS Date wrap-around 
+    // if today's date exceeds the days in the target month (e.g. today is 31st, target is Feb)
+    d.setMonth(parseInt(slashMatch[2]) - 1, parseInt(slashMatch[1]));
     return d;
   }
   // ISO Date from AI_Router (e.g., "2026-05-13T00:00:00")
@@ -865,7 +876,12 @@ async function pollLivinEmails() {
       let destination = 'Livin Transaction';
       const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
       if (merchantMatch?.[1]) {
-        destination = merchantMatch[1].replace(/&nbsp;/ig, ' ').replace(/\s+/g, ' ').trim().substring(0, 80);
+        let rawDest = merchantMatch[1].split('\n')[0]; // Take only the first line
+        rawDest = rawDest.replace(/&nbsp;/ig, ' ');
+        rawDest = rawDest.replace(/&\w+;/g, ' '); // Strip other HTML entities
+        rawDest = rawDest.replace(/\s*-?\s*ID\s+Tanggal.*$/i, ''); // Strip trailing ID Tanggal
+        rawDest = rawDest.replace(/\s*-?\s*Tanggal.*$/i, ''); // Strip trailing Tanggal
+        destination = rawDest.replace(/\s+/g, ' ').trim().substring(0, 80);
       }
 
       // Date parsing

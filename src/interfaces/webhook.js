@@ -705,7 +705,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       if (!isNaN(parsed.getTime())) return parsed;
 
       // Fallback: strip non-essential labels and retry.
-      parsed = new Date(cleaned.replace(/\bWIB\b/gi, '').trim());
+      const hasWib = /\bWIB\b/i.test(cleaned);
+      let strToParse = cleaned.replace(/\bWIB\b/gi, '').trim();
+      if (hasWib && !strToParse.match(/[+-]\d{2,4}/)) {
+        strToParse += ' +0700'; // Append correct offset if WIB was detected and no other offset exists
+      }
+      parsed = new Date(strToParse);
       if (!isNaN(parsed.getTime())) return parsed;
 
       return null;
@@ -772,7 +777,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         let destination = 'Livin Transaction';
         const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
         if (merchantMatch?.[1]) {
-          destination = merchantMatch[1].trim().substring(0, 80);
+          let rawDest = merchantMatch[1].split('\n')[0]; // Take only the first line
+          rawDest = rawDest.replace(/&nbsp;/ig, ' ');
+          rawDest = rawDest.replace(/&\w+;/g, ' '); // Strip other HTML entities
+          rawDest = rawDest.replace(/\s*-?\s*ID\s+Tanggal.*$/i, ''); // Strip trailing ID Tanggal
+          rawDest = rawDest.replace(/\s*-?\s*Tanggal.*$/i, ''); // Strip trailing Tanggal
+          destination = rawDest.replace(/\s+/g, ' ').trim().substring(0, 80);
         }
         const parsedDate = parseEmailDateSafe(e.date);
         const dateIso = parsedDate ? parsedDate.toISOString() : new Date().toISOString();
@@ -2080,6 +2090,13 @@ router.post('/tasker', security.webhookAuth, async (req, res) => {
       const safeText = String(briefingText).substring(0, 4000);
       // Tasker-initiated: must use outbound (no webhook response available)
       await sendTelegramOutbound(safeText);
+
+      // [PHASE 6 — Pilar 8.2] Log wake-up event for behavioral tracking (fire-and-forget)
+      try {
+        const behaviorEngine = require('../domain/Behavior_Engine');
+        await behaviorEngine.logWakeUp();
+      } catch (_) { /* Never let behavior logging crash the main briefing flow */ }
+
       res.status(200).json({ status: 'Briefing sent' });
     } catch (e) {
       console.error('[TASKER] Alarm briefing failed:', e.message);

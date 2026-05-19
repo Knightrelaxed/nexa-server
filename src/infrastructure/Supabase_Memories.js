@@ -13,7 +13,8 @@ const SUPABASE_TABLES = [
   'nexa_core_identity',
   'nexa_2nd_brain',
   'nexa_vault_items',
-  'nexa_pending_transactions'
+  'nexa_pending_transactions',
+  'nexa_behavior_log'          // [PHASE 6 — Pilar 8.2]
 ];
 
 function resolveAllowedTableName(tableName) {

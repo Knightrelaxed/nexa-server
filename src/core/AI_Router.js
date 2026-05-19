@@ -272,10 +272,15 @@ Tentukan intent dan ekstrak data!
   let resultJsonStr = await executeWithFallback(prompt, ROUTER_SYSTEM_PROMPT, 0.3);
 
   // Clean markdown block if GenAI decides to return it despite instructions
-  resultJsonStr = resultJsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+  let cleanStr = resultJsonStr.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const firstBrace = cleanStr.indexOf('{');
+  const lastBrace = cleanStr.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    cleanStr = cleanStr.substring(firstBrace, lastBrace + 1);
+  }
 
   try {
-    const routingData = JSON.parse(resultJsonStr);
+    const routingData = JSON.parse(cleanStr);
 
     // 5. Save new memory ONLY after successful parse (symmetric context)
     // We only save the user's input here. The final reply (domainReply or reply_message)
