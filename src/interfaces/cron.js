@@ -72,11 +72,9 @@ function initCronJobs() {
       const financeEngine = require('../domain/Finance_Engine');
       const { sendTelegramOutbound } = require('./webhook');
       const rows = await supabase.getPendingTransactions();
-      const unsent = rows.filter(r => !r.telegram_sent);
-      if (unsent.length === 0) { watchdogRunning = false; return; }
+      if (!rows || rows.length === 0) { watchdogRunning = false; return; }
 
-      console.log(`[WATCHDOG] Found ${unsent.length} unsent Telegram alert(s). Retrying...`);
-      for (const row of unsent) {
+      for (const row of rows) {
         try {
           const tx = row.tx_data;
           const compositeKey = row.composite_key;
@@ -94,13 +92,14 @@ function initCronJobs() {
             }
             console.log(`[WATCHDOG] Tx ${compositeKey} expired (${Math.round(ageMs/60000)}m old). Auto-saving...`);
             await financeEngine.autoSaveFromWatchdog(compositeKey, tx);
-          } else {
-            // Still within window — resend via curl+proxy (proven to work on HF)
+          } else if (!row.telegram_sent) {
+            // Not yet sent to Telegram AND still within 5-min window — resend
             const msg = await financeEngine.buildConfirmationMessage(tx, 'TRANSAKSI LIVIN TERBARU');
             await sendTelegramOutbound(msg);
             await supabase.markPendingTransactionSent(compositeKey);
             console.log(`[WATCHDOG] ✅ Alert resent successfully for: ${compositeKey}`);
           }
+          // else: telegram_sent=true AND still within 5-min window → do nothing, wait for user response
         } catch (e) {
           console.error('[WATCHDOG] Error processing pending tx:', e.message);
         }

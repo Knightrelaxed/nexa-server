@@ -1032,6 +1032,17 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
  */
 async function _autoSavePending(compositeKey, tx) {
   try {
+    // DEDUP GUARD: Check before saving to prevent double-save race
+    // between setTimeout (5-min auto-save) and Watchdog cron (90s interval)
+    const txTime = new Date(tx.time || Date.now());
+    const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, txTime);
+    if (alreadySaved) {
+      console.log(`[FINANCE] _autoSavePending: ${compositeKey} already saved. Skipping.`);
+      pendingConfirmations.delete(compositeKey);
+      try { await supabase.deletePendingTransaction(compositeKey); } catch (_) {}
+      return;
+    }
+
     const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
     const aiRouter = require('../core/AI_Router');
     const autoQuery = `catat ${tipeStr} ${tx.nominal} ke ${tx.destination}`;
@@ -1041,7 +1052,8 @@ async function _autoSavePending(compositeKey, tx) {
     await processTransaction(tx, 'GMAIL_POLLING');
     pendingConfirmations.delete(compositeKey);
     await supabase.deletePendingTransaction(compositeKey);
-    const nominalFmt = `Rp${tx.nominal.toLocaleString('id-ID')}`;
+    const nominalNum = typeof tx.nominal === 'number' ? tx.nominal : parseFloat(String(tx.nominal).replace(/[^0-9]/g, ''));
+    const nominalFmt = isNaN(nominalNum) ? String(tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
     const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`;
     try {
       const { sendTelegramOutbound } = require('../interfaces/webhook');
@@ -1141,7 +1153,7 @@ async function getPendingConfirmationsContext() {
       const key = row.composite_key;
       if (!pendingConfirmations.has(key)) {
         const ageMs = Date.now() - new Date(row.created_at).getTime();
-        const remaining = (5 * 60 * 1000) - ageMs;
+        const remaining = Math.max(1000, (5 * 60 * 1000) - ageMs); // Guard: never negative/zero
         const timeoutId = setTimeout(async () => {
           if (pendingConfirmations.has(key)) await _autoSavePending(key, tx);
         }, remaining);
