@@ -426,7 +426,7 @@ async function tryResolvePending(userText, pendingCtx) {
       };
     }
     startDate.setMinutes(startDate.getMinutes() + durationMins);
-    const computedEnd = new Date(startDate.getTime() + durationMins * 60000).toISOString();
+    const computedEnd = startDate.toISOString();
     
     // Check for conflicts
     const conflicts = await googleWorkspace.checkCalendarConflicts(pendingCtx.start, computedEnd);
