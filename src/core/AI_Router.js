@@ -300,6 +300,30 @@ Tentukan intent dan ekstrak data!
 }
 
 /**
+ * Lightweight one-shot AI call for synthesis tasks (non-JSON).
+ * Used by: cron.js (Midday Pulse, Evening Debrief, Tomorrow Prep, Weekly Review),
+ * and any module that needs a plain-text AI response.
+ * @param {string} prompt - The task/user prompt
+ * @returns {Promise<string>} - Plain text response from AI
+ */
+const PLAIN_TEXT_SYSTEM_PROMPT = `Anda adalah N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh.
+Jawab dengan bahasa Indonesia yang natural, cerdas, luwes, sopan, dan hangat (gaya asisten premium ala Jarvis).
+Balas HANYA dengan teks biasa. JANGAN gunakan format JSON. JANGAN gunakan markdown **bold** atau *italic*.
+Berikan jawaban yang informatif dan ringkas.`;
+
+async function callAI(prompt) {
+  const result = await executeWithFallback(prompt, PLAIN_TEXT_SYSTEM_PROMPT, 0.5);
+  let text = String(result).trim();
+  // If the model wrapped its answer in JSON anyway, extract the first string value
+  try {
+    const parsed = JSON.parse(text);
+    const firstVal = Object.values(parsed).find(v => typeof v === 'string');
+    if (firstVal) text = firstVal;
+  } catch (_) { /* Not JSON, already plain text — good */ }
+  return text;
+}
+
+/**
  * Lightweight AI classifier for Finance Interceptor.
  * When there's a pending transaction waiting for user confirmation,
  * this determines the user's INTENT from their reply without regex.
@@ -309,8 +333,6 @@ Tentukan intent dan ekstrak data!
  *   'CANCEL'       — user wants to cancel/discard the transaction
  *   'DESCRIPTION'  — user is providing a new description or category for the transaction
  *   'AMBIGUOUS'    — unclear, ask for clarification
- *
- * Designed to be FAST and CHEAP: minimal prompt, low temp, no memory/context.
  *
  * @param {string} userText - The raw message from the user
  * @param {object} pendingTx - The pending transaction context { nominal, destination, type }
@@ -339,19 +361,17 @@ Aturan:
 BALAS HANYA dengan satu kata: CONFIRM, CANCEL, DESCRIPTION, atau AMBIGUOUS. Jangan tambahkan penjelasan apapun.`;
 
   try {
-    const result = await executeWithFallback(userText, systemPrompt, 0.0); // temp=0 for determinism
+    const result = await executeWithFallback(userText, systemPrompt, 0.0);
     const clean = String(result).trim().toUpperCase().replace(/[^A-Z]/g, '');
-    if (['CONFIRM', 'CANCEL', 'DESCRIPTION', 'AMBIGUOUS'].includes(clean)) {
-      return clean;
-    }
-    // If AI returned something unexpected, fall back to AMBIGUOUS
+    if (['CONFIRM', 'CANCEL', 'DESCRIPTION', 'AMBIGUOUS'].includes(clean)) return clean;
     console.warn(`[CLASSIFIER] Unexpected classification result: "${result}". Defaulting to AMBIGUOUS.`);
     return 'AMBIGUOUS';
   } catch (e) {
     console.error('[CLASSIFIER] classifyPendingTransactionIntent failed:', e.message);
-    return 'AMBIGUOUS'; // Safe fallback — won't corrupt anything
+    return 'AMBIGUOUS';
   }
 }
+
 /**
  * Lightweight AI binary classifier (YES / NO / AMBIGUOUS).
  * General-purpose: used for deletion confirmation, calendar conflict,
@@ -359,8 +379,6 @@ BALAS HANYA dengan satu kata: CONFIRM, CANCEL, DESCRIPTION, atau AMBIGUOUS. Jang
  *
  * @param {string} userText      - The raw reply from the user
  * @param {string} contextString - Plain-text description of what is being confirmed
- *                                 e.g. "hapus transaksi mie ayam Rp10.000"
- *                                 e.g. "tambah jadwal Kuliah Algoritma walaupun bentrok"
  * @returns {Promise<'YES'|'NO'|'AMBIGUOUS'>}
  */
 async function classifyYesNo(userText, contextString = '') {
