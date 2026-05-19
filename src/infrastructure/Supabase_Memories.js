@@ -62,25 +62,50 @@ async function getRecentMemories(limit = 10) {
 async function isDuplicateTransaction(compositeKey, transactionTime) {
   if (!supabase) return false;
   
+  // ── Gate 1: Check nexa_finance_dedup ─────────────────────────────────────
   // Dedup window: 24 hours. Same nominal+merchant is allowed on different days.
   // This prevents double-recording from Livin email re-polling, but allows
   // Tuan Faqih to record the same purchase (e.g. "Indomaret, Rp13.000") on two separate days.
   const windowStart = new Date(transactionTime.getTime() - 24 * 60 * 60 * 1000).toISOString();
   const windowEnd   = new Date(transactionTime.getTime() + 24 * 60 * 60 * 1000).toISOString();
 
-  const { data, error } = await supabase
+  const { data: dedupData, error: dedupError } = await supabase
     .from('nexa_finance_dedup')
     .select('id')
     .eq('composite_key', compositeKey)
     .gte('transaction_time', windowStart)
     .lte('transaction_time', windowEnd);
 
-  if (error) {
-    console.error('[SUPABASE] Error checking duplicate:', error.message);
+  if (dedupError) {
+    console.error('[SUPABASE] Error checking duplicate:', dedupError.message);
     return false; 
   }
 
-  return data && data.length > 0;
+  if (dedupData && dedupData.length > 0) return true;
+
+  // ── Gate 2: Check nexa_pending_transactions ───────────────────────────────
+  // Critical: a pending record exists when Telegram confirmation was queued
+  // but the server restarted before the user responded. Without this check,
+  // pollLivinEmails would re-process the same email and write a DUPLICATE row
+  // to the Google Sheet because nexa_finance_dedup is only written AFTER save.
+  try {
+    const { data: pendingData, error: pendingError } = await supabase
+      .from('nexa_pending_transactions')
+      .select('composite_key')
+      .eq('composite_key', compositeKey)
+      .limit(1);
+
+    if (pendingError) {
+      console.warn('[SUPABASE] Error checking pending transactions for dedup:', pendingError.message);
+    } else if (pendingData && pendingData.length > 0) {
+      console.log(`[SUPABASE] Dedup via pending_transactions: ${compositeKey} already awaiting confirmation.`);
+      return true;
+    }
+  } catch (e) {
+    console.warn('[SUPABASE] Unexpected error in pending dedup check:', e.message);
+  }
+
+  return false;
 }
 
 /**

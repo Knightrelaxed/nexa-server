@@ -55,6 +55,15 @@ async function recoverPendingTransactions() {
       if (ageMs >= TIMEOUT_MS) {
         console.log(`[FINANCE] Recovered tx ${compositeKey} is expired. Auto-saving now...`);
         try {
+          // DEDUP GUARD: Check both dedup tables before saving to prevent
+          // race condition with Watchdog cron (which also runs every 90s).
+          const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, createdAt);
+          if (alreadySaved) {
+            console.log(`[FINANCE] Recovery: ${compositeKey} already saved or pending. Deleting stale pending record.`);
+            await supabase.deletePendingTransaction(compositeKey);
+            continue;
+          }
+
           const aiRouter = require('../core/AI_Router');
           const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
           const autoQuery = `catat ${tipeStr} ${tx.nominal} ke ${tx.destination}`;
@@ -62,7 +71,12 @@ async function recoverPendingTransactions() {
           tx.category = routingData?.extracted_data?.category || 'Lainnya';
           if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
           await processTransaction(tx, 'GMAIL_POLLING');
-        } catch (_) {}
+          // processTransaction already calls logTransactionKey, but we
+          // delete the pending record immediately after to signal to the
+          // Watchdog that this tx is resolved and should not be re-processed.
+        } catch (saveErr) {
+          console.error(`[FINANCE] Recovery auto-save failed for ${compositeKey}:`, saveErr.message);
+        }
         await supabase.deletePendingTransaction(compositeKey);
         continue;
       }

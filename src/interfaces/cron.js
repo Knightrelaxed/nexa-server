@@ -84,6 +84,14 @@ function initCronJobs() {
 
           if (ageMs >= 5 * 60 * 1000) {
             // Expired — auto-save without asking user
+            // DEDUP GUARD: Check before saving to prevent race condition with recoverPendingTransactions
+            const txTime = new Date(row.created_at);
+            const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, txTime);
+            if (alreadySaved) {
+              console.log(`[WATCHDOG] ${compositeKey} already saved. Cleaning up stale pending record.`);
+              await supabase.deletePendingTransaction(compositeKey);
+              continue;
+            }
             console.log(`[WATCHDOG] Tx ${compositeKey} expired (${Math.round(ageMs/60000)}m old). Auto-saving...`);
             await financeEngine.autoSaveFromWatchdog(compositeKey, tx);
           } else {
