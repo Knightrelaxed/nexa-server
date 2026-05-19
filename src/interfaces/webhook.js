@@ -1204,30 +1204,38 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     }
 
     // ============================================================
-    // PENDING DELETION REPLY INTERCEPTOR
-    // Catches user replies to a deletion confirmation prompt
+    // PENDING DELETION REPLY INTERCEPTOR (AI-Powered)
     // ============================================================
     const pendingDelCtx = financeEngine.getPendingDeletionsContext();
     if (pendingDelCtx) {
-      const normText = textInput.toLowerCase().trim();
-      const isConfirm = /^(ya|iya|ok|oke|siap|benar|hapus|lanjut|lanjutkan|gas|setuju)/.test(normText);
-      const isCancel  = /^(batal|batalkan|cancel|tidak|jangan|ga|gak|no)$/.test(normText);
+      // Extract context: what transaction is about to be deleted
+      let delContext = 'hapus transaksi keuangan';
+      try {
+        const [firstEntry] = pendingDelCtx.values();
+        if (firstEntry && firstEntry.rowData) {
+          const r = firstEntry.rowData;
+          delContext = `hapus transaksi "${r[6] || r[4] || '-'}" senilai Rp${Math.abs(r[7] || 0).toLocaleString('id-ID')}`;
+        }
+      } catch (_) {}
 
-      if (isConfirm) {
-        console.log('[FINANCE INTERCEPTOR] User confirmed pending deletion.');
+      const { classifyYesNo } = require('../core/AI_Router');
+      const verdict = await classifyYesNo(textInput, delContext);
+      console.log(`[FINANCE INTERCEPTOR] AI deletion verdict: "${verdict}" for input: "${textInput}"`);
+
+      if (verdict === 'YES') {
         const reply = await financeEngine.confirmDeleteTransaction(true);
         await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(reply || '✅ Transaksi telah dihapus.');
         clearTimeout(safetyTimer);
         return;
-      } else if (isCancel) {
-        console.log('[FINANCE INTERCEPTOR] User cancelled pending deletion.');
+      } else if (verdict === 'NO') {
         const reply = await financeEngine.confirmDeleteTransaction(false);
         await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(reply || '✅ Penghapusan dibatalkan.');
         clearTimeout(safetyTimer);
         return;
       }
+      // AMBIGUOUS — fall through to normal routing; don't act on unclear input
     }
 
     // ============================================================
@@ -1288,29 +1296,42 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     }
 
     // ============================================================
+    // PENDING TASK CATEGORY INTERCEPTOR (AI-Powered)
+    // ============================================================
     const chatId = String(message.chat.id);
     if (taskManager.pendingTaskCategories.has(chatId)) {
-      const normalized = textInput.toLowerCase().trim();
-      let overrideList = null;
+      const { classifyYesNo } = require('../core/AI_Router');
+      const pendingTask = taskManager.pendingTaskCategories.get(chatId);
+      const taskTitle = pendingTask && pendingTask.task && pendingTask.task.title ? pendingTask.task.title : 'tugas baru';
+      const suggestedList = pendingTask && pendingTask.suggestedList ? pendingTask.suggestedList : 'daftar tugas';
+      const taskContext = `konfirmasi apakah tugas "${taskTitle}" dimasukkan ke list "${suggestedList}"`;
 
-      if (normalized === 'ya' || normalized === 'ok' || normalized === 'oke' || normalized === 'siap') {
-        overrideList = null; // Use the suggested one
-      } else if (normalized === 'tidak' || normalized === 'no' || normalized === 'ga' || normalized === 'gak') {
-        overrideList = 'Tugas Saya';
-      } else if (normalized === 'batal' || normalized === 'batalkan' || normalized === 'cancel') {
+      const normalized = textInput.toLowerCase().trim();
+      // Hard cancel check first (AI is overkill for explicit "batal")
+      if (normalized === 'batal' || normalized === 'batalkan' || normalized === 'cancel') {
         taskManager.cancelPendingTask(chatId);
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => { });
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram('🚫 Penambahan tugas dibatalkan.');
         clearTimeout(safetyTimer);
         return;
+      }
+
+      const verdict = await classifyYesNo(textInput, taskContext);
+      console.log(`[TASK INTERCEPTOR] AI verdict: "${verdict}" for input: "${textInput}"`);
+
+      let overrideList = null;
+      if (verdict === 'YES') {
+        overrideList = null; // Use the suggested list
+      } else if (verdict === 'NO') {
+        overrideList = 'Tugas Saya'; // Default fallback list
       } else {
-        // Assume user typed a different list name
+        // AMBIGUOUS — user likely typed a custom list name
         overrideList = textInput.trim();
       }
 
       const resTask = await taskManager.executePendingTask(chatId, overrideList);
       if (resTask && resTask.message) {
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => { });
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(resTask.message);
         clearTimeout(safetyTimer);
         return;
@@ -1318,19 +1339,19 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     }
 
     // ============================================================
-    // PENDING CONFLICT CONFIRMATION — intercept "ya"/"batal" reply
+    // PENDING CONFLICT CONFIRMATION — AI-Powered (intercept ya/batal)
     // ============================================================
     if (pendingConflictEvent && (Date.now() - (pendingConflictEvent.askedAt || 0)) < 10 * 60 * 1000) {
-      const normalized = textInput.toLowerCase().trim();
-      const isYes = /^(ya|iya|lanjut|lanjutkan|ok|oke|tambahkan|tetap)/.test(normalized);
-      const isNo = /^(batal|tidak|cancel|ga|gak|jangan)/.test(normalized);
+      const ev = pendingConflictEvent;
+      const conflictContext = `tambahkan jadwal "${ev.summary}" walaupun ada bentrok jadwal lain`;
+      const { classifyYesNo } = require('../core/AI_Router');
+      const verdict = await classifyYesNo(textInput, conflictContext);
+      console.log(`[CALENDAR INTERCEPTOR] AI conflict verdict: "${verdict}" for input: "${textInput}"`);
 
-      if (isYes || isNo) {
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => { });
-        if (isYes) {
-          // Force-create the event despite the conflict
+      if (verdict === 'YES' || verdict === 'NO') {
+        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+        if (verdict === 'YES') {
           try {
-            const ev = pendingConflictEvent;
             const result = await googleWorkspace.createCalendarEvent(
               ev.summary, ev.start, ev.end, ev.description || '',
               ev.location || '', ev.reminder_minutes || [], ev.recurrence || ''
@@ -1349,6 +1370,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         clearTimeout(safetyTimer);
         return;
       }
+      // AMBIGUOUS — fall through to normal routing
     }
 
     // Email follow-up override: keep intent in EMAIL context to avoid misrouting to CALENDAR/NORMAL_CHAT

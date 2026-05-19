@@ -352,5 +352,42 @@ BALAS HANYA dengan satu kata: CONFIRM, CANCEL, DESCRIPTION, atau AMBIGUOUS. Jang
     return 'AMBIGUOUS'; // Safe fallback — won't corrupt anything
   }
 }
+/**
+ * Lightweight AI binary classifier (YES / NO / AMBIGUOUS).
+ * General-purpose: used for deletion confirmation, calendar conflict,
+ * task category confirmation, and any other yes/no flow.
+ *
+ * @param {string} userText      - The raw reply from the user
+ * @param {string} contextString - Plain-text description of what is being confirmed
+ *                                 e.g. "hapus transaksi mie ayam Rp10.000"
+ *                                 e.g. "tambah jadwal Kuliah Algoritma walaupun bentrok"
+ * @returns {Promise<'YES'|'NO'|'AMBIGUOUS'>}
+ */
+async function classifyYesNo(userText, contextString = '') {
+  const systemPrompt = `Kamu adalah classifier niat biner yang sangat akurat.
+Konteks: user baru saja menerima pertanyaan konfirmasi untuk: "${contextString}".
+User membalas dengan teks berikut. Tugasmu: tentukan apakah user MENYETUJUI atau MENOLAK.
 
-module.exports = { routeUserMessage, invalidatePersonalFactsCache, callAI, classifyPendingTransactionIntent };
+- YES      → user menyetujui / mengkonfirmasi / mau lanjut.
+  Contoh afirmatif: "ya", "iya", "yap", "oke", "ok", "lanjut", "gas", "setuju", "hapus", "benar",
+  "lakukan", "siap", "betul", "confirm", "acc", "yoi", "yes", "do it", "lanjutkan", dll.
+- NO       → user menolak / membatalkan / tidak mau.
+  Contoh negatif: "tidak", "jangan", "batal", "batalkan", "ga", "gak", "nggak", "cancel",
+  "skip", "no", "ngga", "tolak", "stop", dll.
+- AMBIGUOUS → tidak jelas, pertanyaan baru, atau tidak relevan dengan konfirmasi di atas.
+
+BALAS HANYA dengan satu kata: YES, NO, atau AMBIGUOUS. Tanpa penjelasan apapun.`;
+
+  try {
+    const result = await executeWithFallback(userText, systemPrompt, 0.0);
+    const clean = String(result).trim().toUpperCase().replace(/[^A-Z]/g, '');
+    if (['YES', 'NO', 'AMBIGUOUS'].includes(clean)) return clean;
+    console.warn(`[CLASSIFIER] classifyYesNo unexpected result: "${result}". Defaulting to AMBIGUOUS.`);
+    return 'AMBIGUOUS';
+  } catch (e) {
+    console.error('[CLASSIFIER] classifyYesNo failed:', e.message);
+    return 'AMBIGUOUS';
+  }
+}
+
+module.exports = { routeUserMessage, invalidatePersonalFactsCache, callAI, classifyPendingTransactionIntent, classifyYesNo };
