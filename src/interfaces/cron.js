@@ -84,7 +84,7 @@ function initCronJobs() {
             // Expired — auto-save without asking user
             // DEDUP GUARD: Check before saving to prevent race condition with recoverPendingTransactions
             const txTime = new Date(row.created_at);
-            const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, txTime);
+            const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, txTime, false);
             if (alreadySaved) {
               console.log(`[WATCHDOG] ${compositeKey} already saved. Cleaning up stale pending record.`);
               await supabase.deletePendingTransaction(compositeKey);

@@ -59,7 +59,7 @@ async function getRecentMemories(limit = 10) {
  * @param {string} compositeKey - e.g. "50000_Kopi Kenangan"
  * @param {Date} transactionTime 
  */
-async function isDuplicateTransaction(compositeKey, transactionTime) {
+async function isDuplicateTransaction(compositeKey, transactionTime, checkPending = true) {
   if (!supabase) return false;
   
   // ── Gate 1: Check nexa_finance_dedup ─────────────────────────────────────
@@ -82,6 +82,8 @@ async function isDuplicateTransaction(compositeKey, transactionTime) {
   }
 
   if (dedupData && dedupData.length > 0) return true;
+
+  if (!checkPending) return false;
 
   // ── Gate 2: Check nexa_pending_transactions ───────────────────────────────
   // Critical: a pending record exists when Telegram confirmation was queued

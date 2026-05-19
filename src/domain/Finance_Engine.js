@@ -1,7 +1,7 @@
 const supabase = require('../infrastructure/Supabase_Memories');
 const googleWorkspace = require('../infrastructure/Google_Workspace');
 const gmailClient = require('../infrastructure/Gmail_Client');
-const axios = require('axios');
+// axios removed — all Telegram sends must use sendTelegramOutbound (Cloudflare proxy) not direct api.telegram.org
 const env = require('../config/env');
 
 // In-memory cache of pending confirmations (source of truth = Supabase)
@@ -13,25 +13,9 @@ const pendingDeletions = new Map();
 
 let isPollingLivin = false;
 
-/**
- * Send Telegram message with retry logic (3 attempts)
- */
-async function sendTelegramWithRetry(msg, retries = 3) {
-  for (let i = 1; i <= retries; i++) {
-    try {
-      await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        chat_id: env.TELEGRAM_CHAT_ID,
-        text: msg,
-        parse_mode: 'HTML'
-      }, { timeout: 10000 });
-      return true;
-    } catch (e) {
-      console.warn(`[FINANCE] Telegram send attempt ${i}/${retries} failed: ${e.message}`);
-      if (i < retries) await new Promise(r => setTimeout(r, 2000 * i));
-    }
-  }
-  return false;
-}
+// AUDIT FIX: sendTelegramWithRetry REMOVED — it called api.telegram.org directly which is BLOCKED
+// on HF Docker. All Telegram sends from Finance_Engine must use sendTelegramOutbound() from
+// webhook.js which routes through the Cloudflare Worker proxy.
 
 /**
  * On startup: recover any pending transactions from Supabase that were
@@ -55,9 +39,10 @@ async function recoverPendingTransactions() {
       if (ageMs >= TIMEOUT_MS) {
         console.log(`[FINANCE] Recovered tx ${compositeKey} is expired. Auto-saving now...`);
         try {
-          // DEDUP GUARD: Check both dedup tables before saving to prevent
+          // DEDUP GUARD: Check dedup tables before saving to prevent
           // race condition with Watchdog cron (which also runs every 90s).
-          const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, createdAt);
+          // We pass checkPending=false because this is already a pending transaction.
+          const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, createdAt, false);
           if (alreadySaved) {
             console.log(`[FINANCE] Recovery: ${compositeKey} already saved or pending. Deleting stale pending record.`);
             await supabase.deletePendingTransaction(compositeKey);
@@ -135,7 +120,8 @@ async function processTransaction(data, source) {
 
   // Deduplication — only for passive (automated) inputs, not manual Telegram entries
   if (source === 'TASKER_LIVIN' || source === 'GMAIL_POLLING') {
-    const isDuplicate = await supabase.isDuplicateTransaction(compositeKey, transactionTime);
+    // Pass false to skip pending check if we are already processing it.
+    const isDuplicate = await supabase.isDuplicateTransaction(compositeKey, transactionTime, false);
     if (isDuplicate) {
       console.log(`[FINANCE] Zero-Duplication Engine intercepted duplicate entry from ${source}.`);
       return { status: 'DUPLICATE', message: 'Transaction already recorded.' };
@@ -721,7 +707,9 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
     
     // Update nominal if provided
     if (newNominal !== undefined && newNominal !== null && String(newNominal).trim() !== '') {
-      const nominal = parseFloat(newNominal);
+      // AUDIT FIX (CRITICAL): Use _parseFlexibleCurrency so IDR formats like "50.000" or
+      // "1.500.000" are parsed correctly instead of being truncated by bare parseFloat.
+      const nominal = _parseFlexibleCurrency(String(newNominal));
       if (isNaN(nominal) || nominal <= 0) {
         return { status: 'FAILED', message: `Nominal baru tidak valid: "${newNominal}". Harus berupa angka positif.` };
       }
@@ -914,16 +902,17 @@ async function pollLivinEmails() {
       if (isFailed) {
         // Log to Supabase so we don't notify again
         await supabase.logTransactionKey(compositeKey, transactionTime, 'FAILED_TRANSFER');
-        // Just notify the user and don't process it further
-        if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+        // AUDIT FIX (CRITICAL): Use sendTelegramOutbound (Cloudflare proxy) — direct axios.post to
+        // api.telegram.org is BLOCKED on HF Docker. Failed-transfer alerts had NO Watchdog recovery
+        // path, so they were permanently silently lost. Now routed through the proxy.
+        try {
           const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
           const failedMsg = `⚠️ <b>TRANSFER GAGAL</b>\n\nTujuan: ${destination}\nNominal: ${nominalFmt}\n\n<i>N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam buku kas Anda.</i>`;
-          await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: env.TELEGRAM_CHAT_ID,
-            text: failedMsg,
-            parse_mode: 'HTML'
-          });
-          try { await supabase.saveChatMemory('assistant', failedMsg); } catch(e) {}
+          const { sendTelegramOutbound } = require('../interfaces/webhook');
+          await sendTelegramOutbound(failedMsg);
+          try { await supabase.saveChatMemory('assistant', failedMsg); } catch (_e) {}
+        } catch (_sendErr) {
+          console.warn('[FINANCE] Failed transfer alert could not be sent:', _sendErr.message);
         }
         continue;
       }
@@ -954,20 +943,18 @@ async function pollLivinEmails() {
 
       try {
         const msg = await requestTransactionConfirmation(tx, 'TRANSAKSI LIVIN TERBARU');
-        if (msg && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-          await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: env.TELEGRAM_CHAT_ID,
-            text: msg,
-            parse_mode: 'HTML'
-          });
-          // CRITICAL FIX: Mark as sent so Watchdog doesn't resend 90s later!
-          const cleanMerchant = destination.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const compositeKey = `${nominal}_${cleanMerchant}`;
+        if (msg) {
+          // AUDIT FIX: Use sendTelegramOutbound (Cloudflare proxy) instead of direct axios.post.
+          // Direct calls to api.telegram.org are BLOCKED on HF Docker. Previously relied on
+          // 90-second Watchdog retry as a workaround. Now sends immediately via proxy.
+          const { sendTelegramOutbound } = require('../interfaces/webhook');
+          await sendTelegramOutbound(msg);
+          // Mark as sent so Watchdog doesn't redundantly resend 90s later
           await supabase.markPendingTransactionSent(compositeKey);
-          try { await supabase.saveChatMemory('assistant', msg); } catch(e) {}
+          try { await supabase.saveChatMemory('assistant', msg); } catch (_e) {}
         }
       } catch (err) {
-        console.error('[FINANCE] Confirmation failed:', err.message);
+        console.error('[FINANCE] Confirmation send failed (Watchdog will retry in 90s):', err.message);
       }
     }
 
@@ -1037,9 +1024,10 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
 async function _autoSavePending(compositeKey, tx) {
   try {
     // DEDUP GUARD: Check before saving to prevent double-save race
-    // between setTimeout (5-min auto-save) and Watchdog cron (90s interval)
+    // between setTimeout (5-min auto-save) and Watchdog cron (90s interval).
+    // We pass false for checkPending because this transaction is pending itself.
     const txTime = new Date(tx.time || Date.now());
-    const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, txTime);
+    const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, txTime, false);
     if (alreadySaved) {
       console.log(`[FINANCE] _autoSavePending: ${compositeKey} already saved. Skipping.`);
       pendingConfirmations.delete(compositeKey);
@@ -1056,7 +1044,9 @@ async function _autoSavePending(compositeKey, tx) {
     await processTransaction(tx, 'GMAIL_POLLING');
     pendingConfirmations.delete(compositeKey);
     await supabase.deletePendingTransaction(compositeKey);
-    const nominalNum = typeof tx.nominal === 'number' ? tx.nominal : parseFloat(String(tx.nominal).replace(/[^0-9]/g, ''));
+    // AUDIT FIX (CRITICAL): Use _parseFlexibleCurrency — the old replace(/[^0-9]/g,'') stripped
+    // the decimal point, so "50000.50" became 5000050. _parseFlexibleCurrency handles all formats.
+    const nominalNum = typeof tx.nominal === 'number' ? tx.nominal : _parseFlexibleCurrency(String(tx.nominal));
     const nominalFmt = isNaN(nominalNum) ? String(tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
     const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`;
     try {
