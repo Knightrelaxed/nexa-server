@@ -54,18 +54,14 @@ async function triggerGodMode(level = 3, metadata = {}) {
 
   // ============================================================
   // SECONDARY: Send message back to Telegram as an alert/audit log
+  // Uses sendTelegramOutbound (Cloudflare proxy) — direct api.telegram.org is BLOCKED on HF Docker.
   // ============================================================
   if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
     const safeViolationInfo = escapeHtml(violationInfo);
     const telegramMessage = `🔴 <b>GOD MODE AKTIF</b>\n\nTuan Faqih,\nBatas screen-time terlampaui.\nKoneksi internet dimatikan.\n\nPelanggaran: ${safeViolationInfo}\nLevel: ${level}\nWaktu: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}`;
     try {
-      await axios.post(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        chat_id: env.TELEGRAM_CHAT_ID,
-        text: telegramMessage,
-        parse_mode: 'HTML'
-      });
-      const supabase = require('../infrastructure/Supabase_Memories');
-      try { await supabase.saveChatMemory('assistant', telegramMessage); } catch(e) {}
+      const { sendTelegramOutbound } = require('../interfaces/webhook');
+      await sendTelegramOutbound(telegramMessage);
     } catch (telegramErr) {
       console.error('[DISCIPLINE] Failed to send God Mode audit to Telegram:', telegramErr.message);
     }

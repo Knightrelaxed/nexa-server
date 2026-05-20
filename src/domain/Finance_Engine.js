@@ -826,7 +826,10 @@ async function updatePendingTransaction(rawUserText = null, customCategory = nul
 
     // Apply explicit overrides if provided directly
     if (customCategory) pending.tx.category = customCategory;
-    if (customNominal && !isNaN(parseFloat(customNominal))) pending.tx.nominal = parseFloat(customNominal);
+    if (customNominal) {
+      const parsed = _parseFlexibleCurrency(customNominal);
+      if (!isNaN(parsed)) pending.tx.nominal = parsed;
+    }
 
     // Reset the 5-minute timeout because user interacted
     clearTimeout(pending.timeoutId);
