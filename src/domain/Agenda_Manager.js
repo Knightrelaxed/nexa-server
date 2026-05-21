@@ -271,7 +271,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         return { status: 'SUCCESS', message: `${contextLabel}\n(Kosong / Tidak ada jadwal yang ditemukan)` };
       }
       
-      const eventList = events.map((e, i) => {
+      const eventLines = await Promise.all(events.map(async (e, i) => {
         const startRaw = e.start?.dateTime || e.start?.date;
         const endRaw = e.end?.dateTime || e.end?.date;
         
@@ -285,8 +285,43 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
            const sDate = new Date(startRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
            timeLabel = `${sDate} (Sepanjang hari)`;
         }
-        return `${i + 1}. ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
-      }).join('\n');
+        let line = `${i + 1}. ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
+
+        // [PREDICTIVE CONTEXT ENGINE]
+        const lowerSummary = (e.summary || '').toLowerCase();
+        const importantKeywords = ['rapat', 'meeting', 'seminar', 'ujian', 'proyek', 'presentasi', 'kuliah', 'tugas', 'sidang', 'bimbingan'];
+        const isImportant = importantKeywords.some(kw => lowerSummary.includes(kw));
+        
+        if (isImportant) {
+          try {
+            const { readDatabaseTable } = require('../infrastructure/Supabase_Memories');
+            
+            let searchKw = lowerSummary;
+            for (const kw of importantKeywords) {
+              searchKw = searchKw.replace(kw, '').trim();
+            }
+            
+            if (searchKw.length >= 3) {
+              const vaultRes = await readDatabaseTable('nexa_vault_items', { searchKeyword: searchKw, limit: 1 });
+              const hasVault = vaultRes.success && vaultRes.rows && vaultRes.rows.length > 0;
+              
+              const brainRes = await readDatabaseTable('nexa_2nd_brain', { searchKeyword: searchKw, limit: 1 });
+              const hasBrain = brainRes.success && brainRes.rows && brainRes.rows.length > 0;
+              
+              if (hasVault || hasBrain) {
+                const foundItems = [];
+                if (hasVault) foundItems.push(`Dokumen Vault`);
+                if (hasBrain) foundItems.push(`Catatan Memori`);
+                line += `\n   🔗 <i>(Konteks Tersedia: ${foundItems.join(' & ')} terkait '${searchKw}')</i>`;
+              }
+            }
+          } catch (err) {
+            console.error('[AGENDA] Context prediction failed:', err.message);
+          }
+        }
+        return line;
+      }));
+      const eventList = eventLines.join('\n');
       
       return { status: 'SUCCESS', message: `${contextLabel}\n${eventList}` };
     }
@@ -300,7 +335,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         const events = await googleWorkspace.getTodaysEvents();
         if (events && events.length > 0) {
           msg += `\n📅 <b>JADWAL (${events.length}):</b>\n`;
-          msg += events.map(e => {
+          const eventLines = await Promise.all(events.map(async (e) => {
             const startRaw = e.start?.dateTime || e.start?.date;
             const endRaw = e.end?.dateTime || e.end?.date;
             let timeLabel = 'Sepanjang hari';
@@ -309,8 +344,44 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
               const en = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
               timeLabel = `${s} - ${en}`;
             }
-            return `   ▸ ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
-          }).join('\n');
+            
+            let line = `   ▸ ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
+
+            // [PREDICTIVE CONTEXT ENGINE]
+            const lowerSummary = (e.summary || '').toLowerCase();
+            const importantKeywords = ['rapat', 'meeting', 'seminar', 'ujian', 'proyek', 'presentasi', 'kuliah', 'tugas', 'sidang', 'bimbingan'];
+            const isImportant = importantKeywords.some(kw => lowerSummary.includes(kw));
+            
+            if (isImportant) {
+              try {
+                const { readDatabaseTable } = require('../infrastructure/Supabase_Memories');
+                
+                let searchKw = lowerSummary;
+                for (const kw of importantKeywords) {
+                  searchKw = searchKw.replace(kw, '').trim();
+                }
+                
+                if (searchKw.length >= 3) {
+                  const vaultRes = await readDatabaseTable('nexa_vault_items', { searchKeyword: searchKw, limit: 1 });
+                  const hasVault = vaultRes.success && vaultRes.rows && vaultRes.rows.length > 0;
+                  
+                  const brainRes = await readDatabaseTable('nexa_2nd_brain', { searchKeyword: searchKw, limit: 1 });
+                  const hasBrain = brainRes.success && brainRes.rows && brainRes.rows.length > 0;
+                  
+                  if (hasVault || hasBrain) {
+                    const foundItems = [];
+                    if (hasVault) foundItems.push(`Dokumen Vault`);
+                    if (hasBrain) foundItems.push(`Catatan Memori`);
+                    line += `\n     🔗 <i>(Konteks Tersedia: ${foundItems.join(' & ')} terkait '${searchKw}')</i>`;
+                  }
+                }
+              } catch (err) {
+                console.error('[AGENDA] Context prediction failed:', err.message);
+              }
+            }
+            return line;
+          }));
+          msg += eventLines.join('\n');
         } else {
           msg += `\n📅 <b>JADWAL:</b> Tidak ada jadwal hari ini.\n`;
         }
