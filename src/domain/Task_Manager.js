@@ -72,13 +72,20 @@ function formatTask(task, index, indent = 0) {
 }
 
 /**
- * Helper to auto-create a Calendar event for tasks with a specific deadline time
+ * Helper to auto-create a Calendar event for tasks with a specific deadline time.
+ *
+ * CRITICAL GUARD: Only fires if due_date has an EXPLICIT time component (contains 'T').
+ * A bare date string like "2026-05-09" MUST NOT enter here — JS parses it as midnight UTC
+ * which converts to 07:00 WIB, creating phantom calendar spam.
  */
 async function autoCreateCalendarBlock(title, due_date) {
   if (!due_date) return false;
+  // GUARD: Reject pure date strings — they have no user-specified time.
+  if (!due_date.includes('T')) return false;
   const dueMs = new Date(due_date);
   if (isNaN(dueMs.getTime())) return false;
   const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+  // Only create a block if there is a meaningful time (not midnight WIB which could also be an unintended offset)
   if (h && h !== '00:00' && h !== '24:00') {
     // Time is explicitly set. Create a 30-min calendar block for the deadline.
     const startIso = dueMs.toISOString();
@@ -162,7 +169,10 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
       let taskNotes = notes || '';
       let timeLabel = null;
-      if (due_date) {
+      // CRITICAL FIX: Only extract time if due_date has an EXPLICIT 'T' time component.
+      // A bare date string ("2026-05-09") is parsed by JS as midnight UTC → 07:00 WIB.
+      // That "07:00" is a phantom — the user never specified a time. Skipping it entirely.
+      if (due_date && due_date.includes('T')) {
         const dueMs = new Date(due_date);
         if (!isNaN(dueMs.getTime())) {
           const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
