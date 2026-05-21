@@ -1691,6 +1691,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               notes: taskResult.notes,
               dueDate: taskResult.due_date,
               listName: taskResult.pendingListName,
+              durationMins: taskResult.durationMins,
+              hasAutonomousBlock: taskResult.hasAutonomousBlock,
               timerId,
               chatId: pendingId
             });

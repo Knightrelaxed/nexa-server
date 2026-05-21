@@ -78,7 +78,7 @@ function formatTask(task, index, indent = 0) {
  * A bare date string like "2026-05-09" MUST NOT enter here — JS parses it as midnight UTC
  * which converts to 07:00 WIB, creating phantom calendar spam.
  */
-async function autoCreateCalendarBlock(title, due_date) {
+async function autoCreateCalendarBlock(title, due_date, durationMinutes = 30) {
   if (!due_date) return false;
   // GUARD: Reject pure date strings — they have no user-specified time.
   if (!due_date.includes('T')) return false;
@@ -87,15 +87,15 @@ async function autoCreateCalendarBlock(title, due_date) {
   const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
   // Only create a block if there is a meaningful time (not midnight WIB which could also be an unintended offset)
   if (h && h !== '00:00' && h !== '24:00') {
-    // Time is explicitly set. Create a 30-min calendar block for the deadline.
+    // Time is explicitly set. Create a calendar block for the deadline.
     const startIso = dueMs.toISOString();
-    const endIso = new Date(dueMs.getTime() + 30 * 60000).toISOString();
+    const endIso = new Date(dueMs.getTime() + durationMinutes * 60000).toISOString();
     try {
       await googleWorkspace.createCalendarEvent(
-        `⏰ DEADLINE: ${title}`,
+        `⏰ BLOK KERJA: ${title}`,
         startIso,
         endIso,
-        'Otomatis dibuat oleh N.E.X.A berdasarkan tugas.'
+        'Otomatis dijadwalkan oleh N.E.X.A Autonomous Time-Blocking.'
       );
       return true;
     } catch (e) {
@@ -127,7 +127,7 @@ async function executePendingTask(chatId, overrideListName = null) {
   if (pending.timerId) clearTimeout(pending.timerId);
   pendingTaskCategories.delete(chatId);
 
-  const { title, notes, dueDate } = pending;
+  const { title, notes, dueDate, durationMins, hasAutonomousBlock } = pending;
   const listName = overrideListName || pending.listName;
 
   let listId = '@default';
@@ -147,9 +147,13 @@ async function executePendingTask(chatId, overrideListName = null) {
     msg += `\n📅 Deadline: ${d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
     
     // Auto-create calendar block if time is specified
-    const hasCalBlock = await autoCreateCalendarBlock(title, dueDate);
+    const hasCalBlock = await autoCreateCalendarBlock(title, dueDate, durationMins || 30);
     if (hasCalBlock) {
-      msg += `\n📅 Otomatis menambahkan blok waktu di Google Calendar!`;
+      if (hasAutonomousBlock) {
+        msg += `\n🤖 <b>Autonomous Time-Blocking:</b> Menemukan slot kosong dan otomatis menambahkan blok kerja ${durationMins} menit di Kalender!`;
+      } else {
+        msg += `\n📅 Otomatis menambahkan blok waktu di Google Calendar!`;
+      }
     }
   }
   return { status: 'SUCCESS', message: msg };
@@ -169,9 +173,18 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
       let taskNotes = notes || '';
       let timeLabel = null;
-      // CRITICAL FIX: Only extract time if due_date has an EXPLICIT 'T' time component.
+      let durationMins = 30; // default to 30 mins if not specified
+      let hasAutonomousBlock = false;
+
+      // Extract duration tag (e.g. #durasi:2j, #durasi:90m)
+      const durMatch = taskNotes.match(/#durasi:(\d+)([jm])/i);
+      if (durMatch) {
+        const val = parseInt(durMatch[1]);
+        durationMins = durMatch[2].toLowerCase() === 'j' ? val * 60 : val;
+      }
+
+      // CRITICAL FIX: Only extract explicit time if due_date has an EXPLICIT 'T' time component.
       // A bare date string ("2026-05-09") is parsed by JS as midnight UTC → 07:00 WIB.
-      // That "07:00" is a phantom — the user never specified a time. Skipping it entirely.
       if (due_date && due_date.includes('T')) {
         const dueMs = new Date(due_date);
         if (!isNaN(dueMs.getTime())) {
@@ -180,6 +193,28 @@ async function handleTaskIntent(extractedData, chatId = null) {
             timeLabel = h + ' WIB';
             taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
           }
+        }
+      } else if (due_date && durMatch) {
+        // [AUTONOMOUS TIME BLOCKING]
+        // Date only AND duration tag is present! Find an empty slot automatically.
+        const targetDateMs = new Date(due_date.split('T')[0] + 'T00:00:00+07:00').getTime();
+        const nowMs = Date.now();
+        const timeMinIso = new Date(nowMs).toISOString();
+        const timeMaxIso = new Date(Math.max(nowMs + 24 * 3600000, targetDateMs + 24 * 3600000 - 1)).toISOString();
+
+        try {
+          const { findEmptySlot } = require('../infrastructure/Google_Workspace');
+          const slot = await findEmptySlot(durationMins, timeMinIso, timeMaxIso);
+          if (slot) {
+            due_date = slot.start; 
+            const dueMs = new Date(due_date);
+            const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+            timeLabel = `${h} WIB (Auto-Blocked)`;
+            taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
+            hasAutonomousBlock = true;
+          }
+        } catch (e) {
+          console.error('[AUTONOMOUS BLOCKING] Failed to find slot:', e.message);
         }
       }
 
@@ -194,7 +229,7 @@ async function handleTaskIntent(extractedData, chatId = null) {
       // If chatId is provided and we auto-suggested a list (not explicitly asked), set up 5-min confirmation
       // If the user explicitly provided list_name, or if it's default, create directly without confirmation
       if (chatId && resolvedList && resolvedList !== 'Tugas Saya' && isSuggested) {
-        return { status: 'PENDING_CONFIRM', pendingListName: resolvedList, title, notes: taskNotes, due_date, chatId };
+        return { status: 'PENDING_CONFIRM', pendingListName: resolvedList, title, notes: taskNotes, due_date, durationMins, hasAutonomousBlock, chatId };
       }
 
       // If no chatId or list is default, create directly without confirmation
@@ -218,9 +253,13 @@ async function handleTaskIntent(extractedData, chatId = null) {
         if (timeLabel) msg += ` jam ${timeLabel}`;
         
         // Auto-create calendar block if time is specified
-        const hasCalBlock = await autoCreateCalendarBlock(title, due_date);
+        const hasCalBlock = await autoCreateCalendarBlock(title, due_date, durationMins);
         if (hasCalBlock) {
-          msg += `\n📅 Otomatis menambahkan blok waktu di Google Calendar!`;
+          if (hasAutonomousBlock) {
+            msg += `\n🤖 <b>Autonomous Time-Blocking:</b> Menemukan slot kosong dan otomatis menambahkan blok kerja ${durationMins} menit di Kalender!`;
+          } else {
+            msg += `\n📅 Otomatis menambahkan blok waktu di Google Calendar!`;
+          }
         }
       }
       return { status: 'SUCCESS', message: msg };

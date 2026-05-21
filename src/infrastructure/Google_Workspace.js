@@ -907,6 +907,91 @@ async function getTomorrowEvents() {
   return response.data.items || [];
 }
 
+/**
+ * [AUTONOMOUS TIME BLOCKING] Query Google Calendar Free/Busy API.
+ */
+async function getFreeBusy(timeMin, timeMax) {
+  const { calendar } = getClients();
+  const calendarId = env.GOOGLE_CALENDAR_ID || 'primary';
+  const response = await calendar.freebusy.query({
+    requestBody: {
+      timeMin,
+      timeMax,
+      items: [{ id: calendarId }]
+    }
+  });
+  return response.data.calendars[calendarId].busy || [];
+}
+
+/**
+ * [AUTONOMOUS TIME BLOCKING] Find an empty slot of a given duration.
+ * Ensures the slot is within working hours (08:00 - 22:00 Jakarta Time).
+ */
+async function findEmptySlot(durationMinutes, timeMinIso, timeMaxIso) {
+  const busyBlocks = await getFreeBusy(timeMinIso, timeMaxIso);
+  busyBlocks.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  let currentStart = new Date(timeMinIso);
+  const maxEnd = new Date(timeMaxIso);
+  const durationMs = durationMinutes * 60 * 1000;
+
+  const isValidWorkingHour = (date) => {
+    const localUtc = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+    const h = localUtc.getUTCHours();
+    return h >= 8 && h < 22;
+  };
+
+  const adjustToWorkingHours = (date) => {
+    let localUtc = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+    let h = localUtc.getUTCHours();
+    if (h < 8) {
+      localUtc.setUTCHours(8, 0, 0, 0);
+    } else if (h >= 22) {
+      localUtc.setUTCDate(localUtc.getUTCDate() + 1);
+      localUtc.setUTCHours(8, 0, 0, 0);
+    }
+    return new Date(localUtc.getTime() - 7 * 60 * 60 * 1000);
+  };
+
+  currentStart = adjustToWorkingHours(currentStart);
+  // Optional round up to nearest 30 mins
+  if (currentStart.getMinutes() % 30 !== 0) {
+    currentStart = new Date(currentStart.getTime() + (30 - currentStart.getMinutes() % 30) * 60 * 1000);
+  }
+
+  for (const block of busyBlocks) {
+    const blockStart = new Date(block.start);
+    const blockEnd = new Date(block.end);
+
+    while (currentStart < blockStart) {
+      let candidateEnd = new Date(currentStart.getTime() + durationMs);
+      if (candidateEnd <= blockStart && candidateEnd <= maxEnd && isValidWorkingHour(currentStart) && isValidWorkingHour(new Date(candidateEnd.getTime() - 1))) {
+        return { start: currentStart.toISOString(), end: candidateEnd.toISOString() };
+      }
+      currentStart = new Date(currentStart.getTime() + 30 * 60 * 1000);
+      currentStart = adjustToWorkingHours(currentStart);
+    }
+
+    if (blockEnd > currentStart) {
+      currentStart = adjustToWorkingHours(blockEnd);
+      if (currentStart.getMinutes() % 30 !== 0) {
+        currentStart = new Date(currentStart.getTime() + (30 - currentStart.getMinutes() % 30) * 60 * 1000);
+      }
+    }
+  }
+
+  while (currentStart < maxEnd) {
+    let candidateEnd = new Date(currentStart.getTime() + durationMs);
+    if (candidateEnd <= maxEnd && isValidWorkingHour(currentStart) && isValidWorkingHour(new Date(candidateEnd.getTime() - 1))) {
+      return { start: currentStart.toISOString(), end: candidateEnd.toISOString() };
+    }
+    currentStart = new Date(currentStart.getTime() + 30 * 60 * 1000);
+    currentStart = adjustToWorkingHours(currentStart);
+  }
+
+  return null;
+}
+
 module.exports = {
   uploadFileToVault,
   deleteAllVaultFiles,
@@ -934,7 +1019,9 @@ module.exports = {
   deleteGenericSpreadsheet,
   updateCalendarEventColor,
   getUpcomingEvents,   // [PHASE 6] Proximity Alert
-  getTomorrowEvents    // [PHASE 6] Tomorrow Prep
+  getTomorrowEvents,   // [PHASE 6] Tomorrow Prep
+  getFreeBusy,
+  findEmptySlot
   // Note: raw clients (sheets, calendar, docs, drive) not exported.
   // Use the functions above. Clients are lazy-initialized via getClients().
 };
