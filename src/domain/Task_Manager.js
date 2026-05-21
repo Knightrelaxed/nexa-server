@@ -163,7 +163,7 @@ async function executePendingTask(chatId, overrideListName = null) {
  * Main handler for TASK intent from AI Router
  */
 async function handleTaskIntent(extractedData, chatId = null) {
-  const { action, title, due_date, notes, search_keyword, list_name, parent_task_keyword } = extractedData;
+  const { action, title, due_date, notes, search_keyword, list_name, parent_task_keyword, duration_minutes } = extractedData;
   console.log(`[TASKS] Executing Task Intent: ${action}`);
 
   try {
@@ -173,48 +173,69 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
       let taskNotes = notes || '';
       let timeLabel = null;
-      let durationMins = 30; // default to 30 mins if not specified
+      let durationMins = duration_minutes || 0; // AI Router extracts this naturally
       let hasAutonomousBlock = false;
+      let resolvedDueDate = due_date;
 
-      // Extract duration tag (e.g. #durasi:2j, #durasi:90m)
-      const durMatch = taskNotes.match(/#durasi:(\d+)([jm])/i);
-      if (durMatch) {
-        const val = parseInt(durMatch[1]);
-        durationMins = durMatch[2].toLowerCase() === 'j' ? val * 60 : val;
+      // [AI-DRIVEN DURATION]: If AI Router detected a duration, use it.
+      // If NOT detected (null/0) AND task has a deadline, proactively ask the user.
+      if (!durationMins && resolvedDueDate && chatId) {
+        // Return PENDING_DURATION — NEXA will ask the user how long the task takes
+        return {
+          status: 'PENDING_DURATION',
+          title,
+          notes: taskNotes,
+          due_date: resolvedDueDate,
+          list_name,
+          chatId,
+          message: `⏱️ Tugas '<b>${escapeHtml(title)}</b>' sudah saya catat.\n\nKira-kira <b>berapa lama</b> waktu yang dibutuhkan untuk mengerjakannya, Tuan?\n<i>(Contoh: "2 jam", "45 menit", "30m")\nSaya akan otomatis mencarikan slot kosong di Kalender Tuan!</i>\n\n<i>⏳ Jika tidak ada respons dalam 5 menit, tugas akan dibuat tanpa blok waktu otomatis.</i>`
+        };
       }
 
-      // CRITICAL FIX: Only extract explicit time if due_date has an EXPLICIT 'T' time component.
-      // A bare date string ("2026-05-09") is parsed by JS as midnight UTC → 07:00 WIB.
-      if (due_date && due_date.includes('T')) {
-        const dueMs = new Date(due_date);
+      // If duration was provided (from AI or from PENDING_DURATION confirmation)
+      if (durationMins > 0) {
+        // CRITICAL FIX: Only extract explicit time if due_date has an EXPLICIT 'T' time component.
+        if (resolvedDueDate && resolvedDueDate.includes('T')) {
+          const dueMs = new Date(resolvedDueDate);
+          if (!isNaN(dueMs.getTime())) {
+            const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+            if (h && h !== '00:00') {
+              timeLabel = h + ' WIB';
+              taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
+            }
+          }
+        } else if (resolvedDueDate) {
+          // [AUTONOMOUS TIME BLOCKING]
+          // Date only AND duration is known! Find an empty slot automatically.
+          const targetDateMs = new Date(resolvedDueDate.split('T')[0] + 'T00:00:00+07:00').getTime();
+          const nowMs = Date.now();
+          const timeMinIso = new Date(nowMs).toISOString();
+          const timeMaxIso = new Date(Math.max(nowMs + 24 * 3600000, targetDateMs + 24 * 3600000 - 1)).toISOString();
+
+          try {
+            const { findEmptySlot } = require('../infrastructure/Google_Workspace');
+            const slot = await findEmptySlot(durationMins, timeMinIso, timeMaxIso);
+            if (slot) {
+              resolvedDueDate = slot.start;
+              const dueMs = new Date(resolvedDueDate);
+              const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+              timeLabel = `${h} WIB (Auto-Blocked)`;
+              taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
+              hasAutonomousBlock = true;
+            }
+          } catch (e) {
+            console.error('[AUTONOMOUS BLOCKING] Failed to find slot:', e.message);
+          }
+        }
+      } else if (resolvedDueDate && resolvedDueDate.includes('T')) {
+        // No duration but explicit time — just label it
+        const dueMs = new Date(resolvedDueDate);
         if (!isNaN(dueMs.getTime())) {
           const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
           if (h && h !== '00:00') {
             timeLabel = h + ' WIB';
             taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
           }
-        }
-      } else if (due_date && durMatch) {
-        // [AUTONOMOUS TIME BLOCKING]
-        // Date only AND duration tag is present! Find an empty slot automatically.
-        const targetDateMs = new Date(due_date.split('T')[0] + 'T00:00:00+07:00').getTime();
-        const nowMs = Date.now();
-        const timeMinIso = new Date(nowMs).toISOString();
-        const timeMaxIso = new Date(Math.max(nowMs + 24 * 3600000, targetDateMs + 24 * 3600000 - 1)).toISOString();
-
-        try {
-          const { findEmptySlot } = require('../infrastructure/Google_Workspace');
-          const slot = await findEmptySlot(durationMins, timeMinIso, timeMaxIso);
-          if (slot) {
-            due_date = slot.start; 
-            const dueMs = new Date(due_date);
-            const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
-            timeLabel = `${h} WIB (Auto-Blocked)`;
-            taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
-            hasAutonomousBlock = true;
-          }
-        } catch (e) {
-          console.error('[AUTONOMOUS BLOCKING] Failed to find slot:', e.message);
         }
       }
 
@@ -227,9 +248,8 @@ async function handleTaskIntent(extractedData, chatId = null) {
       }
 
       // If chatId is provided and we auto-suggested a list (not explicitly asked), set up 5-min confirmation
-      // If the user explicitly provided list_name, or if it's default, create directly without confirmation
       if (chatId && resolvedList && resolvedList !== 'Tugas Saya' && isSuggested) {
-        return { status: 'PENDING_CONFIRM', pendingListName: resolvedList, title, notes: taskNotes, due_date, durationMins, hasAutonomousBlock, chatId };
+        return { status: 'PENDING_CONFIRM', pendingListName: resolvedList, title, notes: taskNotes, due_date: resolvedDueDate, durationMins, hasAutonomousBlock, chatId };
       }
 
       // If no chatId or list is default, create directly without confirmation
@@ -245,15 +265,15 @@ async function handleTaskIntent(extractedData, chatId = null) {
         }
       }
 
-      const task = await googleTasks.createTask({ title, notes: taskNotes, dueDate: due_date || null, listId });
+      const task = await googleTasks.createTask({ title, notes: taskNotes, dueDate: resolvedDueDate || null, listId });
       let msg = `✅ Tugas '<b>${escapeHtml(task.title)}</b>' ditambahkan ke <b>${escapeHtml(resolvedList || 'Tugas Saya')}</b>.`;
-      if (due_date) {
-        const dueDateObj = new Date(due_date.split('T')[0] + 'T00:00:00+07:00');
+      if (resolvedDueDate) {
+        const dueDateObj = new Date(resolvedDueDate.split('T')[0] + 'T00:00:00+07:00');
         msg += `\n📅 Deadline: ${dueDateObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
         if (timeLabel) msg += ` jam ${timeLabel}`;
         
         // Auto-create calendar block if time is specified
-        const hasCalBlock = await autoCreateCalendarBlock(title, due_date, durationMins);
+        const hasCalBlock = await autoCreateCalendarBlock(title, resolvedDueDate, durationMins);
         if (hasCalBlock) {
           if (hasAutonomousBlock) {
             msg += `\n🤖 <b>Autonomous Time-Blocking:</b> Menemukan slot kosong dan otomatis menambahkan blok kerja ${durationMins} menit di Kalender!`;

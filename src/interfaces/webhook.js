@@ -1300,12 +1300,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     // ============================================================
     const chatId = String(message.chat.id);
     if (taskManager.pendingTaskCategories.has(chatId)) {
-      const { classifyYesNo } = require('../core/AI_Router');
       const pendingTask = taskManager.pendingTaskCategories.get(chatId);
-      const taskTitle = pendingTask && pendingTask.task && pendingTask.task.title ? pendingTask.task.title : 'tugas baru';
-      const suggestedList = pendingTask && pendingTask.suggestedList ? pendingTask.suggestedList : 'daftar tugas';
-      const taskContext = `konfirmasi apakah tugas "${taskTitle}" dimasukkan ke list "${suggestedList}"`;
-
+      
       const normalized = textInput.toLowerCase().trim();
       // Hard cancel check first (AI is overkill for explicit "batal")
       if (normalized === 'batal' || normalized === 'batalkan' || normalized === 'cancel') {
@@ -1316,25 +1312,72 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         return;
       }
 
-      const verdict = await classifyYesNo(textInput, taskContext);
-      console.log(`[TASK INTERCEPTOR] AI verdict: "${verdict}" for input: "${textInput}"`);
+      if (pendingTask.type === 'CONFIRM_DURATION') {
+        const { callAI } = require('../core/AI_Router');
+        const aiPrompt = `User replies: "${textInput}". Extract the intended duration in minutes. If no duration is mentioned, respond with "0".`;
+        const aiResp = await callAI(aiPrompt);
+        const parsed = parseInt(aiResp.trim());
+        let durationMins = (!isNaN(parsed) && parsed > 0) ? parsed : 30; // fallback to 30 if unparseable
+        
+        pendingTask.durationMins = durationMins;
+        
+        // Calculate autonomous block here before executing
+        if (pendingTask.dueDate) {
+          const targetDateMs = new Date(pendingTask.dueDate.split('T')[0] + 'T00:00:00+07:00').getTime();
+          const nowMs = Date.now();
+          const timeMinIso = new Date(nowMs).toISOString();
+          const timeMaxIso = new Date(Math.max(nowMs + 24 * 3600000, targetDateMs + 24 * 3600000 - 1)).toISOString();
 
-      let overrideList = null;
-      if (verdict === 'YES') {
-        overrideList = null; // Use the suggested list
-      } else if (verdict === 'NO') {
-        overrideList = 'Tugas Saya'; // Default fallback list
+          try {
+            const { findEmptySlot } = require('../infrastructure/Google_Workspace');
+            const slot = await findEmptySlot(durationMins, timeMinIso, timeMaxIso);
+            if (slot) {
+              pendingTask.dueDate = slot.start; 
+              const dueMs = new Date(pendingTask.dueDate);
+              const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+              const timeLabel = `${h} WIB (Auto-Blocked)`;
+              pendingTask.notes = pendingTask.notes ? `⏰ Jam: ${timeLabel}\n${pendingTask.notes}` : `⏰ Jam: ${timeLabel}`;
+              pendingTask.hasAutonomousBlock = true;
+            }
+          } catch (e) {
+            console.error('[AUTONOMOUS BLOCKING] Failed to find slot:', e.message);
+          }
+        }
+        
+        const resTask = await taskManager.executePendingTask(chatId, pendingTask.listName);
+        if (resTask && resTask.message) {
+          await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+          await respondToTelegram(resTask.message);
+          clearTimeout(safetyTimer);
+          return;
+        }
       } else {
-        // AMBIGUOUS — user likely typed a custom list name
-        overrideList = textInput.trim();
-      }
+        // CONFIRM_LIST logic
+        const { classifyYesNo } = require('../core/AI_Router');
+        const taskTitle = pendingTask && pendingTask.title ? pendingTask.title : 'tugas baru';
+        const suggestedList = pendingTask && pendingTask.listName ? pendingTask.listName : 'daftar tugas';
+        const taskContext = `konfirmasi apakah tugas "${taskTitle}" dimasukkan ke list "${suggestedList}"`;
 
-      const resTask = await taskManager.executePendingTask(chatId, overrideList);
-      if (resTask && resTask.message) {
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
-        await respondToTelegram(resTask.message);
-        clearTimeout(safetyTimer);
-        return;
+        const verdict = await classifyYesNo(textInput, taskContext);
+        console.log(`[TASK INTERCEPTOR] AI verdict: "${verdict}" for input: "${textInput}"`);
+
+        let overrideList = null;
+        if (verdict === 'YES') {
+          overrideList = null; // Use the suggested list
+        } else if (verdict === 'NO') {
+          overrideList = 'Tugas Saya'; // Default fallback list
+        } else {
+          // AMBIGUOUS — user likely typed a custom list name
+          overrideList = textInput.trim();
+        }
+
+        const resTask = await taskManager.executePendingTask(chatId, overrideList);
+        if (resTask && resTask.message) {
+          await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
+          await respondToTelegram(resTask.message);
+          clearTimeout(safetyTimer);
+          return;
+        }
       }
     }
 
@@ -1687,6 +1730,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             }, 5 * 60 * 1000);
 
             pendingTaskCategories.set(pendingId, {
+              type: 'CONFIRM_LIST',
               title: taskResult.title,
               notes: taskResult.notes,
               dueDate: taskResult.due_date,
@@ -1698,6 +1742,37 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             });
 
             domainReply = `📋 Tugas '<b>${taskResult.title}</b>' akan saya masukkan ke list <b>${taskResult.pendingListName}</b>.\n\nKonfirmasi? Balas:\n• <b>ya</b> — masukkan sekarang\n• <b>nama list lain</b> — pindah ke list tersebut\n• <b>tidak</b> — masukkan ke Tugas Saya\n\n<i>⏱️ Auto-masuk dalam 5 menit jika tidak ada respons.</i>`;
+          } else if (taskResult && taskResult.status === 'PENDING_DURATION') {
+            // Set up 5-minute timer to create WITHOUT autonomous block
+            const { pendingTaskCategories, executePendingTask } = taskManager;
+            const pendingId = chatId || 'default';
+            const old = pendingTaskCategories.get(pendingId);
+            if (old && old.timerId) clearTimeout(old.timerId);
+
+            const timerId = setTimeout(async () => {
+              if (pendingTaskCategories.has(pendingId)) {
+                try {
+                  const res = await executePendingTask(pendingId);
+                  if (res && res.message) {
+                    await sendTelegramOutbound(res.message);
+                  }
+                } catch (e) { console.error('[TASK] Auto-create without block failed:', e.message); }
+              }
+            }, 5 * 60 * 1000);
+
+            pendingTaskCategories.set(pendingId, {
+              type: 'CONFIRM_DURATION',
+              title: taskResult.title,
+              notes: taskResult.notes,
+              dueDate: taskResult.due_date,
+              listName: taskResult.list_name,
+              durationMins: 0,
+              hasAutonomousBlock: false,
+              timerId,
+              chatId: pendingId
+            });
+
+            domainReply = taskResult.message;
           } else if (taskResult && taskResult.message) {
             domainReply = taskResult.message;
           }

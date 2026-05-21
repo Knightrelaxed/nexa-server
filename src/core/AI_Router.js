@@ -131,7 +131,16 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Untuk penemuan fakta secara OTOMATIS/PASIF dari obrolan, JANGAN gunakan intent ini. Gunakan array "learned_user_facts" di *root* JSON agar Anda tetap bisa mengeksekusi intent utama (misalnya FINANCE).
      // CORE_IDENTITY: { action: "APPEND"|"DELETE", content: string, search_keyword: string }
      //   → Sama seperti atas, gunakan HANYA jika disuruh eksplisit. Untuk pembelajaran pasif, gunakan array "learned_core_identities" di *root* JSON.
-     // TASK: { action: "CREATE"|"CREATE_SUBTASK"|"CREATE_MULTIPLE"|"READ"|"READ_LIST"|"READ_LISTS"|"READ_TODAY"|"READ_UPCOMING"|"READ_OVERDUE"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"MOVE"|"CLEAR_DONE"|"SET_PRIORITY", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string, list_name: string, parent_task_keyword: string, priority: "HIGH"|"NORMAL", tasks: [{title, notes, due_date, list_name}] }
+     // TASK: { action: "CREATE"|"CREATE_SUBTASK"|"CREATE_MULTIPLE"|"READ"|"READ_LIST"|"READ_LISTS"|"READ_TODAY"|"READ_UPCOMING"|"READ_OVERDUE"|"READ_DONE"|"COMPLETE"|"DELETE"|"EDIT"|"MOVE"|"CLEAR_DONE"|"SET_PRIORITY", title: string, due_date: string (ISO 8601 +07:00 atau null), notes: string, search_keyword: string, list_name: string, parent_task_keyword: string, priority: "HIGH"|"NORMAL", duration_minutes: number|null, tasks: [{title, notes, due_date, list_name, duration_minutes}] }
+     //   → duration_minutes: Estimasi durasi pengerjaan tugas DALAM MENIT. Ekstrak secara natural dari pesan user.
+     //     Contoh inferensi cerdas:
+     //     - "buat tugas review dokumen 2 jam besok" → duration_minutes: 120
+     //     - "catat tugas kerjakan essay sekitar 90 menit" → duration_minutes: 90
+     //     - "tugas rapat tim 1.5 jam" → duration_minutes: 90
+     //     - "buat tugas baca jurnal setengah jam" → duration_minutes: 30
+     //     - "buat tugas presentasi, butuh waktu 45 menit" → duration_minutes: 45
+     //     - "tugas kerjakan laporan #durasi:2j" → duration_minutes: 120 (tag legacy tetap didukung)
+     //     Jika user TIDAK menyebutkan durasi sama sekali, isi null. N.E.X.A akan menanyakan langsung.
      //   → SET_PRIORITY: Tandai tugas YANG SUDAH ADA sebagai prioritas tinggi ("ini sangat penting", "prioritaskan", "bintangi"). Wajib isi search_keyword = kata kunci nama tugas. JANGAN gunakan CREATE jika pengguna hanya meminta memprioritaskan.
      //   → COMPLETE: Selesaikan tugas yang SUDAH ADA ("selesaikan tugas", "tandai selesai", "sudah dikerjakan", "centang"). Wajib isi search_keyword = kata kunci nama tugas.
      //   → CREATE: Buat tugas BARU ("Catat tugas: kerjakan essay", "tambahkan ke daftar belanja: beras"). JANGAN gunakan ini untuk mengubah prioritas atau menyelesaikan tugas yang sudah ada.
