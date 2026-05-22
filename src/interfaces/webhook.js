@@ -474,6 +474,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
   const captionText = message.caption || '';
   const vaultTriggerText = `${textInput || ''} ${captionText || ''}`.toLowerCase();
 
+  // [AUDIT FIX] Centralized INCOMING memory save (Anti-Amnesia)
+  // Lock the user's message into Supabase IMMEDIATELY.
+  // This guarantees N.E.X.A never loses context even if an error crashes the router below.
+  const rawInputStr = (textInput || captionText || '[Attachment/Media]').substring(0, 4000);
+  await supabaseMemories.saveChatMemory('user', rawInputStr).catch(() => {});
+
   try {
     // ============================================================
     // FINANCE CONFIRMATION LOOP (Y/N)
@@ -486,7 +492,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         const financeEngine = require('../domain/Finance_Engine');
         const confirmationReply = await financeEngine.confirmPendingTransactions(isY);
         if (confirmationReply) {
-          await supabaseMemories.saveChatMemory('user', textInput);
           await respondToTelegram(confirmationReply);
           clearTimeout(safetyTimer);
           return;
@@ -510,7 +515,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             confirmed_at: new Date().toISOString()
           }).catch((e) => console.error('[VAULT] Confirm update failed:', e.message));
 
-          await supabaseMemories.saveChatMemory('user', textInput);
           pendingVaultContext = null;
           await respondToTelegram('✅ Baik, Tuan. Metadata Vault dikonfirmasi dan disimpan.');
           clearTimeout(safetyTimer);
@@ -537,8 +541,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               `Balas: <b>KONFIRM</b> / <b>EKSTRAK ULANG</b> / <b>EDIT key: value; key2: value2</b>`
             );
 
-            await supabaseMemories.saveChatMemory('user', textInput);
-            await supabaseMemories.saveChatMemory('nexa', `[SISTEM: HASIL EKSTRAKSI ULANG VISION]\n${JSON.stringify(pendingVaultContext.metadata, null, 2)}`);
 
             clearTimeout(safetyTimer);
             return;
@@ -555,8 +557,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           if (edits.category) pendingVaultContext.category = String(edits.category).toUpperCase();
           pendingVaultContext.askedAt = Date.now();
 
-          await supabaseMemories.saveChatMemory('user', textInput);
-          await supabaseMemories.saveChatMemory('nexa', `[SISTEM: DRAFT METADATA DIUPDATE MANUAL]\n${JSON.stringify(pendingVaultContext.metadata, null, 2)}`);
 
           await respondToTelegram(
             `✅ Dicatat, Tuan. Draft metadata sekarang:\n${escapeHtml(formatVaultMetadata(pendingVaultContext.metadata))}\n\n` +
@@ -660,8 +660,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             };
           }
 
-          await supabaseMemories.saveChatMemory('user', `[SISTEM: MENGUNGGAH GAMBAR] Tuan Faqih mengirimkan gambar dokumen/arsip dengan nama: ${finalFileName}`);
-          await supabaseMemories.saveChatMemory('nexa', `[SISTEM: HASIL EKSTRAKSI VISION] Saya telah membaca gambar tersebut dan mengekstrak data berikut:\n${JSON.stringify(draftMeta, null, 2)}`);
 
           await respondToTelegram(
             `✅ Tersimpan di Vault Drive (DRAFT).\n<b>Nama:</b> ${escapeHtml(finalFileName)}\n<b>Kategori (tebakan):</b> ${escapeHtml(category)}\n<b>Link:</b> ${uploaded.webViewLink || '(tidak tersedia)'}\n\n` +
@@ -1189,7 +1187,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           pendingConflictEvent = { ...resolved.pendingEvent, askedAt: Date.now() };
         }
 
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => { });
         await respondToTelegram(resolved.message);
         clearTimeout(safetyTimer);
         return;
@@ -1217,13 +1214,11 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
       if (verdict === 'YES') {
         const reply = await financeEngine.confirmDeleteTransaction(true);
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(reply || '✅ Transaksi telah dihapus.');
         clearTimeout(safetyTimer);
         return;
       } else if (verdict === 'NO') {
         const reply = await financeEngine.confirmDeleteTransaction(false);
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(reply || '✅ Penghapusan dibatalkan.');
         clearTimeout(safetyTimer);
         return;
@@ -1256,20 +1251,17 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
       if (intent === 'CONFIRM') {
         const confirmReply = await financeEngine.confirmPendingTransactions(true);
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(confirmReply || '✅ Transaksi telah dicatat.');
         clearTimeout(safetyTimer);
         return;
       } else if (intent === 'CANCEL') {
         const cancelReply = await financeEngine.confirmPendingTransactions(false);
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram(cancelReply || '❌ Transaksi dibatalkan.');
         clearTimeout(safetyTimer);
         return;
       } else if (intent === 'DESCRIPTION') {
         const updatedMsg = await financeEngine.updatePendingTransaction(textInput, null, null);
         if (updatedMsg) {
-          await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
           await respondToTelegram(updatedMsg);
           clearTimeout(safetyTimer);
           return;
@@ -1299,7 +1291,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       // Hard cancel check first (AI is overkill for explicit "batal")
       if (normalized === 'batal' || normalized === 'batalkan' || normalized === 'cancel') {
         taskManager.cancelPendingTask(chatId);
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         await respondToTelegram('🚫 Penambahan tugas dibatalkan.');
         clearTimeout(safetyTimer);
         return;
@@ -1339,7 +1330,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         
         const resTask = await taskManager.executePendingTask(chatId, pendingTask.listName);
         if (resTask && resTask.message) {
-          await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
           await respondToTelegram(resTask.message);
           clearTimeout(safetyTimer);
           return;
@@ -1366,7 +1356,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
         const resTask = await taskManager.executePendingTask(chatId, overrideList);
         if (resTask && resTask.message) {
-          await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
           await respondToTelegram(resTask.message);
           clearTimeout(safetyTimer);
           return;
@@ -1385,7 +1374,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       console.log(`[CALENDAR INTERCEPTOR] AI conflict verdict: "${verdict}" for input: "${textInput}"`);
 
       if (verdict === 'YES' || verdict === 'NO') {
-        await supabaseMemories.saveChatMemory('faqih', textInput).catch(() => {});
         if (verdict === 'YES') {
           try {
             const result = await googleWorkspace.createCalendarEvent(
@@ -2141,7 +2129,6 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
     const finalReply = domainReply || aiDraftReply;
     if (finalReply) {
       // Save ONLY the actual final message that the user receives
-      await supabaseMemories.saveChatMemory('nexa', finalReply).catch(() => { });
       console.log('[TELEGRAM] Replying with intent:', routingData.intent);
       conversationContext = {
         ...(conversationContext || {}),

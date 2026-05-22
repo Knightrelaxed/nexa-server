@@ -983,7 +983,6 @@ async function pollLivinEmails() {
           const failedMsg = `⚠️ <b>TRANSFER GAGAL</b>\n\nTujuan: ${destination}\nNominal: ${nominalFmt}\n\n<i>N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam buku kas Anda.</i>`;
           const { sendTelegramOutbound } = require('../interfaces/webhook');
           await sendTelegramOutbound(failedMsg);
-          try { await supabase.saveChatMemory('assistant', failedMsg); } catch (_e) {}
         } catch (_sendErr) {
           console.warn('[FINANCE] Failed transfer alert could not be sent:', _sendErr.message);
         }
@@ -1024,7 +1023,6 @@ async function pollLivinEmails() {
           await sendTelegramOutbound(msg);
           // Mark as sent so Watchdog doesn't redundantly resend 90s later
           await supabase.markPendingTransactionSent(compositeKey);
-          try { await supabase.saveChatMemory('assistant', msg); } catch (_e) {}
         }
       } catch (err) {
         console.error('[FINANCE] Confirmation send failed (Watchdog will retry in 90s):', err.message);
