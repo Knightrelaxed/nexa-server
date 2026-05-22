@@ -82,11 +82,15 @@ async function autoCreateCalendarBlock(title, due_date, durationMinutes = 30) {
   if (!due_date) return false;
   // GUARD: Reject pure date strings — they have no user-specified time.
   if (!due_date.includes('T')) return false;
+  // GUARD: Reject midnight times which are usually just parsed date-only strings
+  if (due_date.includes('T00:00:00.000Z') || due_date.includes('T00:00:00Z') || due_date.includes('T00:00:00+')) return false;
+  if (due_date.includes('T17:00:00.000Z') || due_date.includes('T17:00:00Z')) return false; // 17:00 UTC is midnight Jakarta
+
   const dueMs = new Date(due_date);
   if (isNaN(dueMs.getTime())) return false;
   const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
   // Only create a block if there is a meaningful time (not midnight WIB which could also be an unintended offset)
-  if (h && h !== '00:00' && h !== '24:00') {
+  if (h && h !== '00:00' && h !== '24:00' && h !== '07:00') { // Also ignore 07:00 to prevent the UTC midnight bug entirely
     // Time is explicitly set. Create a calendar block for the deadline.
     const startIso = dueMs.toISOString();
     const endIso = new Date(dueMs.getTime() + durationMinutes * 60000).toISOString();
@@ -196,12 +200,15 @@ async function handleTaskIntent(extractedData, chatId = null) {
       if (durationMins > 0) {
         // CRITICAL FIX: Only extract explicit time if due_date has an EXPLICIT 'T' time component.
         if (resolvedDueDate && resolvedDueDate.includes('T')) {
-          const dueMs = new Date(resolvedDueDate);
-          if (!isNaN(dueMs.getTime())) {
-            const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
-            if (h && h !== '00:00') {
-              timeLabel = h + ' WIB';
-              taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
+          const isMidnightUTC = resolvedDueDate.includes('T00:00:00.000Z') || resolvedDueDate.includes('T00:00:00Z') || resolvedDueDate.includes('T17:00:00.000Z') || resolvedDueDate.includes('T17:00:00Z') || resolvedDueDate.includes('T00:00:00+');
+          if (!isMidnightUTC) {
+            const dueMs = new Date(resolvedDueDate);
+            if (!isNaN(dueMs.getTime())) {
+              const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+              if (h && h !== '00:00') {
+                timeLabel = h + ' WIB';
+                taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
+              }
             }
           }
         } else if (resolvedDueDate) {
@@ -229,12 +236,15 @@ async function handleTaskIntent(extractedData, chatId = null) {
         }
       } else if (resolvedDueDate && resolvedDueDate.includes('T')) {
         // No duration but explicit time — just label it
-        const dueMs = new Date(resolvedDueDate);
-        if (!isNaN(dueMs.getTime())) {
-          const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
-          if (h && h !== '00:00') {
-            timeLabel = h + ' WIB';
-            taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
+        const isMidnightUTC = resolvedDueDate.includes('T00:00:00.000Z') || resolvedDueDate.includes('T00:00:00Z') || resolvedDueDate.includes('T17:00:00.000Z') || resolvedDueDate.includes('T17:00:00Z') || resolvedDueDate.includes('T00:00:00+');
+        if (!isMidnightUTC) {
+          const dueMs = new Date(resolvedDueDate);
+          if (!isNaN(dueMs.getTime())) {
+            const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+            if (h && h !== '00:00') {
+              timeLabel = h + ' WIB';
+              taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
+            }
           }
         }
       }

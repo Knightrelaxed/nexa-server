@@ -17,6 +17,75 @@ let isPollingLivin = false;
 // on HF Docker. All Telegram sends from Finance_Engine must use sendTelegramOutbound() from
 // webhook.js which routes through the Cloudflare Worker proxy.
 
+const VALID_FINANCE_CATEGORIES = [
+  'Makanan dan minuman', 'Bar, kafe', 'Restoran, makanan cepat saji', 'Bahan makanan',
+  'Apotek, obat-obatan', 'Belanja', 'Waktu luang', 'Alat tulis, peralatan',
+  'Hadiah, kesenangan', 'Elektronik, aksesoris', 'Hewan peliharaan, hewan',
+  'Rumah, taman', 'Anak-anak', 'Kesehatan dan kecantikan', 'Perhiasan, aksesoris',
+  'Pakaian dan alas kaki', 'Asuransi properti', 'Perumahan', 'Perawatan, perbaikan',
+  'Layanan', 'Energi, utilitas', 'Hipotek', 'Sewa', 'Transportasi',
+  'Perjalanan dinas', 'Jarak jauh', 'Taksi', 'Transportasi umum', 'Leasing',
+  'Asuransi kendaraan', 'Kendaraan', 'Sewa-menyewa', 'Perawatan kendaraan',
+  'Parkir', 'Bahan bakar', 'Hiburan dan kehidupan', 'Lotere, judi',
+  'Alkohol, tembakau', 'Amal, hadiah', 'Liburan, perjalanan, hotel',
+  'TV, streaming', 'Buku, audio, langganan', 'Pendidikan, pengembangan diri',
+  'Hobi', 'Peristiwa hidup', 'Budaya, acara olahraga', 'Olahraga aktif, kebugaran',
+  'Kesehatan, kecantikan', 'Perawatan kesehatan, dokter', 'Komunikasi, PC',
+  'Layanan pos', 'Perangkat lunak, aplikasi, permainan', 'Internet',
+  'Telepon, ponsel', 'Pengeluaran keuangan', 'Biaya, tarif', 'Konsultasi',
+  'Denda', 'Pinjaman, bunga', 'Asuransi', 'Pajak', 'Investasi', 'Koleksi',
+  'Tabungan', 'Investasi keuangan', 'Kendaraan, barang bergerak', 'Properti',
+  'Pendapatan', 'Hadiah', 'Tunjangan anak', 'Pengembalian dana pajak, pembelian',
+  'Cek, kupon', 'Pendapatan dari meminjamkan', 'Iuran & hibah', 'Pendapatan sewa',
+  'Penjualan', 'Bunga, dividen', 'Gaji, faktur', 'Hilangan', 'Lainnya'
+];
+
+async function _autoCategorizeMerchant(merchantName, currentCategory) {
+  // If user/AI Router already chose a valid specific category, keep it
+  if (currentCategory && currentCategory !== 'Lainnya' && currentCategory !== 'Livin Email' && currentCategory.trim() !== '') {
+    return currentCategory;
+  }
+
+  // 100% AI-driven categorization — no rigid regex rules
+  try {
+    const { callAI } = require('../core/AI_Router');
+    const prompt = `Kamu adalah mesin kategorisasi transaksi keuangan. Analisa tujuan/catatan transaksi berikut dan pilih SATU kategori yang paling tepat.
+
+Transaksi: "${merchantName}"
+
+Daftar kategori (pilih SATU saja, tulis PERSIS):
+${VALID_FINANCE_CATEGORIES.map(c => `- ${c}`).join('\n')}
+
+ATURAN:
+1. Gunakan inferensi cerdas. Contoh: "GRAB FOOD" → "Restoran, makanan cepat saji", "GRAB TRANSPORT" → "Taksi", "nge gym" → "Olahraga aktif, kebugaran", "Waroeng Emdje" → "Restoran, makanan cepat saji", "Bakmi Jowo" → "Restoran, makanan cepat saji", "Amira Fotocopy" → "Alat tulis, peralatan", "Bisnis Kab. Sumenep" → "Layanan", "nieta kitchen" → "Restoran, makanan cepat saji", "nasi Padang" → "Restoran, makanan cepat saji", "beli Ades" → "Makanan dan minuman", "Menghutangi aji" → "Pinjaman, bunga".
+2. KHUSUS kategori "Lainnya": HANYA gunakan jika nama tujuan/merchant berupa nama orang pribadi (misal: "Budi", "Agus"), inisial/singkatan yang sangat ambigu, atau memang tujuan transaksinya benar-benar tidak bisa ditebak sama sekali.
+3. HANYA balas nama kategori. Tanpa penjelasan, tanpa tanda kutip.`;
+    const aiResp = await callAI(prompt);
+    let cat = aiResp.trim();
+    // Strip quotes/whitespace if AI wraps the answer
+    cat = cat.replace(/^["'`](.*)["'`]$/, '$1').trim();
+    // Strip trailing period/punctuation
+    cat = cat.replace(/[.!]+$/, '').trim();
+
+    if (VALID_FINANCE_CATEGORIES.includes(cat)) {
+      console.log(`[FINANCE] AI categorized "${merchantName}" → "${cat}"`);
+      return cat;
+    }
+    // Fuzzy match: AI might return slightly different casing
+    const fuzzy = VALID_FINANCE_CATEGORIES.find(v => v.toLowerCase() === cat.toLowerCase());
+    if (fuzzy) {
+      console.log(`[FINANCE] AI categorized (fuzzy) "${merchantName}" → "${fuzzy}"`);
+      return fuzzy;
+    }
+    console.warn(`[FINANCE] AI returned invalid category "${cat}" for "${merchantName}". Falling back to Lainnya.`);
+  } catch (e) {
+    console.error('[FINANCE] AI Categorization failed:', e.message);
+  }
+
+  return 'Lainnya';
+}
+
+
 /**
  * On startup: recover any pending transactions from Supabase that were
  * never sent to Telegram (e.g. server crashed mid-send).
@@ -49,11 +118,8 @@ async function recoverPendingTransactions() {
             continue;
           }
 
-          const aiRouter = require('../core/AI_Router');
           const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
-          const autoQuery = `catat ${tipeStr} ${tx.nominal} ke ${tx.destination}`;
-          const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
-          tx.category = routingData?.extracted_data?.category || 'Lainnya';
+          tx.category = await _autoCategorizeMerchant(tx.destination, tx.category);
           if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
           await processTransaction(tx, 'GMAIL_POLLING');
           // processTransaction already calls logTransactionKey, but we
@@ -61,8 +127,11 @@ async function recoverPendingTransactions() {
           // Watchdog that this tx is resolved and should not be re-processed.
         } catch (saveErr) {
           console.error(`[FINANCE] Recovery auto-save failed for ${compositeKey}:`, saveErr.message);
+        } finally {
+          try { await supabase.deletePendingTransaction(compositeKey); } catch (e) {
+            console.error(`[FINANCE] Failed to delete recovered tx ${compositeKey}:`, e.message);
+          }
         }
-        await supabase.deletePendingTransaction(compositeKey);
         continue;
       }
 
@@ -152,12 +221,15 @@ async function processTransaction(data, source) {
     // Nominal: positive for Pemasukan, NEGATIVE for Pengeluaran (drives Saldo formula in sheet)
     const nominalSigned = isIncome ? nominal : -nominal;
 
+    // Apply smart categorization
+    const smartCategory = await _autoCategorizeMerchant(data.destination || data.description, data.category);
+
     // Build the txData object matching appendFinanceRow's expected shape
     const txData = {
       tanggal: dateStr,                                        // B: "9 Februari 2026"
       waktu: timeStr,                                          // C: "14.45"
       tipe: tipeLabel,                                         // D: "Pemasukan" | "Pengeluaran"
-      kategori: data.category || 'Lainnya',                    // E: Kategori
+      kategori: smartCategory,                                 // E: Kategori
       akun: 'Bank Mandiri Livin',                              // F: Akun (fixed for this sheet)
       catatan: data.description || data.destination || '-',    // G: Catatan / Detail
       nominal: nominalSigned                                    // H: Signed nominal
@@ -755,13 +827,11 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
         if (customDescription) pending.tx.description = customDescription;
         if (customCategory) pending.tx.category = customCategory;
         
-        // BUG FIX #7: Use correct type (INCOME/EXPENSE) when inferring category
-        if (!customCategory && pending.tx.description !== '[Menunggu Detail User]') {
-          const aiRouter = require('../core/AI_Router');
-          const tipeStr = pending.tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
-          const autoQuery = `catat ${tipeStr} ${pending.tx.nominal} untuk ${pending.tx.description} dari/ke ${pending.tx.destination}`;
-          const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
-          pending.tx.category = routingData?.extracted_data?.category || 'Lainnya';
+        // Use lightweight AI categorizer instead of full routing
+        if (!customCategory) {
+          pending.tx.category = await _autoCategorizeMerchant(
+            pending.tx.destination || pending.tx.description, pending.tx.category
+          );
         }
 
         const res = await processTransaction(pending.tx, 'GMAIL_POLLING');
@@ -812,13 +882,13 @@ async function updatePendingTransaction(rawUserText = null, customCategory = nul
       } else {
         // 2. Everything else → treat as description/purpose text
         pending.tx.description = rawUserText.trim();
-        // Attempt AI-based category inference from the description + destination
+        // Use lightweight AI categorizer from description + destination
         try {
-          const aiRouter = require('../core/AI_Router');
-          const inferQuery = `catat pengeluaran ke ${pending.tx.destination} untuk ${rawUserText}`;
-          const r = await aiRouter.routeUserMessage(inferQuery, { last_intent: null });
-          if (r && r.extracted_data && r.extracted_data.category && r.extracted_data.category !== 'Lainnya') {
-            pending.tx.category = r.extracted_data.category;
+          const inferredCat = await _autoCategorizeMerchant(
+            `${pending.tx.destination} ${rawUserText}`, null
+          );
+          if (inferredCat && inferredCat !== 'Lainnya') {
+            pending.tx.category = inferredCat;
           }
         } catch (_) {}
       }
@@ -1006,7 +1076,7 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
     proactiveQuestion = `💡 Transaksi ini siap dikunci. Jika ada koreksi tambahan, silakan balas pesan ini. Jika tidak, N.E.X.A akan meresmikannya dalam 5 menit.`;
   }
 
-  const displayCategory = tx.category === '[Menunggu Kategori AI/User]' ? '[Auto-AI]' : `${tx.category} [Auto-AI]`;
+  const displayCategory = (tx.category && tx.category !== 'Lainnya' && tx.category !== '[Menunggu Kategori AI/User]') ? `${tx.category} [Auto-AI]` : 'Lainnya [Auto-AI]';
 
   return `💸 <b>${sourceLabel}</b>\n\n` +
     `<b>No:</b> [Auto]\n` +
@@ -1039,14 +1109,16 @@ async function _autoSavePending(compositeKey, tx) {
     }
 
     const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
-    const aiRouter = require('../core/AI_Router');
-    const autoQuery = `catat ${tipeStr} ${tx.nominal} ke ${tx.destination}`;
-    const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
-    tx.category = routingData?.extracted_data?.category || 'Lainnya';
+    // Use lightweight AI categorizer (category may already be set from requestTransactionConfirmation)
+    tx.category = await _autoCategorizeMerchant(tx.destination, tx.category);
     if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
-    await processTransaction(tx, 'GMAIL_POLLING');
-    pendingConfirmations.delete(compositeKey);
-    await supabase.deletePendingTransaction(compositeKey);
+    try {
+      await processTransaction(tx, 'GMAIL_POLLING');
+    } finally {
+      pendingConfirmations.delete(compositeKey);
+      try { await supabase.deletePendingTransaction(compositeKey); } catch (_) {}
+    }
+    
     // AUDIT FIX (CRITICAL): Use _parseFlexibleCurrency — the old replace(/[^0-9]/g,'') stripped
     // the decimal point, so "50000.50" became 5000050. _parseFlexibleCurrency handles all formats.
     const nominalNum = typeof tx.nominal === 'number' ? tx.nominal : _parseFlexibleCurrency(String(tx.nominal));
@@ -1071,11 +1143,14 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
   const nominal = txData.nominal;
   const destination = txData.destination || 'Unknown';
 
+  // AI auto-categorize IMMEDIATELY so the confirmation message shows the real category
+  const aiCategory = await _autoCategorizeMerchant(destination, txData.category);
+
   const tx = {
     nominal,
     type: txData.type || 'EXPENSE',
     destination,
-    category: txData.category && txData.category !== 'Uncategorized' ? txData.category : '[Menunggu Kategori AI/User]',
+    category: aiCategory,
     description: txData.description && txData.description !== '-' ? txData.description : '[Menunggu Detail User]',
     time: txData.time || new Date().toISOString()
   };
@@ -1186,6 +1261,8 @@ module.exports = {
   updatePendingTransaction,
   requestTransactionConfirmation,
   recoverPendingTransactions,
+  _parseFlexibleCurrency,
+  _autoCategorizeMerchant,
   // Exposed for Watchdog cron (cron.js)
   buildConfirmationMessage: _buildConfirmationMessage,
   autoSaveFromWatchdog,

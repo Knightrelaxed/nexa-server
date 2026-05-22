@@ -963,7 +963,7 @@ async function findEmptySlot(durationMinutes, timeMinIso, timeMaxIso) {
     const blockStart = new Date(block.start);
     const blockEnd = new Date(block.end);
 
-    while (currentStart < blockStart) {
+    while (currentStart < blockStart && currentStart < maxEnd) {
       let candidateEnd = new Date(currentStart.getTime() + durationMs);
       if (candidateEnd <= blockStart && candidateEnd <= maxEnd && isValidWorkingHour(currentStart) && isValidWorkingHour(new Date(candidateEnd.getTime() - 1))) {
         return { start: currentStart.toISOString(), end: candidateEnd.toISOString() };

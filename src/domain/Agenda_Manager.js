@@ -104,6 +104,10 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       if (!start) {
         return { status: 'FAILED', message: `❌ Kapan kegiatan '${summary}' ini dilaksanakan, Tuan?` };
       }
+      const isMidnightUTC = start.includes('T00:00:00.000Z') || start.includes('T00:00:00Z') || start.includes('T17:00:00.000Z') || start.includes('T17:00:00Z');
+      if (!start.includes('T') || isMidnightUTC) {
+        return { status: 'FAILED', message: `❌ Tanggal untuk kegiatan '${summary}' sudah saya mengerti, tapi jam berapa pelaksanaannya, Tuan?` };
+      }
       if (!end) {
         // Validate start before doing any date math
         const startDate = new Date(start);

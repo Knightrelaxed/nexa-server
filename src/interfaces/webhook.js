@@ -755,16 +755,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       const nominalMatch = blob.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp?\s*([0-9][0-9\.\,]+)/i);
       if (!nominalMatch) return null;
       // AUDIT FIX (CRITICAL-2): Use robust IDR/USD-aware parser — mirrors Finance_Engine._parseFlexibleCurrency
+      const { _parseFlexibleCurrency } = require('../domain/Finance_Engine');
       const raw = String(nominalMatch[1]).trim();
-      const dots = (raw.match(/\./g) || []).length;
-      const commas = (raw.match(/,/g) || []).length;
-      let cleaned = raw;
-      if (dots > 0 && commas === 1)       cleaned = raw.replace(/\./g, '').replace(',', '.'); // IDR with decimal
-      else if (commas > 0 && dots === 1)  cleaned = raw.replace(/,/g, '');                   // USD with decimal
-      else if (dots > 0 && commas === 0)  cleaned = raw.replace(/\./g, '');                  // IDR thousands only
-      else if (commas > 0 && dots === 0)  cleaned = raw.replace(/,/g, '');                   // USD thousands only
-      cleaned = cleaned.replace(/[^0-9.]/g, '');
-      const nominal = parseFloat(cleaned);
+      const nominal = _parseFlexibleCurrency(raw);
       return isNaN(nominal) || nominal <= 0 ? null : nominal;
     };
     const extractLivinTransactionsFromEmails = (emails) => {
@@ -790,8 +783,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           nominal,
           type: 'EXPENSE',
           destination,
-          category: 'Livin Email',
-          description: (e.subject || 'Transaksi dari email Livin').substring(0, 100),
+          category: null, // Let Finance_Engine AI auto-categorize based on destination
+          description: `pengeluaran ke ${destination}`,
           time: dateIso
         });
       }
