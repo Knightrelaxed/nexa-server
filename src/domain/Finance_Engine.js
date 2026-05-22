@@ -265,7 +265,7 @@ async function processTransaction(data, source) {
       throw new Error('File buku kas Tuan berformat Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli. Silakan buka file tersebut di Google Drive, klik "File > Save as Google Sheets", lalu masukkan ID file yang baru ke konfigurasi sistem Tuan.');
     }
     if (error.message && error.message.includes('Unable to parse range')) {
-      throw new Error(`⚠️ <b>Tab Bulan Ini Belum Dibuat!</b>\nN.E.X.A mencoba mencari tab (sheet) dengan nama bulan ini (misal: "Mei 2026"), tetapi tidak menemukannya.\n\n<b>Solusi:</b>\nBuka file Google Sheets Anda, lalu duplikat tab "Februari 2026" (atau tab sebelumnya) dan ubah nama tab hasil duplikatnya menjadi nama bulan ini (contoh: "Mei 2026").`);
+      throw new Error(`⚠️ <b>Tab Tahun Ini Belum Dibuat!</b>\nN.E.X.A mencoba mencari tab (sheet) dengan nama tahun ini (misal: "2026"), tetapi tidak menemukannya.\n\n<b>Solusi:</b>\nBuka file Google Sheets Anda, lalu buat atau duplikat tab sebelumnya dan beri nama sesuai tahun ini (contoh: "2026").`);
     }
     throw error;
   }
@@ -291,7 +291,7 @@ async function getRecentTransactions(limit = 5) {
       return `⚠️ <b>Gagal mengambil data:</b> Format dokumen tidak didukung.\n\nTuan, file buku kas saat ini berformat Microsoft Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli.\n\n<b>Cara Perbaikan:</b>\n1. Buka file tersebut di Google Drive\n2. Klik "File" > "Save as Google Sheets"\n3. Copy ID dari file baru tersebut dan perbarui di setelan (GOOGLE_SHEET_ID).`;
     }
     if (err.message && err.message.includes('Unable to parse range')) {
-      return `⚠️ <b>Tab Bulan Ini Belum Dibuat!</b>\nN.E.X.A tidak dapat menemukan tab (sheet) dengan nama bulan ini di Google Sheets Tuan. Silakan buat atau duplikat tab sebelumnya, dan beri nama sesuai bulan ini (contoh: "Mei 2026").`;
+      return `⚠️ <b>Tab Tahun Ini Belum Dibuat!</b>\nN.E.X.A tidak dapat menemukan tab (sheet) dengan nama tahun ini di Google Sheets Tuan. Silakan buat atau duplikat tab sebelumnya, dan beri nama sesuai tahun ini (contoh: "2026").`;
     }
     return `⚠️ Gagal mengambil data keuangan: ${err.message}`;
   }
