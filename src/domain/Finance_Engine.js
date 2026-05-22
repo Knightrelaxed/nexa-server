@@ -940,10 +940,29 @@ async function pollLivinEmails() {
     for (const e of emails) {
       const blob = `${e.subject || ''}\n${e.body || ''}\n${e.snippet || ''}`;
       
-      // BUG FIX #2: Extract Nominal using _parseFlexibleCurrency for robustness
-      const nominalMatch = blob.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp?\s*([0-9][0-9\.\,]+)/i);
-      if (!nominalMatch) continue;
-      const nominal = _parseFlexibleCurrency(nominalMatch[1]);
+      // Extract Nominal (Including Admin Fees / Biaya Transfer)
+      let nominal = 0;
+      
+      // Try to find "Total Transaksi" first
+      const totalMatch = blob.match(/(?:total transaksi|total pembayaran|total)\s*rp\.?\s*([0-9][0-9\.\,]+)/i);
+      if (totalMatch) {
+        nominal = _parseFlexibleCurrency(totalMatch[1]);
+      } else {
+        // Fallback: Find nominal and add admin fee if exists
+        const nominalMatch = blob.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp\.?\s*([0-9][0-9\.\,]+)/i);
+        if (nominalMatch) {
+          nominal = _parseFlexibleCurrency(nominalMatch[1]);
+        }
+        
+        const adminMatch = blob.match(/(?:biaya transfer|biaya admin|biaya)\s*rp\.?\s*([0-9][0-9\.\,]+)/i);
+        if (adminMatch && !isNaN(nominal)) {
+          const adminFee = _parseFlexibleCurrency(adminMatch[1]);
+          if (!isNaN(adminFee)) {
+            nominal += adminFee;
+          }
+        }
+      }
+
       if (isNaN(nominal) || nominal <= 0) continue;
 
       // Check for failed transactions
