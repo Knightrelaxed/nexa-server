@@ -2135,8 +2135,9 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         lastAssistantReply: finalReply,
         askedAt: Date.now()
       };
-      // Pass skipMemory = true because AI_Router (or domainReply logic above) already saved it!
-      await respondToTelegram(finalReply, true);
+      // Save ONLY the actual final message that the user receives centrally.
+      // We removed scattered saves in AI_Router so this is the authoritative save point.
+      await respondToTelegram(finalReply, false);
     }
 
   } catch (error) {
