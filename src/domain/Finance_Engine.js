@@ -41,8 +41,10 @@ const VALID_FINANCE_CATEGORIES = [
 ];
 
 async function _autoCategorizeMerchant(merchantName, currentCategory) {
-  // If user/AI Router already chose a valid specific category, keep it
-  if (currentCategory && currentCategory !== 'Lainnya' && currentCategory !== 'Livin Email' && currentCategory.trim() !== '') {
+  // If user/AI Router already chose a valid specific category, keep it.
+  // MUST also treat placeholder strings as "needs categorization".
+  const INVALID_CATEGORIES = ['Lainnya', 'Livin Email', '[Menunggu Kategori AI/User]', 'Uncategorized'];
+  if (currentCategory && !INVALID_CATEGORIES.includes(currentCategory) && currentCategory.trim() !== '' && !currentCategory.startsWith('[')) {
     return currentCategory;
   }
 
@@ -991,15 +993,12 @@ async function pollLivinEmails() {
 
       newCount++;
 
-      // Let AI make an initial guess for the category based on the destination name
-      let guessedCategory = '[Menunggu Kategori AI/User]';
+      // Let AI make an initial guess for the category based on the destination name.
+      // Uses _autoCategorizeMerchant (lightweight, dedicated AI categorizer)
+      // instead of the expensive routeUserMessage (full routing engine).
+      let guessedCategory = 'Lainnya';
       try {
-        const aiRouter = require('../core/AI_Router');
-        const autoQuery = `catat pengeluaran ${nominal} ke ${destination}`;
-        const routingData = await aiRouter.routeUserMessage(autoQuery, { last_intent: null });
-        if (routingData?.extracted_data?.category && routingData.extracted_data.category !== 'Uncategorized') {
-          guessedCategory = routingData.extracted_data.category;
-        }
+        guessedCategory = await _autoCategorizeMerchant(destination, null);
       } catch (e) {
         console.warn('[FINANCE] Pre-categorization failed:', e.message);
       }
