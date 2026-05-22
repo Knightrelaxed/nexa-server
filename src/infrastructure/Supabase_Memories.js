@@ -583,5 +583,34 @@ module.exports = {
   savePendingTransaction,
   getPendingTransactions,
   deletePendingTransaction,
-  markPendingTransactionSent
+  markPendingTransactionSent,
+  getTodayMemories
 };
+
+/**
+ * Fetch all chat memories from today (WIB timezone) for Memory Consolidation cron.
+ * Returns messages since midnight today Asia/Jakarta.
+ */
+async function getTodayMemories() {
+  if (!supabase) return [];
+  // Midnight WIB (UTC+7) = 17:00 UTC previous day
+  const nowUtc = new Date();
+  const jakartaOffset = 7 * 60 * 60 * 1000;
+  const jakartaNow = new Date(nowUtc.getTime() + jakartaOffset);
+  const midnightJakarta = new Date(
+    Date.UTC(jakartaNow.getUTCFullYear(), jakartaNow.getUTCMonth(), jakartaNow.getUTCDate())
+    - jakartaOffset
+  );
+
+  const { data, error } = await supabase
+    .from('nexa_chat_memories')
+    .select('role, content, created_at')
+    .gte('created_at', midnightJakarta.toISOString())
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[SUPABASE] Error fetching today memories:', error.message);
+    return [];
+  }
+  return data || [];
+}

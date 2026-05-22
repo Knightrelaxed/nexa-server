@@ -329,8 +329,66 @@ function initCronJobs() {
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
+  // ================================================================
+  // NEXT-GEN CONTEXTUAL AWARENESS: Memory Consolidation
+  // ================================================================
+
+  // 11. Daily Memory Consolidation (23:59 WIB)
+  // Reads all chat memories from today, extracts new permanent facts about the user,
+  // and saves them to the User Profile table to give N.E.X.A long-term organic memory.
+  cron.schedule('59 23 * * *', async () => {
+    console.log('[CRON-MEM] Executing Daily Memory Consolidation...');
+    try {
+      const supabaseMemories = require('../infrastructure/Supabase_Memories');
+      const aiRouter = require('../core/AI_Router');
+      const { sendTelegramOutbound } = require('./webhook');
+
+      const todayMemories = await supabaseMemories.getTodayMemories();
+      if (!todayMemories || todayMemories.length === 0) {
+        console.log('[CRON-MEM] No chat activity today. Skipping consolidation.');
+        return;
+      }
+
+      const chatLog = todayMemories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n');
+      
+      const prompt = `Anda adalah Subsistem Memori N.E.X.A. Tugas Anda adalah membaca transkrip obrolan hari ini antara Tuan Faqih dan N.E.X.A, lalu MENGEKSTRAK FAKTA PERMANEN baru.
+Syarat Fakta Permanen:
+- Harus berupa preferensi, kebiasaan, rutinitas, prinsip, atau fakta penting jangka panjang tentang Tuan Faqih.
+- JANGAN mengekstrak informasi sementara (misal: "Tuan sedang rapat hari ini", "Tuan baru beli kopi").
+- JANGAN mengekstrak jika tidak ada hal krusial.
+- Format teks harus lugas, misal: "Tuan Faqih lebih suka ditegur secara santai saat weekend."
+
+Transkrip Hari Ini:
+${chatLog.substring(0, 8000)} // Capped to prevent token overflow
+
+Keluarkan hasil EKSTRAKSI DALAM BENTUK ARRAY JSON SAJA. Jika tidak ada fakta permanen baru yang layak disimpan, kembalikan array kosong []. Jangan gunakan backtick markdown.`;
+
+      const result = await aiRouter.callAI(prompt);
+      try {
+        const parsed = JSON.parse(result);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log(`[CRON-MEM] Extracted ${parsed.length} new facts.`);
+          for (const fact of parsed) {
+            await supabaseMemories.saveUserProfile(fact);
+          }
+          aiRouter.invalidatePersonalFactsCache();
+          
+          // Optionally notify the user
+          await sendTelegramOutbound(`🧠 <b>Memory Consolidation Complete</b>\nSaya telah memproses memori obrolan hari ini dan mempelajari ${parsed.length} hal baru tentang Tuan.`);
+        } else {
+          console.log('[CRON-MEM] No new permanent facts found in today\'s logs.');
+        }
+      } catch (err) {
+        console.log('[CRON-MEM] AI did not return a valid JSON array or no facts found:', result);
+      }
+    } catch (e) {
+      console.error('[CRON-MEM] Memory Consolidation failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   console.log('[CRON] 🛡️ Telegram Alert Watchdog active (90s interval).');
   console.log('[CRON-P6] ✅ Phase 6 Proactive Crons active: Proximity, Midday, Evening, Tomorrow, Weekly Review.');
+  console.log('[CRON-MEM] 🧠 Memory Consolidation active (23:59 WIB).');
 }
 
 module.exports = { initCronJobs };

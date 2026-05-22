@@ -191,10 +191,69 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 }
 `;
 
+// ============================================================
+// CROSS-DOMAIN FUSION & SENTIMENT HELPERS
+// ============================================================
+
+/**
+ * Pure heuristic sentiment detection from text style (Zero Latency).
+ * Returns 'STRESSED', 'CASUAL', or 'NEUTRAL'.
+ */
+function _detectSentiment(text) {
+  if (!text) return 'NEUTRAL';
+  const str = text.toLowerCase();
+  // If it contains rush words, lots of typos (heuristic: repeated letters/caps), or exclamation marks
+  const rushWords = ['cepet', 'buruan', 'darurat', 'penting', 'sekarang', 'urgent', 'gawat'];
+  const hasRush = rushWords.some(w => str.includes(w));
+  const hasExclamation = (text.match(/!/g) || []).length >= 2;
+  const isAllCaps = text.length > 5 && text === text.toUpperCase();
+
+  if (hasRush || hasExclamation || isAllCaps) return 'STRESSED';
+
+  const casualWords = ['santai', 'nggak buru', 'nanti aja', 'kalo sempet', 'haha', 'wkwk'];
+  const isCasual = casualWords.some(w => str.includes(w));
+  if (isCasual) return 'CASUAL';
+
+  return 'NEUTRAL';
+}
+
+async function _fetchRecentFinanceSummary(limit) {
+  try {
+    const financeEngine = require('../domain/Finance_Engine');
+    const summary = await financeEngine.getRecentTransactions(limit);
+    if (!summary || summary.includes('(Tidak ada transaksi')) return null;
+    return summary;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function _fetchUpcomingEventsSummary(limit) {
+  try {
+    const googleWorkspace = require('../infrastructure/Google_Workspace');
+    // Using getTodaysEvents and taking the next 'limit' events
+    const todayStr = await googleWorkspace.getTodaysEvents();
+    if (!todayStr || todayStr.includes('Tidak ada jadwal')) return null;
+    
+    // Just parse the first few lines
+    const lines = todayStr.split('\n').filter(l => l.trim().length > 0);
+    // Take up to `limit` lines that look like events (ignoring the header)
+    const eventLines = lines.slice(1, limit + 1);
+    if (eventLines.length === 0) return null;
+    return eventLines.join(', ');
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Route incoming natural language (text) from user
  */
 async function routeUserMessage(textInput, runtimeHints = {}) {
+  // ── Sentiment Detection (Empathy Layer) ──────────────────────────────────
+  // Silently score user's stress/urgency from writing style.
+  // We do NOT call AI for this — it's pure heuristic (zero latency).
+  const _sentimentScore = _detectSentiment(textInput);
   // 1. Load personal facts (from cache — zero overhead after first call)
   const personalFacts = await loadPersonalFactsWithCache();
 
@@ -234,6 +293,28 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     _miniCal.push(`  +${i} hari: ${dayFull} (ISO: ${ds})`);
   }
   const miniCalStr = _miniCal.join('\n');
+
+  // ── Cross-Domain Fusion ────────────────────────────────────────────────────
+  // Silently pull recent finance + upcoming calendar data to enrich context.
+  // Runs in parallel — zero sequential latency penalty.
+  let crossDomainBlock = '';
+  try {
+    const [recentTxResult, upcomingEvResult] = await Promise.allSettled([
+      _fetchRecentFinanceSummary(3),
+      _fetchUpcomingEventsSummary(3)
+    ]);
+    const finLines = [];
+    if (recentTxResult.status === 'fulfilled' && recentTxResult.value) {
+      finLines.push(`Keuangan Terkini (3 terakhir): ${recentTxResult.value}`);
+    }
+    if (upcomingEvResult.status === 'fulfilled' && upcomingEvResult.value) {
+      finLines.push(`Jadwal Mendatang: ${upcomingEvResult.value}`);
+    }
+    if (finLines.length > 0) {
+      crossDomainBlock = `\n[DATA LINTAS DOMAIN — GUNAKAN UNTUK KONEKSI KONTEKS CERDAS]\n${finLines.join('\n')}\n`;
+    }
+  } catch (_) { /* Non-critical — never crash routing */ }
+
   let runtimeContextBlock = '';
   if (runtimeHints && Object.keys(runtimeHints).length > 0) {
     const lines = [];
@@ -257,6 +338,14 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     }
   }
 
+  // ── Build Sentiment Instruction Block ─────────────────────────────────────
+  let sentimentBlock = '';
+  if (_sentimentScore === 'STRESSED') {
+    sentimentBlock = `\n[DETEKSI EMOSI TUAN FAQIH — WAJIB DIPATUHI]\nAnalisis gaya penulisan menunjukkan Tuan sedang TERBURU-BURU atau STRES. Respons N.E.X.A harus: (1) SUPER SINGKAT — max 3 kalimat, (2) Tidak ada basa-basi panjang, (3) Langsung ke inti, (4) Nada hangat dan suportif.\n`;
+  } else if (_sentimentScore === 'CASUAL') {
+    sentimentBlock = `\n[DETEKSI EMOSI TUAN FAQIH]\nTuan sedang santai. Boleh sedikit lebih hangat dan conversational dalam respons.\n`;
+  }
+
   const prompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
@@ -266,7 +355,7 @@ ISO Date Hari Ini: ${currentJakartaISO}
 ${miniCalStr}
 (Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)
 
-${factsContext}
+${factsContext}${sentimentBlock}${crossDomainBlock}
 [RIWAYAT KONTEKS RUNTIME]
 ${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
 
