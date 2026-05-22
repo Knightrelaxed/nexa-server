@@ -363,9 +363,19 @@ ${chatLog.substring(0, 8000)} // Capped to prevent token overflow
 
 Keluarkan hasil EKSTRAKSI DALAM BENTUK ARRAY JSON SAJA. Jika tidak ada fakta permanen baru yang layak disimpan, kembalikan array kosong []. Jangan gunakan backtick markdown.`;
 
-      const result = await aiRouter.callAI(prompt);
+      const { executeWithFallback } = require('../core/Fallback_Engine');
+      const result = await executeWithFallback(prompt, "Anda adalah AI Pengekstrak Fakta. Output WAJIB JSON Array of Strings murni.", 0.2, true);
+      
       try {
-        const parsed = JSON.parse(result);
+        // Clean markdown block if GenAI decides to return it despite instructions
+        let cleanStr = result.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const firstBracket = cleanStr.indexOf('[');
+        const lastBracket = cleanStr.lastIndexOf(']');
+        if (firstBracket !== -1 && lastBracket > firstBracket) {
+          cleanStr = cleanStr.substring(firstBracket, lastBracket + 1);
+        }
+        
+        const parsed = JSON.parse(cleanStr);
         if (Array.isArray(parsed) && parsed.length > 0) {
           console.log(`[CRON-MEM] Extracted ${parsed.length} new facts.`);
           for (const fact of parsed) {
