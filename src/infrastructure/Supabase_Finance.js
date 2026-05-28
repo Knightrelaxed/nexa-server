@@ -439,15 +439,12 @@ async function deleteTransaction(uuid) {
 }
 
 /**
- * Mendapatkan ringkasan total (Income, Expense, Balance) untuk bulan tertentu
- * @param {number} month (1-12)
- * @param {number} year 
+ * Mendapatkan ringkasan total (Income, Expense, Balance) untuk rentang waktu tertentu
+ * @param {Date} startDate 
+ * @param {Date} endDate 
  */
-async function getFinanceAnalytics(month, year) {
+async function getFinanceAnalytics(startDate, endDate) {
   if (!supabaseFinance) return { totalIncome: 0, totalExpense: 0, balance: 0 };
-  
-  const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 0);
   
   const startStr = startDate.toISOString().split('T')[0];
   const endStr = endDate.toISOString().split('T')[0];

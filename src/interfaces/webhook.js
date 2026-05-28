@@ -1508,7 +1508,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           }
           domainReply = recentData;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'READ_ANALYTICS') {
-          const analyticsData = await financeEngine.getFinanceAnalytics();
+          const analyticsData = await financeEngine.getFinanceAnalytics(routingData.extracted_data.date_text);
           domainReply = (routingData.reply_message ? routingData.reply_message + '\n\n' : '') + analyticsData;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'DELETE') {
           const result = await financeEngine.deleteTransaction(routingData.extracted_data.search_keyword);

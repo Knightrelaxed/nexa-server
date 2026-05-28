@@ -492,26 +492,50 @@ async function searchTransactions(filters = {}) {
 }
 
 /**
- * Fetch and format the Analytics Table from Supabase for the current month.
+ * Fetch and format the Analytics Table from Supabase.
  */
-async function getFinanceAnalytics() {
+async function getFinanceAnalytics(dateText = null) {
   try {
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
+    let startDate = new Date();
+    let endDate = new Date();
+    let timeLabel = 'Bulan Ini';
 
-    const analytics = await supabaseFinance.getFinanceAnalytics(month, year);
+    if (dateText) {
+      const lowerDate = dateText.toLowerCase();
+      if (lowerDate.includes('minggu')) {
+        timeLabel = 'Minggu Ini';
+        const day = startDate.getDay();
+        const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
+        startDate.setDate(diff);
+        endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
+      } else if (lowerDate.includes('tahun')) {
+        timeLabel = 'Tahun Ini';
+        startDate = new Date(startDate.getFullYear(), 0, 1);
+        endDate = new Date(startDate.getFullYear(), 11, 31);
+      } else if (lowerDate.includes('hari')) {
+        timeLabel = 'Hari Ini';
+      } else {
+        startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+        endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+      }
+    } else {
+      startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+    }
+
+    const analytics = await supabaseFinance.getFinanceAnalytics(startDate, endDate);
     if (!analytics || (analytics.totalIncome === 0 && analytics.totalExpense === 0)) {
-      return '📭 Data analitik belum tersedia untuk bulan ini.';
+      return `📭 Data analitik belum tersedia untuk ${timeLabel}.`;
     }
 
     const formatRp = (val) => `Rp${Math.abs(val).toLocaleString('id-ID')}`;
 
-    let report = `📊 <b>Laporan Analitik Keuangan Bulan Ini:</b>\n\n`;
+    let report = `📊 <b>Laporan Analitik Keuangan ${timeLabel}:</b>\n\n`;
     report += `🟢 <b>Total Pemasukan:</b> ${formatRp(analytics.totalIncome)}\n`;
     report += `🔴 <b>Total Pengeluaran:</b> ${formatRp(analytics.totalExpense)}\n`;
     report += `──────────────\n`;
-    report += `🏦 <b>SALDO BERSIH BULAN INI:</b> <b>${formatRp(analytics.balance)}</b>\n\n`;
+    report += `🏦 <b>SALDO BERSIH ${timeLabel.toUpperCase()}:</b> <b>${formatRp(analytics.balance)}</b>\n\n`;
     report += `<i>Laporan dihitung secara real-time dari database Supabase Nexa Finance Web.</i>`;
 
     return report;
