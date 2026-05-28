@@ -68,12 +68,12 @@ Sebagai AI yang super pintar, Anda harus tajam membedakan informasi berharga jan
 
 Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
 {
-  "intent": "FINANCE" | "CALENDAR" | "TASK" | "WEB_SEARCH" | "DISCIPLINE" | "2ND_BRAIN" | "USER_PROFILE" | "CORE_IDENTITY" | "SPREADSHEET" | "EMAIL" | "DATABASE" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
+  "intent": "FINANCE" | "CALENDAR" | "TASK" | "WEB_SEARCH" | "DISCIPLINE" | "2ND_BRAIN" | "USER_PROFILE" | "CORE_IDENTITY" | "EMAIL" | "DATABASE" | "INCOMPLETE_INFO" | "NORMAL_CHAT" | "<NAMA_INTENT_KUSTOM_LAINNYA>",
   "reply_message": "String balasan natural dan luwes untuk Tuan Faqih (wajib ada jika intent NORMAL_CHAT, INCOMPLETE_INFO, atau DISCIPLINE)",
   "learned_user_facts": ["Fakta BARU & PERMANEN tentang Tuan Faqih. KOSONGKAN array ini jika hanya obrolan biasa/sementara atau sudah pernah diingat."],
   "learned_core_identities": ["Aturan BARU tentang diri N.E.X.A atau dinamika hubungan kalian. KOSONGKAN array ini jika tidak ada instruksi/pembelajaran baru."],
   "extracted_data": {
-     // FINANCE: { action: "RECORD"|"RECORD_MULTIPLE"|"READ_LATEST"|"READ_ANALYTICS"|"EDIT"|"DELETE"|"UNDO_DELETE"|"IMPORT_FROM_EMAIL"|"CONFIRM_TRANSACTION"|"UPDATE_PENDING"|"CANCEL_TRANSACTION", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO), search_keyword: string, date_text: string, limit: number, transactions: [{"nominal": number, "type": "INCOME"|"EXPENSE", "destination": "string", "category": "string", "description": "string", "time": "string"}] }
+     // FINANCE: { action: "RECORD"|"RECORD_MULTIPLE"|"READ_LATEST"|"READ_ANALYTICS"|"EDIT"|"DELETE"|"UNDO_DELETE"|"IMPORT_FROM_EMAIL"|"CONFIRM_TRANSACTION"|"UPDATE_PENDING"|"CANCEL_TRANSACTION", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO), account: string (NAMA AKUN PERSIS dari daftar [AKUN KEUANGAN AKTIF] atau kosong jika tidak disebutkan), search_keyword: string, date_text: string, limit: number, transactions: [{"nominal": number, "type": "INCOME"|"EXPENSE", "destination": "string", "category": "string", "description": "string", "time": "string", "account": "string"}] }
      //   → Jika pengguna MENGKONFIRMASI ("masukkan", "ya", "benar", "simpan") untuk menanggapi transaksi tertunda, WAJIB gunakan "CONFIRM_TRANSACTION". Ini akan LANGSUNG menyimpan data.
      //   → Jika pengguna MENGOREKSI/MENAMBAH DETAIL/NOMINAL transaksi tertunda ("koreksi: itu buat beli sate", "kategorinya charity", "salah, harusnya 60rb"), WAJIB gunakan "UPDATE_PENDING" beserta field "description", "category", dan/atau "nominal" yang diubah. Ini akan mengupdate data tertunda.
      //   → Jika pengguna MEMBATALKAN/MENOLAK transaksi tertunda ("batalkan", "batal", "jangan"), WAJIB gunakan "CANCEL_TRANSACTION".
@@ -82,6 +82,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //     - WAKTU: Jika tidak menyebut waktu, kosongkan time (otomatis sekarang). JIKA pengguna menyebut HARI/TANGGAL ("kemarin", "lusa", "tanggal 5") TANPA menyebutkan JAM yang spesifik, Anda WAJIB mengubah root intent menjadi "INCOMPLETE_INFO" dan tanyakan jam transaksinya.
      //   → PENTING: Untuk action RECORD/EDIT/UPDATE_PENDING, pilih kategori spesifik dari opsi berikut: "Makanan dan minuman", "Bar, kafe", "Restoran, makanan cepat saji", "Bahan makanan", "Apotek, obat-obatan", "Belanja", "Waktu luang", "Alat tulis, peralatan", "Hadiah, kesenangan", "Elektronik, aksesoris", "Hewan peliharaan, hewan", "Rumah, taman", "Anak-anak", "Kesehatan dan kecantikan", "Perhiasan, aksesoris", "Pakaian dan alas kaki", "Asuransi properti", "Perumahan", "Perawatan, perbaikan", "Layanan", "Energi, utilitas", "Hipotek", "Sewa", "Transportasi", "Perjalanan dinas", "Jarak jauh", "Taksi", "Transportasi umum", "Leasing", "Asuransi kendaraan", "Kendaraan", "Sewa-menyewa", "Perawatan kendaraan", "Parkir", "Bahan bakar", "Hiburan dan kehidupan", "Lotere, judi", "Alkohol, tembakau", "Amal, hadiah", "Liburan, perjalanan, hotel", "TV, streaming", "Buku, audio, langganan", "Pendidikan, pengembangan diri", "Hobi", "Peristiwa hidup", "Budaya, acara olahraga", "Olahraga aktif, kebugaran", "Kesehatan, kecantikan", "Perawatan kesehatan, dokter", "Komunikasi, PC", "Layanan pos", "Perangkat lunak, aplikasi, permainan", "Internet", "Telepon, ponsel", "Pengeluaran keuangan", "Biaya, tarif", "Konsultasi", "Denda", "Pinjaman, bunga", "Asuransi", "Pajak", "Investasi", "Koleksi", "Tabungan", "Investasi keuangan", "Kendaraan, barang bergerak", "Properti", "Pendapatan", "Hadiah", "Tunjangan anak", "Pengembalian dana pajak, pembelian", "Cek, kupon", "Pendapatan dari meminjamkan", "Iuran & hibah", "Pendapatan sewa", "Penjualan", "Bunga, dividen", "Gaji, faktur", "Hilangan", "Lainnya".
      //     - ATURAN KATEGORI: DILARANG KERAS menggunakan kategori "Lainnya" atau "Uncategorized" kecuali benar-benar tidak ada yang mendekati. Gunakan kemampuan inferensi Anda (misal: "Spotify" -> "TV, streaming", "Gojek" -> "Transportasi", "Amira Fotocopy" -> "Layanan pos" / "Alat tulis"). Analisa tujuan/catatannya dengan cerdas!
+     //   → AKUN (field "account"): WAJIB diisi jika pengguna menyebutkan nama akun/dompet/bank (contoh: "pakai Gopay", "dari BCA", "tunai", "pake livin"). Gunakan nama PERSIS dari daftar akun aktif di bawah ini (blok [AKUN KEUANGAN AKTIF]). Jika tidak disebutkan, KOSONGKAN field "account" (biarkan null/string kosong).
      //   → Gunakan action "READ_LATEST" jika pengguna meminta melihat/menampilkan data transaksi. WAJIB sertakan: "date_text" (misal: "kemarin", "hari ini", "tanggal 14"), "search_keyword" (kata kunci nama/merchant), "type" ("INCOME"|"EXPENSE"), dan "category" JIKA disebutkan oleh pengguna. Jika pengguna meminta spesifik jumlah (misal "terakhir", "1 saja", "3 transaksi"), WAJIB isi field "limit" dengan angka (1, 3, dst). Jika tidak, biarkan null.
      //   → Gunakan action "READ_ANALYTICS" jika pengguna meminta laporan total pemasukan, pengeluaran, saldo akhir, atau "analitik keuangan".
      //   → Gunakan action "EDIT" jika pengguna meminta mengubah/mengedit transaksi lama. WAJIB isi search_keyword dengan KATA KUNCI PENCARIAN (bisa berupa nominal lama seperti "9500" atau nama merchant). JANGAN MENGOSONGKAN search_keyword jika user menyebutkan nominal transaksi yang mau diedit. Isi field "nominal", "description", atau "category" HANYA dengan nilai BARU jika user ingin mengubahnya. Jika user bilang "Edit yang barusan 9500 jadi mie ayam", maka search_keyword="9500", description="mie ayam".
@@ -168,7 +169,6 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Gunakan jika pengguna menanyakan fakta real-time, berita terkini, nilai tukar, cuaca, atau informasi yang butuh penelusuran internet.
      //   → type "news": jika eksplisit minta berita terbaru. type "search": untuk semua pencarian umum.
      //   → Contoh: "siapa presiden Indonesia?", "berita terbaru UGM", "kurs dolar hari ini"
-     // SPREADSHEET: { action: "CREATE_OR_APPEND"|"DELETE", table_name: string, data: { "Kolom1": "Nilai1", "Kolom2": "Nilai2" } }
      // EMAIL: { action: "READ" | "SEND" | "DELETE", search_keyword: string, max_results: number, to: string, subject: string, content: string }
      //   → Gunakan action "READ" jika pengguna meminta mengecek kotak masuk (sertakan search_keyword jika mencari email tertentu).
      //   → Isi max_results sesuai jumlah yang diminta user (contoh: "satu saja" => 1, "3 email terbaru" => 3). Default 5 jika tidak disebut.
@@ -176,7 +176,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Gunakan action "DELETE" jika meminta menghapus email (sertakan search_keyword).
      // DATABASE: { action: "LIST_TABLES"|"READ_TABLE"|"INSERT_ROW"|"UPDATE_ROW"|"DELETE_ROW"|"DELETE_ALL_ROWS"|"DELETE_ALL_ROWS_CONFIRMED"|"CANCEL_ACTION", table_name: string, row_id: number, search_keyword: string, max_results: number, row_data: object, update_data: object }
      //   → Gunakan intent DATABASE HANYA untuk perintah terkait Supabase (cek tabel, lihat data tabel, tambah/edit/hapus baris di nexa_vault_items, nexa_behavior_log, dll).
-     //   → PENTING: DILARANG KERAS menggunakan intent DATABASE untuk kata kunci "Tabel keuangan", "Buku kas", "Spreadsheet", atau "Google Sheet". Gunakan intent FINANCE atau SPREADSHEET untuk itu!
+     //   → PENTING: DILARANG KERAS menggunakan intent DATABASE untuk kata kunci "Tabel keuangan" atau "Buku kas". Gunakan intent FINANCE untuk hal tersebut.
      //   → PENTING: DILARANG MENGARANG ACTION. "DELETE_ROWS" (jamak) TIDAK ADA. Jika diminta menghapus banyak baris, gunakan "DELETE_ROW" untuk satu, atau tolak.
      //   → Jika user secara eksplisit meminta menghapus "seluruh" atau "semua" data di sebuah tabel Supabase, gunakan action "DELETE_ALL_ROWS".
      //   → PENTING: Jika asisten sebelumnya telah meminta konfirmasi untuk menghapus seluruh tabel (PERINGATAN), dan jawaban terbaru user bermakna MENYETUJUI (misal: "ya", "gas", "lakukan", "oke", "silakan"), Anda WAJIB mempertahankan intent DATABASE dan menggunakan action "DELETE_ALL_ROWS_CONFIRMED".
@@ -295,14 +295,22 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   }
   const miniCalStr = _miniCal.join('\n');
 
-  // ── Cross-Domain Fusion ────────────────────────────────────────────────────
-  // Silently pull recent finance + upcoming calendar data to enrich context.
+  // ── Cross-Domain Fusion + Accounts Context ─────────────────────────────────
+  // Silently pull recent finance + upcoming calendar data + active accounts list.
   // Runs in parallel — zero sequential latency penalty.
   let crossDomainBlock = '';
+  let activeAccountsBlock = '';
   try {
-    const [recentTxResult, upcomingEvResult] = await Promise.allSettled([
+    const [recentTxResult, upcomingEvResult, accountsResult] = await Promise.allSettled([
       _fetchRecentFinanceSummary(3),
-      _fetchUpcomingEventsSummary(3)
+      _fetchUpcomingEventsSummary(3),
+      // Load daftar akun aktif dari Supabase Finance (dengan cache)
+      (async () => {
+        try {
+          const supabaseFinance = require('../infrastructure/Supabase_Finance');
+          return await supabaseFinance.getAccountsList();
+        } catch (_) { return []; }
+      })()
     ]);
     const finLines = [];
     if (recentTxResult.status === 'fulfilled' && recentTxResult.value) {
@@ -313,6 +321,12 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     }
     if (finLines.length > 0) {
       crossDomainBlock = `\n[DATA LINTAS DOMAIN — GUNAKAN UNTUK KONEKSI KONTEKS CERDAS]\n${finLines.join('\n')}\n`;
+    }
+
+    // Bangun blok akun aktif jika ada data
+    if (accountsResult.status === 'fulfilled' && accountsResult.value && accountsResult.value.length > 0) {
+      const accountLines = accountsResult.value.map(a => `- ${a.name} (${a.type})`).join('\n');
+      activeAccountsBlock = `\n[AKUN KEUANGAN AKTIF — PAKAI NAMA PERSIS INI UNTUK FIELD "account" DI FINANCE]\n${accountLines}\nCatatan: Jika user menyebut nama akun/dompet/bank yang mirip salah satu di atas, petakan ke nama yang paling cocok.\n`;
     }
   } catch (_) { /* Non-critical — never crash routing */ }
 
@@ -356,7 +370,7 @@ ISO Date Hari Ini: ${currentJakartaISO}
 ${miniCalStr}
 (Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)
 
-${factsContext}${sentimentBlock}${crossDomainBlock}
+${factsContext}${activeAccountsBlock}${sentimentBlock}${crossDomainBlock}
 [RIWAYAT KONTEKS RUNTIME]
 ${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
 

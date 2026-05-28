@@ -14,7 +14,6 @@ const financeEngine = require('../domain/Finance_Engine');
 const godMode = require('../domain/Discipline_GodMode');
 const voiceEngine = require('../core/Voice_Engine');
 const visionEngine = require('../core/Vision_Engine');
-const spreadsheetManager = require('../domain/Spreadsheet_Manager');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 const taskManager = require('../domain/Task_Manager');
 const webSearch = require('../infrastructure/Web_Search');
@@ -482,24 +481,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
 
   try {
     // ============================================================
-    // FINANCE CONFIRMATION LOOP (Y/N)
-    // ============================================================
-    if (textInput) {
-      const isY = /^(y|ya|yes|simpan|ok|oke)$/i.test(textInput.trim());
-      const isN = /^(n|no|tidak|batal|cancel)$/i.test(textInput.trim());
-
-      if (isY || isN) {
-        const financeEngine = require('../domain/Finance_Engine');
-        const confirmationReply = await financeEngine.confirmPendingTransactions(isY);
-        if (confirmationReply) {
-          await respondToTelegram(confirmationReply);
-          clearTimeout(safetyTimer);
-          return;
-        }
-      }
-    }
-
-    // ============================================================
     // VAULT CONFIRMATION LOOP (KONFIRM / EKSTRAK ULANG / EDIT)
     // ============================================================
     if (pendingVaultContext && textInput) {
@@ -877,7 +858,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     const hasStrongNewIntentCue = (text) => {
       const normalized = String(text || '').toLowerCase();
       if (!normalized) return false;
-      return /(email|gmail|database|supabase|kalender|agenda|jadwal|task|tugas|keuangan|pengeluaran|pemasukan|search|cari|berita|spreadsheet|sheet|dokumen|2nd brain|profil|identitas)/.test(normalized);
+      return /(email|gmail|database|supabase|kalender|agenda|jadwal|task|tugas|keuangan|pengeluaran|pemasukan|search|cari|berita|dokumen|2nd brain|profil|identitas)/.test(normalized);
     };
     const normalizeKeywordCandidate = (text) => {
       const normalized = String(text || '').toLowerCase().trim();
@@ -1059,12 +1040,6 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         }
         if (action === 'DELETE' && !data.search_keyword) {
           return '❓ Item mana yang ingin dihapus dari memori, Tuan?';
-        }
-      }
-
-      if (intent === 'SPREADSHEET') {
-        if (!data.action || !data.table_name) {
-          return '❓ Untuk Spreadsheet, mohon sebutkan aksi dan nama tabel/file yang dimaksud, Tuan.';
         }
       }
 
@@ -1551,10 +1526,10 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             domainReply = confirmationReply;
           } else {
             // Fallback if timeout already triggered and pending queue is empty
-            const googleWorkspace = require('../infrastructure/Google_Workspace');
-            const recent = await googleWorkspace.getFinanceSummary(1);
+            const supabaseFinance = require('../infrastructure/Supabase_Finance');
+            const recent = await supabaseFinance.readTransactions({ limit: 1 });
             if (recent && recent.length > 0) {
-              const lastCat = recent[0][6]; // cat/desc
+              const lastCat = recent[0].description || '-';
               const result = await financeEngine.editTransaction(lastCat, null, routingData.extracted_data.description, routingData.extracted_data.category);
               domainReply = `⏳ Waktu konfirmasi 5 menit telah habis sehingga transaksi otomatis terkunci. N.E.X.A melakukan *fallback* ke mode Edit:\n${result.message}`;
             } else {
@@ -1571,17 +1546,17 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             domainReply = updatedMsg;
           } else {
             // Fallback: the transaction is no longer pending (already saved). Edit the latest row.
-            const googleWorkspace = require('../infrastructure/Google_Workspace');
-            const recent = await googleWorkspace.getFinanceSummary(1);
+            const supabaseFinance = require('../infrastructure/Supabase_Finance');
+            const recent = await supabaseFinance.readTransactions({ limit: 1 });
             if (recent && recent.length > 0) {
-              const lastCat = recent[0][6]; // cat/desc
+              const lastCat = recent[0].description || '-';
               const result = await financeEngine.editTransaction(
                 lastCat,
                 routingData.extracted_data.nominal,
                 routingData.extracted_data.description,
                 routingData.extracted_data.category
               );
-              domainReply = `⏳ Transaksi sudah tidak tertunda (telah dimasukkan ke sheet). N.E.X.A otomatis melakukan *fallback* ke mode Edit:\n${result.message}`;
+              domainReply = `⏳ Transaksi sudah tidak tertunda (telah dimasukkan ke database). N.E.X.A otomatis melakukan *fallback* ke mode Edit:\n${result.message}`;
             } else {
               domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
             }
@@ -1875,14 +1850,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         }
         break;
 
-      case 'SPREADSHEET':
-        if (routingData.extracted_data) {
-          const result = await spreadsheetManager.processSpreadsheetIntent(routingData.extracted_data);
-          if (result && result.message) {
-            domainReply = result.message;
-          }
-        }
-        break;
+
 
       case 'EMAIL':
         const gmailClient = require('../infrastructure/Gmail_Client');
@@ -2113,7 +2081,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           domainReply = '✅ Aksi database dibatalkan, Tuan.';
           pendingDatabaseContext = null;
         } else if (dbAction === 'DELETE_ROWS') {
-          domainReply = `❌ Penghapusan banyak baris secara otomatis belum didukung. Jika ini tabel keuangan (Google Sheets), hapus satu per satu menggunakan kata kunci (contoh: "Hapus transaksi 150000"). Jika ini tabel Supabase, silakan buat skrip khusus.`;
+          domainReply = `❌ Penghapusan banyak baris secara otomatis belum didukung. Hapus satu per satu menggunakan kata kunci (contoh: "Hapus transaksi 150000"). Jika ini tabel Supabase, silakan buat skrip khusus.`;
         } else {
           domainReply = `❌ Aksi database tidak dikenali: ${escapeHtml(dbAction)}`;
         }

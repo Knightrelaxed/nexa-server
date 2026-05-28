@@ -7,7 +7,7 @@ node_modules/
 !.env.example
 
 # Google Service Account JSON key — CRITICAL: never push to GitHub
-*.json
+nexa-core-*.json
 !package.json
 !package-lock.json
 

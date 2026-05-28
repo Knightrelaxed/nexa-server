@@ -89,7 +89,7 @@ async function isDuplicateTransaction(compositeKey, transactionTime, checkPendin
   // Critical: a pending record exists when Telegram confirmation was queued
   // but the server restarted before the user responded. Without this check,
   // pollLivinEmails would re-process the same email and write a DUPLICATE row
-  // to the Google Sheet because nexa_finance_dedup is only written AFTER save.
+  // to the database because nexa_finance_dedup is only written AFTER save.
   try {
     const { data: pendingData, error: pendingError } = await supabase
       .from('nexa_pending_transactions')

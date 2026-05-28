@@ -1,5 +1,5 @@
 const supabase = require('../infrastructure/Supabase_Memories');
-const googleWorkspace = require('../infrastructure/Google_Workspace');
+const supabaseFinance = require('../infrastructure/Supabase_Finance');
 const gmailClient = require('../infrastructure/Gmail_Client');
 // axios removed — all Telegram sends must use sendTelegramOutbound (Cloudflare proxy) not direct api.telegram.org
 const env = require('../config/env');
@@ -200,7 +200,7 @@ async function processTransaction(data, source) {
   }
 
   try {
-    // Format date in Indonesian locale for the sheet (e.g. "9 Februari 2026")
+    // Format date in Indonesian locale (e.g. "9 Februari 2026")
     const dateStr = transactionTime.toLocaleDateString('id-ID', {
       timeZone: 'Asia/Jakarta',
       day: 'numeric',
@@ -208,7 +208,7 @@ async function processTransaction(data, source) {
       year: 'numeric'
     });
 
-    // Format time as HH.MM (e.g. "14.45") to match existing sheet style
+    // Format time as HH.MM (e.g. "14.45")
     const timeStr = transactionTime.toLocaleTimeString('id-ID', {
       timeZone: 'Asia/Jakarta',
       hour: '2-digit',
@@ -216,28 +216,46 @@ async function processTransaction(data, source) {
       hour12: false
     }).replace(':', '.');
 
-    // Normalize type to Indonesian label used by sheet formulas
+    // Normalize type to Indonesian label
     const isIncome = (data.type || '').toUpperCase() === 'INCOME' || data.type === 'Pemasukan';
     const tipeLabel = isIncome ? 'Pemasukan' : 'Pengeluaran';
 
-    // Nominal: positive for Pemasukan, NEGATIVE for Pengeluaran (drives Saldo formula in sheet)
+    // Nominal: positive for Pemasukan, NEGATIVE for Pengeluaran
     const nominalSigned = isIncome ? nominal : -nominal;
 
     // Apply smart categorization
     const smartCategory = await _autoCategorizeMerchant(data.destination || data.description, data.category);
 
-    // Build the txData object matching appendFinanceRow's expected shape
-    const txData = {
-      tanggal: dateStr,                                        // B: "9 Februari 2026"
-      waktu: timeStr,                                          // C: "14.45"
-      tipe: tipeLabel,                                         // D: "Pemasukan" | "Pengeluaran"
-      kategori: smartCategory,                                 // E: Kategori
-      akun: 'Bank Mandiri Livin',                              // F: Akun (fixed for this sheet)
-      catatan: data.description || data.destination || '-',    // G: Catatan / Detail
-      nominal: nominalSigned                                    // H: Signed nominal
-    };
+    // Nama akun: gunakan data.account jika ada (dari Telegram manual/AI Router),
+    // fallback ke 'Bank Mandiri Livin' jika sumber adalah Tasker/Gmail otomatis.
+    const akunName = data.account && String(data.account).trim()
+      ? String(data.account).trim()
+      : 'Bank Mandiri Livin';
 
-    const result = await googleWorkspace.appendFinanceRow(txData);
+    // ── DATABASE: Supabase Nexa Finance ────────────────────────────────────
+    const txDateISO = transactionTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    const txTimeHHMM = transactionTime.toLocaleTimeString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+
+    const sfResult = await supabaseFinance.writeTransaction({
+      txType:       isIncome ? 'INCOME' : 'EXPENSE',
+      nominal,
+      categoryName: smartCategory,
+      accountName:  akunName,
+      description:  data.description || data.destination || '-',
+      dateISO:      txDateISO,
+      timeHHMM:     txTimeHHMM,
+    });
+
+    if (sfResult.status !== 'SUCCESS') {
+      throw new Error(`Supabase Finance gagal: ${sfResult.reason}`);
+    }
+
+    console.log(`[FINANCE] ✅ Transaksi Supabase berhasil disimpan (ID: ${sfResult.id})`);
 
     // Log composite key to dedup table (prevents cross-channel duplicates)
     await supabase.logTransactionKey(compositeKey, transactionTime, source);
@@ -252,47 +270,32 @@ async function processTransaction(data, source) {
       });
     } catch (_) { /* Never let behavior logging crash the finance flow */ }
 
-    console.log(`[FINANCE] Transaction saved → Sheet "${result.sheetName}", Row ${result.rowNumber}, No ${result.noValue}`);
-
     const nominalFormatted = `Rp${nominal.toLocaleString('id-ID')}`;
     return {
       status: 'SUCCESS',
-      message: `✅ Transaksi <b>${tipeLabel}</b> sebesar <b>${nominalFormatted}</b> (${txData.catatan}) berhasil dicatat di baris No. ${result.noValue} — Sheet <i>${result.sheetName}</i>.`
+      message: `✅ Transaksi <b>${tipeLabel}</b> sebesar <b>${nominalFormatted}</b> berhasil dicatat ke database Supabase (Akun: ${akunName}).`
     };
   } catch (error) {
     console.error('[FINANCE] Failed to record transaction:', error.message);
-    if (error.message && error.message.includes('Office file')) {
-      throw new Error('File buku kas Tuan berformat Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli. Silakan buka file tersebut di Google Drive, klik "File > Save as Google Sheets", lalu masukkan ID file yang baru ke konfigurasi sistem Tuan.');
-    }
-    if (error.message && error.message.includes('Unable to parse range')) {
-      throw new Error(`⚠️ <b>Tab Tahun Ini Belum Dibuat!</b>\nN.E.X.A mencoba mencari tab (sheet) dengan nama tahun ini (misal: "2026"), tetapi tidak menemukannya.\n\n<b>Solusi:</b>\nBuka file Google Sheets Anda, lalu buat atau duplikat tab sebelumnya dan beri nama sesuai tahun ini (contoh: "2026").`);
-    }
     throw error;
   }
 }
 
 /**
- * Fetch recent transactions from the current month's sheet (columns A-J).
+ * Fetch recent transactions from Supabase
  * @param {number} limit - how many recent rows to show
  */
 async function getRecentTransactions(limit = 5) {
   try {
-    const rows = await googleWorkspace.getFinanceSummary(limit);
-    if (!rows || rows.length === 0) return '📭 Tidak ada transaksi yang tercatat di sheet bulan ini.';
+    const rows = await supabaseFinance.readTransactions({ limit });
+    if (!rows || rows.length === 0) return '📭 Tidak ada transaksi yang tercatat di Supabase bulan ini.';
 
-    let response = `💸 <b>${rows.length} Transaksi Terakhir (Sheet Bulan Ini):</b>\n\n`;
-    // BUG FIX #6: Use _formatRowAsCard for consistent formatting with searchTransactions
-    const cards = rows.map(row => _formatRowAsCard(row)).join('\n──────────────\n');
+    let response = `💸 <b>${rows.length} Transaksi Terakhir (Supabase):</b>\n\n`;
+    const cards = rows.map(row => _formatTxAsCard(row)).join('\n──────────────\n');
     response += cards + '\n──────────────';
     return response;
   } catch (err) {
     console.error('[FINANCE] Failed to fetch recent transactions:', err.message);
-    if (err.message && err.message.includes('Office file')) {
-      return `⚠️ <b>Gagal mengambil data:</b> Format dokumen tidak didukung.\n\nTuan, file buku kas saat ini berformat Microsoft Excel (.xlsx). N.E.X.A hanya bisa membaca format Google Sheets asli.\n\n<b>Cara Perbaikan:</b>\n1. Buka file tersebut di Google Drive\n2. Klik "File" > "Save as Google Sheets"\n3. Copy ID dari file baru tersebut dan perbarui di setelan (GOOGLE_SHEET_ID).`;
-    }
-    if (err.message && err.message.includes('Unable to parse range')) {
-      return `⚠️ <b>Tab Tahun Ini Belum Dibuat!</b>\nN.E.X.A tidak dapat menemukan tab (sheet) dengan nama tahun ini di Google Sheets Tuan. Silakan buat atau duplikat tab sebelumnya, dan beri nama sesuai tahun ini (contoh: "2026").`;
-    }
     return `⚠️ Gagal mengambil data keuangan: ${err.message}`;
   }
 }
@@ -393,113 +396,78 @@ function _parseIndonesianDateString(str) {
 }
 
 /**
- * Format a single row as a rich card for Telegram.
- * Columns: A(No) B(Tanggal) C(Waktu) D(Tipe) E(Kategori) F(Akun) G(Catatan) H(Nominal) I(Saldo)
+ * Format a single transaction as a rich card for Telegram.
  */
-function _formatRowAsCard(row) {
-  const no       = row[0] || '-';
-  const tanggal  = row[1] || '-';
-  const waktu    = row[2] || '-';
-  const tipe     = row[3] || '-';
-  const kategori = row[4] || '-';
-  const akun     = row[5] || 'Bank Mandiri Livin';
-  const catatan  = row[6] || '-';
-  const nominal  = row[7] || '0';
-  const saldo    = row[8] || '-';
+function _formatTxAsCard(tx) {
+  const tanggal  = tx.transaction_date || '-';
+  const waktu    = tx.transaction_time || '-';
+  const tipe     = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+  const kategori = tx.categories?.name || '-';
+  const akun     = tx.accounts?.name || '-';
+  const catatan  = tx.description || '-';
+  const nominal  = tx.amount || 0;
 
-  const nominalNum = _parseFlexibleCurrency(nominal);
-  const nominalFmt = isNaN(nominalNum) ? nominal : `Rp${Math.abs(nominalNum).toLocaleString('id-ID')}`;
-  const saldoNum   = _parseFlexibleCurrency(saldo);
-  const saldoFmt   = isNaN(saldoNum) ? saldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
+  const nominalFmt = `Rp${Math.abs(nominal).toLocaleString('id-ID')}`;
   const tipeIcon   = tipe === 'Pemasukan' ? '🟢' : '🔴';
+  const uuidShort  = tx.id ? tx.id.substring(0, 8) : 'N/A';
 
-  return `${tipeIcon} <b>No. ${no}</b>\n` +
+  return `${tipeIcon} <b>ID: ${uuidShort}</b>\n` +
     `<b>Tanggal:</b> ${tanggal}\n` +
     `<b>Waktu:</b> ${waktu}\n` +
     `<b>Tipe:</b> ${tipe}\n` +
     `<b>Kategori:</b> ${kategori}\n` +
     `<b>Akun:</b> ${akun}\n` +
     `<b>Catatan / Detail:</b> ${catatan}\n` +
-    `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
-    `<b>Saldo yang Anda punya:</b> ${saldoFmt}`;
+    `<b>Nominal (Rp):</b> ${nominalFmt}`;
 }
 
 /**
- * Search and display transactions with precise multi-attribute filtering.
+ * Search and display transactions with precise multi-attribute filtering from Supabase.
  * @param {Object} filters
- * @param {string} [filters.date_text]  - "kemarin", "hari ini", "tanggal 14", etc.
- * @param {string} [filters.keyword]    - description / merchant keyword (e.g. "jardine")
- * @param {string} [filters.type]       - "Pemasukan" or "Pengeluaran"
- * @param {string} [filters.category]   - category keyword
- * @param {number} [filters.limit]      - max results (default 20)
+ * @param {string} [filters.date_text]
+ * @param {string} [filters.keyword]
+ * @param {string} [filters.type]
+ * @param {string} [filters.category]
+ * @param {number} [filters.limit]
  */
 async function searchTransactions(filters = {}) {
   try {
-    const rows = await googleWorkspace.getAllFinanceRows();
-    if (!rows || rows.length === 0) return '📭 Tidak ada transaksi yang tercatat di sheet bulan ini.';
-
     const targetDate = filters.date_text ? _parseRelativeDateFilter(filters.date_text) : null;
-    const kwLower    = filters.keyword   ? filters.keyword.toLowerCase().trim()  : null;
-    const typeLower  = filters.type      ? filters.type.toLowerCase().trim()     : null;
-    const catLower   = filters.category  ? filters.category.toLowerCase().trim() : null;
-    const limit      = filters.limit || 20;
-
-    const matched = [];
-    // Scan from newest to oldest
-    for (let i = rows.length - 1; i >= 0; i--) {
-      if (matched.length >= limit) break;
-      const row = rows[i];
-      if (!row || row.length < 7) continue;
-
-      // Date filter
-      if (targetDate) {
-        const cellDate = _parseIndonesianDateString(String(row[1] || ''));
-        if (!cellDate) continue;
-        if (cellDate.getFullYear() !== targetDate.getFullYear() ||
-            cellDate.getMonth()    !== targetDate.getMonth()    ||
-            cellDate.getDate()     !== targetDate.getDate()) continue;
-      }
-
-      // Type filter  
-      if (typeLower) {
-        const cellType = (row[3] || '').toLowerCase();
-        const wantIncome  = typeLower.includes('masuk') || typeLower === 'pemasukan' || typeLower === 'income';
-        const wantExpense = typeLower.includes('keluar') || typeLower === 'pengeluaran' || typeLower === 'expense';
-        if (wantIncome  && cellType !== 'pemasukan') continue;
-        if (wantExpense && cellType !== 'pengeluaran') continue;
-      }
-
-      // Category filter
-      if (catLower) {
-        const cellCat = (row[4] || '').toLowerCase();
-        if (!cellCat.includes(catLower)) continue;
-      }
-
-      // Keyword filter: search description (col 6) and category (col 4)
-      if (kwLower) {
-        const cellDesc = (row[6] || '').toLowerCase();
-        const cellCat2 = (row[4] || '').toLowerCase();
-        const kwTokens = kwLower.split(/\s+/).filter(t => t.length > 2);
-        const match = kwTokens.some(t => cellDesc.includes(t) || cellCat2.includes(t))
-                      || cellDesc.includes(kwLower);
-        if (!match) continue;
-      }
-
-      matched.push(row);
+    let month = null, year = null;
+    if (targetDate) {
+      month = targetDate.getMonth() + 1;
+      year = targetDate.getFullYear();
     }
 
-    // Reverse to chronological order for display
-    matched.reverse();
+    const typeLower = filters.type ? filters.type.toLowerCase().trim() : null;
+    let txType = null;
+    if (typeLower) {
+      if (typeLower.includes('masuk') || typeLower === 'pemasukan' || typeLower === 'income') txType = 'INCOME';
+      if (typeLower.includes('keluar') || typeLower === 'pengeluaran' || typeLower === 'expense') txType = 'EXPENSE';
+    }
 
-    if (matched.length === 0) {
+    // Gabungkan keyword dan category menjadi keyword umum untuk pencarian Supabase
+    const keywordParts = [];
+    if (filters.keyword) keywordParts.push(filters.keyword);
+    if (filters.category) keywordParts.push(filters.category);
+    const searchKeyword = keywordParts.join(' ');
+
+    const rows = await supabaseFinance.readTransactions({
+      limit: filters.limit || 20,
+      keyword: searchKeyword,
+      txType,
+      month,
+      year
+    });
+
+    if (!rows || rows.length === 0) {
       let desc = 'transaksi';
       if (filters.date_text) desc += ` pada ${filters.date_text}`;
       if (filters.keyword)   desc += ` dengan kata kunci "${filters.keyword}"`;
       if (filters.type)      desc += ` (${filters.type})`;
-      return `📭 Tidak ada ${desc} yang ditemukan di sheet bulan ini.`;
+      return `📭 Tidak ada ${desc} yang ditemukan di database.`;
     }
 
-    // Build header — BUG FIX #4: format date_text humanely (avoid raw ISO string in output)
     const _formatDateLabel = (dt) => {
       if (!dt) return null;
       const isoMatch = dt.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -507,15 +475,15 @@ async function searchTransactions(filters = {}) {
         const d = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
         return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
       }
-      return dt; // Return as-is for natural language ("kemarin", "hari ini", etc.)
+      return dt;
     };
-    let header = `🔍 <b>Ditemukan ${matched.length} transaksi`;
+    let header = `🔍 <b>Ditemukan ${rows.length} transaksi`;
     if (filters.date_text) header += ` pada ${_formatDateLabel(filters.date_text)}`;
     if (filters.type)      header += ` (${filters.type})`;
     if (filters.keyword)   header += ` — "${filters.keyword}"`;
     header += `:</b>\n\n`;
 
-    const cards = matched.map(row => _formatRowAsCard(row)).join('\n──────────────\n');
+    const cards = rows.map(tx => _formatTxAsCard(tx)).join('\n──────────────\n');
     return header + cards;
   } catch (err) {
     console.error('[FINANCE] searchTransactions failed:', err.message);
@@ -524,49 +492,31 @@ async function searchTransactions(filters = {}) {
 }
 
 /**
- * Fetch and format the Analytics Table (L5:S9) from the current month's sheet.
+ * Fetch and format the Analytics Table from Supabase for the current month.
  */
 async function getFinanceAnalytics() {
   try {
-    const rows = await googleWorkspace.getFinanceAnalytics();
-    if (!rows || rows.length === 0) return '📭 Data analitik belum tersedia di sheet bulan ini.';
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
 
-    // The range is L5:S9. 
-    // Row indices: L5 is 0, L6 is 1, L7 is 2, L8 is 3.
-    // Col indices: L is 0 ... S is 7.
-    // Based on user spec: S6 = Pemasukan, S7 = Pengeluaran, S8 = Saldo
-    
-    // Safely extract values, fallback to 0 if undefined
-    const rawPemasukan = rows[1] && rows[1][7] ? rows[1][7] : 0;
-    const rawPengeluaran = rows[2] && rows[2][7] ? rows[2][7] : 0;
-    const rawSaldo = rows[3] && rows[3][7] ? rows[3][7] : 0;
+    const analytics = await supabaseFinance.getFinanceAnalytics(month, year);
+    if (!analytics || (analytics.totalIncome === 0 && analytics.totalExpense === 0)) {
+      return '📭 Data analitik belum tersedia untuk bulan ini.';
+    }
 
-    // Helper to format currency
-    const formatRp = (val) => {
-      const num = _parseFlexibleCurrency(val);
-      return isNaN(num) ? val : `Rp${Math.abs(num).toLocaleString('id-ID')}`;
-    };
-
-    const pemasukanFmt = formatRp(rawPemasukan);
-    const pengeluaranFmt = formatRp(rawPengeluaran);
-    const saldoFmt = formatRp(rawSaldo);
+    const formatRp = (val) => `Rp${Math.abs(val).toLocaleString('id-ID')}`;
 
     let report = `📊 <b>Laporan Analitik Keuangan Bulan Ini:</b>\n\n`;
-    report += `🟢 <b>Total Pemasukan:</b> ${pemasukanFmt}\n`;
-    report += `🔴 <b>Total Pengeluaran:</b> ${pengeluaranFmt}\n`;
+    report += `🟢 <b>Total Pemasukan:</b> ${formatRp(analytics.totalIncome)}\n`;
+    report += `🔴 <b>Total Pengeluaran:</b> ${formatRp(analytics.totalExpense)}\n`;
     report += `──────────────\n`;
-    report += `🏦 <b>SALDO AKHIR:</b> <b>${saldoFmt}</b>\n\n`;
-    report += `<i>Laporan dihitung secara real-time dari rumusan Google Sheets Tuan Faqih.</i>`;
+    report += `🏦 <b>SALDO BERSIH BULAN INI:</b> <b>${formatRp(analytics.balance)}</b>\n\n`;
+    report += `<i>Laporan dihitung secara real-time dari database Supabase Nexa Finance Web.</i>`;
 
     return report;
   } catch (err) {
     console.error('[FINANCE] Failed to fetch analytics:', err.message);
-    if (err.message && err.message.includes('Office file')) {
-      return `⚠️ <b>Gagal membaca analitik:</b> File buku kas Tuan berformat Excel (.xlsx). Silakan ubah ke format Google Sheets (File > Save as Google Sheets) dan perbarui ID filenya.`;
-    }
-    if (err.message && err.message.includes('Unable to parse range')) {
-      return `⚠️ <b>Tab Bulan Ini Belum Dibuat!</b>\nN.E.X.A tidak dapat menemukan tab bulan ini untuk membaca analitik. Silakan buat/duplikat tab di Google Sheets Anda dengan nama bulan ini (contoh: "Mei 2026").`;
-    }
     return `⚠️ Gagal membaca tabel analitik: ${err.message}`;
   }
 }
@@ -576,34 +526,29 @@ let lastDeletedTransaction = null;
 
 /**
  * Finds the best matching transaction row based on robust multi-attribute token scoring.
+ * Works with Supabase transaction objects.
  */
 function _findBestTransactionMatch(rows, keyword) {
   const kw = String(keyword).toLowerCase().trim();
   
   if (kw === '' || /^(barusan|tadi|terakhir|terbaru|sebelumnya)$/.test(kw) || /transaksi (barusan|tadi|terakhir|terbaru)/.test(kw)) {
-    return rows.length - 1;
+    return 0; // Supabase results are ordered newest first, so index 0 is newest
   }
   
-  if (/^\d+$/.test(kw)) {
-    const idx = rows.findIndex(r => String(r[0]).trim() === kw);
-    if (idx !== -1) return idx;
-  }
-
   const tokens = kw.split(/\s+/).filter(t => t.length > 2 || /^\d+$/.test(t));
   if (tokens.length === 0) tokens.push(kw);
 
   let bestIndex = -1;
   let maxScore = 0;
 
-  for (let i = rows.length - 1; i >= 0; i--) {
+  for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || r.length < 8) continue;
     
-    const tanggal = (r[1] || '').toLowerCase();
-    const waktu = (r[2] || '').toLowerCase();
-    const kategori = (r[4] || '').toLowerCase();
-    const desc = (r[6] || '').toLowerCase();
-    const nominalRaw = String(r[7] || '').replace(/[^0-9]/g, '');
+    const tanggal = (r.transaction_date || '').toLowerCase();
+    const waktu = (r.transaction_time || '').toLowerCase();
+    const kategori = (r.categories?.name || '').toLowerCase();
+    const desc = (r.description || '').toLowerCase();
+    const nominalRaw = String(r.amount || '');
     const nominalKw = kw.replace(/[^0-9]/g, '');
 
     let score = 0;
@@ -633,12 +578,12 @@ function getPendingDeletionsContext() {
 }
 
 /**
- * Initiates a deletion request. Finds the transaction and stores it in pendingDeletions.
+ * Initiates a deletion request. Finds the transaction from Supabase and stores it in pendingDeletions.
  */
 async function requestDeleteConfirmation(keyword) {
   try {
-    const rows = await googleWorkspace.getAllFinanceRows();
-    if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel bulan ini masih kosong.' };
+    const rows = await supabaseFinance.readTransactions({ limit: 50 });
+    if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel database saat ini masih kosong.' };
 
     const indexToDelete = _findBestTransactionMatch(rows, keyword);
 
@@ -646,15 +591,14 @@ async function requestDeleteConfirmation(keyword) {
       return { status: 'FAILED', message: `Tidak ada transaksi yang cocok dengan "${keyword}".` };
     }
 
-    const row = rows[indexToDelete];
-    const no = row[0] || '-';
-    const tanggal = row[1] || '-';
-    const waktu = row[2] || '-';
-    const tipe = row[3] || '-';
-    const kategori = row[4] || '-';
-    const catatan = row[6] || '-';
-    const nominalRaw = _parseFlexibleCurrency(row[7]);
-    const nominalFmt = isNaN(nominalRaw) ? row[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
+    const tx = rows[indexToDelete];
+    const uuidShort = tx.id ? tx.id.substring(0, 8) : 'N/A';
+    const tanggal = tx.transaction_date || '-';
+    const waktu = tx.transaction_time || '-';
+    const tipe = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+    const kategori = tx.categories?.name || '-';
+    const catatan = tx.description || '-';
+    const nominalFmt = `Rp${Math.abs(tx.amount || 0).toLocaleString('id-ID')}`;
 
     // Store in pending deletions with a 3-minute timeout
     const delKey = `del_${Date.now()}`;
@@ -662,11 +606,11 @@ async function requestDeleteConfirmation(keyword) {
       pendingDeletions.delete(delKey);
     }, 3 * 60 * 1000);
     
-    pendingDeletions.set(delKey, { index: indexToDelete, rowData: row, timeoutId });
+    pendingDeletions.set(delKey, { uuid: tx.id, txData: tx, timeoutId });
 
     const msg = `⚠️ <b>KONFIRMASI PENGHAPUSAN TRANSAKSI</b>\n\n` +
-      `N.E.X.A menemukan data berikut:\n` +
-      `<b>No:</b> ${no}\n` +
+      `N.E.X.A menemukan data berikut di Supabase:\n` +
+      `<b>ID:</b> ${uuidShort}\n` +
       `<b>Tanggal:</b> ${tanggal} ${waktu}\n` +
       `<b>Tipe/Kategori:</b> ${tipe} - ${kategori}\n` +
       `<b>Catatan:</b> ${catatan}\n` +
@@ -681,7 +625,7 @@ async function requestDeleteConfirmation(keyword) {
 }
 
 /**
- * Confirms or cancels a pending deletion.
+ * Confirms or cancels a pending deletion in Supabase.
  */
 async function confirmDeleteTransaction(isYes) {
   if (pendingDeletions.size === 0) return null;
@@ -692,31 +636,25 @@ async function confirmDeleteTransaction(isYes) {
 
     if (isYes) {
       try {
-        const rows = await googleWorkspace.getAllFinanceRows();
-        // Recalculate index just in case rows shifted, match by No (col 0)
-        const noToDel = pending.rowData[0];
-        const actualIndex = rows.findIndex(r => r[0] === noToDel);
+        const result = await supabaseFinance.deleteTransaction(pending.uuid);
         
-        if (actualIndex === -1) {
-          return `❌ Transaksi tidak ditemukan di sheet. Mungkin sudah terhapus.`;
+        if (result.status !== 'SUCCESS') {
+          return `❌ Transaksi gagal dihapus dari database: ${result.reason}`;
         }
 
-        const deletedRow = rows.splice(actualIndex, 1)[0];
-        await googleWorkspace.overwriteFinanceSheet(rows);
-
-        // Store for undo (10-minute window)
+        // Simpan data lengkap untuk undo
         if (lastDeletedTransaction?.expireTimerId) clearTimeout(lastDeletedTransaction.expireTimerId);
         const expireTimerId = setTimeout(() => {
           lastDeletedTransaction = null;
         }, 10 * 60 * 1000);
-        lastDeletedTransaction = { deletedRow, deletedIndex: actualIndex, expireTimerId };
+        lastDeletedTransaction = { deletedTx: pending.txData, expireTimerId };
 
-        const nominalRaw = _parseFlexibleCurrency(deletedRow[7]);
-        const nominalFmt = isNaN(nominalRaw) ? deletedRow[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
+        const catatan = pending.txData.description || '-';
+        const nominalFmt = `Rp${Math.abs(pending.txData.amount || 0).toLocaleString('id-ID')}`;
 
-        return `🗑️ <b>TRANSAKSI DIHAPUS</b>\n\n"${deletedRow[6] || '-'}" sebesar ${nominalFmt} telah dihapus dari sheet keuangan.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
+        return `🗑️ <b>TRANSAKSI DIHAPUS DARI DATABASE</b>\n\n"${catatan}" sebesar ${nominalFmt} telah dihapus sepenuhnya.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
       } catch (error) {
-        return `❌ Gagal menghapus transaksi dari sheet: ${error.message}`;
+        return `❌ Gagal menghapus transaksi dari database: ${error.message}`;
       }
     } else {
       return `✅ Penghapusan dibatalkan. Data tetap aman.`;
@@ -726,7 +664,7 @@ async function confirmDeleteTransaction(isYes) {
 
 /**
  * Undo the last deleted transaction (within 10-minute window).
- * Re-inserts the row at its original position and rewrites the sheet.
+ * Re-inserts the transaction to Supabase.
  */
 async function undoDeleteTransaction() {
   if (!lastDeletedTransaction) {
@@ -734,24 +672,30 @@ async function undoDeleteTransaction() {
   }
 
   try {
-    const { deletedRow, deletedIndex, expireTimerId } = lastDeletedTransaction;
+    const { deletedTx, expireTimerId } = lastDeletedTransaction;
     clearTimeout(expireTimerId);
-
-    const rows = await googleWorkspace.getAllFinanceRows();
     
-    // Re-insert at original position (or end if sheet shrunk)
-    const insertAt = Math.min(deletedIndex, rows.length);
-    rows.splice(insertAt, 0, deletedRow);
+    // Tulis ulang ke Supabase
+    const sfResult = await supabaseFinance.writeTransaction({
+      txType:       deletedTx.type.toUpperCase(),
+      nominal:      deletedTx.amount,
+      categoryName: deletedTx.categories?.name || 'Lainnya',
+      accountName:  deletedTx.accounts?.name || 'Bank Mandiri Livin',
+      description:  deletedTx.description,
+      dateISO:      deletedTx.transaction_date,
+      timeHHMM:     deletedTx.transaction_time,
+    });
 
-    await googleWorkspace.overwriteFinanceSheet(rows);
+    if (sfResult.status !== 'SUCCESS') {
+      return { status: 'FAILED', message: `⚠️ Gagal memulihkan ke database: ${sfResult.reason}` };
+    }
 
-    const catatan = deletedRow[6] || '-';
-    const nominalRaw = _parseFlexibleCurrency(deletedRow[7]);
-    const nominalFmt = isNaN(nominalRaw) ? deletedRow[7] : `Rp${Math.abs(nominalRaw).toLocaleString('id-ID')}`;
+    const catatan = deletedTx.description || '-';
+    const nominalFmt = `Rp${Math.abs(deletedTx.amount || 0).toLocaleString('id-ID')}`;
 
     lastDeletedTransaction = null; // Clear undo cache
 
-    return { status: 'SUCCESS', message: `↩️ <b>Transaksi dikembalikan!</b>\n\n"${catatan}" sebesar <b>${nominalFmt}</b> telah dipulihkan ke sheet keuangan Tuan. Semua nomor urut telah disesuaikan kembali.` };
+    return { status: 'SUCCESS', message: `↩️ <b>Transaksi dikembalikan!</b>\n\n"${catatan}" sebesar <b>${nominalFmt}</b> telah dipulihkan ke database Supabase.` };
   } catch (error) {
     console.error('[FINANCE] Failed to undo delete:', error.message);
     return { status: 'FAILED', message: `Gagal mengembalikan transaksi: ${error.message}` };
@@ -760,13 +704,12 @@ async function undoDeleteTransaction() {
 
 
 /**
- * Edit a specific transaction matching a keyword.
- * Same search priority as deleteTransaction: No column → exact desc → partial match.
+ * Edit a specific transaction matching a keyword in Supabase.
  */
 async function editTransaction(keyword, newNominal, newDescription, newCategory) {
   try {
-    const rows = await googleWorkspace.getAllFinanceRows();
-    if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel bulan ini masih kosong.' };
+    const rows = await supabaseFinance.readTransactions({ limit: 50 });
+    if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel database saat ini masih kosong.' };
 
     const indexToEdit = _findBestTransactionMatch(rows, keyword);
 
@@ -774,37 +717,39 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
       return { status: 'FAILED', message: `Tidak ada transaksi yang cocok dengan "${keyword}".` };
     }
 
-    const oldRow = rows[indexToEdit];
-    // BUG FIX #3: Corrected variable naming — row[6] is Catatan (notes), row[4] is Kategori
-    const oldCatatan = oldRow[6] || '-';
-    const oldKategori = oldRow[4] || '-';
+    const tx = rows[indexToEdit];
+    const oldCatatan = tx.description || '-';
+    const oldKategori = tx.categories?.name || '-';
+    
+    const patchData = {};
     
     // Update nominal if provided
     if (newNominal !== undefined && newNominal !== null && String(newNominal).trim() !== '') {
-      // AUDIT FIX (CRITICAL): Use _parseFlexibleCurrency so IDR formats like "50.000" or
-      // "1.500.000" are parsed correctly instead of being truncated by bare parseFloat.
       const nominal = _parseFlexibleCurrency(String(newNominal));
       if (isNaN(nominal) || nominal <= 0) {
         return { status: 'FAILED', message: `Nominal baru tidak valid: "${newNominal}". Harus berupa angka positif.` };
       }
-      const isIncome = (oldRow[3] || '') === 'Pemasukan';
-      oldRow[7] = isIncome ? nominal : -nominal;
+      patchData.nominal = nominal;
     }
     
     // Update description if provided
     if (newDescription) {
-      oldRow[6] = newDescription;
+      patchData.description = newDescription;
     }
 
     // Update category if provided
     if (newCategory && newCategory !== 'Uncategorized') {
-      oldRow[4] = newCategory;
+      patchData.categoryName = newCategory;
     }
     
-    // Overwrite the sheet
-    await googleWorkspace.overwriteFinanceSheet(rows);
+    // Update the Supabase record
+    const result = await supabaseFinance.updateTransaction(tx.id, patchData);
 
-    return { status: 'SUCCESS', message: `✏️ <b>Transaksi berhasil diubah!</b>\nCatatan: "${oldCatatan}" | Kategori: "${oldKategori}"\n\nSemua rumus dan data telah disesuaikan ulang.` };
+    if (result.status !== 'SUCCESS') {
+      return { status: 'FAILED', message: `Gagal mengedit transaksi di database: ${result.reason}` };
+    }
+
+    return { status: 'SUCCESS', message: `✏️ <b>Transaksi (ID: ${tx.id.substring(0,8)}) berhasil diubah di database!</b>\nSebelumnya: "${oldCatatan}" | Kategori: "${oldKategori}"` };
   } catch (error) {
     console.error('[FINANCE] Failed to edit transaction:', error.message);
     return { status: 'FAILED', message: `Gagal mengubah transaksi: ${error.message}` };
@@ -858,16 +803,16 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
 
   if (isYes) {
     if (successMessages.length > 0) return successMessages.join('\n\n');
-    return `✅ <b>Berhasil dicatat!</b> ${processedCount} transaksi telah dimasukkan ke dalam sheet keuangan Tuan.`;
+    return `✅ <b>Berhasil dicatat!</b> ${processedCount} transaksi telah dimasukkan ke dalam database keuangan Tuan.`;
   } else {
-    return `❌ <b>Dibatalkan.</b> ${skippedCount} transaksi Livin' diabaikan dan tidak dimasukkan ke dalam sheet.`;
+    return `❌ <b>Dibatalkan.</b> ${skippedCount} transaksi Livin' diabaikan dan tidak dimasukkan ke dalam database.`;
   }
 }
 
 /**
  * Updates a pending transaction with new details/category/nominal and re-sends a confirmation prompt.
  * Smart auto-detection: pass raw user text and it will figure out what to update.
- * Does NOT save to Google Sheets yet.
+ * Does NOT save to database yet.
  */
 async function updatePendingTransaction(rawUserText = null, customCategory = null, customNominal = null) {
   if (pendingConfirmations.size === 0) return null;
@@ -1073,13 +1018,11 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
 
   let currentSaldo = '-';
   try {
-    const recentRows = await googleWorkspace.getFinanceSummary(1);
-    if (recentRows && recentRows.length > 0) {
-      const recent = recentRows[0];
-      const lastCat = recent[6] || '-';
-      const rawSaldo = recent[8] || 0;
-      const saldoNum = _parseFlexibleCurrency(rawSaldo);
-      currentSaldo = isNaN(saldoNum) ? rawSaldo : `Rp${saldoNum.toLocaleString('id-ID')}`;
+    const now = new Date();
+    const analytics = await supabaseFinance.getFinanceAnalytics(now.getMonth() + 1, now.getFullYear());
+    if (analytics) {
+      const saldoNum = analytics.balance;
+      currentSaldo = isNaN(saldoNum) ? saldoNum : `Rp${saldoNum.toLocaleString('id-ID')}`;
     }
   } catch (_) {}
 
