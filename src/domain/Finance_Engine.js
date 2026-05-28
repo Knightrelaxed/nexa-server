@@ -946,7 +946,7 @@ async function pollLivinEmails() {
         // path, so they were permanently silently lost. Now routed through the proxy.
         try {
           const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
-          const failedMsg = `⚠️ <b>TRANSFER GAGAL</b>\n\nTujuan: ${destination}\nNominal: ${nominalFmt}\n\n<i>N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam buku kas Anda.</i>`;
+          const failedMsg = `⚠️ <b>TRANSFER GAGAL</b>\n\nTujuan: ${destination}\nNominal: ${nominalFmt}\n\n<i>N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam catatan keuangan Anda.</i>`;
           const { sendTelegramOutbound } = require('../interfaces/webhook');
           await sendTelegramOutbound(failedMsg);
         } catch (_sendErr) {

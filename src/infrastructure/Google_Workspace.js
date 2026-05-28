@@ -3,7 +3,6 @@ const env = require('../config/env');
 const fs = require('fs');
 
 const SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/drive'
@@ -32,7 +31,6 @@ function getClients() {
   });
 
   _clients = {
-    sheets: google.sheets({ version: 'v4', auth }),
     calendar: google.calendar({ version: 'v3', auth }),
     docs: google.docs({ version: 'v1', auth }),
     drive: google.drive({ version: 'v3', auth }),
