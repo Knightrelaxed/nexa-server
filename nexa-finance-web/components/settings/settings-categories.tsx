@@ -141,30 +141,39 @@ export function SettingsCategories() {
       )}
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingCat ? "Edit Kategori" : "Tambah Kategori Baru"}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label>Nama Kategori</Label>
-              <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Cth: Belanja Bulanan" />
+        <DialogContent className="w-[92vw] max-w-md p-0 overflow-hidden rounded-2xl border-0 shadow-2xl gap-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+            <h2 className="text-xl font-bold text-slate-800">{editingCat ? "Edit Kategori" : "Tambah Kategori Baru"}</h2>
+          </div>
+          <div className="px-6 py-5 flex flex-col gap-5 bg-white">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold text-slate-800">Nama Kategori <span className="text-red-500">*</span></Label>
+              <Input 
+                value={formData.name} 
+                onChange={(e) => setFormData({...formData, name: e.target.value})} 
+                placeholder="Cth: Belanja Bulanan" 
+                className="h-11 rounded-xl border-slate-200 focus-visible:ring-emerald-500"
+              />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Tipe</Label>
+            <div className="grid grid-cols-[1fr_1fr] gap-4">
+              <div className="space-y-1.5 min-w-0">
+                <Label className="text-sm font-semibold text-slate-800">Tipe</Label>
                 <Select value={formData.type} onValueChange={(val) => setFormData({...formData, type: val})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full h-11 rounded-xl border-slate-200 focus:ring-emerald-500">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="expense">Pengeluaran</SelectItem>
                     <SelectItem value="income">Pemasukan</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Grup (Hanya Pengeluaran)</Label>
+              <div className="space-y-1.5 min-w-0">
+                <Label className="text-sm font-semibold text-slate-800 truncate block" title="Grup (Khusus Pengeluaran)">Grup Kategori</Label>
                 <Select disabled={formData.type === 'income'} value={formData.group_name} onValueChange={(val) => setFormData({...formData, group_name: val})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-full h-11 rounded-xl border-slate-200 focus:ring-emerald-500 disabled:opacity-50 disabled:bg-slate-50">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Makanan & Minuman">Makanan & Minuman</SelectItem>
                     <SelectItem value="Transportasi">Transportasi</SelectItem>
@@ -177,13 +186,24 @@ export function SettingsCategories() {
                 </Select>
               </div>
             </div>
+            
+            <div className="mt-2 flex gap-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsModalOpen(false)}
+                className="h-12 flex-1 rounded-xl font-semibold border-slate-200 text-slate-600 hover:bg-slate-50"
+              >
+                Batal
+              </Button>
+              <Button 
+                onClick={handleSave} 
+                disabled={isSaving || !formData.name.trim()} 
+                className="h-12 flex-1 rounded-xl font-semibold bg-emerald-500 hover:bg-emerald-600 text-white transition-all shadow-sm"
+              >
+                {isSaving ? <Loader2 className="animate-spin h-5 w-5" /> : "Simpan"}
+              </Button>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsModalOpen(false)}>Batal</Button>
-            <Button onClick={handleSave} disabled={isSaving} className="bg-emerald-500 hover:bg-emerald-600">
-              {isSaving ? <Loader2 className="animate-spin h-4 w-4" /> : "Simpan"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
