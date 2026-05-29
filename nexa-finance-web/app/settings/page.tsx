@@ -20,9 +20,19 @@ export default function SettingsPage() {
       </div>
 
         <Tabs defaultValue="categories" className="w-full">
-          <TabsList className="grid w-full sm:w-[300px] grid-cols-2 mb-6 bg-slate-100">
-            <TabsTrigger value="categories">Kategori</TabsTrigger>
-            <TabsTrigger value="accounts">Akun</TabsTrigger>
+          <TabsList className="grid w-full sm:w-[300px] grid-cols-2 mb-6 bg-slate-100/80 p-1 rounded-xl">
+            <TabsTrigger 
+              value="categories"
+              className="rounded-lg data-[state=active]:bg-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-md transition-all duration-300 text-slate-600"
+            >
+              Kategori
+            </TabsTrigger>
+            <TabsTrigger 
+              value="accounts"
+              className="rounded-lg data-[state=active]:bg-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-md transition-all duration-300 text-slate-600"
+            >
+              Akun
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="categories" className="mt-0">
