@@ -225,8 +225,13 @@ async function processTransaction(data, source) {
         }
       }
     }
+    // ── METODE PEMBAYARAN ───────────────────────────────────────────────────
+    // Ekstrak dari data AI Router. Jika tidak disebutkan user, default null.
+    const VALID_PAYMENT_METHODS = ['QRIS', 'Transfer bank', 'Kartu Kredit', 'Tunai'];
+    const paymentMethod = data.payment_method && VALID_PAYMENT_METHODS.includes(data.payment_method)
+      ? data.payment_method
+      : null;
 
-    // ── DATABASE: Supabase Nexa Finance ────────────────────────────────────
     const txDateISO = transactionTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
     const txTimeHHMM = transactionTime.toLocaleTimeString('id-ID', {
       timeZone: 'Asia/Jakarta',
@@ -236,13 +241,14 @@ async function processTransaction(data, source) {
     });
 
     const sfResult = await supabaseFinance.writeTransaction({
-      txType:       isIncome ? 'INCOME' : 'EXPENSE',
+      txType:        isIncome ? 'INCOME' : 'EXPENSE',
       nominal,
-      categoryName: smartCategory,
-      accountName:  akunName,
-      description:  data.description || data.destination || '-',
-      dateISO:      txDateISO,
-      timeHHMM:     txTimeHHMM,
+      categoryName:  smartCategory,
+      accountName:   akunName,
+      description:   data.description || data.destination || '-',
+      dateISO:       txDateISO,
+      timeHHMM:      txTimeHHMM,
+      paymentMethod: paymentMethod,
     });
 
     if (sfResult.status !== 'SUCCESS') {
@@ -265,9 +271,10 @@ async function processTransaction(data, source) {
     } catch (_) { /* Never let behavior logging crash the finance flow */ }
 
     const nominalFormatted = `Rp${nominal.toLocaleString('id-ID')}`;
+    const paymentMethodLine = paymentMethod ? `\n💳 <b>Metode:</b> ${paymentMethod}` : '';
     return {
       status: 'SUCCESS',
-      message: `✅ Transaksi <b>${tipeLabel}</b> sebesar <b>${nominalFormatted}</b> berhasil dicatat ke database Supabase (Akun: ${akunName}).`
+      message: `✅ Transaksi <b>${tipeLabel}</b> sebesar <b>${nominalFormatted}</b> berhasil dicatat ke database Supabase (Akun: ${akunName}).${paymentMethodLine}`
     };
   } catch (error) {
     console.error('[FINANCE] Failed to record transaction:', error.message);

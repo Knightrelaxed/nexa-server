@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
+import type { PaymentMethod } from "@/lib/supabase/types"
 import { Card } from "@/components/ui/card"
 import {
   ResponsiveContainer, AreaChart, Area,
@@ -488,9 +489,28 @@ export function DashboardView() {
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[12px] font-semibold">{t.category_name}</p>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#22d3ee] shrink-0" />
-                        <span className="text-[10px] text-muted-foreground truncate">{t.account_name}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#22d3ee] shrink-0" />
+                          <span className="text-[10px] text-muted-foreground truncate">{t.account_name}</span>
+                        </div>
+                        {t.payment_method && (() => {
+                          const pm = t.payment_method as PaymentMethod
+                          const styles: Record<string, string> = {
+                            'QRIS': 'bg-violet-100 text-violet-700',
+                            'Transfer bank': 'bg-blue-100 text-blue-700',
+                            'Kartu Kredit': 'bg-orange-100 text-orange-700',
+                            'Tunai': 'bg-green-100 text-green-700',
+                          }
+                          const shortLabel: Record<string, string> = {
+                            'QRIS': 'QRIS', 'Transfer bank': 'TF', 'Kartu Kredit': 'KK', 'Tunai': 'Tunai'
+                          }
+                          return (
+                            <span className={`inline-flex items-center px-1 py-0.5 rounded text-[9px] font-bold ${styles[pm] ?? ''}`}>
+                              {shortLabel[pm] ?? pm}
+                            </span>
+                          )
+                        })()}
                       </div>
                     </div>
                     <div className="text-right shrink-0">

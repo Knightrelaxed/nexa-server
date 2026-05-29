@@ -65,13 +65,14 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         setAccountId(initialData.account_id)
         setDate(initialData.transaction_date)
         if (initialData.transaction_time) setTime(initialData.transaction_time)
-        // paymentMethod is not currently stored in DB, but we keep its default
+        setPaymentMethod(initialData.payment_method ?? 'QRIS')
       } else {
         // Reset to default on new
         setAmount("")
         setDescription("")
         setDate(new Date().toISOString().slice(0, 10))
         setTime(new Date().toTimeString().slice(0, 5))
+        setPaymentMethod("QRIS")
       }
     }
   }, [open, initialData])
@@ -106,6 +107,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         transaction_date: date,
         transaction_time: time,
         description: description || undefined,
+        payment_method: type === "transfer" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod),
       }
 
       if (initialData && initialData.id) {
@@ -123,6 +125,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
       setDescription("")
       setDate(new Date().toISOString().slice(0, 10))
       setTime(new Date().toTimeString().slice(0, 5))
+      setPaymentMethod("QRIS")
     } catch (err) {
       toast.error("Gagal menyimpan catatan")
       console.error(err)
@@ -149,6 +152,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         transaction_date: date,
         transaction_time: time,
         description: description || undefined,
+        payment_method: type === "transfer" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod),
       })
       toast.success("Catatan tersimpan! Siap menambah lagi.")
       await refetchAccounts()

@@ -164,6 +164,7 @@ export async function fetchTransactions(
     transaction_date: row.transaction_date,
     transaction_time: row.transaction_time,
     description: row.description,
+    payment_method: row.payment_method ?? null,
     created_at: row.created_at,
     account_name: row.accounts?.name ?? '',
     category_name: row.categories?.name ?? '',

@@ -236,10 +236,11 @@ async function resolveCategoryId(categoryName, txType) {
  * @param {string} params.description - Catatan/deskripsi transaksi
  * @param {string} params.dateISO     - Tanggal format YYYY-MM-DD
  * @param {string} params.timeHHMM    - Waktu format HH:MM (opsional)
+ * @param {string} params.paymentMethod - Metode pembayaran: QRIS|Transfer bank|Kartu Kredit|Tunai (opsional)
  *
  * @returns {Promise<{status: 'SUCCESS'|'SKIPPED'|'ERROR', id?: string, reason?: string}>}
  */
-async function writeTransaction({ txType, nominal, categoryName, accountName, description, dateISO, timeHHMM }) {
+async function writeTransaction({ txType, nominal, categoryName, accountName, description, dateISO, timeHHMM, paymentMethod }) {
   if (!supabaseFinance) {
     return { status: 'SKIPPED', reason: 'Supabase Finance tidak dikonfigurasi' };
   }
@@ -276,6 +277,7 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
       transaction_date: dateISO,             // YYYY-MM-DD
       transaction_time: timeHHMM || null,    // HH:MM atau null
       description:      description || null,
+      payment_method:   paymentMethod || null, // QRIS | Transfer bank | Kartu Kredit | Tunai
     })
     .select('id')
     .single();

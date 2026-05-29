@@ -33,6 +33,8 @@ export interface DbCategory {
   created_at: string;
 }
 
+export type PaymentMethod = 'QRIS' | 'Transfer bank' | 'Kartu Kredit' | 'Tunai';
+
 export interface DbTransaction {
   id: string;
   account_id: string;
@@ -42,6 +44,7 @@ export interface DbTransaction {
   transaction_date: string; // ISO date string (YYYY-MM-DD)
   transaction_time: string | null;
   description: string | null;
+  payment_method: PaymentMethod | null;
   created_at: string;
 }
 

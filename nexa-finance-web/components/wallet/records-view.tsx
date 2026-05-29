@@ -13,6 +13,25 @@ import { useTransactions } from "@/hooks/use-finance-data"
 import { deleteTransactions } from "@/lib/supabase/mutations"
 import { toast } from "sonner"
 import { MonthSelector } from "./month-selector"
+import type { PaymentMethod } from "@/lib/supabase/types"
+
+const PAYMENT_METHOD_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  'QRIS':          { bg: 'bg-violet-100', text: 'text-violet-700', label: 'QRIS' },
+  'Transfer bank': { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Transfer' },
+  'Kartu Kredit':  { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Kredit' },
+  'Tunai':         { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Tunai' },
+}
+
+function PaymentBadge({ method }: { method: PaymentMethod | null | undefined }) {
+  if (!method) return null
+  const style = PAYMENT_METHOD_STYLE[method]
+  if (!style) return null
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${style.bg} ${style.text}`}>
+      {style.label}
+    </span>
+  )
+}
 import { FilterSidebar } from "./filter-sidebar"
 import { AddTransactionModal } from "./add-transaction-modal"
 import { cn } from "@/lib/utils"
@@ -307,9 +326,10 @@ export function RecordsView() {
                               <span className="text-[12px] text-muted-foreground truncate">{t.account_name}</span>
                             </div>
 
-                            {/* Description */}
-                            <div className="hidden md:block flex-1 min-w-0">
+                            {/* Description + Payment Method */}
+                            <div className="hidden md:flex flex-col flex-1 min-w-0 gap-0.5">
                               <span className="text-[12px] text-muted-foreground truncate">{t.description}</span>
+                              <PaymentBadge method={t.payment_method as PaymentMethod} />
                             </div>
 
                             {/* Amount + Time */}

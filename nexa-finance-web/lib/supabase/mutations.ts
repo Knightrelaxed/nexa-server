@@ -1,5 +1,5 @@
 import { supabase } from './client';
-import type { DbAccount, DbTransaction } from './types';
+import type { DbAccount, DbTransaction, PaymentMethod } from './types';
 
 // ----------------------------------------------------------------
 // Account mutations
@@ -81,6 +81,7 @@ export interface CreateTransactionInput {
   transaction_date: string; // YYYY-MM-DD
   transaction_time?: string;
   description?: string;
+  payment_method?: PaymentMethod | null;
 }
 
 /**
@@ -99,6 +100,7 @@ export async function createTransaction(
       transaction_date: data.transaction_date,
       transaction_time: data.transaction_time ?? null,
       description: data.description ?? null,
+      payment_method: data.payment_method ?? null,
     })
     .select()
     .single();
