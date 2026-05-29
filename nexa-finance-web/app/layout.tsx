@@ -3,7 +3,6 @@ import { Geist } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from 'sonner'
 import { SupabaseProvider } from '@/components/providers/supabase-provider'
-import { ThemeProvider } from '@/components/providers/theme-provider'
 import './globals.css'
 
 const geist = Geist({ subsets: ['latin'] })
@@ -69,12 +68,10 @@ export default function RootLayout({
         />
       </head>
       <body className={`${geist.className} antialiased`}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <SupabaseProvider>
-            {children}
-            <Toaster position="bottom-right" richColors closeButton />
-          </SupabaseProvider>
-        </ThemeProvider>
+        <SupabaseProvider>
+          {children}
+          <Toaster position="bottom-right" richColors closeButton />
+        </SupabaseProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

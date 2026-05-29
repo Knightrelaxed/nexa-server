@@ -2,7 +2,6 @@ import { Metadata } from 'next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SettingsCategories } from '@/components/settings/settings-categories';
 import { SettingsAccounts } from '@/components/settings/settings-accounts';
-import { SettingsPreferences } from '@/components/settings/settings-preferences';
 import { Topbar } from '@/components/wallet/topbar';
 
 export const metadata: Metadata = {
@@ -24,10 +23,9 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="categories" className="w-full">
-          <TabsList className="grid w-full sm:w-[400px] grid-cols-3 mb-6 bg-slate-100">
+          <TabsList className="grid w-full sm:w-[300px] grid-cols-2 mb-6 bg-slate-100">
             <TabsTrigger value="categories">Kategori</TabsTrigger>
             <TabsTrigger value="accounts">Akun</TabsTrigger>
-            <TabsTrigger value="preferences">Preferensi</TabsTrigger>
           </TabsList>
           
           <TabsContent value="categories" className="mt-0">
@@ -36,10 +34,6 @@ export default function SettingsPage() {
           
           <TabsContent value="accounts" className="mt-0">
             <SettingsAccounts />
-          </TabsContent>
-          
-          <TabsContent value="preferences" className="mt-0">
-            <SettingsPreferences />
           </TabsContent>
         </Tabs>
       </main>
