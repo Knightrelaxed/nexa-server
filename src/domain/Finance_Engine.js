@@ -563,7 +563,7 @@ let lastDeletedTransaction = null;
 function _findBestTransactionMatch(rows, keyword) {
   const kw = keyword ? String(keyword).toLowerCase().trim() : '';
   
-  if (kw === '' || /^(barusan|tadi|terakhir|terbaru|sebelumnya)$/.test(kw) || /transaksi (barusan|tadi|terakhir|terbaru)/.test(kw)) {
+  if (kw === '' || kw === 'latest') {
     return 0; // Supabase results are ordered newest first, so index 0 is newest
   }
   
