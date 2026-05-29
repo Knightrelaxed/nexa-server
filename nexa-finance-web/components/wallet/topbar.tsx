@@ -3,8 +3,9 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Wallet, Plus, LogOut, Server } from "lucide-react"
+import { Wallet, Plus, LogOut, Server, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { AddTransactionModal } from "./add-transaction-modal"
 import { cn } from "@/lib/utils"
 
@@ -31,8 +32,8 @@ export function Topbar() {
             </div>
           </Link>
 
-          {/* Tabs */}
-          <nav className="flex flex-1 min-w-0 items-center gap-1 sm:gap-4 overflow-x-auto no-scrollbar mask-fade-edges" aria-label="Navigasi utama">
+          {/* Tabs - Desktop Only */}
+          <nav className="hidden sm:flex flex-1 min-w-0 items-center gap-1 sm:gap-4 overflow-x-auto no-scrollbar mask-fade-edges" aria-label="Navigasi utama">
             {tabs.map((tab) => {
               const active = pathname === tab.href || (pathname === "/" && tab.href === "/dashboard")
               return (
@@ -84,6 +85,63 @@ export function Topbar() {
                   FINANCE
                 </span>
               </div>
+            </div>
+
+            {/* Mobile Hamburger Menu */}
+            <div className="sm:hidden flex items-center ml-1">
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-slate-600 hover:text-emerald-600 hover:bg-emerald-50">
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-[280px] p-0 border-l-0 sm:hidden">
+                  <SheetTitle className="sr-only">Navigasi Utama Mobile</SheetTitle>
+                  <div className="flex flex-col h-full bg-slate-50">
+                    <div className="flex h-16 items-center px-6 border-b border-border/40 bg-white">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-sm">
+                          <Wallet className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="font-black tracking-widest text-slate-800">NEXA<span className="text-emerald-500 ml-1">FINANCE</span></span>
+                      </div>
+                    </div>
+                    <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+                      {tabs.map((tab) => {
+                        const active = pathname === tab.href || (pathname === "/" && tab.href === "/dashboard")
+                        return (
+                          <SheetTrigger asChild key={tab.href}>
+                            <Link
+                              href={tab.href}
+                              className={cn(
+                                "flex items-center rounded-xl px-4 py-3.5 text-[15px] font-medium transition-all duration-200",
+                                active
+                                  ? "bg-emerald-100/60 text-emerald-700 shadow-sm shadow-emerald-100"
+                                  : "text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-sm"
+                              )}
+                            >
+                              {tab.label}
+                            </Link>
+                          </SheetTrigger>
+                        )
+                      })}
+                      
+                      <div className="pt-4 mt-4 border-t border-border/40">
+                        <SheetTrigger asChild>
+                          <Link href="#" className="flex items-center rounded-xl px-4 py-3.5 text-[15px] font-medium text-slate-600 hover:bg-white hover:text-slate-900 transition-all duration-200">
+                            Pengaturan
+                          </Link>
+                        </SheetTrigger>
+                        <SheetTrigger asChild>
+                          <Link href="#" className="flex items-center rounded-xl px-4 py-3.5 text-[15px] font-medium text-slate-600 hover:bg-white hover:text-slate-900 transition-all duration-200">
+                            Bantuan
+                          </Link>
+                        </SheetTrigger>
+                      </div>
+                    </nav>
+                  </div>
+                </SheetContent>
+              </Sheet>
             </div>
           </div>
         </div>
