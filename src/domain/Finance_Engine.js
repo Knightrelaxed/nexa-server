@@ -226,11 +226,22 @@ async function processTransaction(data, source) {
     // Apply smart categorization
     const smartCategory = await _autoCategorizeMerchant(data.destination || data.description, data.category);
 
-    // Nama akun: gunakan data.account jika ada (dari Telegram manual/AI Router),
-    // fallback ke 'Bank Mandiri Livin' jika sumber adalah Tasker/Gmail otomatis.
-    const akunName = data.account && String(data.account).trim()
-      ? String(data.account).trim()
-      : 'Bank Mandiri Livin';
+    // Nama akun: gunakan data.account jika ada (dari Telegram manual/AI Router).
+    // Jika otomatis dari Livin, paksa 'Bank Mandiri Livin'.
+    // Jika manual dan kosong, ambil akun aktif pertama dari database.
+    let akunName = data.account && String(data.account).trim() ? String(data.account).trim() : null;
+    if (!akunName) {
+      if (source === 'TASKER_LIVIN' || source === 'GMAIL_POLLING') {
+        akunName = 'Bank Mandiri Livin';
+      } else {
+        const accounts = await supabaseFinance.getAccountsList();
+        if (accounts && accounts.length > 0) {
+          akunName = accounts[0].name;
+        } else {
+          akunName = 'Tunai'; // Failsafe mutlak
+        }
+      }
+    }
 
     // ── DATABASE: Supabase Nexa Finance ────────────────────────────────────
     const txDateISO = transactionTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
