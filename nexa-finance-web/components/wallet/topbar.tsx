@@ -25,9 +25,9 @@ export function Topbar() {
         <div className="mx-auto flex h-16 sm:h-20 w-full max-w-[1440px] items-center px-4 sm:px-6 lg:px-8">
 
           {/* Logo */}
-          <Link href="/dashboard" className="group flex items-center gap-2 mr-4 sm:mr-8 shrink-0">
-            <div className="flex h-10 w-11 sm:h-11 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-md shadow-emerald-500/25 group-hover:shadow-emerald-500/40 group-active:scale-95 transition-all duration-300 cursor-pointer">
-              <Wallet className="h-5 w-5 sm:h-6 sm:w-6 text-white group-hover:scale-110 transition-transform duration-300" strokeWidth={2.5} />
+          <Link href="/dashboard" className="group flex items-center gap-2 mr-2 sm:mr-8 shrink-0">
+            <div className="flex h-9 w-10 sm:h-11 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-md shadow-emerald-500/25 group-hover:shadow-emerald-500/40 group-active:scale-95 transition-all duration-300 cursor-pointer">
+              <Wallet className="h-4 w-4 sm:h-6 sm:w-6 text-white group-hover:scale-110 transition-transform duration-300" strokeWidth={2.5} />
             </div>
           </Link>
 
@@ -40,7 +40,7 @@ export function Topbar() {
                   key={tab.href}
                   href={tab.href}
                   className={cn(
-                    "flex shrink-0 items-center justify-center rounded-full px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] transition-all duration-300 whitespace-nowrap",
+                    "flex shrink-0 items-center justify-center rounded-full px-3 py-1.5 sm:px-5 sm:py-2.5 text-[12px] sm:text-[14px] transition-all duration-300 whitespace-nowrap",
                     active
                       ? "bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-500/30"
                       : "text-muted-foreground hover:bg-emerald-50 font-medium hover:text-emerald-600",
@@ -54,14 +54,13 @@ export function Topbar() {
           </nav>
 
           {/* Right Actions */}
-          <div className="ml-2 sm:ml-auto flex items-center gap-3 sm:gap-4 shrink-0">
+          <div className="ml-1 sm:ml-auto flex items-center gap-2 sm:gap-4 shrink-0">
             <Button
               onClick={() => setModalOpen(true)}
-              className="group gap-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-4 shadow-lg shadow-emerald-500/25 h-9 sm:h-10 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300"
-              size="sm"
+              className="group gap-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold w-9 h-9 p-0 sm:w-auto sm:px-4 sm:h-10 shadow-lg shadow-emerald-500/25 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 shrink-0 flex items-center justify-center"
             >
-              <Plus className="h-4 w-4 sm:h-5 sm:w-5 group-hover:rotate-90 transition-transform duration-300" strokeWidth={3} />
-              <span className="hidden md:inline">Catatan Baru</span>
+              <Plus className="h-5 w-5 sm:h-5 sm:w-5 group-hover:rotate-90 transition-transform duration-300" strokeWidth={3} />
+              <span className="hidden sm:inline">Catatan Baru</span>
             </Button>
 
             {/* HuggingFace Server Logs Link */}
@@ -69,13 +68,14 @@ export function Topbar() {
               href="https://huggingface.co/spaces/nexa-asistant/NEXA-Core-Server?logs=container" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="flex items-center justify-center h-9 w-9 sm:h-10 sm:w-10 rounded-full border border-border bg-white hover:bg-slate-50 text-slate-500 hover:text-emerald-600 shadow-sm transition-all duration-300"
+              className="flex items-center justify-center h-9 w-9 sm:h-10 sm:w-10 rounded-full border border-border bg-white hover:bg-slate-50 text-slate-500 hover:text-emerald-600 shadow-sm transition-all duration-300 shrink-0"
               title="Lihat Log Server"
             >
               <Server className="h-4 w-4 sm:h-4 sm:w-4" />
             </Link>
 
-            <div className="flex items-center pl-2 sm:pl-4 sm:border-l border-border/60 select-none cursor-default">
+            {/* BRAND TEXT - HIDDEN ON MOBILE TO SAVE SPACE */}
+            <div className="hidden sm:flex items-center pl-2 sm:pl-4 sm:border-l border-border/60 select-none cursor-default">
               <div className="flex items-center">
                 <span className="text-[13px] sm:text-[15px] font-black tracking-[0.2em] text-slate-800 drop-shadow-sm">
                   NEXA
