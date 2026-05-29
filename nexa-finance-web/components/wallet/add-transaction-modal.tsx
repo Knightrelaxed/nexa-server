@@ -486,7 +486,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
 
               {/* Payment method */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Jenis Transaksi</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Metode Pembayaran</label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                   <SelectTrigger className="w-full">
                     <SelectValue />

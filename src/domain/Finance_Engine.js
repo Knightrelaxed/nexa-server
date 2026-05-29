@@ -17,28 +17,7 @@ let isPollingLivin = false;
 // on HF Docker. All Telegram sends from Finance_Engine must use sendTelegramOutbound() from
 // webhook.js which routes through the Cloudflare Worker proxy.
 
-const VALID_FINANCE_CATEGORIES = [
-  'Makanan dan minuman', 'Bar, kafe', 'Restoran, makanan cepat saji', 'Bahan makanan',
-  'Apotek, obat-obatan', 'Belanja', 'Waktu luang', 'Alat tulis, peralatan',
-  'Hadiah, kesenangan', 'Elektronik, aksesoris', 'Hewan peliharaan, hewan',
-  'Rumah, taman', 'Anak-anak', 'Kesehatan dan kecantikan', 'Perhiasan, aksesoris',
-  'Pakaian dan alas kaki', 'Asuransi properti', 'Perumahan', 'Perawatan, perbaikan',
-  'Layanan', 'Energi, utilitas', 'Hipotek', 'Sewa', 'Transportasi',
-  'Perjalanan dinas', 'Jarak jauh', 'Taksi', 'Transportasi umum', 'Leasing',
-  'Asuransi kendaraan', 'Kendaraan', 'Sewa-menyewa', 'Perawatan kendaraan',
-  'Parkir', 'Bahan bakar', 'Hiburan dan kehidupan', 'Lotere, judi',
-  'Alkohol, tembakau', 'Amal, hadiah', 'Liburan, perjalanan, hotel',
-  'TV, streaming', 'Buku, audio, langganan', 'Pendidikan, pengembangan diri',
-  'Hobi', 'Peristiwa hidup', 'Budaya, acara olahraga', 'Olahraga aktif, kebugaran',
-  'Kesehatan, kecantikan', 'Perawatan kesehatan, dokter', 'Komunikasi, PC',
-  'Layanan pos', 'Perangkat lunak, aplikasi, permainan', 'Internet',
-  'Telepon, ponsel', 'Pengeluaran keuangan', 'Biaya, tarif', 'Konsultasi',
-  'Denda', 'Pinjaman, bunga', 'Asuransi', 'Pajak', 'Investasi', 'Koleksi',
-  'Tabungan', 'Investasi keuangan', 'Kendaraan, barang bergerak', 'Properti',
-  'Pendapatan', 'Hadiah', 'Tunjangan anak', 'Pengembalian dana pajak, pembelian',
-  'Cek, kupon', 'Pendapatan dari meminjamkan', 'Iuran & hibah', 'Pendapatan sewa',
-  'Penjualan', 'Bunga, dividen', 'Gaji, faktur', 'Hilangan', 'Lainnya'
-];
+// VALID_FINANCE_CATEGORIES statis telah dihapus. Daftar ditarik dinamis dari DB.
 
 async function _autoCategorizeMerchant(merchantName, currentCategory) {
   // If user/AI Router already chose a valid specific category, keep it.
@@ -51,12 +30,16 @@ async function _autoCategorizeMerchant(merchantName, currentCategory) {
   // 100% AI-driven categorization — no rigid regex rules
   try {
     const { callAI } = require('../core/AI_Router');
+    const supabaseFinance = require('../infrastructure/Supabase_Finance');
+    const categories = await supabaseFinance.getCategoriesList();
+    const validCatNames = categories.map(c => c.name);
+
     const prompt = `Kamu adalah mesin kategorisasi transaksi keuangan. Analisa tujuan/catatan transaksi berikut dan pilih SATU kategori yang paling tepat.
 
 Transaksi: "${merchantName}"
 
 Daftar kategori (pilih SATU saja, tulis PERSIS):
-${VALID_FINANCE_CATEGORIES.map(c => `- ${c}`).join('\n')}
+${validCatNames.map(c => `- ${c}`).join('\n')}
 
 ATURAN:
 1. Gunakan inferensi cerdas. Contoh: "GRAB FOOD" → "Restoran, makanan cepat saji", "GRAB TRANSPORT" → "Taksi", "nge gym" → "Olahraga aktif, kebugaran", "Waroeng Emdje" → "Restoran, makanan cepat saji", "Bakmi Jowo" → "Restoran, makanan cepat saji", "Amira Fotocopy" → "Alat tulis, peralatan", "Bisnis Kab. Sumenep" → "Layanan", "nieta kitchen" → "Restoran, makanan cepat saji", "nasi Padang" → "Restoran, makanan cepat saji", "beli Ades" → "Makanan dan minuman", "Menghutangi aji" → "Pinjaman, bunga".
@@ -69,12 +52,12 @@ ATURAN:
     // Strip trailing period/punctuation
     cat = cat.replace(/[.!]+$/, '').trim();
 
-    if (VALID_FINANCE_CATEGORIES.includes(cat)) {
+    if (validCatNames.includes(cat)) {
       console.log(`[FINANCE] AI categorized "${merchantName}" → "${cat}"`);
       return cat;
     }
     // Fuzzy match: AI might return slightly different casing
-    const fuzzy = VALID_FINANCE_CATEGORIES.find(v => v.toLowerCase() === cat.toLowerCase());
+    const fuzzy = validCatNames.find(v => v.toLowerCase() === cat.toLowerCase());
     if (fuzzy) {
       console.log(`[FINANCE] AI categorized (fuzzy) "${merchantName}" → "${fuzzy}"`);
       return fuzzy;

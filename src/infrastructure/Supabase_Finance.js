@@ -53,6 +53,7 @@ async function _loadCategories() {
   const { data, error } = await supabaseFinance
     .from('categories')
     .select('id, name, type')
+    .eq('is_archived', false)
     .order('sort_order', { ascending: true });
 
   if (error) {
@@ -64,6 +65,13 @@ async function _loadCategories() {
   _categoryFetchedAt = now;
   console.log(`[SUPABASE_FINANCE] Categories cache refreshed: ${_categoryCache.length} kategori.`);
   return _categoryCache;
+}
+
+/**
+ * Mendapatkan daftar kategori aktif dari cache/database
+ */
+async function getCategoriesList() {
+  return await _loadCategories();
 }
 
 // ── Private: Load & Cache Accounts ───────────────────────────────────────────
@@ -657,5 +665,6 @@ module.exports = {
   resolveAccountId,
   resolveCategoryId,
   getAccountsList,
+  getCategoriesList,
   invalidateCache,
 };

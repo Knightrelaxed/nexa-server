@@ -80,8 +80,8 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Jika pengguna meminta MENCATAT transaksi baru ("catat pengeluaran..."), gunakan action "RECORD".
      //   → KHUSUS jika pengguna mengirim struk/gambar/teks dengan banyak item dan meminta "satu-satu dipisah" atau "pisahkan transaksinya", WAJIB gunakan action "RECORD_MULTIPLE" dan isi array "transactions" dengan objek masing-masing transaksi. DILARANG menggabungkan nominal jika disuruh memisah.
      //     - WAKTU: Jika tidak menyebut waktu, kosongkan time (otomatis sekarang). JIKA pengguna menyebut HARI/TANGGAL ("kemarin", "lusa", "tanggal 5") TANPA menyebutkan JAM yang spesifik, Anda WAJIB mengubah root intent menjadi "INCOMPLETE_INFO" dan tanyakan jam transaksinya.
-     //   → PENTING: Untuk action RECORD/EDIT/UPDATE_PENDING, pilih kategori spesifik dari opsi berikut: "Makanan dan minuman", "Bar, kafe", "Restoran, makanan cepat saji", "Bahan makanan", "Apotek, obat-obatan", "Belanja", "Waktu luang", "Alat tulis, peralatan", "Hadiah, kesenangan", "Elektronik, aksesoris", "Hewan peliharaan, hewan", "Rumah, taman", "Anak-anak", "Kesehatan dan kecantikan", "Perhiasan, aksesoris", "Pakaian dan alas kaki", "Asuransi properti", "Perumahan", "Perawatan, perbaikan", "Layanan", "Energi, utilitas", "Hipotek", "Sewa", "Transportasi", "Perjalanan dinas", "Jarak jauh", "Taksi", "Transportasi umum", "Leasing", "Asuransi kendaraan", "Kendaraan", "Sewa-menyewa", "Perawatan kendaraan", "Parkir", "Bahan bakar", "Hiburan dan kehidupan", "Lotere, judi", "Alkohol, tembakau", "Amal, hadiah", "Liburan, perjalanan, hotel", "TV, streaming", "Buku, audio, langganan", "Pendidikan, pengembangan diri", "Hobi", "Peristiwa hidup", "Budaya, acara olahraga", "Olahraga aktif, kebugaran", "Kesehatan, kecantikan", "Perawatan kesehatan, dokter", "Komunikasi, PC", "Layanan pos", "Perangkat lunak, aplikasi, permainan", "Internet", "Telepon, ponsel", "Pengeluaran keuangan", "Biaya, tarif", "Konsultasi", "Denda", "Pinjaman, bunga", "Asuransi", "Pajak", "Investasi", "Koleksi", "Tabungan", "Investasi keuangan", "Kendaraan, barang bergerak", "Properti", "Pendapatan", "Hadiah", "Tunjangan anak", "Pengembalian dana pajak, pembelian", "Cek, kupon", "Pendapatan dari meminjamkan", "Iuran & hibah", "Pendapatan sewa", "Penjualan", "Bunga, dividen", "Gaji, faktur", "Hilangan", "Lainnya".
-     //     - ATURAN KATEGORI: DILARANG KERAS menggunakan kategori "Lainnya" atau "Uncategorized" kecuali benar-benar tidak ada yang mendekati. Gunakan kemampuan inferensi Anda (misal: "Spotify" -> "TV, streaming", "Gojek" -> "Transportasi", "Amira Fotocopy" -> "Layanan pos" / "Alat tulis"). Analisa tujuan/catatannya dengan cerdas!
+     //   → PENTING: Untuk action RECORD/EDIT/UPDATE_PENDING, pilih kategori spesifik HANYA dari opsi daftar [KATEGORI TRANSAKSI AKTIF].
+     //     - ATURAN KATEGORI: DILARANG KERAS menggunakan kategori "Lainnya" atau "Uncategorized" kecuali benar-benar tidak ada yang mendekati dari daftar [KATEGORI TRANSAKSI AKTIF]. Gunakan kemampuan inferensi Anda. Analisa tujuan/catatannya dengan cerdas!
      //   → AKUN (field "account"): WAJIB diisi jika pengguna menyebutkan nama akun/dompet/bank. Jika pengguna TIDAK menyebutkannya, periksa daftar [AKUN KEUANGAN AKTIF]. Jika ada lebih dari 1 akun aktif, Anda WAJIB mengubah root intent menjadi "INCOMPLETE_INFO" dan menanyakan Tuan Faqih akun mana yang ingin digunakan. Jika hanya ada 1 akun aktif, KOSONGKAN field "account".
      //   → Gunakan action "READ_LATEST" jika pengguna meminta melihat/menampilkan data transaksi. WAJIB sertakan: "date_text" (misal: "kemarin", "hari ini", "tanggal 14"), "search_keyword" (kata kunci nama/merchant), "type" ("INCOME"|"EXPENSE"), dan "category" JIKA disebutkan oleh pengguna. Jika pengguna meminta spesifik jumlah (misal "terakhir", "1 saja", "3 transaksi"), WAJIB isi field "limit" dengan angka (1, 3, dst). Jika tidak, biarkan null.
      //   → Gunakan action "READ_ANALYTICS" jika pengguna meminta laporan total pemasukan, pengeluaran, saldo akhir, atau "analitik keuangan".
@@ -309,8 +309,9 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // Runs in parallel — zero sequential latency penalty.
   let crossDomainBlock = '';
   let activeAccountsBlock = '';
+  let activeCategoriesBlock = '';
   try {
-    const [recentTxResult, upcomingEvResult, accountsResult] = await Promise.allSettled([
+    const [recentTxResult, upcomingEvResult, accountsResult, categoriesResult] = await Promise.allSettled([
       _fetchRecentFinanceSummary(3),
       _fetchUpcomingEventsSummary(3),
       // Load daftar akun aktif dari Supabase Finance (dengan cache)
@@ -318,6 +319,13 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
         try {
           const supabaseFinance = require('../infrastructure/Supabase_Finance');
           return await supabaseFinance.getAccountsList();
+        } catch (_) { return []; }
+      })(),
+      // Load daftar kategori aktif dari Supabase Finance
+      (async () => {
+        try {
+          const supabaseFinance = require('../infrastructure/Supabase_Finance');
+          return await supabaseFinance.getCategoriesList();
         } catch (_) { return []; }
       })()
     ]);
@@ -336,6 +344,12 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     if (accountsResult.status === 'fulfilled' && accountsResult.value && accountsResult.value.length > 0) {
       const accountLines = accountsResult.value.map(a => `- ${a.name} (${a.type})`).join('\n');
       activeAccountsBlock = `\n[AKUN KEUANGAN AKTIF — PAKAI NAMA PERSIS INI UNTUK FIELD "account" DI FINANCE]\n${accountLines}\nCatatan: Jika user menyebut nama akun/dompet/bank yang mirip salah satu di atas, petakan ke nama yang paling cocok.\n`;
+    }
+
+    // Bangun blok kategori aktif jika ada data
+    if (categoriesResult.status === 'fulfilled' && categoriesResult.value && categoriesResult.value.length > 0) {
+      const catLines = categoriesResult.value.map(c => `- ${c.name} (${c.type})`).join('\n');
+      activeCategoriesBlock = `\n[KATEGORI TRANSAKSI AKTIF — PAKAI NAMA PERSIS INI UNTUK FIELD "category" DI FINANCE]\n${catLines}\n`;
     }
   } catch (_) { /* Non-critical — never crash routing */ }
 
@@ -379,7 +393,7 @@ ISO Date Hari Ini: ${currentJakartaISO}
 ${miniCalStr}
 (Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)
 
-${factsContext}${activeAccountsBlock}${sentimentBlock}${crossDomainBlock}
+${factsContext}${activeAccountsBlock}${activeCategoriesBlock}${sentimentBlock}${crossDomainBlock}
 [RIWAYAT KONTEKS RUNTIME]
 ${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
 
