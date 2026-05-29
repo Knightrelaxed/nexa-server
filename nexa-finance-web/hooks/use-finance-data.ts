@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   fetchAccounts,
   fetchCategories,
@@ -178,16 +178,16 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
   }, [load]);
 
   // Group by date
-  const grouped = transactions.reduce<GroupedTransactions>((acc, tx) => {
+  const grouped = useMemo(() => transactions.reduce<GroupedTransactions>((acc, tx) => {
     const key = tx.transaction_date;
     if (!acc[key]) acc[key] = [];
     acc[key].push(tx);
     return acc;
-  }, {});
+  }, {}), [transactions]);
 
-  const totalAmount = transactions.reduce((sum, tx) => {
+  const totalAmount = useMemo(() => transactions.reduce((sum, tx) => {
     return tx.type === 'income' ? sum + tx.amount : sum - tx.amount;
-  }, 0);
+  }, 0), [transactions]);
 
   return {
     transactions,
