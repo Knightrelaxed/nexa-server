@@ -28,14 +28,23 @@ export function Topbar() {
         <div className="mx-auto flex h-16 sm:h-20 w-full max-w-[1440px] items-center px-4 sm:px-6 lg:px-8">
 
           {/* Logo */}
-          <Link href="/dashboard" className="group flex items-center gap-2 mr-2 sm:mr-8 shrink-0">
+          <Link href="/dashboard" className="group flex items-center gap-2.5 mr-2 sm:mr-8 shrink-0">
             <Image 
               src="/icons/icon-192x192.png" 
               alt="Nexa Finance Logo" 
               width={48} 
               height={48} 
-              className="w-10 h-10 sm:w-12 sm:h-12 drop-shadow-md group-hover:scale-110 group-active:scale-95 transition-all duration-300 cursor-pointer"
+              className="w-9 h-9 sm:w-11 sm:h-11 drop-shadow-md group-hover:scale-105 group-active:scale-95 transition-all duration-300 cursor-pointer"
             />
+            {/* Brand Text - Hidden on mobile to save space */}
+            <div className="hidden sm:flex items-center select-none cursor-pointer">
+              <span className="text-[15px] lg:text-[17px] font-black tracking-[0.15em] text-slate-800 drop-shadow-sm transition-colors group-hover:text-emerald-600">
+                NEXA
+              </span>
+              <span className="text-[15px] lg:text-[17px] font-bold tracking-[0.15em] text-emerald-500 ml-1.5 drop-shadow-sm">
+                FINANCE
+              </span>
+            </div>
           </Link>
 
           {/* Tabs - Desktop Only */}
@@ -81,17 +90,6 @@ export function Topbar() {
               <Server className="h-4 w-4 sm:h-4 sm:w-4" />
             </Link>
 
-            {/* BRAND TEXT - HIDDEN ON MOBILE TO SAVE SPACE */}
-            <div className="hidden sm:flex items-center pl-2 sm:pl-4 sm:border-l border-border/60 select-none cursor-default">
-              <div className="flex items-center">
-                <span className="text-[13px] sm:text-[15px] font-black tracking-[0.2em] text-slate-800 drop-shadow-sm">
-                  NEXA
-                </span>
-                <span className="text-[13px] sm:text-[15px] font-semibold tracking-[0.2em] text-emerald-500 ml-1.5 drop-shadow-sm">
-                  FINANCE
-                </span>
-              </div>
-            </div>
 
             {/* Mobile Hamburger Menu */}
             <div className="sm:hidden flex items-center ml-1">
