@@ -16,8 +16,10 @@ jobs:
       - name: Push to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # GANTI INI JIKA USERNAME/NAMA SPACE BERBEDA:
-          HF_USERNAME: nexa-asistant
+          # Username pemilik token (akun pribadi):
+          HF_AUTH_USER: Knightrelaxed
+          # Pemilik/organisasi Space di HF:
+          HF_SPACE_OWNER: nexa-asistant
           HF_SPACE_NAME: NEXA-Core-Server
         run: |
-          git push --force https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME main
+          git push --force https://$HF_AUTH_USER:$HF_TOKEN@huggingface.co/spaces/$HF_SPACE_OWNER/$HF_SPACE_NAME main
