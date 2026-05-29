@@ -57,6 +57,25 @@ export async function fetchAccounts(): Promise<AccountWithBalance[]> {
 }
 
 // ----------------------------------------------------------------
+// Account Mutations
+// ----------------------------------------------------------------
+
+export async function createAccount(data: { name: string; type: string; initial_balance: number }) {
+  const { error } = await supabase.from('accounts').insert([data]);
+  if (error) throw error;
+}
+
+export async function updateAccount(id: string, data: { name?: string; type?: string; initial_balance?: number }) {
+  const { error } = await supabase.from('accounts').update(data).eq('id', id);
+  if (error) throw error;
+}
+
+export async function archiveAccount(id: string) {
+  const { error } = await supabase.from('accounts').update({ is_archived: true }).eq('id', id);
+  if (error) throw error;
+}
+
+// ----------------------------------------------------------------
 // Categories
 // ----------------------------------------------------------------
 
@@ -67,11 +86,31 @@ export async function fetchCategories(): Promise<DbCategory[]> {
   const { data, error } = await supabase
     .from('categories')
     .select('*')
+    .eq('is_archived', false)
     .order('type', { ascending: true })
     .order('sort_order', { ascending: true });
 
   if (error) throw error;
   return (data ?? []) as DbCategory[];
+}
+
+// ----------------------------------------------------------------
+// Category Mutations
+// ----------------------------------------------------------------
+
+export async function createCategory(data: { name: string; type: string; icon_key?: string; icon_bg?: string; icon_color?: string; group_name?: string }) {
+  const { error } = await supabase.from('categories').insert([data]);
+  if (error) throw error;
+}
+
+export async function updateCategory(id: string, data: Partial<{ name: string; type: string; icon_key: string; icon_bg: string; icon_color: string; group_name: string }>) {
+  const { error } = await supabase.from('categories').update(data).eq('id', id);
+  if (error) throw error;
+}
+
+export async function archiveCategory(id: string) {
+  const { error } = await supabase.from('categories').update({ is_archived: true }).eq('id', id);
+  if (error) throw error;
 }
 
 // ----------------------------------------------------------------

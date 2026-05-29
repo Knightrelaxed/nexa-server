@@ -29,6 +29,7 @@ export interface DbCategory {
   icon_color: string | null;
   color_hex: string | null;
   sort_order: number;
+  is_archived?: boolean;
   created_at: string;
 }
 

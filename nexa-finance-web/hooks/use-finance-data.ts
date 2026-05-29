@@ -104,12 +104,28 @@ export interface UseCategoriesReturn {
   categories: DbCategory[];
   loading: boolean;
   error: string | null;
+  refetch: () => Promise<void>;
 }
 
 export function useCategories(): UseCategoriesReturn {
   const [categories, setCategories] = useState<DbCategory[]>(_categoriesCache ?? []);
   const [loading, setLoading] = useState(_categoriesCache === null);
   const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      if (!isSupabaseConfigured) { setLoading(false); return; }
+      const data = await fetchCategories();
+      _categoriesCache = data;
+      setCategories(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load categories');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     // Jika cache sudah ada, tidak perlu fetch sama sekali
@@ -148,7 +164,7 @@ export function useCategories(): UseCategoriesReturn {
     return () => { cancelled = true }
   }, []);
 
-  return { categories, loading, error };
+  return { categories, loading, error, refetch: load };
 }
 
 // ----------------------------------------------------------------

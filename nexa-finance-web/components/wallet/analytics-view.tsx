@@ -101,61 +101,67 @@ export function AnalyticsView() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 min-w-0 space-y-6">
+      <div className="flex-1 min-w-0 space-y-4">
+
         {/* Header / Date Selector */}
-        <div className="relative z-50 flex justify-between items-center bg-white/50 backdrop-blur-sm p-2 rounded-2xl border border-border/50 shadow-sm">
-          <h1 className="text-xl font-bold ml-3 text-slate-800">Ringkasan Finansial</h1>
+        <div className="relative z-50 flex flex-wrap items-center justify-between gap-3 bg-white/70 backdrop-blur-sm px-4 py-3 rounded-2xl border border-border/50 shadow-sm">
+          <h1 className="text-lg font-bold text-slate-800 leading-tight">Ringkasan Finansial</h1>
           <MonthSelector selectedMonth={selectedMonth} onChange={setSelectedMonth} />
         </div>
 
-        {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Card className="group border-none shadow-md shadow-emerald-500/5 bg-gradient-to-br from-white to-emerald-50/50 hover:shadow-emerald-500/10 transition-all duration-300">
-          <CardContent className="p-5 relative overflow-hidden">
-            <div className="absolute -right-4 -top-4 w-16 h-16 bg-emerald-100 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-500" />
-            <p className="text-xs font-medium text-slate-500 relative z-10">Tingkat Tabungan</p>
-            <p className="mt-2 text-2xl sm:text-3xl font-black text-emerald-500 relative z-10">{savingsRate.toFixed(1)}%</p>
-            <p className="mt-1 flex items-center gap-1 text-xs font-medium text-emerald-600 relative z-10">
-              <TrendingUp className="h-3.5 w-3.5" /> Normal
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="group border-none shadow-md shadow-orange-500/5 bg-gradient-to-br from-white to-orange-50/50 hover:shadow-orange-500/10 transition-all duration-300">
-          <CardContent className="p-5 relative overflow-hidden">
-            <div className="absolute -right-4 -top-4 w-16 h-16 bg-orange-100 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-500" />
-            <p className="text-xs font-medium text-slate-500 relative z-10">Rata-rata Harian</p>
-            <p className="mt-2 text-2xl sm:text-3xl font-black text-slate-800 relative z-10">{formatIDRCompact(avgDaily)}</p>
-            <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-500 relative z-10">
-              <Activity className="h-3.5 w-3.5" /> Bulan ini
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="group border-none shadow-md shadow-blue-500/5 bg-gradient-to-br from-white to-blue-50/50 hover:shadow-blue-500/10 transition-all duration-300">
-          <CardContent className="p-5 relative overflow-hidden">
-            <div className="absolute -right-4 -top-4 w-16 h-16 bg-blue-100 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-500" />
-            <p className="text-xs font-medium text-slate-500 relative z-10">Pengeluaran Terbesar</p>
-            <p className="mt-2 truncate text-xl sm:text-2xl font-black text-slate-800 flex items-center gap-2 relative z-10">
-              {byCategory[0]?.icon &&
-                (() => {
-                  const Icon = byCategory[0].icon
-                  return <Icon className="h-5 w-5 text-blue-500" strokeWidth={2.5} />
-                })()}
-              {byCategory[0]?.name.split(" ")[0] || "-"}
-            </p>
-            <p className="mt-1 text-xs font-medium text-slate-500 relative z-10">{formatIDRCompact(byCategory[0]?.value || 0)}</p>
-          </CardContent>
-        </Card>
-        <Card className="group border-none shadow-md shadow-purple-500/5 bg-gradient-to-br from-white to-purple-50/50 hover:shadow-purple-500/10 transition-all duration-300">
-          <CardContent className="p-5 relative overflow-hidden">
-            <div className="absolute -right-4 -top-4 w-16 h-16 bg-purple-100 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-500" />
-            <p className="text-xs font-medium text-slate-500 relative z-10">Total Transaksi</p>
-            <p className="mt-2 text-2xl sm:text-3xl font-black text-slate-800 relative z-10">{transactions.length}</p>
-            <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-500 relative z-10">
-              <Activity className="h-3.5 w-3.5" /> {selectedMonth.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+        {/* KPI Grid */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Card className="group border-none shadow-md shadow-emerald-500/5 bg-gradient-to-br from-white to-emerald-50/50 hover:shadow-emerald-500/10 transition-all duration-300">
+            <CardContent className="p-4 relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 w-16 h-16 bg-emerald-100 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-500" />
+              <p className="text-xs font-medium text-slate-500 relative z-10">Tingkat Tabungan</p>
+              <p className="mt-2 text-2xl sm:text-3xl font-black text-emerald-500 relative z-10">{savingsRate.toFixed(1)}%</p>
+              <p className="mt-1 flex items-center gap-1 text-xs font-medium text-emerald-600 relative z-10">
+                <TrendingUp className="h-3 w-3" /> Normal
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="group border-none shadow-md shadow-orange-500/5 bg-gradient-to-br from-white to-orange-50/50 hover:shadow-orange-500/10 transition-all duration-300">
+            <CardContent className="p-4 relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 w-16 h-16 bg-orange-100 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-500" />
+              <p className="text-xs font-medium text-slate-500 relative z-10">Rata-rata Harian</p>
+              <p className="mt-2 text-2xl sm:text-3xl font-black text-slate-800 relative z-10">{formatIDRCompact(avgDaily)}</p>
+              <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-500 relative z-10">
+                <Activity className="h-3 w-3" /> Bulan ini
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="group border-none shadow-md shadow-blue-500/5 bg-gradient-to-br from-white to-blue-50/50 hover:shadow-blue-500/10 transition-all duration-300">
+            <CardContent className="p-4 relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 w-16 h-16 bg-blue-100 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-500" />
+              <p className="text-xs font-medium text-slate-500 relative z-10">Pengeluaran Terbesar</p>
+              <div className="mt-2 flex items-center gap-1.5 relative z-10">
+                {byCategory[0]?.icon &&
+                  (() => {
+                    const Icon = byCategory[0].icon
+                    return <Icon className="h-5 w-5 shrink-0 text-blue-500" strokeWidth={2.5} />
+                  })()}
+                <p className="truncate text-xl sm:text-2xl font-black text-slate-800">
+                  {byCategory[0]?.name.split(" ")[0] || "-"}
+                </p>
+              </div>
+              <p className="mt-1 text-xs font-medium text-slate-500 relative z-10">{formatIDRCompact(byCategory[0]?.value || 0)}</p>
+            </CardContent>
+          </Card>
+
+          <Card className="group border-none shadow-md shadow-purple-500/5 bg-gradient-to-br from-white to-purple-50/50 hover:shadow-purple-500/10 transition-all duration-300">
+            <CardContent className="p-4 relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 w-16 h-16 bg-purple-100 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-500" />
+              <p className="text-xs font-medium text-slate-500 relative z-10">Total Transaksi</p>
+              <p className="mt-2 text-2xl sm:text-3xl font-black text-slate-800 relative z-10">{transactions.length}</p>
+              <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-500 relative z-10">
+                <Activity className="h-3 w-3" /> {selectedMonth.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
       {/* Cashflow trend */}
       <Card className="border-border/40 shadow-sm overflow-hidden">
@@ -292,21 +298,20 @@ export function AnalyticsView() {
         </Card>
       </div>
 
-      {/* Daily spending */}
-      {/* Daily spending */}
-      <Card className="border-border/40 shadow-sm overflow-hidden mb-8">
+      {/* Kalender Pengeluaran Harian */}
+      <Card className="border-border/40 shadow-sm overflow-hidden">
         <CardHeader className="pb-4 bg-slate-50/50 border-b border-border/40">
           <CardTitle className="text-lg font-bold text-slate-800">Kalender Pengeluaran Harian</CardTitle>
           <p className="text-xs font-medium text-slate-500">Pola pengeluaran sepanjang bulan</p>
         </CardHeader>
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 pb-4">
           <div className="h-56 w-full sm:h-72">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={dailySpending} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="day" fontSize={12} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} interval={4} dy={10} />
+                <XAxis dataKey="day" fontSize={11} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} interval={4} dy={10} />
                 <YAxis
-                  fontSize={12}
+                  fontSize={11}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fill: '#64748b' }}
@@ -333,6 +338,7 @@ export function AnalyticsView() {
           </div>
         </CardContent>
       </Card>
+
       </div>
     </div>
   )
