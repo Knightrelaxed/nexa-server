@@ -1221,8 +1221,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       } catch (_) {}
 
       const { classifyPendingTransactionIntent } = require('../core/AI_Router');
-      const intent = await classifyPendingTransactionIntent(textInput, pendingTxContext);
-      console.log(`[FINANCE INTERCEPTOR] AI classified intent: "${intent}" for input: "${textInput}"`);
+      const parsedData = await classifyPendingTransactionIntent(textInput, pendingTxContext);
+      const intent = parsedData.intent;
+      console.log(`[FINANCE INTERCEPTOR] AI classified intent: "${intent}" for input: "${textInput}"`, parsedData.updates);
 
       if (intent === 'CONFIRM') {
         const confirmReply = await financeEngine.confirmPendingTransactions(true);
@@ -1234,8 +1235,15 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         await respondToTelegram(cancelReply || '❌ Transaksi dibatalkan.');
         clearTimeout(safetyTimer);
         return;
-      } else if (intent === 'DESCRIPTION') {
-        const updatedMsg = await financeEngine.updatePendingTransaction(textInput, null, null);
+      } else if (intent === 'UPDATE') {
+        const up = parsedData.updates || {};
+        const updatedMsg = await financeEngine.updatePendingTransaction(
+          up.description || null,
+          up.category || null,
+          null, // nominal
+          up.account || null,
+          up.payment_method || null
+        );
         if (updatedMsg) {
           await respondToTelegram(updatedMsg);
           clearTimeout(safetyTimer);

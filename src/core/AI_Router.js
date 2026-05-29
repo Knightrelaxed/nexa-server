@@ -75,7 +75,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
   "extracted_data": {
      // FINANCE: { action: "RECORD"|"RECORD_MULTIPLE"|"READ_LATEST"|"READ_ANALYTICS"|"EDIT"|"DELETE"|"UNDO_DELETE"|"IMPORT_FROM_EMAIL"|"CONFIRM_TRANSACTION"|"UPDATE_PENDING"|"CANCEL_TRANSACTION", nominal: number, type: "INCOME"|"EXPENSE", destination: string, category: string, description: string, time: string (ISO), account: string (NAMA AKUN PERSIS dari daftar [AKUN KEUANGAN AKTIF] atau kosong jika tidak disebutkan), payment_method: "QRIS"|"Transfer bank"|"Kartu Kredit"|"Tunai"|null, search_keyword: string, date_text: string, limit: number, transactions: [{"nominal": number, "type": "INCOME"|"EXPENSE", "destination": "string", "category": "string", "description": "string", "time": "string", "account": "string", "payment_method": "QRIS"|"Transfer bank"|"Kartu Kredit"|"Tunai"|null}] }
      //   → Jika pengguna MENGKONFIRMASI ("masukkan", "ya", "benar", "simpan") untuk menanggapi transaksi tertunda, WAJIB gunakan "CONFIRM_TRANSACTION". Ini akan LANGSUNG menyimpan data.
-     //   → Jika pengguna MENGOREKSI/MENAMBAH DETAIL/NOMINAL transaksi tertunda ("koreksi: itu buat beli sate", "kategorinya charity", "salah, harusnya 60rb"), WAJIB gunakan "UPDATE_PENDING" beserta field "description", "category", dan/atau "nominal" yang diubah. Ini akan mengupdate data tertunda.
+     //   → Jika pengguna MENGOREKSI/MENAMBAH DETAIL transaksi tertunda, WAJIB gunakan "UPDATE_PENDING" beserta field yang relevan. PENTING: JANGAN MENGISI field "description" jika pengguna HANYA menjawab metode pembayaran atau nama akun (misal: "pake qris bro", "pakai livin"). Isi HANYA "payment_method" atau "account", dan biarkan field lain kosong (null) agar catatan lama tidak tertimpa!
      //   → Jika pengguna MEMBATALKAN/MENOLAK transaksi tertunda ("batalkan", "batal", "jangan"), WAJIB gunakan "CANCEL_TRANSACTION".
      //   → Jika pengguna meminta MENCATAT transaksi baru ("catat pengeluaran..."), gunakan action "RECORD".
      //   → KHUSUS jika pengguna mengirim struk/gambar/teks dengan banyak item dan meminta "satu-satu dipisah" atau "pisahkan transaksinya", WAJIB gunakan action "RECORD_MULTIPLE" dan isi array "transactions" dengan objek masing-masing transaksi. DILARANG menggabungkan nominal jika disuruh memisah.
@@ -88,7 +88,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //     - "kartu kredit", "gesek kartu", "pake kartu", "tap kartu", "cicil", "kredit", "pakai CC" → "Kartu Kredit"
      //     - "tunai", "cash", "uang cash", "bayar cash", "uang fisik", "bayar langsung", "pegang uang" → "Tunai"
      //     - Jika TIDAK disebutkan sama sekali oleh user: isi null (sistem akan gunakan default QRIS)
-     //   → AKUN (field "account"): WAJIB diisi jika pengguna menyebutkan nama akun/dompet/bank. Jika pengguna TIDAK menyebutkannya, periksa daftar [AKUN KEUANGAN AKTIF]. Jika ada lebih dari 1 akun aktif, JANGAN gunakan "INCOMPLETE_INFO". Tetap gunakan "RECORD" tetapi KOSONGKAN field "account". Sistem akan membuat transaksi tertunda dan otomatis bertanya kepada pengguna. Jika hanya ada 1 akun aktif, KOSONGKAN field "account".
+     //   → AKUN (field "account"): Ekstrak persis sesuai nama di daftar [AKUN KEUANGAN AKTIF]. Jika pengguna menyebutkan akun yang TIDAK ADA di daftar (misal akun fiktif), atau tidak menyebutkan sama sekali, KOSONGKAN field "account" dan TETAP gunakan intent "FINANCE" dengan action "RECORD". JANGAN PERNAH gunakan "INCOMPLETE_INFO" untuk transaksi keuangan yang informasinya kurang (biarkan backend yang bertanya).
      //   → Gunakan action "READ_LATEST" jika pengguna meminta melihat/menampilkan data transaksi. WAJIB sertakan: "date_text" (misal: "kemarin", "hari ini", "tanggal 14"), "search_keyword" (kata kunci nama/merchant), "type" ("INCOME"|"EXPENSE"), dan "category" JIKA disebutkan oleh pengguna. Jika pengguna meminta spesifik jumlah (misal "terakhir", "1 saja", "3 transaksi"), WAJIB isi field "limit" dengan angka (1, 3, dst). Jika tidak, biarkan null.
      //   → Gunakan action "READ_ANALYTICS" jika pengguna meminta laporan total pemasukan, pengeluaran, saldo akhir, atau "analitik keuangan".
      //   → Gunakan action "CATEGORY_BREAKDOWN" jika pengguna menanyakan pengeluaran per kategori, kategori terbesar, atau "paling banyak dibelanjakan untuk apa". Sertakan "date_text" jika disebutkan.
@@ -484,32 +484,43 @@ async function classifyPendingTransactionIntent(userText, pendingTx = {}) {
     ? `Rp${pendingTx.nominal} ke/dari ${pendingTx.destination}`
     : '(transaksi tidak diketahui)';
 
-  const systemPrompt = `Kamu adalah classifier niat yang sangat akurat.
+  const systemPrompt = `Kamu adalah classifier dan parser niat yang sangat akurat.
 User baru saja menerima notifikasi transaksi keuangan senilai ${txSummary} yang MENUNGGU KONFIRMASI.
-User kemudian membalas dengan pesan singkat.
-Tugasmu: Tentukan NIAT user dari balasannya.
+User kemudian membalas dengan pesan singkat. Tugasmu: Tentukan NIAT user dan ekstrak data yang relevan.
 
-Aturan:
+Aturan Niat (intent):
 - CONFIRM  → user ingin MENYIMPAN / mengkonfirmasi transaksi tersebut.
-  Contoh: "ya", "oke", "masukkan", "masukan", "catat", "simpan", "lanjut", "gas", "done", "save", "acc", dll.
+  Contoh: "ya", "oke", "masukkan", "masukan", "catat", "simpan", "lanjut", "gas", "done", "save", "acc"
 - CANCEL   → user ingin MEMBATALKAN / menolak transaksi tersebut.
-  Contoh: "batal", "jangan", "tidak", "ga", "gak", "hapus", "cancel", "skip", dll.
-- DESCRIPTION → user memberikan deskripsi, keterangan, atau kategori BARU untuk transaksi tersebut.
-  Biasanya berupa kalimat 2+ kata atau penjelasan tujuan transaksi.
-  Contoh: "untuk beli makan siang", "bayar parkir kampus", "kategori transportasi", dll.
-- AMBIGUOUS → tidak jelas / tidak relevan / pertanyaan baru yang tidak berhubungan dengan transaksi ini.
+  Contoh: "batal", "jangan", "tidak", "ga", "gak", "hapus", "cancel", "skip"
+- UPDATE   → user memberikan deskripsi, keterangan, metode pembayaran, akun, atau kategori BARU untuk transaksi tersebut.
+  Contoh: "untuk beli makan siang", "pake tunai", "bayar qris", "kategori makanan", "bank bca", "tunai"
+- AMBIGUOUS → tidak jelas / pertanyaan baru / tidak relevan.
 
-BALAS HANYA dengan satu kata: CONFIRM, CANCEL, DESCRIPTION, atau AMBIGUOUS. Jangan tambahkan penjelasan apapun.`;
+PENTING: Balas HARUS dengan format JSON valid seperti berikut:
+{
+  "intent": "CONFIRM" | "CANCEL" | "UPDATE" | "AMBIGUOUS",
+  "updates": {
+    "description": "isi jika user memberi deskripsi/catatan (contoh: 'beli rokok dua batang')",
+    "category": "isi jika user menyebut kategori",
+    "payment_method": "isi jika user menyebut metode pembayaran (contoh: 'tunai', 'qris', 'transfer')",
+    "account": "isi jika user menyebut nama bank/dompet (contoh: 'bank livin', 'bca', 'dana')"
+  }
+}
+Biarkan field di dalam 'updates' bernilai null jika user tidak menyebutkannya.`;
 
   try {
-    const result = await executeWithFallback(userText, systemPrompt, 0.0, false); // jsonMode=false: classifiers return plain text, not JSON
-    const clean = String(result).trim().toUpperCase().replace(/[^A-Z]/g, '');
-    if (['CONFIRM', 'CANCEL', 'DESCRIPTION', 'AMBIGUOUS'].includes(clean)) return clean;
-    console.warn(`[CLASSIFIER] Unexpected classification result: "${result}". Defaulting to AMBIGUOUS.`);
-    return 'AMBIGUOUS';
+    const result = await executeWithFallback(userText, systemPrompt, 0.1, true); // jsonMode=true
+    let clean = String(result).replace(/```json/gi, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    
+    if (!['CONFIRM', 'CANCEL', 'UPDATE', 'AMBIGUOUS'].includes(parsed.intent)) {
+       parsed.intent = 'AMBIGUOUS';
+    }
+    return parsed;
   } catch (e) {
     console.error('[CLASSIFIER] classifyPendingTransactionIntent failed:', e.message);
-    return 'AMBIGUOUS';
+    return { intent: 'AMBIGUOUS', updates: {} };
   }
 }
 
