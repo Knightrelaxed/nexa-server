@@ -36,12 +36,12 @@ export function Topbar() {
               height={48} 
               className="w-9 h-9 sm:w-11 sm:h-11 drop-shadow-md group-hover:scale-105 group-active:scale-95 transition-all duration-300 cursor-pointer"
             />
-            {/* Brand Text - Hidden on mobile to save space */}
-            <div className="hidden sm:flex items-center select-none cursor-pointer">
-              <span className="text-[15px] lg:text-[17px] font-black tracking-[0.15em] text-slate-800 drop-shadow-sm transition-colors group-hover:text-emerald-600">
+            {/* Brand Text */}
+            <div className="flex items-center select-none cursor-pointer">
+              <span className="text-[13px] sm:text-[15px] lg:text-[17px] font-black tracking-[0.15em] text-slate-800 drop-shadow-sm transition-colors group-hover:text-emerald-600">
                 NEXA
               </span>
-              <span className="text-[15px] lg:text-[17px] font-bold tracking-[0.15em] text-emerald-500 ml-1.5 drop-shadow-sm">
+              <span className="text-[13px] sm:text-[15px] lg:text-[17px] font-bold tracking-[0.15em] text-emerald-500 ml-1.5 drop-shadow-sm">
                 FINANCE
               </span>
             </div>
