@@ -69,10 +69,10 @@ export function SettingsAccounts() {
       {loading ? (
         <div className="flex justify-center p-8"><Loader2 className="animate-spin text-emerald-500" /></div>
       ) : (
-        <Card>
-          <CardHeader className="pb-3 border-b bg-slate-50/50">
-            <CardTitle className="text-base text-slate-800">Akun Aktif</CardTitle>
-            <CardDescription>Ubah saldo awal jika ada ketidaksesuaian dengan saldo asli.</CardDescription>
+        <Card className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] overflow-hidden">
+          <CardHeader className="pb-4 border-b border-slate-100 bg-slate-50/50 px-6">
+            <CardTitle className="text-[15px] font-bold text-slate-800">Akun Aktif</CardTitle>
+            <CardDescription className="text-xs">Ubah saldo awal jika ada ketidaksesuaian dengan saldo asli.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y max-h-[500px] overflow-y-auto">

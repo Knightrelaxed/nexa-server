@@ -79,9 +79,9 @@ export function SettingsCategories() {
         <div className="flex justify-center p-8"><Loader2 className="animate-spin text-emerald-500" /></div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader className="pb-3 border-b">
-              <CardTitle className="text-base text-red-500">Pengeluaran</CardTitle>
+          <Card className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] overflow-hidden">
+            <CardHeader className="pb-3 border-b bg-slate-50/50 px-5">
+              <CardTitle className="text-[14px] font-bold text-red-500 uppercase tracking-wide">Pengeluaran</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y max-h-[500px] overflow-y-auto">
@@ -109,9 +109,9 @@ export function SettingsCategories() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-3 border-b">
-              <CardTitle className="text-base text-emerald-500">Pemasukan</CardTitle>
+          <Card className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] overflow-hidden">
+            <CardHeader className="pb-3 border-b bg-slate-50/50 px-5">
+              <CardTitle className="text-[14px] font-bold text-emerald-500 uppercase tracking-wide">Pemasukan</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y max-h-[500px] overflow-y-auto">
