@@ -552,6 +552,7 @@ async function getAccountBalances() {
       else expense += tx.amount;
     }
     results.push({
+      id: acc.id,
       name: acc.name,
       type: acc.type,
       initial_balance: acc.initial_balance || 0,

@@ -1079,11 +1079,13 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
 
   let currentSaldo = '-';
   try {
-    const now = new Date();
-    const analytics = await supabaseFinance.getFinanceAnalytics(now.getMonth() + 1, now.getFullYear());
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const analytics = await supabaseFinance.getFinanceAnalytics(startOfMonth, endOfMonth);
     if (analytics) {
       const saldoNum = analytics.balance;
-      currentSaldo = isNaN(saldoNum) ? saldoNum : `Rp${saldoNum.toLocaleString('id-ID')}`;
+      currentSaldo = isNaN(saldoNum) ? '-' : `Rp${Math.abs(saldoNum).toLocaleString('id-ID')}`;
     }
   } catch (_) {}
 
@@ -1686,40 +1688,28 @@ async function getDailyBalanceTrendReport(dateText = null) {
       return '📭 Tidak ada akun yang terdaftar.';
     }
 
-    // Resolve account_id from name
-    const allAccs = await supabaseFinance._loadAccountsRaw ? await supabaseFinance._loadAccountsRaw() : null;
-    // Fallback: use getAccountBalances to find the first account with its id
+    // Use getAccountBalances to get the first account with its id
     const balances = await supabaseFinance.getAccountBalances();
     if (!balances || balances.length === 0) return '📭 Tidak ada saldo akun.';
 
     const formatRp = v => `Rp${Math.abs(v).toLocaleString('id-ID')}`;
     let msg = `📈 <b>Tren Saldo Harian — ${balances[0].name} (${timeLabel})</b>\n\n`;
 
-    // We use getDailyTrend as proxy since we can't easily get account_id from name here
-    const trend = await supabaseFinance.getDailyTrend(startDate, endDate);
+    const startStr = startDate.toISOString().split('T')[0];
+    const endStr = endDate.toISOString().split('T')[0];
+    const trend = await supabaseFinance.getDailyBalanceTrend(balances[0].id, startStr, endStr);
+
     if (!trend || trend.length === 0) return `📭 Tidak ada data tren saldo untuk ${timeLabel}.`;
 
-    // Build running balance from initial
-    let running = balances[0].initial_balance || 0;
-    // Subtract all transactions BEFORE startDate
-    const startStr = startDate.toISOString().split('T')[0];
-    const allTxBefore = await supabaseFinance.readTransactions({ limit: 9999, month: null, year: null });
-    for (const tx of allTxBefore.filter(t => t.transaction_date < startStr)) {
-      if (tx.type === 'income') running += tx.amount;
-      else running -= tx.amount;
-    }
-
-    const maxVal = Math.max(...trend.map(d => Math.abs(running + d.income - d.expense)), 1);
+    const maxVal = Math.max(...trend.map(d => Math.abs(d.running_balance)), 1);
     msg += `<code>`;
     for (const d of trend.slice(-10)) {
-      if (d.income > 0) running += d.income;
-      if (d.expense > 0) running -= d.expense;
-      const bars = Math.round((Math.abs(running) / maxVal) * 8);
-      const label = d.date.slice(5); // MM-DD
-      msg += `${label} ${'█'.repeat(bars)}${'░'.repeat(8 - bars)} ${formatRp(running)}\n`;
+      const bars = Math.round((Math.abs(d.running_balance) / maxVal) * 8);
+      const label = d.day.slice(5); // MM-DD
+      msg += `${label} ${'█'.repeat(bars)}${'░'.repeat(8 - bars)} ${formatRp(d.running_balance)}\n`;
     }
     msg += `</code>\n`;
-    msg += `<b>Saldo akhir periode:</b> ${formatRp(running)}`;
+    msg += `<b>Saldo akhir periode:</b> ${formatRp(trend[trend.length - 1].running_balance)}`;
 
     return msg.trim();
   } catch (err) {
