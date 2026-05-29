@@ -564,7 +564,7 @@ let lastDeletedTransaction = null;
  * Works with Supabase transaction objects.
  */
 function _findBestTransactionMatch(rows, keyword) {
-  const kw = String(keyword).toLowerCase().trim();
+  const kw = keyword ? String(keyword).toLowerCase().trim() : '';
   
   if (kw === '' || /^(barusan|tadi|terakhir|terbaru|sebelumnya)$/.test(kw) || /transaksi (barusan|tadi|terakhir|terbaru)/.test(kw)) {
     return 0; // Supabase results are ordered newest first, so index 0 is newest

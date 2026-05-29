@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { createAccount } from "@/lib/supabase/mutations"
+import { useState, useEffect } from "react"
+import { createAccount, updateAccount } from "@/lib/supabase/mutations"
 import { useAuth } from "@/components/providers/supabase-provider"
 import { X, Wallet, Banknote, CreditCard, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ interface AddAccountModalProps {
   open: boolean
   onClose: () => void
   onSuccess?: () => void
+  initialData?: any
 }
 
 const ACCOUNT_TYPES = [
@@ -35,7 +36,7 @@ const CURRENCIES = [
   { value: "EUR", label: "€ EUR" },
 ]
 
-export function AddAccountModal({ open, onClose, onSuccess }: AddAccountModalProps) {
+export function AddAccountModal({ open, onClose, onSuccess, initialData }: AddAccountModalProps) {
   const { userId } = useAuth()
   const [name, setName]               = useState("")
   const [type, setType]               = useState<"bank" | "cash" | "e-wallet">("cash")
@@ -44,6 +45,26 @@ export function AddAccountModal({ open, onClose, onSuccess }: AddAccountModalPro
   const [currency, setCurrency]       = useState("IDR")
   const [excludeStats, setExcludeStats] = useState(false)
   const [loading, setLoading]         = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      if (initialData) {
+        setName(initialData.name)
+        setType(initialData.type as any)
+        setColorHex(initialData.color || "#ffb300")
+        setInitialBalance(initialData.initial_balance.toString())
+        setCurrency(initialData.currency || "IDR")
+        setExcludeStats(initialData.exclude_from_stats || false)
+      } else {
+        setName("")
+        setType("cash")
+        setColorHex("#ffb300")
+        setInitialBalance("0")
+        setCurrency("IDR")
+        setExcludeStats(false)
+      }
+    }
+  }, [open, initialData])
 
   if (!open) return null
 
@@ -63,24 +84,25 @@ export function AddAccountModal({ open, onClose, onSuccess }: AddAccountModalPro
     const balance = parseFloat(initialBalance.replace(/\./g, "") || "0")
     setLoading(true)
     try {
-      await createAccount({
+      const payload = {
         name: name.trim(),
         type,
         initial_balance: balance,
         currency,
         color: colorHex,
         exclude_from_stats: excludeStats,
-      })
-      toast.success(`Akun "${name}" berhasil ditambahkan! ✓`)
+      }
+
+      if (initialData && initialData.id) {
+        await updateAccount(initialData.id, payload)
+        toast.success(`Akun "${name}" berhasil diperbarui! ✓`)
+      } else {
+        await createAccount(payload)
+        toast.success(`Akun "${name}" berhasil ditambahkan! ✓`)
+      }
+      
       onSuccess?.()
       onClose()
-      // Reset
-      setName("")
-      setType("cash")
-      setColorHex("#ffb300")
-      setInitialBalance("0")
-      setCurrency("IDR")
-      setExcludeStats(false)
     } catch (err) {
       toast.error("Gagal menyimpan akun")
       console.error(err)
@@ -98,7 +120,7 @@ export function AddAccountModal({ open, onClose, onSuccess }: AddAccountModalPro
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-95 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-800">Tambah Akun</h2>
+          <h2 className="text-xl font-bold text-slate-800">{initialData ? "Edit Akun" : "Tambah Akun"}</h2>
           <button
             onClick={onClose}
             className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
@@ -247,7 +269,7 @@ export function AddAccountModal({ open, onClose, onSuccess }: AddAccountModalPro
                 : "bg-slate-100 text-slate-400"
             )}
           >
-            {loading ? "Menyimpan..." : "Buat akun"}
+            {loading ? "Menyimpan..." : (initialData ? "Simpan Perubahan" : "Buat akun")}
           </Button>
         </form>
       </div>

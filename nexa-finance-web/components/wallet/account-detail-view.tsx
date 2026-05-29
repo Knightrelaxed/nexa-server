@@ -9,6 +9,7 @@ import { fetchDailyBalanceTrend } from "@/lib/supabase/queries"
 import { deleteTransactions } from "@/lib/supabase/mutations"
 import { toast } from "sonner"
 import { AddTransactionModal } from "./add-transaction-modal"
+import { AddAccountModal } from "./add-account-modal"
 import type { DailyBalanceTrendRow } from "@/lib/supabase/types"
 import {
   ResponsiveContainer,
@@ -39,12 +40,38 @@ interface AccountDetailViewProps {
 }
 
 export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps) {
-  const { accounts } = useAccounts()
+  const { accounts, deleteAccount, refetch: refetchAccounts } = useAccounts()
   const account = accounts.find((a) => a.id === accountId)
   
   const [activeTab, setActiveTab] = useState<"saldo" | "catatan">("saldo")
   const [trendData, setTrendData] = useState<DailyBalanceTrendRow[]>([])
   const [loadingTrend, setLoadingTrend] = useState(true)
+  const [editAccountModalOpen, setEditAccountModalOpen] = useState(false)
+
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+  }>({ isOpen: false, title: "", message: "", onConfirm: () => {} })
+
+  const confirmAction = (title: string, message: string, onConfirm: () => void, confirmText = "Hapus") => {
+    setConfirmState({ isOpen: true, title, message, onConfirm, confirmText })
+  }
+
+  const handleDeleteAccount = async () => {
+    if (!account) return
+    confirmAction("Hapus Akun", `Apakah Anda yakin ingin menghapus akun "${account.name}"? Semua transaksi di dalamnya juga akan terhapus secara permanen.`, async () => {
+      try {
+        await deleteAccount(account.id)
+        toast.success(`Akun "${account.name}" berhasil dihapus`)
+        onBack()
+      } catch (err) {
+        toast.error("Gagal menghapus akun")
+      }
+    })
+  }
 
   // Fetch transactions for this account
   const txFilters = useMemo(() => ({ accountId }), [accountId])
@@ -198,10 +225,10 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
           <h2 className="text-[18px] sm:text-[20px] font-bold">Detail Akun</h2>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 mt-4 sm:mt-0 ml-auto">
-          <Button variant="outline" className="h-9 px-4 rounded-full text-blue-500 border-blue-200 hover:bg-blue-50 hover:text-blue-600">
+          <Button onClick={() => setEditAccountModalOpen(true)} variant="outline" className="h-9 px-4 rounded-full text-blue-500 border-blue-200 hover:bg-blue-50 hover:text-blue-600">
             Edit
           </Button>
-          <Button variant="outline" className="h-9 px-4 rounded-full text-red-500 border-red-200 hover:bg-red-50 hover:text-red-600">
+          <Button onClick={handleDeleteAccount} variant="outline" className="h-9 px-4 rounded-full text-red-500 border-red-200 hover:bg-red-50 hover:text-red-600">
             Hapus
           </Button>
         </div>
@@ -474,6 +501,42 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
           refetch()
         }}
       />
+
+      <AddAccountModal
+        open={editAccountModalOpen}
+        onClose={() => setEditAccountModalOpen(false)}
+        initialData={account}
+        onSuccess={() => refetchAccounts()}
+      />
+
+      {/* ── Custom Confirm Modal ── */}
+      {confirmState.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setConfirmState(prev => ({ ...prev, isOpen: false }))} />
+          <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">{confirmState.title}</h3>
+            <p className="text-[13px] text-slate-500 mb-6">{confirmState.message}</p>
+            <div className="flex gap-3 justify-end">
+              <Button 
+                variant="outline" 
+                onClick={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
+                className="rounded-xl font-semibold text-slate-600 border-slate-200 hover:bg-slate-50"
+              >
+                Batal
+              </Button>
+              <Button 
+                onClick={() => {
+                  setConfirmState(prev => ({ ...prev, isOpen: false }))
+                  confirmState.onConfirm()
+                }}
+                className="rounded-xl font-semibold text-white bg-[#ef4444] hover:bg-[#dc2626]"
+              >
+                {confirmState.confirmText}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
