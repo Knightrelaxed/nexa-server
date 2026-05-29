@@ -95,7 +95,7 @@ export function Topbar() {
                     <Menu className="h-5 w-5" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="right" className="w-[280px] p-0 border-l-0 sm:hidden">
+                <SheetContent side="left" className="w-[280px] p-0 border-r-0 sm:hidden">
                   <SheetTitle className="sr-only">Navigasi Utama Mobile</SheetTitle>
                   <div className="flex flex-col h-full bg-slate-50">
                     <div className="flex h-16 items-center px-6 border-b border-border/40 bg-white">
