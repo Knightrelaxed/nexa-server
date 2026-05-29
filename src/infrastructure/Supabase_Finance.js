@@ -603,6 +603,43 @@ async function getDailyTrend(startDate, endDate) {
   return Object.values(map);
 }
 
+/**
+ * Ringkasan bulanan via RPC get_monthly_summary (sama persis dengan Web).
+ * Returns [{ month: 'YYYY-MM', total_income, total_expense }]
+ */
+async function getMonthlySummary(months = 7) {
+  if (!supabaseFinance) return [];
+  const { data, error } = await supabaseFinance.rpc('get_monthly_summary', { p_months: months });
+  if (error) { console.error('[SUPABASE_FINANCE] getMonthlySummary error:', error.message); return []; }
+  return (data || []).map(r => ({
+    month: r.month,
+    total_income: Number(r.total_income),
+    total_expense: Number(r.total_expense),
+  }));
+}
+
+/**
+ * Tren saldo harian per akun via RPC get_daily_balance_trend (sama persis dengan Web).
+ * @param {string} accountId - UUID akun
+ * @param {string} startDate - YYYY-MM-DD
+ * @param {string} endDate   - YYYY-MM-DD
+ */
+async function getDailyBalanceTrend(accountId, startDate, endDate) {
+  if (!supabaseFinance) return [];
+  const { data, error } = await supabaseFinance.rpc('get_daily_balance_trend', {
+    p_account_id: accountId,
+    p_start: startDate,
+    p_end: endDate,
+  });
+  if (error) { console.error('[SUPABASE_FINANCE] getDailyBalanceTrend error:', error.message); return []; }
+  return (data || []).map(r => ({
+    day: r.day,
+    daily_income: Number(r.daily_income),
+    daily_expense: Number(r.daily_expense),
+    running_balance: Number(r.running_balance),
+  }));
+}
+
 module.exports = {
   writeTransaction,
   readTransactions,
@@ -614,6 +651,8 @@ module.exports = {
   getAccountBalances,
   getPeriodComparison,
   getDailyTrend,
+  getMonthlySummary,
+  getDailyBalanceTrend,
   resolveAccountId,
   resolveCategoryId,
   getAccountsList,

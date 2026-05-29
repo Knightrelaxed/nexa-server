@@ -1585,6 +1585,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           domainReply = await financeEngine.getDailyTrendReport(routingData.extracted_data.date_text || null);
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'SMART_SUMMARY') {
           domainReply = await financeEngine.getSmartFinanceSummary(routingData.extracted_data.date_text || null);
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'MONTHLY_SUMMARY') {
+          domainReply = await financeEngine.getMonthlySummaryReport();
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'SAVING_RATE') {
+          domainReply = await financeEngine.getSavingRateReport(routingData.extracted_data.date_text || null);
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'BALANCE_TREND') {
+          domainReply = await financeEngine.getDailyBalanceTrendReport(routingData.extracted_data.date_text || null);
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'RECORD_MULTIPLE' && Array.isArray(routingData.extracted_data.transactions)) {
           let replies = [];
           for (const tx of routingData.extracted_data.transactions) {

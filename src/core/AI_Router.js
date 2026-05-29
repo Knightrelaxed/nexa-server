@@ -91,6 +91,9 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Gunakan action "ACCOUNT_BALANCES" jika pengguna menanyakan saldo semua akun, kekayaan bersih, atau "saldo di masing-masing dompet".
      //   → Gunakan action "DAILY_TREND" jika pengguna menanyakan tren harian, pola belanja harian, hari paling boros, atau grafik harian. Sertakan "date_text".
      //   → Gunakan action "SMART_SUMMARY" jika pengguna meminta ringkasan keuangan, kondisi keuangan, atau laporan lengkap ("gimana keuanganku?", "kasih ringkasan", "rekap keuangan"). Sertakan "date_text".
+     //   → Gunakan action "MONTHLY_SUMMARY" jika pengguna meminta tren bulanan, grafik 7 bulan, atau histori bulanan keuangan ("tren bulanku", "7 bulan terakhir").
+     //   → Gunakan action "SAVING_RATE" jika pengguna menanyakan tingkat tabungan, saving rate, seberapa banyak yang ditabung, atau persentase hemat ("berapa saving rate aku?", "seberapa boros aku?"). Sertakan "date_text".
+     //   → Gunakan action "BALANCE_TREND" jika pengguna menanyakan grafik/tren saldo harian suatu akun, atau pergerakan saldo hari per hari. Sertakan "date_text".
      //   → Gunakan action "EDIT" jika pengguna meminta mengubah/mengedit transaksi lama. WAJIB isi search_keyword dengan KATA KUNCI PENCARIAN (bisa berupa nominal lama seperti "9500" atau nama merchant). JANGAN MENGOSONGKAN search_keyword jika user menyebutkan nominal transaksi yang mau diedit. Isi field "nominal", "description", atau "category" HANYA dengan nilai BARU jika user ingin mengubahnya. Jika user bilang "Edit yang barusan 9500 jadi mie ayam", maka search_keyword="9500", description="mie ayam".
      //   → Gunakan action "DELETE" jika pengguna meminta menghapus transaksi (sertakan search_keyword).
      //   → Gunakan action "UNDO_DELETE" jika pengguna meminta membatalkan/mengembalikan transaksi yang baru dihapus ("batalkan hapus", "undo", "kembalikan yang dihapus").

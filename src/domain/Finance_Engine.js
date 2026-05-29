@@ -1602,6 +1602,131 @@ async function getSmartFinanceSummary(dateText = null) {
   }
 }
 
+/**
+ * Ringkasan bulanan 7 bulan terakhir (sama persis dengan chart bar di Web).
+ */
+async function getMonthlySummaryReport() {
+  try {
+    const data = await supabaseFinance.getMonthlySummary(7);
+    if (!data || data.length === 0) return '📭 Tidak ada data ringkasan bulanan.';
+
+    const formatRp = v => `Rp${Math.abs(v).toLocaleString('id-ID')}`;
+    const MONTHS_ID = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'];
+
+    let msg = `📅 <b>Tren Keuangan 7 Bulan Terakhir</b>\n\n`;
+    const maxVal = Math.max(...data.map(d => Math.max(d.total_income, d.total_expense)), 1);
+
+    for (const row of data) {
+      const [y, m] = row.month.split('-');
+      const label = `${MONTHS_ID[parseInt(m) - 1]} ${y}`;
+      const incBars = Math.round((row.total_income / maxVal) * 8);
+      const expBars = Math.round((row.total_expense / maxVal) * 8);
+      const net = row.total_income - row.total_expense;
+      const netIcon = net >= 0 ? '✅' : '🔴';
+      msg += `<b>${label}</b> ${netIcon}\n`;
+      msg += `<code>  🟢 ${'█'.repeat(incBars)}${'░'.repeat(8 - incBars)} ${formatRp(row.total_income)}\n`;
+      msg += `  🔴 ${'█'.repeat(expBars)}${'░'.repeat(8 - expBars)} ${formatRp(row.total_expense)}</code>\n\n`;
+    }
+
+    return msg.trim();
+  } catch (err) {
+    return `⚠️ Gagal mengambil ringkasan bulanan: ${err.message}`;
+  }
+}
+
+/**
+ * Saving rate (tingkat tabungan) untuk periode tertentu.
+ */
+async function getSavingRateReport(dateText = null) {
+  try {
+    const { startDate, endDate, timeLabel } = _parseAnalyticsPeriod(dateText);
+    const analytics = await supabaseFinance.getFinanceAnalytics(startDate, endDate);
+
+    const formatRp = v => `Rp${Math.abs(v).toLocaleString('id-ID')}`;
+
+    if (analytics.totalIncome === 0 && analytics.totalExpense === 0) {
+      return `📭 Tidak ada data keuangan untuk ${timeLabel}.`;
+    }
+
+    const savingsRate = analytics.totalIncome > 0
+      ? ((analytics.totalIncome - analytics.totalExpense) / analytics.totalIncome * 100)
+      : 0;
+    const tabungan = analytics.totalIncome - analytics.totalExpense;
+
+    let ratingIcon, ratingText;
+    if (savingsRate >= 30) { ratingIcon = '🏆'; ratingText = 'Sangat Baik! Hemat sekali.'; }
+    else if (savingsRate >= 20) { ratingIcon = '✅'; ratingText = 'Baik. Finansial sehat.'; }
+    else if (savingsRate >= 10) { ratingIcon = '⚠️'; ratingText = 'Cukup. Bisa lebih hemat.'; }
+    else if (savingsRate > 0) { ratingIcon = '🔴'; ratingText = 'Perlu perhatian. Pengeluaran hampir sama dengan pemasukan.'; }
+    else { ratingIcon = '❌'; ratingText = 'Defisit! Pengeluaran melebihi pemasukan.'; }
+
+    let msg = `💰 <b>Tingkat Tabungan — ${timeLabel}</b>\n\n`;
+    msg += `<b>Pemasukan:</b>   ${formatRp(analytics.totalIncome)}\n`;
+    msg += `<b>Pengeluaran:</b> ${formatRp(analytics.totalExpense)}\n`;
+    msg += `<b>Sisa/Tabungan:</b> <b>${formatRp(tabungan)}</b>\n`;
+    msg += `──────────────\n`;
+    msg += `<b>Saving Rate: ${savingsRate.toFixed(1)}%</b>\n`;
+    msg += `${ratingIcon} <i>${ratingText}</i>`;
+
+    return msg;
+  } catch (err) {
+    return `⚠️ Gagal menghitung saving rate: ${err.message}`;
+  }
+}
+
+/**
+ * Tren saldo harian untuk akun pertama (sama persis dengan Area Chart di Web).
+ */
+async function getDailyBalanceTrendReport(dateText = null) {
+  try {
+    const { startDate, endDate, timeLabel } = _parseAnalyticsPeriod(dateText);
+    const accounts = await supabaseFinance.getAccountsList();
+
+    if (!accounts || accounts.length === 0) {
+      return '📭 Tidak ada akun yang terdaftar.';
+    }
+
+    // Resolve account_id from name
+    const allAccs = await supabaseFinance._loadAccountsRaw ? await supabaseFinance._loadAccountsRaw() : null;
+    // Fallback: use getAccountBalances to find the first account with its id
+    const balances = await supabaseFinance.getAccountBalances();
+    if (!balances || balances.length === 0) return '📭 Tidak ada saldo akun.';
+
+    const formatRp = v => `Rp${Math.abs(v).toLocaleString('id-ID')}`;
+    let msg = `📈 <b>Tren Saldo Harian — ${balances[0].name} (${timeLabel})</b>\n\n`;
+
+    // We use getDailyTrend as proxy since we can't easily get account_id from name here
+    const trend = await supabaseFinance.getDailyTrend(startDate, endDate);
+    if (!trend || trend.length === 0) return `📭 Tidak ada data tren saldo untuk ${timeLabel}.`;
+
+    // Build running balance from initial
+    let running = balances[0].initial_balance || 0;
+    // Subtract all transactions BEFORE startDate
+    const startStr = startDate.toISOString().split('T')[0];
+    const allTxBefore = await supabaseFinance.readTransactions({ limit: 9999, month: null, year: null });
+    for (const tx of allTxBefore.filter(t => t.transaction_date < startStr)) {
+      if (tx.type === 'income') running += tx.amount;
+      else running -= tx.amount;
+    }
+
+    const maxVal = Math.max(...trend.map(d => Math.abs(running + d.income - d.expense)), 1);
+    msg += `<code>`;
+    for (const d of trend.slice(-10)) {
+      if (d.income > 0) running += d.income;
+      if (d.expense > 0) running -= d.expense;
+      const bars = Math.round((Math.abs(running) / maxVal) * 8);
+      const label = d.date.slice(5); // MM-DD
+      msg += `${label} ${'█'.repeat(bars)}${'░'.repeat(8 - bars)} ${formatRp(running)}\n`;
+    }
+    msg += `</code>\n`;
+    msg += `<b>Saldo akhir periode:</b> ${formatRp(running)}`;
+
+    return msg.trim();
+  } catch (err) {
+    return `⚠️ Gagal mengambil tren saldo: ${err.message}`;
+  }
+}
+
 module.exports = {
   processTransaction,
   getRecentTransactions,
@@ -1613,6 +1738,9 @@ module.exports = {
   getAccountBalancesReport,
   getDailyTrendReport,
   getSmartFinanceSummary,
+  getMonthlySummaryReport,
+  getSavingRateReport,
+  getDailyBalanceTrendReport,
   deleteTransaction: requestDeleteConfirmation,
   confirmDeleteTransaction,
   getPendingDeletionsContext,
