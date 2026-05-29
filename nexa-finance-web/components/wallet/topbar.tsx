@@ -8,6 +8,7 @@ import { Wallet, Plus, LogOut, Server, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { AddTransactionModal } from "./add-transaction-modal"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { cn } from "@/lib/utils"
 
 const tabs = [
@@ -79,6 +80,10 @@ export function Topbar() {
               <span className="hidden sm:inline">Catatan Baru</span>
             </Button>
 
+            {/* Theme Toggle - Desktop */}
+            <div className="hidden sm:block">
+              <ThemeToggle />
+            </div>
             {/* HuggingFace Server Logs Link */}
             <Link 
               href="https://huggingface.co/spaces/nexa-asistant/NEXA-Core-Server?logs=container" 
@@ -134,6 +139,10 @@ export function Topbar() {
                         )
                       })}
                     </nav>
+                    {/* Theme Toggle - Mobile Sidebar */}
+                    <div className="mt-auto p-4 border-t border-border/40">
+                      <ThemeToggle showText={true} />
+                    </div>
                   </div>
                 </SheetContent>
               </Sheet>

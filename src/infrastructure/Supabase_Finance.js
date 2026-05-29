@@ -338,6 +338,8 @@ async function readTransactions({ limit = 5, keyword = '', txType = null, month 
       transaction_date,
       transaction_time,
       description,
+      payment_method,
+      created_at,
       categories ( name ),
       accounts ( name )
     `)

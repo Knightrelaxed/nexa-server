@@ -8,6 +8,9 @@ const env = require('../config/env');
 // key: compositeKey, value: { tx, timeoutId }
 const pendingConfirmations = new Map();
 
+// Lock to prevent race conditions during auto-save
+const processingKeys = new Set();
+
 // In-memory cache for deletion confirmations
 const pendingDeletions = new Map();
 
@@ -589,7 +592,9 @@ function _findBestTransactionMatch(rows, keyword) {
       if (tanggal.includes(t) || waktu.includes(t)) score += 5;
     }
 
-    if (score > maxScore && score > 0) {
+    // BUG FIX 7: Prevent fuzzy match from deleting wrong transactions
+    // Require a minimum score of 15 (e.g. full description match = 100, exact nominal = 50, etc.)
+    if (score > maxScore && score >= 15) {
       maxScore = score;
       bestIndex = i;
     }
@@ -848,11 +853,19 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
           );
         }
 
-        const res = await processTransaction(pending.tx, 'GMAIL_POLLING');
+        // Use TELEGRAM_MANUAL for non-email transactions to avoid strict email dedup
+        const source = pending.tx.isLivinEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL';
+        const res = await processTransaction(pending.tx, source);
         if (res && res.message) successMessages.push(res.message);
         processedCount++;
+        
+        // BUG FIX 5: Only delete from memory if SUCCESSFUL
+        pendingConfirmations.delete(key);
+        try { await supabase.deletePendingTransaction(key); } catch (_) {}
       } catch (e) {
         console.error(`[FINANCE] Failed to save confirmed tx:`, e.message);
+        successMessages.push(`❌ Gagal menyimpan transaksi Rp${pending.tx.nominal}: ${e.message}`);
+        // Do NOT delete from pending confirmations so user can try again (e.g. with different account)
       }
     } else {
       skippedCount++;
@@ -862,10 +875,10 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
       } catch (e) {
         console.error(`[FINANCE] Failed to log cancelled tx:`, e.message);
       }
+      
+      pendingConfirmations.delete(key);
+      try { await supabase.deletePendingTransaction(key); } catch (_) {}
     }
-    pendingConfirmations.delete(key);
-    // Clean up Supabase persistent store
-    try { await supabase.deletePendingTransaction(key); } catch (_) {}
   }
 
   if (isYes) {
@@ -1107,16 +1120,23 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
  * Auto-save a pending transaction (called by timeout or recovery).
  */
 async function _autoSavePending(compositeKey, tx) {
+  // BUG FIX 1: Race Condition & Lock Check
+  // Node.js is single threaded, so we use a dedicated Set to lock processing.
+  // We CANNOT use pendingConfirmations.has() because after a server restart,
+  // Watchdog recovers transactions that are not in the map!
+  if (processingKeys.has(compositeKey)) {
+    return; // Already handled by another concurrent process
+  }
+  processingKeys.add(compositeKey);
+  
   try {
-    // DEDUP GUARD: Check before saving to prevent double-save race
-    // between setTimeout (5-min auto-save) and Watchdog cron (90s interval).
-    // We pass false for checkPending because this transaction is pending itself.
+    pendingConfirmations.delete(compositeKey);
+    try { await supabase.deletePendingTransaction(compositeKey); } catch (_) {}
+
     const txTime = new Date(tx.time || Date.now());
     const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, txTime, false);
     if (alreadySaved) {
       console.log(`[FINANCE] _autoSavePending: ${compositeKey} already saved. Skipping.`);
-      pendingConfirmations.delete(compositeKey);
-      try { await supabase.deletePendingTransaction(compositeKey); } catch (_) {}
       return;
     }
 
@@ -1125,10 +1145,15 @@ async function _autoSavePending(compositeKey, tx) {
     tx.category = await _autoCategorizeMerchant(tx.destination, tx.category);
     if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
     try {
-      await processTransaction(tx, 'GMAIL_POLLING');
-    } finally {
-      pendingConfirmations.delete(compositeKey);
-      try { await supabase.deletePendingTransaction(compositeKey); } catch (_) {}
+      // Use 'TELEGRAM_MANUAL' to bypass strict email duplicate checks for user-initiated saves
+      const source = tx.isLivinEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL';
+      await processTransaction(tx, source);
+    } catch (e) {
+      // BUG FIX 5: Notify user of silent failures
+      console.error('[FINANCE] Auto-save processTransaction failed:', e.message);
+      const { sendTelegramOutbound } = require('../interfaces/webhook');
+      await sendTelegramOutbound(`⚠️ <b>Gagal Menyimpan Transaksi Otomatis</b>\n\nNominal: Rp${tx.nominal}\nTujuan: ${tx.destination}\nAlasan: ${e.message}\n\n<i>Transaksi dibatalkan.</i>`);
+      return;
     }
     
     // AUDIT FIX (CRITICAL): Use _parseFlexibleCurrency — the old replace(/[^0-9]/g,'') stripped
@@ -1142,6 +1167,8 @@ async function _autoSavePending(compositeKey, tx) {
     } catch (_) {}
   } catch (e) {
     console.error('[FINANCE] Auto-save failed:', e.message);
+  } finally {
+    processingKeys.delete(compositeKey);
   }
 }
 
