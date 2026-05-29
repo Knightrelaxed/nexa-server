@@ -12,14 +12,25 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
-      
-      - name: Push to Hugging Face
+
+      - name: Push backend-only to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # Username pemilik token (akun pribadi):
           HF_AUTH_USER: Knightrelaxed
-          # Pemilik/organisasi Space di HF:
           HF_SPACE_OWNER: nexa-asistant
           HF_SPACE_NAME: NEXA-Core-Server
         run: |
-          git push --force https://$HF_AUTH_USER:$HF_TOKEN@huggingface.co/spaces/$HF_SPACE_OWNER/$HF_SPACE_NAME main
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+
+          # Buat branch sementara khusus untuk HF (backend only, tanpa frontend)
+          git checkout -b hf-deploy-temp
+
+          # Hapus folder frontend dari index (tidak dari disk)
+          git rm -rf --cached nexa-finance-web/ 2>/dev/null || true
+
+          # Commit perubahan jika ada
+          git diff --cached --quiet || git commit -m "chore: exclude frontend folder for HF Space deploy"
+
+          # Push hanya backend ke HF Space
+          git push --force https://$HF_AUTH_USER:$HF_TOKEN@huggingface.co/spaces/$HF_SPACE_OWNER/$HF_SPACE_NAME hf-deploy-temp:main
