@@ -399,6 +399,7 @@ async function updateTransaction(uuid, patchData) {
   if (patchData.txType !== undefined) payload.type = patchData.txType.toUpperCase() === 'INCOME' ? 'income' : 'expense';
   if (patchData.dateISO !== undefined) payload.transaction_date = patchData.dateISO;
   if (patchData.timeHHMM !== undefined) payload.transaction_time = patchData.timeHHMM;
+  if (patchData.paymentMethod !== undefined) payload.payment_method = patchData.paymentMethod;
   
   // Resolve relations if provided
   if (patchData.accountName) {

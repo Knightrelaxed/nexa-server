@@ -731,7 +731,7 @@ async function undoDeleteTransaction() {
 /**
  * Edit a specific transaction matching a keyword in Supabase.
  */
-async function editTransaction(keyword, newNominal, newDescription, newCategory) {
+async function editTransaction(keyword, newNominal, newDescription, newCategory, newAccount, newPaymentMethod) {
   try {
     const rows = await supabaseFinance.readTransactions({ limit: 50 });
     if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel database saat ini masih kosong.' };
@@ -766,6 +766,16 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
     if (newCategory && newCategory !== 'Uncategorized') {
       patchData.categoryName = newCategory;
     }
+
+    // Update account if provided
+    if (newAccount) {
+      patchData.accountName = newAccount;
+    }
+
+    // Update payment method if provided
+    if (newPaymentMethod) {
+      patchData.paymentMethod = newPaymentMethod;
+    }
     
     // Update the Supabase record
     const result = await supabaseFinance.updateTransaction(tx.id, patchData);
@@ -777,8 +787,10 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
     const finalNominal = patchData.nominal !== undefined ? patchData.nominal : Math.abs(tx.amount || 0);
     const finalDescription = patchData.description !== undefined ? patchData.description : (tx.description || '-');
     const finalCategory = patchData.categoryName !== undefined ? patchData.categoryName : (tx.categories?.name || '-');
+    const finalAccount = patchData.accountName !== undefined ? patchData.accountName : (tx.accounts?.name || '-');
+    const finalPaymentMethod = patchData.paymentMethod !== undefined ? patchData.paymentMethod : (tx.payment_method || 'QRIS');
     const tipeLabel = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
-    const akunName = tx.accounts?.name || '-';
+    const akunName = finalAccount;
     
     const nominalFmt = `Rp${finalNominal.toLocaleString('id-ID')}`;
 
@@ -786,6 +798,8 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
     if (patchData.nominal !== undefined) editedFields.push(`Nominal (dari Rp${Math.abs(tx.amount || 0).toLocaleString('id-ID')} menjadi ${nominalFmt})`);
     if (patchData.description !== undefined) editedFields.push(`Catatan (dari "${oldCatatan}" menjadi "${finalDescription}")`);
     if (patchData.categoryName !== undefined) editedFields.push(`Kategori (dari "${oldKategori}" menjadi "${finalCategory}")`);
+    if (patchData.accountName !== undefined) editedFields.push(`Akun (menjadi "${finalAccount}")`);
+    if (patchData.paymentMethod !== undefined) editedFields.push(`Metode Pembayaran (menjadi "${finalPaymentMethod}")`);
 
     const message = `💸 <b>TRANSAKSI DIEDIT</b>\n\n` +
       `<b>No:</b> ${tx.id.substring(0,8)}\n` +
@@ -811,7 +825,7 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
  * Resolves a pending transaction confirmation.
  * Returns a reply message to send to the user, or null if no pending transactions.
  */
-async function confirmPendingTransactions(isYes, customDescription = null, customCategory = null) {
+async function confirmPendingTransactions(isYes, customDescription = null, customCategory = null, customAccount = null, customPaymentMethod = null) {
   if (pendingConfirmations.size === 0) return null;
 
   let processedCount = 0;
@@ -824,6 +838,8 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
       try {
         if (customDescription) pending.tx.description = customDescription;
         if (customCategory) pending.tx.category = customCategory;
+        if (customAccount) pending.tx.account = customAccount;
+        if (customPaymentMethod) pending.tx.payment_method = customPaymentMethod;
         
         // Use lightweight AI categorizer instead of full routing
         if (!customCategory) {
@@ -861,43 +877,21 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
 }
 
 /**
- * Updates a pending transaction with new details/category/nominal and re-sends a confirmation prompt.
- * Smart auto-detection: pass raw user text and it will figure out what to update.
- * Does NOT save to database yet.
+ * Updates a pending transaction with new details (description/category/nominal/account/paymentMethod).
  */
-async function updatePendingTransaction(rawUserText = null, customCategory = null, customNominal = null) {
+async function updatePendingTransaction(newDescription = null, newCategory = null, newNominal = null, newAccount = null, newPaymentMethod = null) {
   if (pendingConfirmations.size === 0) return null;
 
   let msg = '';
   for (const [key, pending] of pendingConfirmations.entries()) {
-    if (rawUserText) {
-      const lower = rawUserText.toLowerCase().trim();
-
-      // 1. Detect explicit category keyword ("kategorinya amal", "kategori: makanan")
-      const catMatch = lower.match(/kategori(?:nya)?[:\s]+(.+)/);
-      if (catMatch) {
-        pending.tx.category = catMatch[1].trim();
-      } else {
-        // 2. Everything else → treat as description/purpose text
-        pending.tx.description = rawUserText.trim();
-        // Use lightweight AI categorizer from description + destination
-        try {
-          const inferredCat = await _autoCategorizeMerchant(
-            `${pending.tx.destination} ${rawUserText}`, null
-          );
-          if (inferredCat && inferredCat !== 'Lainnya') {
-            pending.tx.category = inferredCat;
-          }
-        } catch (_) {}
-      }
-    }
-
-    // Apply explicit overrides if provided directly
-    if (customCategory) pending.tx.category = customCategory;
-    if (customNominal) {
-      const parsed = _parseFlexibleCurrency(customNominal);
+    if (newDescription) pending.tx.description = newDescription;
+    if (newCategory) pending.tx.category = newCategory;
+    if (newNominal) {
+      const parsed = _parseFlexibleCurrency(newNominal);
       if (!isNaN(parsed)) pending.tx.nominal = parsed;
     }
+    if (newAccount) pending.tx.account = newAccount;
+    if (newPaymentMethod) pending.tx.payment_method = newPaymentMethod;
 
     // Reset the 5-minute timeout because user interacted
     clearTimeout(pending.timeoutId);
@@ -1084,6 +1078,11 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
     proactiveQuestion = tx.type === 'INCOME'
       ? `❓ <b>Terdapat dana masuk dari ${tx.destination}.</b>\n\nKira-kira uang ini masuk dalam rangka apa, Tuan? <i>(Tanpa balasan, N.E.X.A akan menyimpannya dengan kategori otomatis dalam 5 menit).</i>`
       : `❓ <b>N.E.X.A mencatat pengeluaran ke ${tx.destination}.</b>\n\nTuan, uang ini digunakan untuk keperluan apa ya? <i>(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).</i>`;
+  } else if (!tx.account || !tx.payment_method) {
+    const missingItems = [];
+    if (!tx.account) missingItems.push("akun yang digunakan");
+    if (!tx.payment_method) missingItems.push("metode pembayarannya (QRIS/Transfer/Tunai/Kredit)");
+    proactiveQuestion = `❓ <b>Satu hal lagi Tuan.</b>\n\nMohon informasikan ${missingItems.join(" dan ")} untuk transaksi ini. <i>(Atau abaikan jika ingin disimpan otomatis ke akun default dalam 5 menit).</i>`;
   } else {
     proactiveQuestion = `💡 Transaksi ini siap dikunci. Jika ada koreksi tambahan, silakan balas pesan ini. Jika tidak, N.E.X.A akan meresmikannya dalam 5 menit.`;
   }
@@ -1096,7 +1095,8 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
     `<b>Waktu:</b> ${timeStr}\n` +
     `<b>Tipe:</b> ${tipeStr}\n` +
     `<b>Kategori:</b> ${displayCategory}\n` +
-    `<b>Akun:</b> Bank Mandiri Livin\n` +
+    `<b>Akun:</b> ${tx.account || 'Belum dipilih'}\n` +
+    `<b>Metode:</b> ${tx.payment_method || '-'}\n` +
     `<b>Catatan / Detail:</b> ${displayDesc}\n` +
     `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
     `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
@@ -1164,7 +1164,9 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
     destination,
     category: aiCategory,
     description: txData.description && txData.description !== '-' ? txData.description : '[Menunggu Detail User]',
-    time: txData.time || new Date().toISOString()
+    time: txData.time || new Date().toISOString(),
+    payment_method: txData.payment_method || null,
+    account: txData.account || null
   };
 
   const cleanMerchant = tx.destination.toLowerCase().replace(/[^a-z0-9]/g, '');

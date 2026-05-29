@@ -1529,18 +1529,32 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             const supabaseFinance = require('../infrastructure/Supabase_Finance');
             const recent = await supabaseFinance.readTransactions({ limit: 1 });
             if (recent && recent.length > 0) {
-              const lastCat = recent[0].description || '-';
-              const result = await financeEngine.editTransaction(lastCat, null, routingData.extracted_data.description, routingData.extracted_data.category);
-              domainReply = `⏳ Waktu konfirmasi 5 menit telah habis sehingga transaksi otomatis terkunci. N.E.X.A melakukan *fallback* ke mode Edit:\n${result.message}`;
+              const txAgeMs = Date.now() - new Date(recent[0].created_at).getTime();
+              if (txAgeMs < 10 * 60 * 1000) { // ONLY fallback if transaction was created in the last 10 minutes
+                const lastCat = recent[0].description || '-';
+                const result = await financeEngine.editTransaction(
+                  lastCat, 
+                  null, 
+                  routingData.extracted_data.description, 
+                  routingData.extracted_data.category,
+                  routingData.extracted_data.account,
+                  routingData.extracted_data.payment_method
+                );
+                domainReply = `⏳ Waktu konfirmasi 5 menit telah habis sehingga transaksi otomatis terkunci. N.E.X.A melakukan *fallback* ke mode Edit:\n${result.message}`;
+              } else {
+                domainReply = '❌ Tidak ada transaksi yang tertunda atau bisa diubah (transaksi terakhir sudah terlalu lama).';
+              }
             } else {
-              domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
+              domainReply = '❌ Tidak ada transaksi yang tertunda atau bisa diubah.';
             }
           }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'UPDATE_PENDING') {
           const updatedMsg = await financeEngine.updatePendingTransaction(
             routingData.extracted_data.description || null,
             routingData.extracted_data.category || null,
-            routingData.extracted_data.nominal || null
+            routingData.extracted_data.nominal || null,
+            routingData.extracted_data.account || null,
+            routingData.extracted_data.payment_method || null
           );
           if (updatedMsg) {
             domainReply = updatedMsg;
@@ -1549,16 +1563,23 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             const supabaseFinance = require('../infrastructure/Supabase_Finance');
             const recent = await supabaseFinance.readTransactions({ limit: 1 });
             if (recent && recent.length > 0) {
-              const lastCat = recent[0].description || '-';
-              const result = await financeEngine.editTransaction(
-                lastCat,
-                routingData.extracted_data.nominal,
-                routingData.extracted_data.description,
-                routingData.extracted_data.category
-              );
-              domainReply = `⏳ Transaksi sudah tidak tertunda (telah dimasukkan ke database). N.E.X.A otomatis melakukan *fallback* ke mode Edit:\n${result.message}`;
+              const txAgeMs = Date.now() - new Date(recent[0].created_at).getTime();
+              if (txAgeMs < 10 * 60 * 1000) { // Only fallback if within 10 minutes
+                const lastCat = recent[0].description || '-';
+                const result = await financeEngine.editTransaction(
+                  lastCat, 
+                  routingData.extracted_data.nominal || null, 
+                  routingData.extracted_data.description || null, 
+                  routingData.extracted_data.category || null,
+                  routingData.extracted_data.account || null,
+                  routingData.extracted_data.payment_method || null
+                );
+                domainReply = `⏳ Transaksi sudah terlanjur disimpan, N.E.X.A melakukan *fallback* ke mode Edit:\n${result.message}`;
+              } else {
+                domainReply = '❌ Transaksi sudah terlalu lama untuk diubah secara otomatis.';
+              }
             } else {
-              domainReply = 'Tidak ada transaksi yang tertunda atau bisa diubah.';
+              domainReply = '❌ Tidak ada transaksi yang bisa diubah.';
             }
           }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CANCEL_TRANSACTION') {
@@ -1600,7 +1621,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
               destination: tx.destination || tx.merchant || 'Unknown',
               category: tx.category || 'Uncategorized',
               description: tx.description || '-',
-              time: tx.time || new Date().toISOString()
+              time: tx.time || new Date().toISOString(),
+              account: tx.account || null,
+              payment_method: tx.payment_method || null
             };
             const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
             if (confirmMsg) {
@@ -1620,7 +1643,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             destination: routingData.extracted_data.destination || routingData.extracted_data.merchant || 'Unknown',
             category: routingData.extracted_data.category || 'Uncategorized',
             description: routingData.extracted_data.description || '-',
-            time: routingData.extracted_data.time || new Date().toISOString()
+            time: routingData.extracted_data.time || new Date().toISOString(),
+            account: routingData.extracted_data.account || null,
+            payment_method: routingData.extracted_data.payment_method || null
           };
           const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
           if (confirmMsg) {
