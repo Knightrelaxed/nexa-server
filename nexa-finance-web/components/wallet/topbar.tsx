@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { Wallet, Plus, LogOut, Server, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -28,9 +29,13 @@ export function Topbar() {
 
           {/* Logo */}
           <Link href="/dashboard" className="group flex items-center gap-2 mr-2 sm:mr-8 shrink-0">
-            <div className="flex h-9 w-10 sm:h-11 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-md shadow-emerald-500/25 group-hover:shadow-emerald-500/40 group-active:scale-95 transition-all duration-300 cursor-pointer">
-              <Wallet className="h-4 w-4 sm:h-6 sm:w-6 text-white group-hover:scale-110 transition-transform duration-300" strokeWidth={2.5} />
-            </div>
+            <Image 
+              src="/icons/icon-192x192.png" 
+              alt="Nexa Finance Logo" 
+              width={48} 
+              height={48} 
+              className="w-10 h-10 sm:w-12 sm:h-12 drop-shadow-md group-hover:scale-110 group-active:scale-95 transition-all duration-300 cursor-pointer"
+            />
           </Link>
 
           {/* Tabs - Desktop Only */}
@@ -101,9 +106,13 @@ export function Topbar() {
                   <div className="flex flex-col h-full bg-slate-50">
                     <div className="flex h-16 items-center px-6 border-b border-border/40 bg-white">
                       <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-sm">
-                          <Wallet className="h-4 w-4 text-white" />
-                        </div>
+                        <Image 
+                          src="/icons/icon-192x192.png" 
+                          alt="Nexa" 
+                          width={32} 
+                          height={32} 
+                          className="w-8 h-8 drop-shadow-sm"
+                        />
                         <span className="font-black tracking-widest text-slate-800">NEXA<span className="text-emerald-500 ml-1">FINANCE</span></span>
                       </div>
                     </div>
