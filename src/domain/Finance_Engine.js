@@ -784,7 +784,33 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory)
       return { status: 'FAILED', message: `Gagal mengedit transaksi di database: ${result.reason}` };
     }
 
-    return { status: 'SUCCESS', message: `✏️ <b>Transaksi (ID: ${tx.id.substring(0,8)}) berhasil diubah di database!</b>\nSebelumnya: "${oldCatatan}" | Kategori: "${oldKategori}"` };
+    const finalNominal = patchData.nominal !== undefined ? patchData.nominal : Math.abs(tx.amount || 0);
+    const finalDescription = patchData.description !== undefined ? patchData.description : (tx.description || '-');
+    const finalCategory = patchData.categoryName !== undefined ? patchData.categoryName : (tx.categories?.name || '-');
+    const tipeLabel = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+    const akunName = tx.accounts?.name || '-';
+    
+    const nominalFmt = `Rp${finalNominal.toLocaleString('id-ID')}`;
+
+    let editedFields = [];
+    if (patchData.nominal !== undefined) editedFields.push(`Nominal (dari Rp${Math.abs(tx.amount || 0).toLocaleString('id-ID')} menjadi ${nominalFmt})`);
+    if (patchData.description !== undefined) editedFields.push(`Catatan (dari "${oldCatatan}" menjadi "${finalDescription}")`);
+    if (patchData.categoryName !== undefined) editedFields.push(`Kategori (dari "${oldKategori}" menjadi "${finalCategory}")`);
+
+    const message = `💸 <b>TRANSAKSI DIEDIT</b>\n\n` +
+      `<b>No:</b> ${tx.id.substring(0,8)}\n` +
+      `<b>Tanggal:</b> ${tx.transaction_date || '-'}\n` +
+      `<b>Waktu:</b> ${tx.transaction_time ? tx.transaction_time.slice(0,5) : '-'}\n` +
+      `<b>Tipe:</b> ${tipeLabel}\n` +
+      `<b>Kategori:</b> ${finalCategory}\n` +
+      `<b>Akun:</b> ${akunName}\n` +
+      `<b>Catatan / Detail:</b> ${finalDescription}\n` +
+      `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
+      `<b>Saldo (Rp) Saat Ini:</b> -\n\n` +
+      `Yang saya edit adalah:\n- ${editedFields.join('\n- ')}\n\n` +
+      `Apakah ada hal lain yang mau diedit, Tuan?`;
+
+    return { status: 'SUCCESS', message };
   } catch (error) {
     console.error('[FINANCE] Failed to edit transaction:', error.message);
     return { status: 'FAILED', message: `Gagal mengubah transaksi: ${error.message}` };
