@@ -126,14 +126,6 @@ export function Topbar() {
                           </SheetTrigger>
                         )
                       })}
-                      
-                      <div className="pt-4 mt-4 border-t border-border/40">
-                        <SheetTrigger asChild>
-                          <Link href="/settings" className="flex items-center rounded-xl px-4 py-3.5 text-[15px] font-medium text-slate-600 hover:bg-white hover:text-slate-900 transition-all duration-200">
-                            Pengaturan
-                          </Link>
-                        </SheetTrigger>
-                      </div>
                     </nav>
                   </div>
                 </SheetContent>
