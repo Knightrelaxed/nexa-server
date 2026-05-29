@@ -95,6 +95,11 @@ export function useAccounts(): UseAccountsReturn {
 // useCategories
 // ----------------------------------------------------------------
 
+// Module-level cache: kategori sangat jarang berubah, cukup fetch sekali
+// per-session sehingga tidak perlu hit Supabase setiap kali komponen mount.
+let _categoriesCache: DbCategory[] | null = null
+let _categoriesFetchPromise: Promise<DbCategory[]> | null = null
+
 export interface UseCategoriesReturn {
   categories: DbCategory[];
   loading: boolean;
@@ -102,29 +107,45 @@ export interface UseCategoriesReturn {
 }
 
 export function useCategories(): UseCategoriesReturn {
-  const [categories, setCategories] = useState<DbCategory[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState<DbCategory[]>(_categoriesCache ?? []);
+  const [loading, setLoading] = useState(_categoriesCache === null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    // Jika cache sudah ada, tidak perlu fetch sama sekali
+    if (_categoriesCache !== null) {
+      setCategories(_categoriesCache)
+      setLoading(false)
+      return
+    }
 
-    (async () => {
+    let cancelled = false
+
+    // Jika sedang dalam proses fetch (dipanggil dari komponen lain bersamaan),
+    // tunggu promise yang sudah berjalan — tidak membuat request ganda
+    if (!_categoriesFetchPromise) {
       if (!isSupabaseConfigured) { setLoading(false); return; }
-      try {
-        const data = await fetchCategories();
-        if (!cancelled) setCategories(data);
-      } catch (err: unknown) {
-        if (!cancelled)
-          setError(err instanceof Error ? err.message : 'Failed to load categories');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+      _categoriesFetchPromise = fetchCategories()
+    }
 
-    return () => {
-      cancelled = true;
-    };
+    _categoriesFetchPromise
+      .then((data) => {
+        _categoriesCache = data
+        _categoriesFetchPromise = null
+        if (!cancelled) {
+          setCategories(data)
+          setLoading(false)
+        }
+      })
+      .catch((err: unknown) => {
+        _categoriesFetchPromise = null
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load categories')
+          setLoading(false)
+        }
+      })
+
+    return () => { cancelled = true }
   }, []);
 
   return { categories, loading, error };
