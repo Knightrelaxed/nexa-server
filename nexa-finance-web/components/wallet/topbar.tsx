@@ -55,7 +55,7 @@ export function Topbar() {
           </nav>
 
           {/* Right Actions */}
-          <div className="ml-1 sm:ml-auto flex items-center gap-2 sm:gap-4 shrink-0">
+          <div className="ml-auto flex items-center gap-2 sm:gap-4 shrink-0">
             <Button
               onClick={() => setModalOpen(true)}
               className="group gap-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold w-9 h-9 p-0 sm:w-auto sm:px-4 sm:h-10 shadow-lg shadow-emerald-500/25 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 shrink-0 flex items-center justify-center"
