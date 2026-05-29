@@ -570,7 +570,7 @@ export function DashboardView() {
       )}
 
       {/* ── Accounts Row ── */}
-      <div className="flex items-center gap-3 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0 no-scrollbar">
+      <div className="flex items-stretch gap-3 overflow-x-auto pb-3 pt-1 -mx-3 px-3 sm:mx-0 sm:px-0 no-scrollbar">
         {accounts.map((acc, i) => (
           <div key={acc.id} className={cn(
             "flex min-w-[220px] items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-md shrink-0",
@@ -585,9 +585,9 @@ export function DashboardView() {
         ))}
         <button
           onClick={() => setIsAddAccountOpen(true)}
-          className="flex h-[62px] min-w-[140px] sm:min-w-[160px] items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-white text-muted-foreground hover:bg-muted/50 transition-colors text-sm font-medium shrink-0"
+          className="flex h-auto min-w-[140px] sm:min-w-[160px] items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/50 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors text-sm font-semibold shrink-0"
         >
-          <Plus className="h-4 w-4" /> Tambah Akun
+          <Plus className="h-4 w-4 shrink-0" /> Tambah Akun
         </button>
       </div>
 
