@@ -295,7 +295,8 @@ async function getRecentTransactions(limit = 5) {
     if (!rows || rows.length === 0) return '📭 Tidak ada transaksi yang tercatat di Supabase bulan ini.';
 
     let response = `💸 <b>${rows.length} Transaksi Terakhir (Supabase):</b>\n\n`;
-    const cards = rows.map(row => _formatTxAsCard(row)).join('\n──────────────\n');
+    // Membalik urutan agar tampil dari yang terlama ke yang terbaru (kronologis)
+    const cards = [...rows].reverse().map(row => _formatTxAsCard(row)).join('\n──────────────\n');
     response += cards + '\n──────────────';
     return response;
   } catch (err) {
@@ -413,9 +414,11 @@ function _formatTxAsCard(tx) {
 
   const nominalFmt = `Rp${Math.abs(nominal).toLocaleString('id-ID')}`;
   const tipeIcon   = tipe === 'Pemasukan' ? '🟢' : '🔴';
-  const uuidShort  = tx.id ? tx.id.substring(0, 8) : 'N/A';
+  
+  // Gunakan no jika ada, jika tidak fallback ke UUID pendek
+  const displayId = tx.no ? `#${tx.no}` : (tx.id ? tx.id.substring(0, 8) : 'N/A');
 
-  return `${tipeIcon} <b>ID: ${uuidShort}</b>\n` +
+  return `${tipeIcon} <b>ID: ${displayId}</b>\n` +
     `<b>Tanggal:</b> ${tanggal}\n` +
     `<b>Waktu:</b> ${waktu}\n` +
     `<b>Tipe:</b> ${tipe}\n` +
@@ -487,7 +490,8 @@ async function searchTransactions(filters = {}) {
     if (filters.keyword)   header += ` — "${filters.keyword}"`;
     header += `:</b>\n\n`;
 
-    const cards = rows.map(tx => _formatTxAsCard(tx)).join('\n──────────────\n');
+    // Membalik urutan agar tampil dari yang terlama ke yang terbaru (kronologis)
+    const cards = [...rows].reverse().map(tx => _formatTxAsCard(tx)).join('\n──────────────\n');
     return header + cards;
   } catch (err) {
     console.error('[FINANCE] searchTransactions failed:', err.message);
@@ -1088,14 +1092,21 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
 
   let proactiveQuestion = '';
   if (isMissingDesc) {
+    const outContext = tx.destination === 'Unknown' ? `sebesar ${nominalFmt}` : `ke ${tx.destination}`;
+    const inContext = tx.destination === 'Unknown' ? `sebesar ${nominalFmt}` : `dari ${tx.destination}`;
     proactiveQuestion = tx.type === 'INCOME'
-      ? `❓ <b>Terdapat dana masuk dari ${tx.destination}.</b>\n\nKira-kira uang ini masuk dalam rangka apa, Tuan? <i>(Tanpa balasan, N.E.X.A akan menyimpannya dengan kategori otomatis dalam 5 menit).</i>`
-      : `❓ <b>N.E.X.A mencatat pengeluaran ke ${tx.destination}.</b>\n\nTuan, uang ini digunakan untuk keperluan apa ya? <i>(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).</i>`;
+      ? `❓ <b>Terdapat dana masuk ${inContext}.</b>\n\nKira-kira uang ini masuk dalam rangka apa, Tuan? <i>(Tanpa balasan, N.E.X.A akan menyimpannya dengan kategori otomatis dalam 5 menit).</i>`
+      : `❓ <b>N.E.X.A mencatat pengeluaran ${outContext}.</b>\n\nTuan, uang ini digunakan untuk keperluan apa ya? <i>(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).</i>`;
   } else if (!tx.account || !tx.payment_method) {
     const missingItems = [];
     if (!tx.account) missingItems.push("akun yang digunakan");
     if (!tx.payment_method) missingItems.push("metode pembayarannya (QRIS/Transfer/Tunai/Kredit)");
-    proactiveQuestion = `❓ <b>Satu hal lagi Tuan.</b>\n\nMohon informasikan ${missingItems.join(" dan ")} untuk transaksi ini. <i>(Atau abaikan jika ingin disimpan otomatis ke akun default dalam 5 menit).</i>`;
+    
+    if (sourceLabel.includes('DIPERBARUI')) {
+      proactiveQuestion = `✏️ <b>Detail catatan diperbarui!</b>\n\nSatu hal lagi Tuan, mohon informasikan ${missingItems.join(" dan ")} untuk transaksi ini.`;
+    } else {
+      proactiveQuestion = `❓ <b>Satu hal lagi Tuan.</b>\n\nMohon informasikan ${missingItems.join(" dan ")} untuk transaksi ini. <i>(Atau abaikan jika ingin disimpan otomatis ke akun default dalam 5 menit).</i>`;
+    }
   } else {
     proactiveQuestion = `💡 Transaksi ini siap dikunci. Jika ada koreksi tambahan, silakan balas pesan ini. Jika tidak, N.E.X.A akan meresmikannya dalam 5 menit.`;
   }
