@@ -1572,6 +1572,19 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             routingData.extracted_data.category
           );
           domainReply = result.message;
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'CATEGORY_BREAKDOWN') {
+          domainReply = await financeEngine.getCategoryInsight(routingData.extracted_data.date_text || null);
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'PERIOD_COMPARISON') {
+          domainReply = await financeEngine.getPeriodComparisonReport(routingData.extracted_data.date_text || null);
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'TOP_EXPENSES') {
+          const topLimit = routingData.extracted_data.limit || 5;
+          domainReply = await financeEngine.getTopExpensesReport(routingData.extracted_data.date_text || null, topLimit);
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'ACCOUNT_BALANCES') {
+          domainReply = await financeEngine.getAccountBalancesReport();
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'DAILY_TREND') {
+          domainReply = await financeEngine.getDailyTrendReport(routingData.extracted_data.date_text || null);
+        } else if (routingData.extracted_data && routingData.extracted_data.action === 'SMART_SUMMARY') {
+          domainReply = await financeEngine.getSmartFinanceSummary(routingData.extracted_data.date_text || null);
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'RECORD_MULTIPLE' && Array.isArray(routingData.extracted_data.transactions)) {
           let replies = [];
           for (const tx of routingData.extracted_data.transactions) {

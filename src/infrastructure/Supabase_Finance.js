@@ -475,12 +475,145 @@ async function getFinanceAnalytics(startDate, endDate) {
   };
 }
 
+/**
+ * Breakdown pengeluaran per kategori untuk rentang waktu tertentu.
+ * Returns sorted array: [{ name, total, percentage, count }]
+ */
+async function getCategoryBreakdown(startDate, endDate) {
+  if (!supabaseFinance) return [];
+  const startStr = startDate.toISOString().split('T')[0];
+  const endStr = endDate.toISOString().split('T')[0];
+
+  const { data, error } = await supabaseFinance
+    .from('transactions')
+    .select('amount, type, categories ( name )')
+    .eq('type', 'expense')
+    .gte('transaction_date', startStr)
+    .lte('transaction_date', endStr);
+
+  if (error || !data) return [];
+
+  const map = {};
+  let grandTotal = 0;
+  for (const tx of data) {
+    const cat = tx.categories?.name || 'Lainnya';
+    if (!map[cat]) map[cat] = { name: cat, total: 0, count: 0 };
+    map[cat].total += tx.amount;
+    map[cat].count += 1;
+    grandTotal += tx.amount;
+  }
+
+  return Object.values(map)
+    .map(c => ({ ...c, percentage: grandTotal > 0 ? (c.total / grandTotal * 100) : 0 }))
+    .sort((a, b) => b.total - a.total);
+}
+
+/**
+ * N transaksi expense terbesar dalam rentang waktu tertentu.
+ */
+async function getTopExpenses(startDate, endDate, limit = 5) {
+  if (!supabaseFinance) return [];
+  const startStr = startDate.toISOString().split('T')[0];
+  const endStr = endDate.toISOString().split('T')[0];
+
+  const { data, error } = await supabaseFinance
+    .from('transactions')
+    .select('id, amount, description, transaction_date, transaction_time, categories ( name ), accounts ( name )')
+    .eq('type', 'expense')
+    .gte('transaction_date', startStr)
+    .lte('transaction_date', endStr)
+    .order('amount', { ascending: false })
+    .limit(limit);
+
+  if (error || !data) return [];
+  return data;
+}
+
+/**
+ * Saldo real-time per akun (total income - total expense per account_id).
+ */
+async function getAccountBalances() {
+  if (!supabaseFinance) return [];
+  const accounts = await _loadAccounts();
+  if (!accounts.length) return [];
+
+  const results = [];
+  for (const acc of accounts) {
+    const { data, error } = await supabaseFinance
+      .from('transactions')
+      .select('amount, type')
+      .eq('account_id', acc.id);
+
+    if (error) continue;
+
+    let income = 0, expense = 0;
+    for (const tx of (data || [])) {
+      if (tx.type === 'income') income += tx.amount;
+      else expense += tx.amount;
+    }
+    results.push({
+      name: acc.name,
+      type: acc.type,
+      initial_balance: acc.initial_balance || 0,
+      totalIncome: income,
+      totalExpense: expense,
+      balance: (acc.initial_balance || 0) + income - expense,
+    });
+  }
+  return results;
+}
+
+/**
+ * Bandingkan analytics dua periode berbeda.
+ * Returns { current, previous }
+ */
+async function getPeriodComparison(currentStart, currentEnd, prevStart, prevEnd) {
+  const [current, previous] = await Promise.all([
+    getFinanceAnalytics(currentStart, currentEnd),
+    getFinanceAnalytics(prevStart, prevEnd),
+  ]);
+  return { current, previous };
+}
+
+/**
+ * Tren pengeluaran harian dalam rentang waktu.
+ * Returns [{ date: 'YYYY-MM-DD', expense: number, income: number }]
+ */
+async function getDailyTrend(startDate, endDate) {
+  if (!supabaseFinance) return [];
+  const startStr = startDate.toISOString().split('T')[0];
+  const endStr = endDate.toISOString().split('T')[0];
+
+  const { data, error } = await supabaseFinance
+    .from('transactions')
+    .select('amount, type, transaction_date')
+    .gte('transaction_date', startStr)
+    .lte('transaction_date', endStr)
+    .order('transaction_date', { ascending: true });
+
+  if (error || !data) return [];
+
+  const map = {};
+  for (const tx of data) {
+    const d = tx.transaction_date;
+    if (!map[d]) map[d] = { date: d, expense: 0, income: 0 };
+    if (tx.type === 'expense') map[d].expense += tx.amount;
+    else map[d].income += tx.amount;
+  }
+  return Object.values(map);
+}
+
 module.exports = {
   writeTransaction,
   readTransactions,
   updateTransaction,
   deleteTransaction,
   getFinanceAnalytics,
+  getCategoryBreakdown,
+  getTopExpenses,
+  getAccountBalances,
+  getPeriodComparison,
+  getDailyTrend,
   resolveAccountId,
   resolveCategoryId,
   getAccountsList,
