@@ -450,12 +450,16 @@ export interface PeriodComparisonData {
   lastYear: number;
 }
 
-export function usePeriodComparison(period: { start: Date; end: Date }, tab: "arus" | "pengeluaran" | "pemasukan") {
+export function usePeriodComparison(period: { start: Date; end: Date }, tab: "arus" | "pengeluaran" | "pemasukan", accountId?: string) {
   const [data, setData] = useState<PeriodComparisonData[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
+      if (!accountId) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       if (!isSupabaseConfigured) { setLoading(false); return; }
 
@@ -474,9 +478,9 @@ export function usePeriodComparison(period: { start: Date; end: Date }, tab: "ar
       const format = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
       
       const [trend1, trend2, trend3] = await Promise.all([
-        fetchDailyBalanceTrend('', format(s1), format(e1)),
-        fetchDailyBalanceTrend('', format(s2), format(e2)),
-        fetchDailyBalanceTrend('', format(s3), format(e3))
+        fetchDailyBalanceTrend(accountId, format(s1), format(e1)),
+        fetchDailyBalanceTrend(accountId, format(s2), format(e2)),
+        fetchDailyBalanceTrend(accountId, format(s3), format(e3))
       ]);
 
       const computeCumulative = (trend: DailyBalanceTrendRow[], type: "arus" | "pengeluaran" | "pemasukan") => {
@@ -507,12 +511,12 @@ export function usePeriodComparison(period: { start: Date; end: Date }, tab: "ar
       }
 
       setData(result);
-    } catch (err) {
-      console.error("Failed to load period comparison data", err);
+    } catch (err: any) {
+      console.error("Failed to load period comparison data", err?.message || err);
     } finally {
       setLoading(false);
     }
-  }, [period.start, period.end, tab]);
+  }, [period.start, period.end, tab, accountId]);
 
   useEffect(() => { load() }, [load]);
 

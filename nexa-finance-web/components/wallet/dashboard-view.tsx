@@ -150,7 +150,7 @@ export function DashboardView() {
     balanceTrend, totalBalance, totalIncome, totalExpense,
     cashFlow, recentTransactions, expenseByCategory, dailyCategoryExpenses, dailyNeedsWants, loading: dashLoading,
   } = useDashboardData(period)
-  const { data: comparisonData, loading: comparisonLoading } = usePeriodComparison(period, compTab)
+  const { data: comparisonData, loading: comparisonLoading } = usePeriodComparison(period, compTab, accounts[0]?.id)
 
   const trendData = balanceTrend.map((b) => ({
     name: new Date(b.day).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
