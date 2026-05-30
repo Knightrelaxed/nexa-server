@@ -81,7 +81,7 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → Jika pengguna meminta MENCATAT transaksi baru ("catat pengeluaran..."), gunakan action "RECORD".
      //     - CATATAN/DESKRIPSI: Jika pengguna HANYA menyebutkan nominal dan kata generik seperti "pengeluaran", "bayar", "uang keluar", "pemasukan", tanpa menyebutkan SECARA SPESIFIK apa yang dibeli atau tujuannya, field "description" WAJIB diisi "-". Ini penting agar N.E.X.A bisa proaktif menanyakan detailnya nanti!
      //   → KHUSUS jika pengguna mengirim struk/gambar/teks dengan banyak item dan meminta "satu-satu dipisah" atau "pisahkan transaksinya", WAJIB gunakan action "RECORD_MULTIPLE" dan isi array "transactions" dengan objek masing-masing transaksi. DILARANG menggabungkan nominal jika disuruh memisah.
-     //     - WAKTU: Jika tidak menyebut waktu, kosongkan time (otomatis sekarang). JIKA pengguna menyebut HARI/TANGGAL ("kemarin", "lusa", "tanggal 5") TANPA menyebutkan JAM yang spesifik, Anda WAJIB mengubah root intent menjadi "INCOMPLETE_INFO" dan tanyakan jam transaksinya.
+     //     - WAKTU: Jika pengguna HARI/TANGGAL ("kemarin", "lusa") TANPA menyebutkan JAM, buat perkiraan logis (misal 12:00 siang) dan isi field "time". TETAP gunakan action "RECORD". JANGAN PERNAH gunakan "INCOMPLETE_INFO" karena akan membuat nominal yang sudah diketik user hangus!
      //   → PENTING: Untuk action RECORD/EDIT/UPDATE_PENDING, pilih kategori spesifik HANYA dari opsi daftar [KATEGORI TRANSAKSI AKTIF].
      //     - ATURAN KATEGORI: DILARANG KERAS menggunakan kategori "Lainnya" atau "Uncategorized" kecuali benar-benar tidak ada yang mendekati dari daftar [KATEGORI TRANSAKSI AKTIF]. Gunakan kemampuan inferensi Anda. Analisa tujuan/catatannya dengan cerdas!
      //   → METODE PEMBAYARAN (field "payment_method"): Ekstrak HANYA jika user secara eksplisit menyebutkan atau sangat jelas tersirat. Gunakan inferensi cerdas:
@@ -495,15 +495,16 @@ Aturan Niat (intent):
   Contoh: "ya", "oke", "masukkan", "masukan", "catat", "simpan", "lanjut", "gas", "done", "save", "acc"
 - CANCEL   → user ingin MEMBATALKAN / menolak transaksi tersebut.
   Contoh: "batal", "jangan", "tidak", "ga", "gak", "hapus", "cancel", "skip"
-- UPDATE   → user memberikan deskripsi, keterangan, metode pembayaran, akun, atau kategori BARU untuk transaksi tersebut.
-  Contoh: "untuk beli makan siang", "pake tunai", "bayar qris", "kategori makanan", "bank bca", "tunai"
-- AMBIGUOUS → tidak jelas / pertanyaan baru / tidak relevan.
+- UPDATE   → user memberikan deskripsi, keterangan transaksi, tujuan pengeluaran, metode pembayaran, akun, atau kategori BARU untuk transaksi tersebut. JIKA user hanya merespons dengan kalimat atau frasa pendek (misal: "berangkat ke takom", "beli bensin", "buat bayar utang", "makan siang"), anggap itu sebagai UPDATE untuk diisi ke field "description"!
+  Contoh: "untuk beli makan siang", "pake tunai", "bayar qris", "kategori makanan", "bank bca", "berangkat ke takom"
+- AMBIGUOUS → sama sekali tidak jelas / tidak relevan.
 
 PENTING: Balas HARUS dengan format JSON valid seperti berikut:
 {
+  "reasoning": "Tuliskan 1 kalimat analisis mengapa memilih intent ini.",
   "intent": "CONFIRM" | "CANCEL" | "UPDATE" | "AMBIGUOUS",
   "updates": {
-    "description": "isi jika user memberi deskripsi/catatan (contoh: 'beli rokok dua batang')",
+    "description": "isi jika user memberi deskripsi/catatan/tujuan pengeluaran (contoh: 'beli rokok dua batang', 'berangkat ke takom')",
     "category": "isi jika user menyebut kategori",
     "payment_method": "isi jika user menyebut metode pembayaran (contoh: 'tunai', 'qris', 'transfer')",
     "account": "isi jika user menyebut nama bank/dompet (contoh: 'bank livin', 'bca', 'dana')"

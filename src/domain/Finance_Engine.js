@@ -229,11 +229,13 @@ async function processTransaction(data, source) {
       }
     }
     // ── METODE PEMBAYARAN ───────────────────────────────────────────────────
-    // Ekstrak dari data AI Router. Jika tidak disebutkan user, default null.
-    const VALID_PAYMENT_METHODS = ['QRIS', 'Transfer bank', 'Kartu Kredit', 'Tunai'];
-    const paymentMethod = data.payment_method && VALID_PAYMENT_METHODS.includes(data.payment_method)
-      ? data.payment_method
-      : null;
+    // Ekstrak dari data AI Router secara case-insensitive. Jika invalid/kosong, default null.
+    const pmRaw = typeof data.payment_method === 'string' ? data.payment_method.toLowerCase().trim() : '';
+    let paymentMethod = null;
+    if (pmRaw === 'qris') paymentMethod = 'QRIS';
+    else if (pmRaw === 'transfer bank') paymentMethod = 'Transfer bank';
+    else if (pmRaw === 'kartu kredit') paymentMethod = 'Kartu Kredit';
+    else if (pmRaw === 'tunai') paymentMethod = 'Tunai';
 
     const txDateISO = transactionTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
     const txTimeHHMM = transactionTime.toLocaleTimeString('id-ID', {
@@ -774,6 +776,7 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
     // Update category if provided
     if (newCategory && newCategory !== 'Uncategorized') {
       patchData.categoryName = newCategory;
+      patchData.txType = tx.type; // Penting untuk resolveCategoryId agar tidak default ke EXPENSE
     }
 
     // Update account if provided
@@ -907,7 +910,43 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
       const parsed = _parseFlexibleCurrency(newNominal);
       if (!isNaN(parsed)) pending.tx.nominal = parsed;
     }
-    if (newAccount) pending.tx.account = newAccount;
+
+    // ── VALIDASI AKUN ──────────────────────────────────────────────────────────
+    // Jika user menyebutkan nama akun, verifikasi dulu ke database.
+    // Jika tidak ditemukan, JANGAN update pending.tx.account dan balas dengan
+    // pesan konfirmasi yang menyebutkan daftar akun aktif.
+    if (newAccount) {
+      const accounts = await supabaseFinance.getAccountsList();
+      const normalizedInput = newAccount.toLowerCase().replace(/\s+/g, '');
+
+      // Cari akun yang paling cocok (fuzzy match sederhana berbasis includes)
+      const matched = accounts.find(a => {
+        const normalizedName = a.name.toLowerCase().replace(/\s+/g, '');
+        return normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
+      });
+
+      if (matched) {
+        // Akun ditemukan — gunakan nama resmi dari database
+        pending.tx.account = matched.name;
+      } else {
+        // Akun TIDAK ditemukan — jangan update, dan balas dengan konfirmasi
+        const accountList = accounts.map(a => `• ${a.name} (${a.type})`).join('\n');
+        const unknownAccountMsg =
+          `⚠️ <b>Akun "${newAccount}" tidak ditemukan</b> di daftar akun aktif Tuan.\n\n` +
+          `Berikut akun yang terdaftar:\n${accountList}\n\n` +
+          `❓ Silakan pilih salah satu dari daftar di atas, atau abaikan agar disimpan ke akun default dalam 5 menit.`;
+
+        // Reset timeout karena user sudah berinteraksi
+        clearTimeout(pending.timeoutId);
+        const newTimeoutId = setTimeout(async () => {
+          if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
+        }, 5 * 60 * 1000);
+        pending.timeoutId = newTimeoutId;
+
+        return unknownAccountMsg;
+      }
+    }
+
     if (newPaymentMethod) pending.tx.payment_method = newPaymentMethod;
 
     // Reset the 5-minute timeout because user interacted
@@ -1216,10 +1255,21 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
     return null;
   }
 
-  // 1. Persist to Supabase FIRST (telegram_sent = false)
+  // 1. Auto-assign akun tunggal jika belum diisi dan hanya ada 1 akun aktif
+  if (!tx.account) {
+    try {
+      const accounts = await supabaseFinance.getAccountsList();
+      if (accounts && accounts.length === 1) {
+        tx.account = accounts[0].name;
+        console.log(`[FINANCE] Auto-assigned sole account: ${tx.account}`);
+      }
+    } catch (_) {}
+  }
+
+  // 2. Persist to Supabase FIRST (telegram_sent = false)
   await supabase.savePendingTransaction(compositeKey, tx, false);
 
-  // 2. Build message
+  // 3. Build message
   const msg = await _buildConfirmationMessage(tx, sourceLabel);
 
   // 3. Auto-save timeout

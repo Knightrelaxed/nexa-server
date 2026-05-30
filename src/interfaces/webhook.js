@@ -1547,7 +1547,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             routingData.extracted_data.search_keyword,
             routingData.extracted_data.nominal,
             routingData.extracted_data.description || routingData.extracted_data.destination,
-            routingData.extracted_data.category
+            routingData.extracted_data.category,
+            routingData.extracted_data.account,
+            routingData.extracted_data.payment_method
           );
           domainReply = result.message;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CATEGORY_BREAKDOWN') {
