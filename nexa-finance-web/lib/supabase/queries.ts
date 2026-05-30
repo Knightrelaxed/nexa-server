@@ -130,7 +130,7 @@ export async function fetchTransactions(
       `
       *,
       accounts!transactions_account_id_fkey ( name ),
-      categories!transactions_category_id_fkey ( name, icon_key, icon_bg, icon_color, group_name )
+      categories!transactions_category_id_fkey ( name, icon_key, icon_bg, icon_color, color_hex, group_name )
       `
     )
     .order('transaction_date', { ascending: false })
@@ -171,6 +171,7 @@ export async function fetchTransactions(
     category_icon_key: row.categories?.icon_key ?? '',
     category_icon_bg: row.categories?.icon_bg ?? null,
     category_icon_color: row.categories?.icon_color ?? null,
+    category_color_hex: row.categories?.color_hex ?? null,
     category_group: row.categories?.group_name ?? null,
   })) as TransactionWithDetails[];
 }

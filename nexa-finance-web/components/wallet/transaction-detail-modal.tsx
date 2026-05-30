@@ -23,6 +23,10 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
   const isTransfer = transaction.type === "transfer"
   const Icon = ICON_MAP[transaction.category_icon_key || "more-horizontal"] ?? Search
 
+  // Use category hex color for header; fallback to type-based color
+  const fallbackColor = isTransfer ? "#3b82f6" : isExpense ? "#ef4444" : "#10b981"
+  const headerColor = transaction.category_color_hex || fallbackColor
+
   // transaction_date is "YYYY-MM-DD", add T00:00:00 to avoid UTC offset shifting the day
   const dateLabel = transaction.transaction_date
     ? new Date(transaction.transaction_date + "T00:00:00").toLocaleDateString("id-ID", {
@@ -41,11 +45,11 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
 
       {/* Modal */}
       <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-95 duration-200">
-        {/* Header - Colored based on type */}
-        <div className={cn(
-          "px-6 py-8 text-center relative",
-          isTransfer ? "bg-blue-500" : isExpense ? "bg-[#ef4444]" : "bg-[#10b981]"
-        )}>
+        {/* Header - colored by category */}
+        <div
+          className="px-6 py-8 text-center relative"
+          style={{ backgroundColor: headerColor }}
+        >
           <button
             onClick={onClose}
             className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-black/10 text-white/80 hover:text-white transition-colors"
@@ -55,10 +59,7 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
 
           <div className="flex justify-center mb-3">
             <div className="h-14 w-14 rounded-full bg-white flex items-center justify-center shadow-sm">
-              <Icon className={cn(
-                "h-7 w-7",
-                isTransfer ? "text-blue-500" : isExpense ? "text-[#ef4444]" : "text-[#10b981]"
-              )} />
+              <Icon className="h-7 w-7" style={{ color: headerColor }} />
             </div>
           </div>
           

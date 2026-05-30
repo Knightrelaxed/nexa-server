@@ -64,6 +64,7 @@ export interface TransactionWithDetails extends DbTransaction {
   category_icon_key: string;
   category_icon_bg: string | null;
   category_icon_color: string | null;
+  category_color_hex: string | null;
   category_group: string | null;
 }
 
