@@ -101,6 +101,7 @@ export interface TransactionFilters {
   search?: string;
   sortBy?: 'waktu_terbaru' | 'waktu_terlama';
   type?: 'all' | 'income' | 'expense' | 'transfer';
+  minAmount?: number;
   maxAmount?: number;
   paymentMethod?: string;
   transferFilter?: 'include' | 'only' | 'exclude';

@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Search, RotateCcw, SlidersHorizontal, ArrowUpDown, Wallet, Grid, Coins, FileText, ArrowLeftRight, CreditCard } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
 import { useAccounts, useCategories, useTransactions } from "@/hooks/use-finance-data"
 import {
@@ -72,7 +73,24 @@ export function FilterSidebar({ title, filters, onFilterChange, onReset, isDrawe
   const { transactions } = useTransactions()
   
   const maxNominal = transactions.length > 0 ? Math.max(...transactions.map(t => t.amount)) : 0
-  const rangeVal = filters.maxAmount || 0
+  
+  // Local state for smooth slider dragging
+  const [localRange, setLocalRange] = useState<[number, number] | null>(null)
+
+  // Sync local state when external filters reset
+  const minVal = localRange ? localRange[0] : (filters.minAmount !== undefined ? filters.minAmount : 0);
+  const maxVal = localRange ? localRange[1] : (filters.maxAmount !== undefined ? filters.maxAmount : maxNominal);
+
+  const handleRangeCommit = (values: number[]) => {
+    onFilterChange("minAmount", values[0]);
+    onFilterChange("maxAmount", values[1]);
+  }
+
+  const handleResetRange = () => {
+    setLocalRange(null);
+    onFilterChange("minAmount", undefined);
+    onFilterChange("maxAmount", undefined);
+  }
 
   const content = (
     <div className={cn("flex flex-col gap-4", isDrawer ? "h-full" : "h-full overflow-y-auto no-scrollbar pb-6 pr-1")}>
@@ -149,28 +167,55 @@ export function FilterSidebar({ title, filters, onFilterChange, onReset, isDrawe
             <div className="flex items-center justify-between mb-1.5">
               <label className="font-semibold text-[13px] flex items-center gap-1.5 text-slate-700">
                 Rentang Jumlah 
-                <RotateCcw className="h-3.5 w-3.5 text-emerald-600 hover:text-emerald-700 cursor-pointer transition-colors" onClick={() => onFilterChange("maxAmount", 0)} />
+                <RotateCcw className="h-3.5 w-3.5 text-emerald-600 hover:text-emerald-700 cursor-pointer transition-colors" onClick={handleResetRange} />
               </label>
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">IDR</span>
             </div>
-            <p className="text-[11px] text-muted-foreground mb-4">Jumlah maksimal dalam mata uang referensi</p>
-            <div className="px-1">
-              <input 
-                type="range" 
-                min={0} 
-                max={maxNominal} 
-                value={rangeVal} 
-                onChange={(e) => onFilterChange("maxAmount", Number(e.target.value))} 
-                className="w-full accent-[#10b981] h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer" 
+            <p className="text-[11px] text-muted-foreground mb-4">Jumlah absolut dalam mata uang referensi</p>
+            
+            <div className="px-2 pt-2 pb-1">
+              <Slider
+                min={0}
+                max={maxNominal}
+                step={1000}
+                value={[minVal, maxVal]}
+                onValueChange={(vals) => setLocalRange([vals[0], vals[1]])}
+                onValueCommit={handleRangeCommit}
+                className="my-2"
               />
             </div>
-            <div className="flex items-center justify-between mt-5 text-[12.5px] font-medium text-foreground gap-3">
-               <div className="flex-1 px-3 py-2.5 border border-slate-200/80 rounded-lg bg-white text-center tabular-nums shadow-sm transition-all hover:border-[#10b981]/50">
-                 Rp {rangeVal.toLocaleString('id-ID')}
-               </div>
-               <div className="flex-1 px-3 py-2.5 border border-slate-200/80 rounded-lg bg-white text-center tabular-nums shadow-sm transition-all hover:border-[#10b981]/50 text-slate-500">
-                 Rp {maxNominal.toLocaleString('id-ID')}
-               </div>
+            
+            <div className="flex items-center justify-between mt-1 mb-4 text-[12px] font-medium text-slate-500">
+               <span>Rp {minVal.toLocaleString('id-ID')}</span>
+               <span>Rp {maxVal.toLocaleString('id-ID')}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 relative">
+                <input 
+                  type="number" 
+                  value={minVal}
+                  onChange={(e) => {
+                    const val = Number(e.target.value)
+                    setLocalRange([val, maxVal])
+                  }}
+                  onBlur={() => handleRangeCommit([minVal, maxVal])}
+                  className="w-full h-9 px-3 py-2 border border-slate-200/80 rounded-lg bg-white text-[13px] font-medium shadow-sm transition-all focus:outline-none focus:border-[#10b981] focus:ring-1 focus:ring-[#10b981]"
+                />
+              </div>
+              <span className="text-slate-400 font-bold">-</span>
+              <div className="flex-1 relative">
+                <input 
+                  type="number" 
+                  value={maxVal}
+                  onChange={(e) => {
+                    const val = Number(e.target.value)
+                    setLocalRange([minVal, val])
+                  }}
+                  onBlur={() => handleRangeCommit([minVal, maxVal])}
+                  className="w-full h-9 px-3 py-2 border border-slate-200/80 rounded-lg bg-white text-[13px] font-medium shadow-sm transition-all focus:outline-none focus:border-[#10b981] focus:ring-1 focus:ring-[#10b981]"
+                />
+              </div>
             </div>
           </div>
 
@@ -183,11 +228,17 @@ export function FilterSidebar({ title, filters, onFilterChange, onReset, isDrawe
           />
           
           <FilterSelect 
-            label="Jenis pembayaran" 
+            label="Metode pembayaran" 
             icon={<CreditCard className="h-4 w-4" />}
             value={filters.paymentMethod || "all"}
             onValueChange={(v) => onFilterChange("paymentMethod", v)}
-            options={[{value: 'all', label: 'Semua Jenis Pembayaran'}, {value: 'bank', label: 'Bank'}, {value: 'e-wallet', label: 'E-Wallet'}, {value: 'cash', label: 'Tunai'}]} 
+            options={[
+              {value: 'all', label: 'Semua Metode Pembayaran'}, 
+              {value: 'QRIS', label: 'QRIS'}, 
+              {value: 'Transfer bank', label: 'Transfer Bank'}, 
+              {value: 'Kartu Kredit', label: 'Kartu Kredit'}, 
+              {value: 'Tunai', label: 'Tunai'}
+            ]} 
           />
         </div>
 

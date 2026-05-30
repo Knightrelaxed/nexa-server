@@ -210,6 +210,7 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
     filters?.search,
     filters?.sortBy,
     filters?.type,
+    filters?.minAmount,
     filters?.maxAmount,
     filters?.paymentMethod,
     filters?.transferFilter,

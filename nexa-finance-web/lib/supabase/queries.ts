@@ -164,19 +164,14 @@ export async function fetchTransactions(
   if (filters?.type && filters.type !== 'all') {
     query = query.eq('type', filters.type);
   }
-  if (filters?.maxAmount && filters.maxAmount > 0) {
+  if (filters?.minAmount !== undefined) {
+    query = query.gte('amount', filters.minAmount);
+  }
+  if (filters?.maxAmount !== undefined) {
     query = query.lte('amount', filters.maxAmount);
   }
   if (filters?.paymentMethod && filters.paymentMethod !== 'all') {
-    if (filters.paymentMethod === 'bank') {
-      query = query.in('payment_method', ['Transfer bank']);
-    } else if (filters.paymentMethod === 'e-wallet') {
-      query = query.in('payment_method', ['QRIS']); // Assuming QRIS is e-wallet here, or add more
-    } else if (filters.paymentMethod === 'cash') {
-      query = query.eq('payment_method', 'Tunai');
-    } else {
-      query = query.eq('payment_method', filters.paymentMethod);
-    }
+    query = query.eq('payment_method', filters.paymentMethod);
   }
   if (filters?.transferFilter) {
     if (filters.transferFilter === 'only') {
