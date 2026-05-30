@@ -17,8 +17,8 @@ import type { PaymentMethod } from "@/lib/supabase/types"
 
 const PAYMENT_METHOD_STYLE: Record<string, { bg: string; text: string; label: string }> = {
   'QRIS':          { bg: 'bg-violet-100', text: 'text-violet-700', label: 'QRIS' },
-  'Transfer bank': { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Transfer' },
-  'Kartu Kredit':  { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Kredit' },
+  'Transfer bank': { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Transfer bank' },
+  'Kartu Kredit':  { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Kartu Kredit' },
   'Tunai':         { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Tunai' },
 }
 
