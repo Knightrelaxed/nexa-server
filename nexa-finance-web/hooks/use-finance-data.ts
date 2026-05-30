@@ -265,13 +265,13 @@ export interface UseDashboardDataReturn {
   recentTransactions: TransactionWithDetails[];
   expenseByCategory: ExpenseByCategory[];
   dailyCategoryExpenses: any[];
-  dailyNeedsWants: { day: number; harus: number; butuh: number; ingin: number }[];
+  dailyNeedsWants: { day: string | number; harus: number; butuh: number; ingin: number }[];
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
 }
 
-export function useDashboardData(selectedMonth: Date = new Date()): UseDashboardDataReturn {
+export function useDashboardData(period: { start: Date; end: Date }): UseDashboardDataReturn {
   const [monthlySummary, setMonthlySummary] = useState<MonthlySummaryRow[]>([]);
   const [balanceTrend, setBalanceTrend] = useState<DailyBalanceTrendRow[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
@@ -280,7 +280,7 @@ export function useDashboardData(selectedMonth: Date = new Date()): UseDashboard
   const [recentTransactions, setRecentTransactions] = useState<TransactionWithDetails[]>([]);
   const [expenseByCategory, setExpenseByCategory] = useState<ExpenseByCategory[]>([]);
   const [dailyCategoryExpenses, setDailyCategoryExpenses] = useState<any[]>([]);
-  const [dailyNeedsWants, setDailyNeedsWants] = useState<{ day: number; harus: number; butuh: number; ingin: number }[]>([]);
+  const [dailyNeedsWants, setDailyNeedsWants] = useState<{ day: string | number; harus: number; butuh: number; ingin: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -290,14 +290,14 @@ export function useDashboardData(selectedMonth: Date = new Date()): UseDashboard
       setError(null);
       if (!isSupabaseConfigured) { setLoading(false); return; }
 
-      // Get date range for the selected month
-      const startOfMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1).toISOString().slice(0, 10);
-      const endOfMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).toISOString().slice(0, 10);
+      // Get date range from period
+      const startStr = new Date(period.start.getTime() - period.start.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      const endStr = new Date(period.end.getTime() - period.end.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
       // Run independent fetches in parallel
       const [accounts, transactions, summary] = await Promise.all([
         fetchAccounts(),
-        fetchTransactions({ startDate: startOfMonth, endDate: endOfMonth }),
+        fetchTransactions({ startDate: startStr, endDate: endStr }),
         fetchMonthlySummary(7),
       ]);
 
@@ -320,7 +320,7 @@ export function useDashboardData(selectedMonth: Date = new Date()): UseDashboard
       > = {};
 
       const dailyCatMap: Record<string, Record<string, number>> = {};
-      const dailyNeedsWantsMap: Record<string, { day: number; harus: number; butuh: number; ingin: number }> = {};
+      const dailyNeedsWantsMap: Record<string, { harus: number; butuh: number; ingin: number }> = {};
 
       const getSifat = (group: string | null) => {
         if (!group) return 'butuh';
@@ -344,17 +344,14 @@ export function useDashboardData(selectedMonth: Date = new Date()): UseDashboard
           }
           categoryMap[tx.category_id].total += tx.amount;
           
-          // BUGFIX: Parsing YYYY-MM-DD string dengan new Date() di JS memperlakukan
-          // tanggal sebagai UTC midnight. Di timezone WIB (UTC+7), ini bisa menyebabkan
-          // getDate() mengembalikan hari sebelumnya. Gunakan string split yang aman.
-          const day = parseInt(tx.transaction_date.split('-')[2], 10);
-          if (!dailyCatMap[day]) dailyCatMap[day] = {};
-          if (!dailyCatMap[day][tx.category_name]) dailyCatMap[day][tx.category_name] = 0;
-          dailyCatMap[day][tx.category_name] += tx.amount;
+          const dateStr = tx.transaction_date; // YYYY-MM-DD
+          if (!dailyCatMap[dateStr]) dailyCatMap[dateStr] = {};
+          if (!dailyCatMap[dateStr][tx.category_name]) dailyCatMap[dateStr][tx.category_name] = 0;
+          dailyCatMap[dateStr][tx.category_name] += tx.amount;
 
           const sifat = getSifat(tx.category_group);
-          if (!dailyNeedsWantsMap[day]) dailyNeedsWantsMap[day] = { day, harus: 0, butuh: 0, ingin: 0 };
-          dailyNeedsWantsMap[day][sifat] += tx.amount;
+          if (!dailyNeedsWantsMap[dateStr]) dailyNeedsWantsMap[dateStr] = { harus: 0, butuh: 0, ingin: 0 };
+          dailyNeedsWantsMap[dateStr][sifat] += tx.amount;
         }
       }
 
@@ -366,23 +363,46 @@ export function useDashboardData(selectedMonth: Date = new Date()): UseDashboard
         Object.values(categoryMap).sort((a, b) => b.total - a.total)
       );
 
-      // Build daily category expenses array from 1 to days in month
-      const daysInMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).getDate();
+      // Build daily arrays from start to end date
       const dailyCatArr = [];
       const dailyNeedsArr = [];
-      for (let i = 1; i <= daysInMonth; i++) {
-        dailyCatArr.push({ day: i, ...dailyCatMap[i] });
-        dailyNeedsArr.push(dailyNeedsWantsMap[i] || { day: i, harus: 0, butuh: 0, ingin: 0 });
+      const iter = new Date(period.start);
+      iter.setHours(0,0,0,0);
+      const endIter = new Date(period.end);
+      endIter.setHours(0,0,0,0);
+      
+      let safetyCount = 0;
+      while (iter <= endIter && safetyCount < 366) { // max 1 year for safety
+        const y = iter.getFullYear();
+        const m = String(iter.getMonth() + 1).padStart(2, '0');
+        const d = String(iter.getDate()).padStart(2, '0');
+        const dateStr = `${y}-${m}-${d}`;
+        
+        // short format like "5 Mei" or "24" depending on length of period
+        const dayLabel = (endIter.getTime() - period.start.getTime()) > 35 * 86400000 
+            ? new Intl.DateTimeFormat('id-ID', { month: 'short' }).format(iter) + ' ' + y.toString().substring(2)
+            : new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' }).format(iter);
+
+        dailyCatArr.push({ day: dayLabel, ...dailyCatMap[dateStr] });
+        dailyNeedsArr.push({ 
+           day: dayLabel, 
+           harus: dailyNeedsWantsMap[dateStr]?.harus || 0,
+           butuh: dailyNeedsWantsMap[dateStr]?.butuh || 0,
+           ingin: dailyNeedsWantsMap[dateStr]?.ingin || 0,
+        });
+        
+        iter.setDate(iter.getDate() + 1);
+        safetyCount++;
       }
       setDailyCategoryExpenses(dailyCatArr);
       setDailyNeedsWants(dailyNeedsArr);
 
-      // Balance trend for the first (primary) account over the selected month
+      // Balance trend for the first (primary) account over the selected period
       if (accounts.length > 0) {
         const trend = await fetchDailyBalanceTrend(
           accounts[0].id,
-          startOfMonth,
-          endOfMonth
+          startStr,
+          endStr
         );
         setBalanceTrend(trend);
       }
@@ -391,10 +411,8 @@ export function useDashboardData(selectedMonth: Date = new Date()): UseDashboard
     } finally {
       setLoading(false);
     }
-    // Gunakan key bulan+tahun yang stabil untuk menghindari re-fetch yang tidak perlu
-    // akibat perbedaan millisecond pada toISOString()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [`${selectedMonth.getFullYear()}-${selectedMonth.getMonth()}`]);
+  }, [period.start.toISOString(), period.end.toISOString()]);
 
   useEffect(() => {
     load();

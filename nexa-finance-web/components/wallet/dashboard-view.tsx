@@ -17,7 +17,7 @@ import {
 import { formatIDR, formatIDRCompact } from "@/lib/wallet-data"
 import { useAccounts, useDashboardData } from "@/hooks/use-finance-data"
 import { Button } from "@/components/ui/button"
-import { MonthSelector } from "./month-selector"
+import { PeriodSelector, defaultPeriod, type PeriodValue } from "./period-selector"
 import { AddAccountModal } from "./add-account-modal"
 import { cn } from "@/lib/utils"
 
@@ -99,8 +99,8 @@ function CircleGauge({ value, max, label }: { value: number; max: number; label:
 }
 
 /* ── Types ── */
-type CardId = "dashboard" | "tren-saldo" | "struktur" | "sifat" | "perbandingan" | "arus-kas" | "catatan"
-const DEFAULT_ORDER: CardId[] = ["dashboard", "tren-saldo", "struktur", "sifat", "perbandingan", "arus-kas", "catatan"]
+type CardId = "dashboard" | "tren-saldo" | "struktur" | "perbandingan" | "arus-kas" | "catatan" | "sifat"
+const DEFAULT_ORDER: CardId[] = ["dashboard", "tren-saldo", "struktur", "perbandingan", "arus-kas", "catatan", "sifat"]
 
 interface DragState {
   id: CardId; ghostX: number; ghostY: number
@@ -109,13 +109,13 @@ interface DragState {
 
 /* ── Main Dashboard ── */
 export function DashboardView() {
-  const [selectedMonth, setSelectedMonth] = useState<Date>(() => new Date())
+  const [period, setPeriod] = useState<PeriodValue>(defaultPeriod)
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false)
   const [cardOrder, setCardOrder] = useState<CardId[]>(DEFAULT_ORDER)
 
   // Memuat urutan kartu dari localStorage saat komponen pertama kali dirender
   useEffect(() => {
-    const saved = localStorage.getItem("nexa_dashboard_order")
+    const saved = localStorage.getItem("nexa_dashboard_order_v2")
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
@@ -133,7 +133,7 @@ export function DashboardView() {
 
   // Menyimpan urutan kartu ke localStorage setiap kali ada perubahan
   useEffect(() => {
-    localStorage.setItem("nexa_dashboard_order", JSON.stringify(cardOrder))
+    localStorage.setItem("nexa_dashboard_order_v2", JSON.stringify(cardOrder))
   }, [cardOrder])
 
   const [dragState, setDragState] = useState<DragState | null>(null)
@@ -149,7 +149,7 @@ export function DashboardView() {
   const {
     balanceTrend, totalBalance, totalIncome, totalExpense,
     cashFlow, recentTransactions, expenseByCategory, dailyCategoryExpenses, dailyNeedsWants, loading: dashLoading,
-  } = useDashboardData(selectedMonth)
+  } = useDashboardData(period)
 
   const trendData = balanceTrend.map((b) => ({
     name: new Date(b.day).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
@@ -377,7 +377,7 @@ export function DashboardView() {
 
               {!hasData && (
                  <div className="absolute inset-0 flex items-center justify-center z-10 text-xs text-muted-foreground bg-white/50 backdrop-blur-[1px]">
-                    Belum ada pengeluaran bulan ini.
+                    Belum ada pengeluaran periode ini.
                  </div>
               )}
               <div className="flex items-center gap-2 mb-4 justify-center">
@@ -411,7 +411,7 @@ export function DashboardView() {
           <WidgetHeader title="Tren Arus Kas" subtitle="Pemasukan vs Pengeluaran Harian" isLocked={isLayoutLocked} onGrab={(e) => startDrag("perbandingan", e)} />
           <div className="flex-1 flex flex-col px-2 pt-4 pb-2 min-h-[220px]">
             {dailyChartData.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center h-full text-sm text-muted-foreground">Tidak ada data bulan ini.</div>
+              <div className="flex-1 flex items-center justify-center h-full text-sm text-muted-foreground">Tidak ada data periode ini.</div>
             ) : (
               <div className="flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -441,7 +441,7 @@ export function DashboardView() {
           <div className="flex-1 flex flex-col justify-center px-4 pt-3 pb-4 space-y-4">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-[11px] text-muted-foreground">Arus Kas Bulan Ini</p>
+                <p className="text-[11px] text-muted-foreground">Arus Kas Periode Ini</p>
                 <p className={cn("text-base font-bold tabular-nums", cashFlow >= 0 ? "text-[#10b981]" : "text-[#ef4444]")}>{formatIDR(cashFlow)}</p>
               </div>
               <div className="text-right shrink-0">
@@ -476,7 +476,7 @@ export function DashboardView() {
           <WidgetHeader title="Catatan Terakhir" isLocked={isLayoutLocked} onGrab={(e) => startDrag("catatan", e)} />
           <div className="flex-1 flex flex-col min-h-[200px]">
           {recentTransactions.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Belum ada catatan bulan ini.</div>
+            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Belum ada catatan periode ini.</div>
           ) : (
             <ul className="divide-y divide-border/40">
               {recentTransactions.slice(0, 6).map((t) => {
@@ -593,7 +593,7 @@ export function DashboardView() {
 
       {/* ── Date Selector Row ── */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        <MonthSelector selectedMonth={selectedMonth} onChange={setSelectedMonth} />
+        <PeriodSelector value={period} onChange={setPeriod} />
         <Button 
           onClick={() => setIsLayoutLocked(!isLayoutLocked)}
           className={cn(

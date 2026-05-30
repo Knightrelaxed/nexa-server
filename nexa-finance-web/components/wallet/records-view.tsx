@@ -12,7 +12,7 @@ import { formatIDR, ICON_MAP } from "@/lib/wallet-data"
 import { useTransactions } from "@/hooks/use-finance-data"
 import { deleteTransactions } from "@/lib/supabase/mutations"
 import { toast } from "sonner"
-import { MonthSelector } from "./month-selector"
+import { PeriodSelector, defaultPeriod, type PeriodValue } from "./period-selector"
 import type { PaymentMethod } from "@/lib/supabase/types"
 
 const PAYMENT_METHOD_STYLE: Record<string, { bg: string; text: string; label: string }> = {
@@ -42,11 +42,11 @@ import { cn } from "@/lib/utils"
 export function RecordsView() {
   const [filtersState, setFiltersState] = useState<any>({})
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
-  const [selectedMonth, setSelectedMonth] = useState(new Date())
+  const [period, setPeriod] = useState<PeriodValue>(defaultPeriod)
 
   const filters = useMemo(() => {
-    const startOfMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1).toISOString().slice(0, 10);
-    const endOfMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).toISOString().slice(0, 10);
+    const startDate = period.start.toISOString().slice(0, 10);
+    const endDate = period.end.toISOString().slice(0, 10);
     
     // Clean up "all" values and empty strings before passing to useTransactions
     const cleanFilters: any = {}
@@ -56,8 +56,8 @@ export function RecordsView() {
       }
     })
     
-    return { ...cleanFilters, startDate: startOfMonth, endDate: endOfMonth };
-  }, [filtersState, selectedMonth])
+    return { ...cleanFilters, startDate, endDate };
+  }, [filtersState, period])
 
   const handleFilterChange = (key: string, value: any) => {
     setFiltersState((prev: any) => ({ ...prev, [key]: value }))
@@ -243,7 +243,7 @@ export function RecordsView() {
 
         {/* Date Selector */}
         <div className="flex justify-center">
-          <MonthSelector selectedMonth={selectedMonth} onChange={setSelectedMonth} />
+          <PeriodSelector value={period} onChange={setPeriod} />
         </div>
 
         {/* Transaction Card */}

@@ -23,21 +23,21 @@ import { formatIDR, formatIDRCompact, ICON_MAP } from "@/lib/wallet-data"
 import { useDashboardData, useTransactions } from "@/hooks/use-finance-data"
 import { TrendingUp, TrendingDown, Activity } from "lucide-react"
 import { FilterSidebar } from "./filter-sidebar"
-import { MonthSelector } from "./month-selector"
+import { PeriodSelector, defaultPeriod, type PeriodValue } from "./period-selector"
 import { useState } from "react"
 
 const COLORS = ["#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#eab308"]
 
 export function AnalyticsView() {
   const [filtersState, setFiltersState] = useState<any>({})
-  const [selectedMonth, setSelectedMonth] = useState(new Date())
+  const [period, setPeriod] = useState<PeriodValue>(defaultPeriod)
   
-  const { monthlySummary, expenseByCategory, totalExpense, totalIncome, loading: dashLoading } = useDashboardData(selectedMonth)
+  const { monthlySummary, expenseByCategory, totalExpense, totalIncome, loading: dashLoading } = useDashboardData(period)
 
-  // Get date range for transactions based on selected month
+  // Get date range for transactions based on selected period
   const currentMonthFilters = useMemo(() => {
-    const startDate = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1).toISOString().slice(0, 10);
-    const endDate = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).toISOString().slice(0, 10);
+    const startDate = period.start.toISOString().slice(0, 10);
+    const endDate = period.end.toISOString().slice(0, 10);
     
     const cleanFilters: any = {}
     Object.entries(filtersState).forEach(([k, v]) => {
@@ -47,7 +47,7 @@ export function AnalyticsView() {
     })
     
     return { ...cleanFilters, startDate, endDate };
-  }, [filtersState, selectedMonth]);
+  }, [filtersState, period]);
 
   const handleFilterChange = (key: string, value: any) => {
     setFiltersState((prev: any) => ({ ...prev, [key]: value }))
@@ -98,8 +98,9 @@ export function AnalyticsView() {
   }, [filteredExpenseByCategory])
 
   const today = new Date()
-  const isCurrentMonth = selectedMonth.getMonth() === today.getMonth() && selectedMonth.getFullYear() === today.getFullYear()
-  const daysPassed = isCurrentMonth ? today.getDate() : new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).getDate()
+  const periodStart = period.start
+  const daysInPeriod = Math.ceil((period.end.getTime() - period.start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+  const daysPassed = daysInPeriod
   
   const savingsRate = filteredTotalIncome > 0 ? ((filteredTotalIncome - filteredTotalExpense) / filteredTotalIncome) * 100 : 0
   const avgDaily = filteredTotalExpense / Math.max(daysPassed, 1)
@@ -109,16 +110,36 @@ export function AnalyticsView() {
     transactions
       .filter((t) => t.type === "expense")
       .forEach((t) => {
-        const day = new Date(t.transaction_date).getDate().toString()
-        map[day] = (map[day] || 0) + t.amount
+        map[t.transaction_date] = (map[t.transaction_date] || 0) + t.amount
       })
     
-    const daysInFullMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).getDate()
-    return Array.from({ length: daysInFullMonth }, (_, i) => ({
-      day: String(i + 1),
-      amount: map[String(i + 1)] ?? 0,
-    }))
-  }, [transactions, selectedMonth])
+    const arr = [];
+    const iter = new Date(period.start);
+    iter.setHours(0,0,0,0);
+    const endIter = new Date(period.end);
+    endIter.setHours(0,0,0,0);
+    
+    let safetyCount = 0;
+    while (iter <= endIter && safetyCount < 366) {
+      const y = iter.getFullYear();
+      const m = String(iter.getMonth() + 1).padStart(2, '0');
+      const d = String(iter.getDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
+      
+      const dayLabel = (endIter.getTime() - period.start.getTime()) > 35 * 86400000 
+          ? new Intl.DateTimeFormat('id-ID', { month: 'short' }).format(iter) + ' ' + y.toString().substring(2)
+          : new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' }).format(iter);
+
+      arr.push({
+        day: dayLabel,
+        amount: map[dateStr] || 0,
+      });
+      
+      iter.setDate(iter.getDate() + 1);
+      safetyCount++;
+    }
+    return arr;
+  }, [transactions, period])
 
   const chartMonthlyData = useMemo(() => {
     return monthlySummary.map(m => ({
@@ -151,7 +172,7 @@ export function AnalyticsView() {
         {/* Header / Date Selector */}
         <div className="relative z-50 flex flex-wrap items-center justify-between gap-3 bg-white/70 backdrop-blur-sm px-4 py-3 rounded-2xl border border-border/50 shadow-sm">
           <h1 className="text-lg font-bold text-slate-800 leading-tight">Ringkasan Finansial</h1>
-          <MonthSelector selectedMonth={selectedMonth} onChange={setSelectedMonth} />
+          <PeriodSelector value={period} onChange={setPeriod} />
         </div>
 
         {/* KPI Grid */}
@@ -201,8 +222,8 @@ export function AnalyticsView() {
               <div className="absolute -right-4 -top-4 w-16 h-16 bg-purple-100 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-500" />
               <p className="text-xs font-medium text-slate-500 relative z-10">Total Transaksi</p>
               <p className="mt-2 text-2xl sm:text-3xl font-black text-slate-800 relative z-10">{transactions.length}</p>
-              <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-500 relative z-10">
-                <Activity className="h-3 w-3" /> {selectedMonth.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}
+                <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-500 relative z-10">
+                <Activity className="h-3 w-3" /> {period.label}
               </p>
             </CardContent>
           </Card>
