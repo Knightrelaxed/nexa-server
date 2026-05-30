@@ -428,6 +428,11 @@ export function RecordsView() {
         <TransactionDetailModal
           transaction={viewTx}
           onClose={() => setViewModalOpen(false)}
+          onEdit={() => {
+            setViewModalOpen(false)
+            setEditTx(viewTx)
+            setEditModalOpen(true)
+          }}
         />
       )}
     </div>

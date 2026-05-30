@@ -14,6 +14,7 @@ const PAYMENT_METHOD_STYLE: Record<string, { bg: string; text: string; label: st
 interface TransactionDetailModalProps {
   transaction: any
   onClose: () => void
+  onEdit?: () => void
 }
 
 const TAILWIND_HEX_MAP: Record<string, string> = {
@@ -33,7 +34,7 @@ function getTailwindHex(twClass: string | null): string | null {
   return null
 }
 
-export function TransactionDetailModal({ transaction, onClose }: TransactionDetailModalProps) {
+export function TransactionDetailModal({ transaction, onClose, onEdit }: TransactionDetailModalProps) {
   if (!transaction) return null
 
   const isExpense = transaction.type === "expense"
@@ -134,6 +135,17 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
               {transaction.description || "-"}
             </p>
           </div>
+
+          {onEdit && (
+            <div className="pt-2">
+              <button 
+                onClick={onEdit}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors"
+              >
+                Edit Transaksi
+              </button>
+            </div>
+          )}
         </div>
 
       </div>
