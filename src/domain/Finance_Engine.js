@@ -209,8 +209,11 @@ async function processTransaction(data, source) {
     // Nominal: positive for Pemasukan, NEGATIVE for Pengeluaran
     const nominalSigned = isIncome ? nominal : -nominal;
 
-    // Apply smart categorization
-    const smartCategory = await _autoCategorizeMerchant(data.destination || data.description, data.category);
+    // Apply smart categorization combining both destination and description for maximum context
+    const dest = data.destination && data.destination !== 'Unknown' ? data.destination : '';
+    const desc = data.description && data.description !== '[Menunggu Detail User]' && data.description !== '-' ? data.description : '';
+    const combinedContext = [dest, desc].filter(Boolean).join(' - ') || 'Unknown';
+    const smartCategory = await _autoCategorizeMerchant(combinedContext, data.category);
 
     // Nama akun: gunakan data.account jika ada (dari Telegram manual/AI Router).
     // Jika otomatis dari Livin, paksa 'Bank Mandiri Livin'.
@@ -855,8 +858,12 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
         
         // Use lightweight AI categorizer instead of full routing
         if (!customCategory) {
+          const dest = pending.tx.destination && pending.tx.destination !== 'Unknown' ? pending.tx.destination : '';
+          const desc = pending.tx.description && pending.tx.description !== '[Menunggu Detail User]' && pending.tx.description !== '-' ? pending.tx.description : '';
+          const combinedContext = [dest, desc].filter(Boolean).join(' - ') || 'Unknown';
+          
           pending.tx.category = await _autoCategorizeMerchant(
-            pending.tx.destination || pending.tx.description, pending.tx.category
+            combinedContext, pending.tx.category
           );
         }
 
