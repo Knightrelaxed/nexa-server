@@ -34,6 +34,7 @@ function PaymentBadge({ method }: { method: PaymentMethod | null | undefined }) 
 }
 import { FilterSidebar } from "./filter-sidebar"
 import { AddTransactionModal } from "./add-transaction-modal"
+import { TransactionDetailModal } from "./transaction-detail-modal"
 import { cn } from "@/lib/utils"
 
 
@@ -89,6 +90,9 @@ export function RecordsView() {
 
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editTx, setEditTx] = useState<any>(null)
+
+  const [viewModalOpen, setViewModalOpen] = useState(false)
+  const [viewTx, setViewTx] = useState<any>(null)
 
   const [confirmState, setConfirmState] = useState<{
     isOpen: boolean;
@@ -296,14 +300,20 @@ export function RecordsView() {
                         const Icon = ICON_MAP[t.category_icon_key || "more-horizontal"] ?? Search
 
                         return (
-                          <div key={t.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors group border-b border-border/20 last:border-0">
+                          <div 
+                            key={t.id} 
+                            onClick={() => { setViewTx(t); setViewModalOpen(true); }}
+                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors group border-b border-border/20 last:border-0 cursor-pointer"
+                          >
                             {/* Checkbox */}
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(t.id)}
-                              onChange={() => toggleSelect(t.id)}
-                              className="rounded border-gray-300 w-4 h-4 accent-[#10b981] shrink-0"
-                            />
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(t.id)}
+                                onChange={() => toggleSelect(t.id)}
+                                className="rounded border-gray-300 w-4 h-4 accent-[#10b981] shrink-0"
+                              />
+                            </div>
 
                             {/* Icon */}
                             <div className={cn(
@@ -394,6 +404,13 @@ export function RecordsView() {
             </div>
           </div>
         </div>
+      )}
+
+      {viewModalOpen && viewTx && (
+        <TransactionDetailModal
+          transaction={viewTx}
+          onClose={() => setViewModalOpen(false)}
+        />
       )}
     </div>
   )
