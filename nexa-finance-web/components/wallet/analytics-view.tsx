@@ -285,7 +285,8 @@ export function AnalyticsView() {
                   <PieChart>
                     <Pie 
                       data={byCategory} 
-                      dataKey="value" 
+                      dataKey="value"
+                      nameKey="name"
                       innerRadius={65} 
                       outerRadius={95} 
                       paddingAngle={3}

@@ -306,7 +306,10 @@ export function DashboardView() {
               {/* Top: Pie Chart & List */}
               <div className="grid grid-cols-[130px_1fr] items-center gap-4">
                 <div className="h-[130px] relative">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-[10px] text-center text-slate-500 font-medium">Semua<br />kategori</span>
+                  </div>
+                  <ResponsiveContainer width="100%" height="100%" className="relative z-10">
                     <PieChart>
                       <Tooltip 
                         formatter={(value: number) => formatIDR(value)}
@@ -315,6 +318,7 @@ export function DashboardView() {
                       />
                       <Pie 
                         data={displayPieData} 
+                        nameKey="category_name"
                         innerRadius={40} 
                         outerRadius={60} 
                         paddingAngle={3} 
@@ -325,9 +329,6 @@ export function DashboardView() {
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-[10px] text-center text-slate-500 font-medium">Semua<br />kategori</span>
-                  </div>
                 </div>
                 {!hasData ? (
                   <div className="text-[11px] text-muted-foreground flex items-center h-full">Belum ada pengeluaran bulan ini.</div>
