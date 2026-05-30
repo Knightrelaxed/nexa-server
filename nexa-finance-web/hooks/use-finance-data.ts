@@ -229,6 +229,7 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
   }, {}), [transactions]);
 
   const totalAmount = useMemo(() => transactions.reduce((sum, tx) => {
+    if (tx.type === 'transfer') return sum;
     return tx.type === 'income' ? sum + tx.amount : sum - tx.amount;
   }, 0), [transactions]);
 
