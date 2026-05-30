@@ -414,7 +414,7 @@ function _formatTxAsCard(tx) {
   const tipe     = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
   const kategori = tx.categories?.name || '-';
   const akun     = tx.accounts?.name || '-';
-  const catatan  = tx.description || '-';
+  const deskripsi = tx.description || '-';
   const nominal  = tx.amount || 0;
 
   const nominalFmt = `Rp${Math.abs(nominal).toLocaleString('id-ID')}`;
@@ -429,7 +429,7 @@ function _formatTxAsCard(tx) {
     `<b>Tipe:</b> ${tipe}\n` +
     `<b>Kategori:</b> ${kategori}\n` +
     `<b>Akun:</b> ${akun}\n` +
-    `<b>Deskripsi:</b> ${catatan}\n` +
+    `<b>Deskripsi:</b> ${deskripsi}\n` +
     `<b>Nominal (Rp):</b> ${nominalFmt}`;
 }
 
