@@ -437,3 +437,84 @@ export function useDashboardData(period: { start: Date; end: Date }): UseDashboa
     refetch: load,
   };
 }
+
+// ----------------------------------------------------------------
+// usePeriodComparison
+// ----------------------------------------------------------------
+
+export interface PeriodComparisonData {
+  dayIndex: number;
+  dayLabel: string;
+  current: number;
+  previous: number;
+  lastYear: number;
+}
+
+export function usePeriodComparison(period: { start: Date; end: Date }, tab: "arus" | "pengeluaran" | "pemasukan") {
+  const [data, setData] = useState<PeriodComparisonData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      if (!isSupabaseConfigured) { setLoading(false); return; }
+
+      const s1 = period.start;
+      const e1 = period.end;
+      
+      const s2 = new Date(s1); s2.setMonth(s2.getMonth() - 1);
+      const e2 = new Date(e1); e2.setMonth(e2.getMonth() - 1);
+      if (e2.getMonth() === s1.getMonth()) e2.setDate(0);
+
+      const s3 = new Date(s1); s3.setFullYear(s3.getFullYear() - 1);
+      const e3 = new Date(e1); e3.setFullYear(e3.getFullYear() - 1);
+      if (s1.getMonth() === 1 && s1.getDate() === 29) s3.setDate(28);
+      if (e1.getMonth() === 1 && e1.getDate() === 29) e3.setDate(28);
+
+      const format = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      
+      const [trend1, trend2, trend3] = await Promise.all([
+        fetchDailyBalanceTrend('', format(s1), format(e1)),
+        fetchDailyBalanceTrend('', format(s2), format(e2)),
+        fetchDailyBalanceTrend('', format(s3), format(e3))
+      ]);
+
+      const computeCumulative = (trend: DailyBalanceTrendRow[], type: "arus" | "pengeluaran" | "pemasukan") => {
+        let cumulative = 0;
+        return trend.map(t => {
+          if (type === "pemasukan") cumulative += t.daily_income;
+          else if (type === "pengeluaran") cumulative += t.daily_expense;
+          else cumulative += (t.daily_income - t.daily_expense);
+          return cumulative;
+        });
+      };
+
+      const cum1 = computeCumulative(trend1, tab);
+      const cum2 = computeCumulative(trend2, tab);
+      const cum3 = computeCumulative(trend3, tab);
+
+      const maxLen = Math.max(cum1.length, cum2.length, cum3.length);
+      const result: PeriodComparisonData[] = [];
+      for (let i = 0; i < maxLen; i++) {
+        const d = trend1[i] ? new Date(trend1[i].day) : new Date(s1.getTime() + i * 86400000);
+        result.push({
+          dayIndex: i,
+          dayLabel: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+          current: cum1[i] !== undefined ? cum1[i] : (i > 0 && i >= cum1.length ? cum1[cum1.length - 1] : 0),
+          previous: cum2[i] !== undefined ? cum2[i] : (i > 0 && i >= cum2.length ? cum2[cum2.length - 1] : 0),
+          lastYear: cum3[i] !== undefined ? cum3[i] : (i > 0 && i >= cum3.length ? cum3[cum3.length - 1] : 0)
+        });
+      }
+
+      setData(result);
+    } catch (err) {
+      console.error("Failed to load period comparison data", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [period.start, period.end, tab]);
+
+  useEffect(() => { load() }, [load]);
+
+  return { data, loading };
+}

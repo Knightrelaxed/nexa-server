@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import {
   ResponsiveContainer, AreaChart, Area,
   XAxis, YAxis, Tooltip, PieChart, Pie, Cell, CartesianGrid,
-  ComposedChart, Bar, Line, Legend
+  ComposedChart, Bar, Line, Legend, LineChart
 } from "recharts"
 import {
   Trash2, Plus, PiggyBank,
@@ -15,7 +15,7 @@ import {
   Wine, Coffee, Cake, Percent, Lock, Unlock, type LucideIcon,
 } from "lucide-react"
 import { formatIDR, formatIDRCompact } from "@/lib/wallet-data"
-import { useAccounts, useDashboardData } from "@/hooks/use-finance-data"
+import { useAccounts, useDashboardData, usePeriodComparison } from "@/hooks/use-finance-data"
 import { Button } from "@/components/ui/button"
 import { PeriodSelector, defaultPeriod, type PeriodValue } from "./period-selector"
 import { AddAccountModal } from "./add-account-modal"
@@ -150,6 +150,7 @@ export function DashboardView() {
     balanceTrend, totalBalance, totalIncome, totalExpense,
     cashFlow, recentTransactions, expenseByCategory, dailyCategoryExpenses, dailyNeedsWants, loading: dashLoading,
   } = useDashboardData(period)
+  const { data: comparisonData, loading: comparisonLoading } = usePeriodComparison(period, compTab)
 
   const trendData = balanceTrend.map((b) => ({
     name: new Date(b.day).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
@@ -408,28 +409,54 @@ export function DashboardView() {
       }
       case "perbandingan": return (
         <>
-          <WidgetHeader title="Tren Arus Kas" subtitle="Pemasukan vs Pengeluaran Harian" isLocked={isLayoutLocked} onGrab={(e) => startDrag("perbandingan", e)} />
-          <div className="flex-1 flex flex-col px-2 pt-4 pb-2 min-h-[220px]">
-            {dailyChartData.length === 0 ? (
+          <WidgetHeader title="Perbandingan Periode" isLocked={isLayoutLocked} onGrab={(e) => startDrag("perbandingan", e)} />
+          <div className="flex-1 flex flex-col px-3 pt-4 pb-2 min-h-[260px]">
+            {/* Tabs */}
+            <div className="flex bg-slate-100 rounded-lg p-1 mb-4">
+              <button 
+                onClick={() => setCompTab("arus")}
+                className={cn("flex-1 py-1.5 text-sm font-semibold rounded-md transition-colors", compTab === "arus" ? "bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-700")}
+              >
+                Arus kas
+              </button>
+              <button 
+                onClick={() => setCompTab("pengeluaran")}
+                className={cn("flex-1 py-1.5 text-sm font-semibold rounded-md transition-colors", compTab === "pengeluaran" ? "bg-red-500 shadow-sm text-white" : "text-slate-500 hover:text-slate-700")}
+              >
+                Pengeluaran
+              </button>
+              <button 
+                onClick={() => setCompTab("pemasukan")}
+                className={cn("flex-1 py-1.5 text-sm font-semibold rounded-md transition-colors", compTab === "pemasukan" ? "bg-emerald-500 shadow-sm text-white" : "text-slate-500 hover:text-slate-700")}
+              >
+                Pemasukan
+              </button>
+            </div>
+
+            {comparisonLoading ? (
+              <div className="flex-1 flex items-center justify-center h-full">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-[#3b82f6]" />
+              </div>
+            ) : comparisonData.length === 0 ? (
               <div className="flex-1 flex items-center justify-center h-full text-sm text-muted-foreground">Tidak ada data periode ini.</div>
             ) : (
               <div className="flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={dailyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} stackOffset="sign">
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} interval={4} dy={10} />
-                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1_000).toFixed(0)} rb`} />
-                  <Tooltip 
-                    contentStyle={{ fontSize: 12, borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} 
-                    formatter={(v: number) => formatIDR(Math.abs(v))} 
-                    cursor={{ fill: '#f8fafc' }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: '10px' }} iconType="circle" />
-                  <Bar dataKey="Pemasukan" fill="#22c55e" stackId="a" radius={[2, 2, 0, 0]} barSize={12} className="hover:opacity-80 transition-opacity" />
-                  <Bar dataKey="Pengeluaran" fill="#ef4444" stackId="a" radius={[0, 0, 2, 2]} barSize={12} className="hover:opacity-80 transition-opacity" />
-                  <Line type="monotone" dataKey="Arus kas" stroke="#0f172a" strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 0, fill: '#0f172a' }} />
-                </ComposedChart>
-              </ResponsiveContainer>
+                  <LineChart data={comparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="dayLabel" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} interval={4} dy={10} />
+                    <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1_000_000).toFixed(1).replace('.0', '')} jt`} />
+                    <Tooltip 
+                      contentStyle={{ fontSize: 12, borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} 
+                      formatter={(v: number) => formatIDR(v)} 
+                      cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: '15px' }} iconType="circle" />
+                    <Line name="Periode Saat Ini" type="stepAfter" dataKey="current" stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 0, fill: '#3b82f6' }} />
+                    <Line name="Periode sama tahun lalu" type="stepAfter" dataKey="lastYear" stroke="#f97316" strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 0, fill: '#f97316' }} />
+                    <Line name="Periode Sebelumnya" type="stepAfter" dataKey="previous" stroke="#ec4899" strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 0, fill: '#ec4899' }} />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             )}
           </div>
