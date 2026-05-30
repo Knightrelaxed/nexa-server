@@ -247,46 +247,54 @@ export function RecordsView() {
         </div>
 
         {/* Transaction Card */}
-        <Card className="rounded-2xl shadow-sm border border-slate-200/60 bg-white overflow-hidden">
+        <Card className="rounded-2xl shadow-sm border border-slate-200/60 bg-white relative">
 
-          {/* Action Bar */}
-          <div className={cn(
-            "flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-b border-border/60 transition-colors",
-            isAnySelected ? "bg-[#fffbeb]" : "bg-white"
-          )}>
-            <div className="flex flex-col gap-1 shrink-0">
-              <span className="text-[13px] font-bold">Ditemukan {totalCount} catatan</span>
-              <label className="flex items-center gap-1.5 cursor-pointer w-fit">
+          {/* Action Bar Container */}
+          <div className="sticky top-16 sm:top-20 z-20 flex flex-col rounded-t-2xl bg-white shadow-sm ring-1 ring-slate-200/50">
+            {/* Top Text */}
+            <div className="px-4 pt-3 pb-1 bg-white rounded-t-2xl">
+              <span className="text-[13px] font-bold text-slate-700">Ditemukan {totalCount} catatan</span>
+            </div>
+            {/* Action Bar */}
+            <div className={cn(
+              "flex flex-row items-center justify-between gap-2 px-4 py-2 border-b border-border/60 transition-colors",
+              isAnySelected ? "bg-[#fffbeb]" : "bg-white"
+            )}>
+              <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
                 <input 
                   type="checkbox" 
                   checked={isAnySelected}
                   onChange={toggleSelectAll}
                   className="rounded border-gray-300 w-4 h-4 accent-[#10b981]" 
                 />
-                <span className={cn("text-[12px]", isAnySelected ? "text-foreground font-semibold" : "text-muted-foreground")}>
+                <span className={cn("text-[12px] font-semibold hidden sm:inline", isAnySelected ? "text-foreground" : "text-muted-foreground")}>
                   {isAnySelected ? "Batal pilih semua" : "Pilih semua"}
                 </span>
+                <span className={cn("text-[12px] font-semibold sm:hidden", isAnySelected ? "text-foreground" : "text-muted-foreground")}>
+                  {isAnySelected ? "Batal" : "Semua"}
+                </span>
               </label>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <Button onClick={handleEdit} size="sm" disabled={selectedIds.size !== 1} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full transition-colors", selectedIds.size === 1 ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-100")}>
-                Edit
-              </Button>
-              <Button onClick={handleDelete} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full transition-colors", isAnySelected ? "bg-[#ef4444] hover:bg-[#dc2626] text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-100")}>
-                Hapus
-              </Button>
-              <Button onClick={handleDuplicate} size="sm" disabled={selectedIds.size < 2} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full transition-colors", selectedIds.size >= 2 ? "bg-[#3b82f6] hover:bg-[#2563eb] text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-100")}>
-                Atasi Duplikasi
-              </Button>
-            </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 justify-center sm:justify-start px-2 mask-fade-edges">
+                <Button onClick={handleEdit} size="sm" disabled={selectedIds.size !== 1} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", selectedIds.size === 1 ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
+                  Edit
+                </Button>
+                <Button onClick={handleDelete} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", isAnySelected ? "bg-[#ef4444] hover:bg-[#dc2626] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
+                  Hapus
+                </Button>
+                <Button onClick={handleDuplicate} size="sm" disabled={selectedIds.size < 2} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", selectedIds.size >= 2 ? "bg-[#3b82f6] hover:bg-[#2563eb] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
+                  Atasi Duplikasi
+                </Button>
+              </div>
 
-            <div className="shrink-0 sm:text-right">
-              <p className="text-[13px] font-bold tabular-nums text-foreground">
-                {formatIDR(totalAmount)}
-              </p>
+              <div className="shrink-0 text-right">
+                <p className="text-[13px] font-bold tabular-nums text-foreground">
+                  {formatIDR(totalAmount)}
+                </p>
+              </div>
             </div>
           </div>
+
 
           <CardContent className="p-0">
             {loading ? (
@@ -299,13 +307,16 @@ export function RecordsView() {
             ) : (
               <div>
                 {sortedGrouped.map(([date, items]) => {
-                  const dayTotal = items.reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0)
+                  const dayTotal = items.reduce((s, t) => {
+                    if (t.type === "transfer") return s;
+                    return s + (t.type === "income" ? t.amount : -t.amount);
+                  }, 0)
                   const dateLabel = new Date(date).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })
 
                   return (
                     <div key={date}>
                       {/* Date Header */}
-                      <div className="flex items-center justify-between px-4 py-2 bg-[#f8fafc] border-y border-border/40">
+                      <div className="flex items-center justify-between px-4 py-2.5 bg-[#f8fafc]/95 backdrop-blur-sm border-y border-border/40 sticky top-[144px] sm:top-[160px] z-10 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                         <p className="text-[13px] font-bold">{dateLabel}</p>
                         <p className={cn("text-[13px] font-bold tabular-nums", dayTotal >= 0 ? "text-foreground" : "text-foreground")}>
                           {dayTotal >= 0 ? "" : "-"}{formatIDR(Math.abs(dayTotal))}
