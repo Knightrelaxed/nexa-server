@@ -429,7 +429,7 @@ function _formatTxAsCard(tx) {
     `<b>Tipe:</b> ${tipe}\n` +
     `<b>Kategori:</b> ${kategori}\n` +
     `<b>Akun:</b> ${akun}\n` +
-    `<b>Catatan / Detail:</b> ${catatan}\n` +
+    `<b>Deskripsi:</b> ${catatan}\n` +
     `<b>Nominal (Rp):</b> ${nominalFmt}`;
 }
 
@@ -823,7 +823,7 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
       `<b>Tipe:</b> ${tipeLabel}\n` +
       `<b>Kategori:</b> ${finalCategory}\n` +
       `<b>Akun:</b> ${akunName}\n` +
-      `<b>Catatan / Detail:</b> ${finalDescription}\n` +
+      `<b>Deskripsi:</b> ${finalDescription}\n` +
       `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
       `<b>Saldo (Rp) Saat Ini:</b> -\n\n` +
       `Yang saya edit adalah:\n- ${editedFields.join('\n- ')}\n\n` +
@@ -1167,7 +1167,7 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERB
     `<b>Kategori:</b> ${displayCategory}\n` +
     `<b>Akun:</b> ${tx.account || 'Belum dipilih'}\n` +
     `<b>Metode:</b> ${tx.payment_method || '-'}\n` +
-    `<b>Catatan / Detail:</b> ${displayDesc}\n` +
+    `<b>Deskripsi:</b> ${displayDesc}\n` +
     `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
     `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
     `${proactiveQuestion}`;

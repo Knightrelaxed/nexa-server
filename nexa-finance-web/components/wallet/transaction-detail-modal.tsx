@@ -129,7 +129,7 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
           </div>
 
           <div className="flex flex-col gap-1.5 pt-4 border-t border-slate-100">
-            <span className="text-slate-500 text-sm">Catatan</span>
+            <span className="text-slate-500 text-sm">Deskripsi</span>
             <p className="font-medium text-slate-800 text-[15px] leading-relaxed">
               {transaction.description || "-"}
             </p>
