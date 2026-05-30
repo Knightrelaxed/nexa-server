@@ -530,6 +530,10 @@ async function getFinanceAnalytics(dateText = null) {
         endDate = new Date(startDate.getFullYear(), 11, 31);
       } else if (lowerDate.includes('hari')) {
         timeLabel = 'Hari Ini';
+      } else if (lowerDate.includes('kemarin') || lowerDate.includes('lalu') || lowerDate.includes('sebelum')) {
+        timeLabel = 'Bulan Kemarin';
+        startDate = new Date(startDate.getFullYear(), startDate.getMonth() - 1, 1);
+        endDate = new Date(startDate.getFullYear(), startDate.getMonth(), 0);
       } else {
         startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
         endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
