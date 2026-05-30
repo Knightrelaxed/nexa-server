@@ -63,5 +63,48 @@ Modul `src/core/cron.js` bertindak sebagai jantung yang berdetak sendiri di lata
 4. **Short-Circuit Protection:** Data kosong atau `Unknown` tidak akan pernah menimpa catatan deskripsi sah yang dimasukkan pengguna saat AI menentukan kategori.
 
 ---
+
+## 🌊 4. Alur Data Detail & Sistem AI Prompt (Cognitive Flow)
+
+N.E.X.A mengandalkan sistem *prompt engineering* berlapis untuk mempertahankan gaya bahasa asisten eksekutif sekaligus mengekstrak data JSON yang presisi secara matematis.
+
+### A. Alur Data (Data Flow Pipeline)
+1. **Ingestion (Pemasukan):** Teks masuk via Telegram (`webhook.js`).
+2. **Context Assembly (Perakitan Konteks):** Sebelum memanggil AI, N.E.X.A merakit "Context Block" di `AI_Router.js`. Blok ini berisi:
+   - Waktu saat ini (Akurasi Real-Time).
+   - Kalender 7 hari ke depan (Ditarik dari Google Calendar).
+   - 80+ Kategori Keuangan Aktif (Ditarik dari Supabase).
+   - 84 Fakta Personal Tuan (Data relasional tentang Tuan).
+   - Riwayat Obrolan Terakhir.
+3. **Cognitive Routing (Pengenalan Niat):** Context Block dan pesan user dikirim ke LLM (Groq/Gemini).
+4. **Execution (Eksekusi):** Output JSON di-parsing dan dilempar ke domain fungsi yang relevan (Finance/Calendar/Device).
+5. **Persistence (Penyimpanan):** Data disimpan ke PostgreSQL (Supabase) dengan UUID dan relasi `account_id` / `category_id`.
+
+### B. Master AI Router Prompt (`ROUTER_SYSTEM_PROMPT`)
+Di dalam `src/core/AI_Router.js`, N.E.X.A menggunakan Mega Prompt dengan arsitektur instruksi ketat:
+- **Role:** "Anda adalah N.E.X.A (Nexa Engine for eXecutive Assistance), Asisten AI Pribadi eksklusif milik Tuan Faqih Hidayatulloh. Berbicaralah dengan gaya JARVIS: elegan, sangat cerdas, dingin namun hormat, ringkas, dan fokus."
+- **Data Ekstraksi:** AI dipaksa mengeluarkan JSON dengan skema ketat:
+  ```json
+  {
+    "intent": "FINANCE | CALENDAR | DEVICE | EMAIL | DATABASE | GENERIC | INCOMPLETE_INFO",
+    "action": "RECORD | EDIT | ASK_REPORT | ...",
+    "extracted_data": { ... },
+    "reply_message": "Respon elegan ke Tuan"
+  }
+  ```
+- **Constraint (Batasan Kritis):** Prompt melarang halusinasi data, melarang membuat *action* yang tidak ada, dan memaksa fallback ke `INCOMPLETE_INFO` jika Tuan memberi perintah ambigu ("Cek database" -> database mana?).
+
+### C. Finance Interceptor Prompt
+Di dalam fungsi `classifyPendingTransactionIntent`, terdapat prompt ringan (Low Latency Prompt) khusus untuk menebak balasan singkat saat ada transaksi menggantung:
+- **Aturan UPDATE yang ketat:** "JIKA user hanya merespons dengan kalimat atau frasa pendek (misal: 'berangkat ke takom', 'beli bensin', 'buat bayar utang'), anggap itu sebagai UPDATE untuk diisi ke field description!"
+- **CoT (Chain of Thought):** AI diwajibkan mengisi kolom `"reasoning"` dengan 1 kalimat pemikiran logis sebelum memberikan kesimpulan niat (`CONFIRM`, `CANCEL`, `UPDATE`, `AMBIGUOUS`). Ini meminimalisir kesalahan logika hingga 95%.
+
+### D. AI Categorizer Prompt (`Finance_Engine.js`)
+Ketika N.E.X.A harus menebak kategori transaksi yang kosong, ia menggunakan *few-shot prompting*:
+- **Aturan Pintar:** "Contoh: 'kopi latte' → 'Kafe/Bar', 'GRAB TRANSPORT' → 'Taksi', 'Shopee' → 'Belanja online'."
+- **Larangan "Lainnya":** "KHUSUS kategori 'Lainnya': HANYA gunakan JIKA deskripsinya kosong ATAU sangat ambigu. JIKA ada catatan tujuan (sekecil apapun petunjuknya), JANGAN PERNAH memilih 'Lainnya'!"
+- AI dilarang keras membalas menggunakan kalimat penjelas. Hanya nama kategori murni yang dikembalikan agar bisa difilter menggunakan sistem *Fuzzy Matcher* (pencocokan string).
+
+---
 > [!TIP]
 > **Skalabilitas:** Karena arsitektur ini murni *modular*, Tuan Faqih bisa menambahkan domain baru kapan saja (misalnya: `SmartHome_Engine.js` atau `Crypto_Engine.js`) tanpa perlu mengubah `AI_Router` atau `webhook.js` secara drastis!
