@@ -228,10 +228,15 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
     return acc;
   }, {}), [transactions]);
 
-  const totalAmount = useMemo(() => transactions.reduce((sum, tx) => {
-    if (tx.type === 'transfer') return sum;
-    return tx.type === 'income' ? sum + tx.amount : sum - tx.amount;
-  }, 0), [transactions]);
+  const totalAmount = useMemo(() => {
+    if (filters?.transferFilter === 'only' || filters?.type === 'transfer') {
+      return transactions.reduce((sum, tx) => sum + tx.amount, 0);
+    }
+    return transactions.reduce((sum, tx) => {
+      if (tx.type === 'transfer') return sum;
+      return tx.type === 'income' ? sum + tx.amount : sum - tx.amount;
+    }, 0);
+  }, [transactions, filters]);
 
   return {
     transactions,

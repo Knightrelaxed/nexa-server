@@ -289,7 +289,9 @@ export function RecordsView() {
 
               <div className="shrink-0 text-right">
                 <p className="text-[13px] font-bold tabular-nums text-foreground">
-                  {formatIDR(Math.abs(totalAmount))}
+                  {filters.type === 'expense' 
+                    ? formatIDR(Math.abs(totalAmount)) 
+                    : (totalAmount < 0 ? "-" : "") + formatIDR(Math.abs(totalAmount))}
                 </p>
               </div>
             </div>
@@ -311,7 +313,9 @@ export function RecordsView() {
                     if (t.type === "transfer") return s;
                     return s + (t.type === "income" ? t.amount : -t.amount);
                   }, 0)
-                  const dateLabel = new Date(date).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })
+                  const [y, m, d] = date.split('-');
+                  const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
+                  const dateLabel = dateObj.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 
                   return (
                     <div key={date}>

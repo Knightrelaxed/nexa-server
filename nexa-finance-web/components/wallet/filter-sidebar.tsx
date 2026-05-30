@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Search, RotateCcw, SlidersHorizontal, ArrowUpDown, Wallet, Grid, Coins, FileText, ArrowLeftRight, CreditCard } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -72,10 +72,16 @@ export function FilterSidebar({ title, filters, onFilterChange, onReset, isDrawe
   const { categories } = useCategories()
   const { transactions } = useTransactions()
   
-  const maxNominal = transactions.length > 0 ? Math.max(...transactions.map(t => t.amount)) : 0
+  const maxNominal = transactions.length > 0 ? Math.max(...transactions.map(t => t.amount), 100000000) : 100000000;
   
   // Local state for smooth slider dragging
   const [localRange, setLocalRange] = useState<[number, number] | null>(null)
+
+  useEffect(() => {
+    if (filters.minAmount === undefined && filters.maxAmount === undefined) {
+      setLocalRange(null);
+    }
+  }, [filters.minAmount, filters.maxAmount]);
 
   // Sync local state when external filters reset
   const minVal = localRange ? localRange[0] : (filters.minAmount !== undefined ? filters.minAmount : 0);
