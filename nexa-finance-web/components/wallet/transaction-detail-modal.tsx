@@ -23,10 +23,16 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
   const isTransfer = transaction.type === "transfer"
   const Icon = ICON_MAP[transaction.category_icon_key || "more-horizontal"] ?? Search
 
-  const dateLabel = transaction.transaction_date ? new Date(transaction.transaction_date).toLocaleDateString("id-ID", { 
-    weekday: 'long', day: "numeric", month: "long", year: "numeric" 
-  }) : "-"
-  const timeLabel = transaction.transaction_time ? transaction.transaction_time.slice(0, 5) : "--:--"
+  // transaction_date is "YYYY-MM-DD", add T00:00:00 to avoid UTC offset shifting the day
+  const dateLabel = transaction.transaction_date
+    ? new Date(transaction.transaction_date + "T00:00:00").toLocaleDateString("id-ID", {
+        weekday: 'long', day: "numeric", month: "long", year: "numeric"
+      })
+    : "-"
+  // transaction_time is "HH:MM:SS", just slice first 5 chars
+  const timeLabel = transaction.transaction_time
+    ? String(transaction.transaction_time).slice(0, 5)
+    : "--:--"
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
