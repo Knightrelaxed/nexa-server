@@ -304,10 +304,10 @@ export function DashboardView() {
             <WidgetHeader title="Struktur Pengeluaran" isLocked={isLayoutLocked} onGrab={(e) => startDrag("struktur", e)} />
             <div className="flex-1 flex flex-col gap-4 px-3 py-3">
               {/* Top: Pie Chart & List */}
-              <div className="grid grid-cols-[130px_1fr] items-center gap-4">
-                <div className="h-[130px] relative">
+              <div className="grid grid-cols-[150px_1fr] items-center gap-6">
+                <div className="h-[150px] relative">
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-[10px] text-center text-slate-500 font-medium">Semua<br />kategori</span>
+                    <span className="text-[11px] text-center text-slate-500 font-medium">Semua<br />kategori</span>
                   </div>
                   <ResponsiveContainer width="100%" height="100%" className="relative z-10">
                     <PieChart>
@@ -319,8 +319,8 @@ export function DashboardView() {
                       <Pie 
                         data={displayPieData} 
                         nameKey="category_name"
-                        innerRadius={40} 
-                        outerRadius={60} 
+                        innerRadius={48} 
+                        outerRadius={70} 
                         paddingAngle={3} 
                         dataKey="total" 
                         stroke="none"
