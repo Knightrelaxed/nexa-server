@@ -46,7 +46,7 @@ ${validCatNames.map(c => `- ${c}`).join('\n')}
 
 ATURAN:
 1. Gunakan inferensi cerdas. Contoh: "kopi latte" → "Kafe/Bar", "kopi" → "Kafe/Bar", "starbucks" → "Kafe/Bar", "GRAB FOOD" → "Restoran, makanan cepat saji", "GRAB TRANSPORT" → "Taksi", "nge gym" → "Olahraga aktif, kebugaran", "Waroeng Emdje" → "Restoran, makanan cepat saji", "Bakmi Jowo" → "Restoran, makanan cepat saji", "Amira Fotocopy" → "Alat tulis, peralatan", "Bisnis Kab. Sumenep" → "Layanan", "nieta kitchen" → "Restoran, makanan cepat saji", "nasi Padang" → "Restoran, makanan cepat saji", "beli Ades" → "Makanan dan minuman", "Indomaret" → "Belanja", "Shopee" → "Belanja online", "Menghutangi aji" → "Pinjaman, bunga".
-2. KHUSUS kategori "Lainnya": HANYA gunakan jika nama tujuan/merchant berupa nama orang pribadi (misal: "Budi", "Agus"), inisial/singkatan yang sangat ambigu, atau memang tujuan transaksinya benar-benar tidak bisa ditebak sama sekali.
+2. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu (misal: "Budi", "Agus"). JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya, misal "beli es teh", "ongkos", "pulsa"), JANGAN PERNAH memilih "Lainnya"! Kamu HARUS pintar menebak kategori yang paling mendekati deskripsi tersebut.
 3. HANYA balas nama kategori. Tanpa penjelasan, tanpa tanda kutip.`;
     const aiResp = await callAI(prompt);
     let cat = aiResp.trim();
