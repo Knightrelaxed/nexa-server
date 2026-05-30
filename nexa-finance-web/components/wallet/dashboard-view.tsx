@@ -304,17 +304,29 @@ export function DashboardView() {
             <WidgetHeader title="Struktur Pengeluaran" isLocked={isLayoutLocked} onGrab={(e) => startDrag("struktur", e)} />
             <div className="flex-1 flex flex-col gap-4 px-3 py-3">
               {/* Top: Pie Chart & List */}
-              <div className="grid grid-cols-[110px_1fr] items-center gap-2">
-                <div className="h-[110px] relative">
+              <div className="grid grid-cols-[130px_1fr] items-center gap-4">
+                <div className="h-[130px] relative">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={displayPieData} innerRadius={32} outerRadius={50} paddingAngle={2} dataKey="total" stroke="none">
-                        {displayPieData.map((_, i) => <Cell key={i} fill={displayPieColors[i % displayPieColors.length]} />)}
+                      <Tooltip 
+                        formatter={(value: number) => formatIDR(value)}
+                        contentStyle={{ fontSize: '11px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                        itemStyle={{ color: '#334155', fontWeight: 600 }}
+                      />
+                      <Pie 
+                        data={displayPieData} 
+                        innerRadius={40} 
+                        outerRadius={60} 
+                        paddingAngle={3} 
+                        dataKey="total" 
+                        stroke="none"
+                      >
+                        {displayPieData.map((_, i) => <Cell key={i} fill={displayPieColors[i % displayPieColors.length]} className="hover:opacity-80 transition-opacity duration-200 cursor-pointer" />)}
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="text-[9px] text-center text-muted-foreground">Semua<br />kategori</span>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-[10px] text-center text-slate-500 font-medium">Semua<br />kategori</span>
                   </div>
                 </div>
                 {!hasData ? (
