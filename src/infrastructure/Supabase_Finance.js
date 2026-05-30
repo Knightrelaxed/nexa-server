@@ -456,12 +456,13 @@ async function deleteTransaction(uuid) {
 }
 
 /**
- * Mendapatkan ringkasan total (Income, Expense, Balance) untuk rentang waktu tertentu
+ * Mendapatkan ringkasan total (Income, Expense, Balance, SavingsRate, AvgDaily) untuk rentang waktu tertentu.
+ * Logika identik dengan analytics-view.tsx di Nexa Finance Web.
  * @param {Date} startDate 
  * @param {Date} endDate 
  */
 async function getFinanceAnalytics(startDate, endDate) {
-  if (!supabaseFinance) return { totalIncome: 0, totalExpense: 0, balance: 0 };
+  if (!supabaseFinance) return { totalIncome: 0, totalExpense: 0, balance: 0, savingsRate: 0, avgDailyExpense: 0, daysPassed: 1, totalTransactions: 0 };
   
   const startStr = startDate.toISOString().split('T')[0];
   const endStr = endDate.toISOString().split('T')[0];
@@ -474,21 +475,35 @@ async function getFinanceAnalytics(startDate, endDate) {
 
   if (error) {
     console.error('[SUPABASE_FINANCE] getFinanceAnalytics error:', error.message);
-    return { totalIncome: 0, totalExpense: 0, balance: 0 };
+    return { totalIncome: 0, totalExpense: 0, balance: 0, savingsRate: 0, avgDailyExpense: 0, daysPassed: 1, totalTransactions: 0 };
   }
 
   let totalIncome = 0;
   let totalExpense = 0;
 
-  for (const tx of data) {
+  for (const tx of (data || [])) {
     if (tx.type === 'income') totalIncome += tx.amount;
     else if (tx.type === 'expense') totalExpense += tx.amount;
   }
 
+  // === Rumus IDENTIK dengan analytics-view.tsx baris 102-106 ===
+  // daysInPeriod = Math.ceil((period.end - period.start) / (1000*60*60*24)) + 1
+  const daysPassed = Math.max(Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1, 1);
+
+  // savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0
+  const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
+
+  // avgDailyExpense = totalExpense / daysPassed
+  const avgDailyExpense = totalExpense / daysPassed;
+
   return {
     totalIncome,
     totalExpense,
-    balance: totalIncome - totalExpense
+    balance: totalIncome - totalExpense,
+    savingsRate,
+    avgDailyExpense,
+    daysPassed,
+    totalTransactions: (data || []).length,
   };
 }
 
@@ -595,7 +610,10 @@ async function getPeriodComparison(currentStart, currentEnd, prevStart, prevEnd)
 
 /**
  * Tren pengeluaran harian dalam rentang waktu.
- * Returns [{ date: 'YYYY-MM-DD', expense: number, income: number }]
+ * Returns array LENGKAP hari per hari (termasuk hari kosong = 0).
+ * Logika identik dengan dailySpending di analytics-view.tsx (baris 108-141):
+ * menggunakan iter.setDate(iter.getDate() + 1) agar aman lintas bulan.
+ * @returns {Array<{ date: string, expense: number, income: number }>}
  */
 async function getDailyTrend(startDate, endDate) {
   if (!supabaseFinance) return [];
@@ -609,16 +627,46 @@ async function getDailyTrend(startDate, endDate) {
     .lte('transaction_date', endStr)
     .order('transaction_date', { ascending: true });
 
-  if (error || !data) return [];
+  if (error) {
+    console.error('[SUPABASE_FINANCE] getDailyTrend error:', error.message);
+    return [];
+  }
 
+  // Bangun lookup map dari data DB
   const map = {};
-  for (const tx of data) {
+  for (const tx of (data || [])) {
     const d = tx.transaction_date;
     if (!map[d]) map[d] = { date: d, expense: 0, income: 0 };
     if (tx.type === 'expense') map[d].expense += tx.amount;
     else map[d].income += tx.amount;
   }
-  return Object.values(map);
+
+  // === Algoritma IDENTIK dengan analytics-view.tsx ===
+  // Iterasi hari per hari dari start ke end, tanpa melewati hari kosong.
+  // iter.setDate(iter.getDate() + 1) adalah cara aman untuk lintas bulan.
+  const trendArray = [];
+  const iter = new Date(startDate);
+  iter.setHours(0, 0, 0, 0);
+  const endIter = new Date(endDate);
+  endIter.setHours(0, 0, 0, 0);
+
+  let safetyCount = 0;
+  while (iter <= endIter && safetyCount < 366) {
+    // Format tanggal lokal (bukan UTC) persis seperti transaction_date di DB
+    const y = iter.getFullYear();
+    const m = String(iter.getMonth() + 1).padStart(2, '0');
+    const d = String(iter.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+
+    trendArray.push(
+      map[dateStr] || { date: dateStr, expense: 0, income: 0 }
+    );
+
+    iter.setDate(iter.getDate() + 1); // Aman lintas bulan
+    safetyCount++;
+  }
+
+  return trendArray;
 }
 
 /**

@@ -506,6 +506,8 @@ async function searchTransactions(filters = {}) {
 
 /**
  * Fetch and format the Analytics Table from Supabase.
+ * Hasil laporan mencakup metrik KPI yang sama dengan halaman Analitik Nexa Finance Web:
+ * Savings Rate, Rata-rata Harian, Total Transaksi.
  */
 async function getFinanceAnalytics(dateText = null) {
   try {
@@ -544,12 +546,23 @@ async function getFinanceAnalytics(dateText = null) {
 
     const formatRp = (val) => `Rp${Math.abs(val).toLocaleString('id-ID')}`;
 
+    // === KPI Cards identik dengan analytics-view.tsx ===
+    // Card 1: Savings Rate  — savingsRate = (income - expense) / income * 100
+    // Card 2: Rata-rata Harian — avgDailyExpense = totalExpense / daysPassed
+    // Card 3: Total Transaksi
+
     let report = `📊 <b>Laporan Analitik Keuangan ${timeLabel}:</b>\n\n`;
     report += `🟢 <b>Total Pemasukan:</b> ${formatRp(analytics.totalIncome)}\n`;
     report += `🔴 <b>Total Pengeluaran:</b> ${formatRp(analytics.totalExpense)}\n`;
     report += `──────────────\n`;
-    report += `🏦 <b>SALDO BERSIH ${timeLabel.toUpperCase()}:</b> <b>${formatRp(analytics.balance)}</b>\n\n`;
-    report += `<i>Laporan dihitung secara real-time dari database Supabase Nexa Finance Web.</i>`;
+    report += `🏦 <b>SALDO BERSIH:</b> <b>${formatRp(analytics.balance)}</b>\n\n`;
+
+    // Metrik lanjutan (setara KPI Cards di halaman Analitik Web)
+    report += `💡 <b>Tingkat Tabungan (Savings Rate):</b> ${analytics.savingsRate.toFixed(1)}%\n`;
+    report += `📈 <b>Rata-rata Harian:</b> ${formatRp(analytics.avgDailyExpense)} / hari\n`;
+    report += `🔢 <b>Total Transaksi:</b> ${analytics.totalTransactions} transaksi dalam ${analytics.daysPassed} hari\n\n`;
+
+    report += `<i>Dihitung real-time menggunakan logika identik dengan Dasbor Nexa Finance Web.</i>`;
 
     return report;
   } catch (err) {
@@ -1582,8 +1595,11 @@ async function getDailyTrendReport(dateText = null) {
 
     const formatRp = v => `Rp${Math.abs(v).toLocaleString('id-ID')}`;
     const expenseDays = trend.filter(d => d.expense > 0);
-    const totalExpense = expenseDays.reduce((s, d) => s + d.expense, 0);
-    const avgDaily = expenseDays.length > 0 ? totalExpense / expenseDays.length : 0;
+    const totalExpense = trend.reduce((s, d) => s + d.expense, 0);
+    // === Rumus IDENTIK analytics-view.tsx: avgDaily = totalExpense / daysPassed ===
+    // daysPassed = jumlah hari riil dalam periode (bukan hanya hari yang ada transaksi)
+    const daysPassed = trend.length; // getDailyTrend sudah mengembalikan array lengkap
+    const avgDaily = daysPassed > 0 ? totalExpense / daysPassed : 0;
     const maxDay = expenseDays.sort((a, b) => b.expense - a.expense)[0];
     const minDay = [...expenseDays].sort((a, b) => a.expense - b.expense)[0];
 
