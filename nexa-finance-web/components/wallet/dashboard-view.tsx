@@ -274,12 +274,12 @@ export function DashboardView() {
                 <p className="text-[13px] font-bold text-[#10b981]">{formatIDR(totalIncome)}</p>
               </div>
             </div>
-            <div className="h-[140px] px-1 pb-2 mt-auto">
+            <div className="flex-1 w-full min-h-[220px] px-1 pb-2 mt-auto">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 4, right: 6, left: -24, bottom: 0 }}>
+                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="saldoG" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.18} />
+                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.25} />
                       <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                     </linearGradient>
                   </defs>
