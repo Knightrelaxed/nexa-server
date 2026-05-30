@@ -36,8 +36,8 @@ export function AnalyticsView() {
 
   // Get date range for transactions based on selected period
   const currentMonthFilters = useMemo(() => {
-    const startDate = period.start.toISOString().slice(0, 10);
-    const endDate = period.end.toISOString().slice(0, 10);
+    const startDate = new Date(period.start.getTime() - period.start.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const endDate = new Date(period.end.getTime() - period.end.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     
     const cleanFilters: any = {}
     Object.entries(filtersState).forEach(([k, v]) => {

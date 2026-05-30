@@ -79,11 +79,15 @@ export function FilterSidebar({ title, filters, onFilterChange, onReset, isDrawe
 
   // Sync local state when external filters reset
   const minVal = localRange ? localRange[0] : (filters.minAmount !== undefined ? filters.minAmount : 0);
-  const maxVal = localRange ? localRange[1] : (filters.maxAmount !== undefined ? filters.maxAmount : maxNominal);
+  const maxVal = localRange ? localRange[1] : (filters.maxAmount !== undefined ? (filters.maxAmount === 'all' ? maxNominal : filters.maxAmount) : maxNominal);
 
-  const handleRangeCommit = (values: number[]) => {
-    onFilterChange("minAmount", values[0]);
-    onFilterChange("maxAmount", values[1]);
+  const handleRangeCommit = (vals: number[]) => {
+    onFilterChange("minAmount", vals[0])
+    if (vals[1] === maxNominal) {
+      onFilterChange("maxAmount", "all")
+    } else {
+      onFilterChange("maxAmount", vals[1])
+    }
   }
 
   const handleResetRange = () => {
@@ -177,7 +181,7 @@ export function FilterSidebar({ title, filters, onFilterChange, onReset, isDrawe
               <Slider
                 min={0}
                 max={maxNominal}
-                step={1000}
+                step={50000}
                 value={[minVal, maxVal]}
                 onValueChange={(vals) => setLocalRange([vals[0], vals[1]])}
                 onValueCommit={handleRangeCommit}

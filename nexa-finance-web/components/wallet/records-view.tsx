@@ -45,8 +45,8 @@ export function RecordsView() {
   const [period, setPeriod] = useState<PeriodValue>(defaultPeriod)
 
   const filters = useMemo(() => {
-    const startDate = period.start.toISOString().slice(0, 10);
-    const endDate = period.end.toISOString().slice(0, 10);
+    const startDate = new Date(period.start.getTime() - period.start.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const endDate = new Date(period.end.getTime() - period.end.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     
     // Clean up "all" values and empty strings before passing to useTransactions
     const cleanFilters: any = {}
@@ -289,7 +289,7 @@ export function RecordsView() {
 
               <div className="shrink-0 text-right">
                 <p className="text-[13px] font-bold tabular-nums text-foreground">
-                  {formatIDR(totalAmount)}
+                  {formatIDR(Math.abs(totalAmount))}
                 </p>
               </div>
             </div>
