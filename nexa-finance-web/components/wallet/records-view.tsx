@@ -40,15 +40,33 @@ import { cn } from "@/lib/utils"
 
 /* ── Main Component ── */
 export function RecordsView() {
-  const [query, setQuery] = useState("")
+  const [filtersState, setFiltersState] = useState<any>({})
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState(new Date())
 
   const filters = useMemo(() => {
     const startOfMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1).toISOString().slice(0, 10);
     const endOfMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).toISOString().slice(0, 10);
-    return { search: query, startDate: startOfMonth, endDate: endOfMonth };
-  }, [query, selectedMonth])
+    
+    // Clean up "all" values and empty strings before passing to useTransactions
+    const cleanFilters: any = {}
+    Object.entries(filtersState).forEach(([k, v]) => {
+      if (v !== "all" && v !== "") {
+        cleanFilters[k] = v
+      }
+    })
+    
+    return { ...cleanFilters, startDate: startOfMonth, endDate: endOfMonth };
+  }, [filtersState, selectedMonth])
+
+  const handleFilterChange = (key: string, value: any) => {
+    setFiltersState((prev: any) => ({ ...prev, [key]: value }))
+  }
+
+  const handleResetFilters = () => {
+    setFiltersState({})
+  }
+
 
   const { loading, grouped, totalAmount, totalCount, refetch } = useTransactions(filters)
 
@@ -189,7 +207,7 @@ export function RecordsView() {
             </div>
             <hr className="border-border -mx-4 px-4 mb-4" />
             <div className="flex-1 overflow-y-auto no-scrollbar -mx-4 px-4">
-              <FilterSidebar title="Catatan" query={query} setQuery={setQuery} isDrawer={true} />
+              <FilterSidebar title="Catatan" filters={filtersState} onFilterChange={handleFilterChange} onReset={handleResetFilters} isDrawer={true} />
             </div>
             <div className="mt-auto pt-4 border-t border-border">
               <Button className="w-full bg-[#10b981] hover:bg-[#059669] text-white h-10" onClick={() => setMobileFilterOpen(false)}>
@@ -202,7 +220,7 @@ export function RecordsView() {
 
       {/* ── Desktop Sidebar ── */}
       <div className="hidden lg:block shrink-0 w-[280px] sticky top-[80px] self-start h-[calc(100vh-100px)]">
-        <FilterSidebar title="Catatan" query={query} setQuery={setQuery} />
+        <FilterSidebar title="Catatan" filters={filtersState} onFilterChange={handleFilterChange} onReset={handleResetFilters} />
       </div>
 
       {/* ── Main Content ── */}
@@ -212,7 +230,7 @@ export function RecordsView() {
         <div className="flex items-center gap-2 lg:hidden">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Cari transaksi..." value={query} onChange={(e) => setQuery(e.target.value)} className="pl-9 h-9" />
+            <Input placeholder="Cari transaksi..." value={filtersState.search || ""} onChange={(e) => handleFilterChange("search", e.target.value)} className="pl-9 h-9" />
           </div>
           <Button variant="outline" className="h-9 gap-1.5 shrink-0" onClick={() => setMobileFilterOpen(true)}>
             <SlidersHorizontal className="h-4 w-4" />

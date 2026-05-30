@@ -29,7 +29,7 @@ import { useState } from "react"
 const COLORS = ["#10b981", "#f59e0b", "#ef4444", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#eab308"]
 
 export function AnalyticsView() {
-  const [query, setQuery] = useState("")
+  const [filtersState, setFiltersState] = useState<any>({})
   const [selectedMonth, setSelectedMonth] = useState(new Date())
   
   const { monthlySummary, expenseByCategory, totalExpense, totalIncome, loading: dashLoading } = useDashboardData(selectedMonth)
@@ -38,26 +38,71 @@ export function AnalyticsView() {
   const currentMonthFilters = useMemo(() => {
     const startDate = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1).toISOString().slice(0, 10);
     const endDate = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).toISOString().slice(0, 10);
-    return { startDate, endDate };
-  }, [selectedMonth]);
+    
+    const cleanFilters: any = {}
+    Object.entries(filtersState).forEach(([k, v]) => {
+      if (v !== "all" && v !== "") {
+        cleanFilters[k] = v
+      }
+    })
+    
+    return { ...cleanFilters, startDate, endDate };
+  }, [filtersState, selectedMonth]);
+
+  const handleFilterChange = (key: string, value: any) => {
+    setFiltersState((prev: any) => ({ ...prev, [key]: value }))
+  }
+
+  const handleResetFilters = () => {
+    setFiltersState({})
+  }
 
   const { transactions, loading: txLoading } = useTransactions(currentMonthFilters)
+  
+  // Calculate aggregated data from filtered transactions
+  const { filteredTotalIncome, filteredTotalExpense, filteredExpenseByCategory } = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    const categoryMap: Record<string, { category_name: string; category_icon_key: string; total: number }> = {};
+    
+    for (const tx of transactions) {
+      if (tx.type === 'income') income += tx.amount;
+      if (tx.type === 'expense') {
+        expense += tx.amount;
+        if (!categoryMap[tx.category_id]) {
+          categoryMap[tx.category_id] = {
+            category_name: tx.category_name,
+            category_icon_key: tx.category_icon_key,
+            total: 0
+          };
+        }
+        categoryMap[tx.category_id].total += tx.amount;
+      }
+    }
+    
+    return {
+      filteredTotalIncome: income,
+      filteredTotalExpense: expense,
+      filteredExpenseByCategory: Object.values(categoryMap).sort((a, b) => b.total - a.total)
+    };
+  }, [transactions]);
+
 
   const byCategory = useMemo(() => {
-    return expenseByCategory.map(c => ({
+    return filteredExpenseByCategory.map(c => ({
       name: c.category_name,
       icon: ICON_MAP[c.category_icon_key || "more-horizontal"],
       key: c.category_name,
       value: c.total
     }))
-  }, [expenseByCategory])
+  }, [filteredExpenseByCategory])
 
   const today = new Date()
   const isCurrentMonth = selectedMonth.getMonth() === today.getMonth() && selectedMonth.getFullYear() === today.getFullYear()
   const daysPassed = isCurrentMonth ? today.getDate() : new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).getDate()
   
-  const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0
-  const avgDaily = totalExpense / Math.max(daysPassed, 1)
+  const savingsRate = filteredTotalIncome > 0 ? ((filteredTotalIncome - filteredTotalExpense) / filteredTotalIncome) * 100 : 0
+  const avgDaily = filteredTotalExpense / Math.max(daysPassed, 1)
 
   const dailySpending = useMemo(() => {
     const map: Record<string, number> = {}
@@ -96,7 +141,7 @@ export function AnalyticsView() {
       {/* Sidebar Desktop */}
       <div className="hidden lg:block shrink-0 w-64">
         <div className="sticky top-24">
-          <FilterSidebar title="Analitik" query={query} setQuery={setQuery} />
+          <FilterSidebar title="Analitik" filters={filtersState} onFilterChange={handleFilterChange} onReset={handleResetFilters} />
         </div>
       </div>
 
@@ -238,7 +283,7 @@ export function AnalyticsView() {
               </div>
               <ul className="w-full space-y-3 sm:w-1/2 max-h-56 overflow-y-auto pr-2 no-scrollbar">
                 {byCategory.slice(0, 6).map((c, i) => {
-                  const pct = totalExpense > 0 ? (c.value / totalExpense) * 100 : 0
+                  const pct = filteredTotalExpense > 0 ? (c.value / filteredTotalExpense) * 100 : 0
                   return (
                     <li key={c.key} className="group flex flex-col gap-1.5 cursor-pointer">
                       <div className="flex items-center gap-3 text-sm">

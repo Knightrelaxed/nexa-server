@@ -208,6 +208,11 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
     filters?.startDate,
     filters?.endDate,
     filters?.search,
+    filters?.sortBy,
+    filters?.type,
+    filters?.maxAmount,
+    filters?.paymentMethod,
+    filters?.transferFilter,
   ]);
 
   useEffect(() => {

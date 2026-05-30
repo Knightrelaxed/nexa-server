@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-export function FilterSelect({ label, value, options = [], icon, disabled }: { label: string; value?: string; options?: {value: string, label: string}[]; icon?: React.ReactNode; disabled?: boolean }) {
+export function FilterSelect({ label, value, options = [], icon, disabled, onValueChange }: { label: string; value?: string; options?: {value: string, label: string}[]; icon?: React.ReactNode; disabled?: boolean; onValueChange?: (value: string) => void }) {
   // Gunakan value pertama sebagai default jika tidak ada value
   const defaultValue = value || (options.length > 0 ? options[0].value : undefined);
   
@@ -28,7 +28,7 @@ export function FilterSelect({ label, value, options = [], icon, disabled }: { l
             {icon}
           </div>
         )}
-        <Select disabled={disabled} defaultValue={defaultValue}>
+        <Select disabled={disabled} value={defaultValue} onValueChange={onValueChange}>
           <SelectTrigger 
             className={cn(
               "w-full h-[42px] rounded-xl border border-slate-200/80 bg-white text-[13.5px] font-medium shadow-sm transition-all duration-300",
@@ -60,18 +60,19 @@ export function FilterSelect({ label, value, options = [], icon, disabled }: { l
 
 interface FilterSidebarProps {
   title: string
-  query: string
-  setQuery: (v: string) => void
+  filters: any
+  onFilterChange: (key: string, value: any) => void
+  onReset: () => void
   isDrawer?: boolean
 }
 
-export function FilterSidebar({ title, query, setQuery, isDrawer }: FilterSidebarProps) {
+export function FilterSidebar({ title, filters, onFilterChange, onReset, isDrawer }: FilterSidebarProps) {
   const { accounts } = useAccounts()
   const { categories } = useCategories()
   const { transactions } = useTransactions()
   
   const maxNominal = transactions.length > 0 ? Math.max(...transactions.map(t => t.amount)) : 0
-  const [rangeVal, setRangeVal] = useState(0)
+  const rangeVal = filters.maxAmount || 0
 
   const content = (
     <div className={cn("flex flex-col gap-4", isDrawer ? "h-full" : "h-full overflow-y-auto no-scrollbar pb-6 pr-1")}>
@@ -96,8 +97,8 @@ export function FilterSidebar({ title, query, setQuery, isDrawer }: FilterSideba
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Cari"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                value={filters.search || ""}
+                onChange={(e) => onFilterChange("search", e.target.value)}
                 className="pl-9 h-9 text-[13px] bg-white"
               />
             </div>
@@ -106,30 +107,40 @@ export function FilterSidebar({ title, query, setQuery, isDrawer }: FilterSideba
           <FilterSelect 
             label="Urutkan berdasarkan" 
             icon={<ArrowUpDown className="h-4 w-4" />}
+            value={filters.sortBy || "waktu_terbaru"}
+            onValueChange={(v) => onFilterChange("sortBy", v)}
             options={[{value: 'waktu_terbaru', label: 'Waktu (terbaru dulu)'}, {value: 'waktu_terlama', label: 'Waktu (terlama dulu)'}]} 
           />
           
           <FilterSelect 
             label="Akun" 
             icon={<Wallet className="h-4 w-4" />}
+            value={filters.accountId || "all"}
+            onValueChange={(v) => onFilterChange("accountId", v)}
             options={[{value: 'all', label: 'Semua akun'}, ...accounts.map(a => ({value: a.id, label: a.name}))]} 
           />
           
           <FilterSelect 
             label="Kategori" 
             icon={<Grid className="h-4 w-4" />}
+            value={filters.categoryId || "all"}
+            onValueChange={(v) => onFilterChange("categoryId", v)}
             options={[{value: 'all', label: 'Semua kategori'}, ...categories.map(c => ({value: c.id, label: c.name}))]} 
           />
           
           <FilterSelect 
             label="Mata uang" 
             icon={<Coins className="h-4 w-4" />}
+            value={"all"}
+            onValueChange={() => {}} // Not implemented since everything is IDR for now
             options={[{value: 'all', label: 'Semua Mata Uang'}, {value: 'IDR', label: 'IDR - Rupiah'}]} 
           />
           
           <FilterSelect 
             label="Jenis catatan" 
             icon={<FileText className="h-4 w-4" />}
+            value={filters.type || "all"}
+            onValueChange={(v) => onFilterChange("type", v)}
             options={[{value: 'all', label: 'Semua jenis catatan'}, {value: 'expense', label: 'Pengeluaran'}, {value: 'income', label: 'Pemasukan'}]} 
           />
 
@@ -138,18 +149,18 @@ export function FilterSidebar({ title, query, setQuery, isDrawer }: FilterSideba
             <div className="flex items-center justify-between mb-1.5">
               <label className="font-semibold text-[13px] flex items-center gap-1.5 text-slate-700">
                 Rentang Jumlah 
-                <RotateCcw className="h-3.5 w-3.5 text-emerald-600 hover:text-emerald-700 cursor-pointer transition-colors" onClick={() => setRangeVal(0)} />
+                <RotateCcw className="h-3.5 w-3.5 text-emerald-600 hover:text-emerald-700 cursor-pointer transition-colors" onClick={() => onFilterChange("maxAmount", 0)} />
               </label>
               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">IDR</span>
             </div>
-            <p className="text-[11px] text-muted-foreground mb-4">Jumlah absolut dalam mata uang referensi</p>
+            <p className="text-[11px] text-muted-foreground mb-4">Jumlah maksimal dalam mata uang referensi</p>
             <div className="px-1">
               <input 
                 type="range" 
                 min={0} 
                 max={maxNominal} 
                 value={rangeVal} 
-                onChange={(e) => setRangeVal(Number(e.target.value))} 
+                onChange={(e) => onFilterChange("maxAmount", Number(e.target.value))} 
                 className="w-full accent-[#10b981] h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer" 
               />
             </div>
@@ -166,18 +177,22 @@ export function FilterSidebar({ title, query, setQuery, isDrawer }: FilterSideba
           <FilterSelect 
             label="Transfer" 
             icon={<ArrowLeftRight className="h-4 w-4" />}
+            value={filters.transferFilter || "include"}
+            onValueChange={(v) => onFilterChange("transferFilter", v)}
             options={[{value: 'include', label: 'Sertakan transfer'}, {value: 'only', label: 'Hanya transfer'}, {value: 'exclude', label: 'Kecualikan transfer'}]} 
           />
           
           <FilterSelect 
             label="Jenis pembayaran" 
             icon={<CreditCard className="h-4 w-4" />}
+            value={filters.paymentMethod || "all"}
+            onValueChange={(v) => onFilterChange("paymentMethod", v)}
             options={[{value: 'all', label: 'Semua Jenis Pembayaran'}, {value: 'bank', label: 'Bank'}, {value: 'e-wallet', label: 'E-Wallet'}, {value: 'cash', label: 'Tunai'}]} 
           />
         </div>
 
         {/* Reset button */}
-      <Button variant="outline" className={cn("w-full h-11 border-[#10b981] text-[#10b981] hover:bg-[#10b981] hover:text-white rounded-xl gap-2 font-bold shadow-sm transition-all duration-300", !isDrawer && "mt-2")}>
+      <Button onClick={onReset} variant="outline" className={cn("w-full h-11 border-[#10b981] text-[#10b981] hover:bg-[#10b981] hover:text-white rounded-xl gap-2 font-bold shadow-sm transition-all duration-300", !isDrawer && "mt-2")}>
         <RotateCcw className="h-3.5 w-3.5" />
         Atur Ulang Filter
       </Button>

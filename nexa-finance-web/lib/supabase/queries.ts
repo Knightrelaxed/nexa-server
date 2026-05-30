@@ -132,9 +132,19 @@ export async function fetchTransactions(
       accounts!transactions_account_id_fkey ( name ),
       categories!transactions_category_id_fkey ( name, icon_key, icon_bg, icon_color, color_hex, group_name )
       `
-    )
-    .order('transaction_date', { ascending: false })
-    .order('transaction_time', { ascending: false });
+    );
+
+  if (filters?.sortBy === 'waktu_terlama') {
+    query = query
+      .order('transaction_date', { ascending: true })
+      .order('transaction_time', { ascending: true });
+  } else {
+    // Default: waktu_terbaru
+    query = query
+      .order('transaction_date', { ascending: false })
+      .order('transaction_time', { ascending: false });
+  }
+
 
   if (filters?.accountId) {
     query = query.eq('account_id', filters.accountId);
@@ -150,6 +160,30 @@ export async function fetchTransactions(
   }
   if (filters?.search) {
     query = query.ilike('description', `%${filters.search}%`);
+  }
+  if (filters?.type && filters.type !== 'all') {
+    query = query.eq('type', filters.type);
+  }
+  if (filters?.maxAmount && filters.maxAmount > 0) {
+    query = query.lte('amount', filters.maxAmount);
+  }
+  if (filters?.paymentMethod && filters.paymentMethod !== 'all') {
+    if (filters.paymentMethod === 'bank') {
+      query = query.in('payment_method', ['Transfer bank']);
+    } else if (filters.paymentMethod === 'e-wallet') {
+      query = query.in('payment_method', ['QRIS']); // Assuming QRIS is e-wallet here, or add more
+    } else if (filters.paymentMethod === 'cash') {
+      query = query.eq('payment_method', 'Tunai');
+    } else {
+      query = query.eq('payment_method', filters.paymentMethod);
+    }
+  }
+  if (filters?.transferFilter) {
+    if (filters.transferFilter === 'only') {
+      query = query.eq('type', 'transfer');
+    } else if (filters.transferFilter === 'exclude') {
+      query = query.neq('type', 'transfer');
+    }
   }
 
   const { data, error } = await query;

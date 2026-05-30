@@ -99,4 +99,9 @@ export interface TransactionFilters {
   startDate?: string;   // YYYY-MM-DD
   endDate?: string;     // YYYY-MM-DD
   search?: string;
+  sortBy?: 'waktu_terbaru' | 'waktu_terlama';
+  type?: 'all' | 'income' | 'expense' | 'transfer';
+  maxAmount?: number;
+  paymentMethod?: string;
+  transferFilter?: 'include' | 'only' | 'exclude';
 }
