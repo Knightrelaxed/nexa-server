@@ -15,6 +15,7 @@ interface TransactionDetailModalProps {
   transaction: any
   onClose: () => void
   onEdit?: () => void
+  onDelete?: () => void
 }
 
 const TAILWIND_HEX_MAP: Record<string, string> = {
@@ -34,7 +35,7 @@ function getTailwindHex(twClass: string | null): string | null {
   return null
 }
 
-export function TransactionDetailModal({ transaction, onClose, onEdit }: TransactionDetailModalProps) {
+export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete }: TransactionDetailModalProps) {
   if (!transaction) return null
 
   const isExpense = transaction.type === "expense"
@@ -136,14 +137,24 @@ export function TransactionDetailModal({ transaction, onClose, onEdit }: Transac
             </p>
           </div>
 
-          {onEdit && (
-            <div className="pt-2">
-              <button 
-                onClick={onEdit}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors"
-              >
-                Edit Transaksi
-              </button>
+          {(onEdit || onDelete) && (
+            <div className="pt-2 flex gap-3">
+              {onDelete && (
+                <button 
+                  onClick={onDelete}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-semibold transition-colors"
+                >
+                  Hapus
+                </button>
+              )}
+              {onEdit && (
+                <button 
+                  onClick={onEdit}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors"
+                >
+                  Edit
+                </button>
+              )}
             </div>
           )}
         </div>

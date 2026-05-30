@@ -433,6 +433,18 @@ export function RecordsView() {
             setEditTx(viewTx)
             setEditModalOpen(true)
           }}
+          onDelete={() => {
+            setViewModalOpen(false)
+            confirmAction("Hapus Transaksi", "Apakah Anda yakin ingin menghapus transaksi ini secara permanen?", async () => {
+              try {
+                await deleteTransactions([viewTx.id])
+                toast.success("Transaksi berhasil dihapus")
+                refetch()
+              } catch (err) {
+                toast.error("Gagal menghapus transaksi")
+              }
+            })
+          }}
         />
       )}
     </div>
