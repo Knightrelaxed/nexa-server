@@ -1,4 +1,4 @@
-# N.E.X.A Mega Architecture (Nexa Engine for eXecutive Assistance)
+# N.E.X.A Mega Architecture (Neural Extension Assistant for Intelligence)
 **Dokumen Desain Sistem Inti & Hierarki Kognitif**
 
 N.E.X.A bukan sekadar *chatbot* biasa. Ia adalah sistem kecerdasan buatan berbasis *Autonomous Agent* yang dirancang dengan arsitektur berlapis (Multi-Layer Architecture) untuk menangani manajemen keuangan, jadwal, email, dan percakapan natural tanpa henti (24/7), dibekali dengan ketahanan tingkat tinggi terhadap kegagalan (Zero-Downtime Fallback).
@@ -18,7 +18,14 @@ N.E.X.A terbagi menjadi 4 lapisan utama (*Layers*):
    - Berperan sebagai korteks prefrontal. Menerima teks mentah dan menerjemahkannya menjadi JSON Intent terstruktur (Niat pengguna).
    - Modul Utama: `src/core/AI_Router.js`
    - Fitur Spesial:
-     - **Multi-Tier Fallback Engine:** N.E.X.A memiliki 5 lapis kunci API (4 kunci Groq LLaMA-3, 1 kunci Gemini 2.5 Flash). Jika kunci 1 terkena *Rate Limit* atau *Error 413 (Payload Too Large)*, sistem akan otomatis turun ke kunci 2, 3, 4, hingga 5 tanpa disadari oleh *user*.
+     - **Multi-Tier Fallback Engine (11 Lapis Pertahanan):** N.E.X.A dibekali dengan ketahanan *Zero-Downtime* menggunakan 11 lapis kunci API dan model AI. Peralihan antar penyedia API terjadi dalam hitungan milidetik secara mulus (*seamless*).
+       - *Tier 1-4:* Groq Llama 3.3 70B (The Sprinters). Jalur utama yang dirancang untuk kecepatan tinggi.
+       - *Tier 5-6:* Gemini 2.5 Flash (The Deep Thinkers). Lapis kedua untuk logika berat dan penanganan *error*.
+       - *Tier 7:* Cerebras Llama 3.3 70B (The Backup Sprinter). Lapis ketiga untuk failover kecepatan tinggi independen.
+       - *Tier 8-9:* Gemini 2.0 Flash (The Infinite Context). Lapis keempat cadangan untuk konteks memori masif.
+       - *Tier 10:* Mistral Pixtral 12B (The Reliable Closer). Penyedia independen sebagai penyelamat jika raksasa silikon mati.
+       - *Tier 11:* OpenRouter Gemma 2 27B (The Last Resort). Lapis pamungkas agregator.
+     - **503 Smart Retry & Dumb Mode:** Setiap lapis AI juga dilengkapi mekanisme 3 kali pengulangan pintar (*exponential backoff delay* 2000ms, 4000ms, 6000ms) untuk menghadapi *server overload* sebelum lompat ke *Tier* berikutnya. Jika seluruh 11 lapis hancur, N.E.X.A akan memutus rantai dan mengaktifkan 'DUMB_MODE' yang mengirimkan pesan pemberitahuan *down* secara otomatis.
      - **Finance Interceptor:** Subsistem AI ringan yang memotong laju teks jika mendeteksi *user* sedang merespons konfirmasi transaksi tertunda, menghemat token dan latensi.
 
 3. **Domain Logic Layer (The Engines)**
@@ -82,7 +89,7 @@ N.E.X.A mengandalkan sistem *prompt engineering* berlapis untuk mempertahankan g
 
 ### B. Master AI Router Prompt (`ROUTER_SYSTEM_PROMPT`)
 Di dalam `src/core/AI_Router.js`, N.E.X.A menggunakan Mega Prompt dengan arsitektur instruksi ketat:
-- **Role:** "Anda adalah N.E.X.A (Nexa Engine for eXecutive Assistance), Asisten AI Pribadi eksklusif milik Tuan Faqih Hidayatulloh. Berbicaralah dengan gaya JARVIS: elegan, sangat cerdas, dingin namun hormat, ringkas, dan fokus."
+- **Role:** "Anda adalah N.E.X.A (Neural Extension Assistant for Intelligence), Asisten AI Pribadi eksklusif milik Tuan Faqih Hidayatulloh. Berbicaralah dengan gaya JARVIS: elegan, sangat cerdas, dingin namun hormat, ringkas, dan fokus."
 - **Data Ekstraksi:** AI dipaksa mengeluarkan JSON dengan skema ketat:
   ```json
   {
