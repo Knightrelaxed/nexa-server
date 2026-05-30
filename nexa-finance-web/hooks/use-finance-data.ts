@@ -445,9 +445,9 @@ export function useDashboardData(period: { start: Date; end: Date }): UseDashboa
 export interface PeriodComparisonData {
   dayIndex: number;
   dayLabel: string;
-  current: number;
-  previous: number;
-  lastYear: number;
+  current: number | null;
+  previous: number | null;
+  lastYear: number | null;
 }
 
 export function usePeriodComparison(period: { start: Date; end: Date }, tab: "arus" | "pengeluaran" | "pemasukan", accountId?: string) {
@@ -483,30 +483,52 @@ export function usePeriodComparison(period: { start: Date; end: Date }, tab: "ar
         fetchDailyBalanceTrend(accountId, format(s3), format(e3))
       ]);
 
-      const computeCumulative = (trend: DailyBalanceTrendRow[], type: "arus" | "pengeluaran" | "pemasukan") => {
+      const len1 = Math.round((e1.getTime() - s1.getTime()) / 86400000) + 1;
+      const len2 = Math.round((e2.getTime() - s2.getTime()) / 86400000) + 1;
+      const len3 = Math.round((e3.getTime() - s3.getTime()) / 86400000) + 1;
+      const maxLen = Math.max(len1, len2, len3);
+
+      const buildCumulative = (trend: DailyBalanceTrendRow[], type: "arus" | "pengeluaran" | "pemasukan", len: number, start: Date) => {
+        const map = new Map<string, DailyBalanceTrendRow>();
+        for (const t of trend) map.set(t.day, t);
+        
+        const arr = [];
         let cumulative = 0;
-        return trend.map(t => {
-          if (type === "pemasukan") cumulative += t.daily_income;
-          else if (type === "pengeluaran") cumulative += t.daily_expense;
-          else cumulative += (t.daily_income - t.daily_expense);
-          return cumulative;
-        });
+        for (let i = 0; i < len; i++) {
+          const d = new Date(start);
+          d.setDate(start.getDate() + i);
+          const dateStr = format(d);
+          const row = map.get(dateStr);
+          
+          let inc = 0, exp = 0;
+          if (row) {
+            inc = row.daily_income;
+            exp = row.daily_expense;
+          }
+          
+          if (type === "pemasukan") cumulative += inc;
+          else if (type === "pengeluaran") cumulative += exp;
+          else cumulative += (inc - exp);
+          
+          arr.push(cumulative);
+        }
+        return arr;
       };
 
-      const cum1 = computeCumulative(trend1, tab);
-      const cum2 = computeCumulative(trend2, tab);
-      const cum3 = computeCumulative(trend3, tab);
+      const cum1 = buildCumulative(trend1, tab, len1, s1);
+      const cum2 = buildCumulative(trend2, tab, len2, s2);
+      const cum3 = buildCumulative(trend3, tab, len3, s3);
 
-      const maxLen = Math.max(cum1.length, cum2.length, cum3.length);
       const result: PeriodComparisonData[] = [];
       for (let i = 0; i < maxLen; i++) {
-        const d = trend1[i] ? new Date(trend1[i].day) : new Date(s1.getTime() + i * 86400000);
+        const d = new Date(s1);
+        d.setDate(s1.getDate() + i);
         result.push({
           dayIndex: i,
           dayLabel: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
-          current: cum1[i] !== undefined ? cum1[i] : (i > 0 && i >= cum1.length ? cum1[cum1.length - 1] : 0),
-          previous: cum2[i] !== undefined ? cum2[i] : (i > 0 && i >= cum2.length ? cum2[cum2.length - 1] : 0),
-          lastYear: cum3[i] !== undefined ? cum3[i] : (i > 0 && i >= cum3.length ? cum3[cum3.length - 1] : 0)
+          current: i < cum1.length ? cum1[i] : null,
+          previous: i < cum2.length ? cum2[i] : null,
+          lastYear: i < cum3.length ? cum3[i] : null
         });
       }
 
