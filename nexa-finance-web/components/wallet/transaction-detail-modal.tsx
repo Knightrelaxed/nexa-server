@@ -23,10 +23,10 @@ export function TransactionDetailModal({ transaction, onClose }: TransactionDeta
   const isTransfer = transaction.type === "transfer"
   const Icon = ICON_MAP[transaction.category_icon_key || "more-horizontal"] ?? Search
 
-  const dateLabel = new Date(transaction.transaction_time).toLocaleDateString("id-ID", { 
+  const dateLabel = transaction.transaction_date ? new Date(transaction.transaction_date).toLocaleDateString("id-ID", { 
     weekday: 'long', day: "numeric", month: "long", year: "numeric" 
-  })
-  const timeLabel = transaction.transaction_time ? transaction.transaction_time.slice(11, 16) : "--:--"
+  }) : "-"
+  const timeLabel = transaction.transaction_time ? transaction.transaction_time.slice(0, 5) : "--:--"
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
