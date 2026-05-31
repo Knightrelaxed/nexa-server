@@ -247,17 +247,17 @@ export function RecordsView() {
         </div>
 
         {/* Transaction Card */}
-        <Card className="rounded-2xl shadow-sm border border-slate-200/60 bg-white relative">
+        <Card className="rounded-2xl shadow-sm border border-slate-200/60 bg-white relative min-w-0">
 
           {/* Action Bar Container */}
-          <div className="sticky top-16 sm:top-20 z-20 flex flex-col rounded-t-2xl bg-white shadow-sm ring-1 ring-slate-200/50">
+          <div className="sticky top-16 sm:top-20 z-20 flex flex-col rounded-t-2xl bg-white shadow-sm ring-1 ring-slate-200/50 min-w-0">
             {/* Top Text */}
             <div className="px-4 pt-3 pb-1 bg-white rounded-t-2xl">
               <span className="text-[13px] font-bold text-slate-700">Ditemukan {totalCount} catatan</span>
             </div>
             {/* Action Bar */}
             <div className={cn(
-              "flex flex-row items-center justify-between gap-2 px-4 py-2 border-b border-border/60 transition-colors",
+              "flex flex-row items-center justify-between gap-2 px-4 py-2 border-b border-border/60 transition-colors min-w-0 w-full",
               isAnySelected ? "bg-[#fffbeb]" : "bg-white"
             )}>
               <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
