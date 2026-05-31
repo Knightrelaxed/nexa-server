@@ -236,9 +236,6 @@ export function RecordsView() {
             <SlidersHorizontal className="h-4 w-4" />
             <span className="text-sm">Filter</span>
           </Button>
-          <Button size="icon" className="h-9 w-9 bg-[#10b981] hover:bg-[#059669] shrink-0">
-            <Plus className="h-4 w-4" />
-          </Button>
         </div>
 
         {/* Date Selector */}
