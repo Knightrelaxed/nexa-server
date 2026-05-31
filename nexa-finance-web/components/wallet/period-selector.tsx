@@ -110,7 +110,9 @@ export function PeriodSelector({ value, onChange }: PeriodSelectorProps) {
   const calcPosition = useCallback(() => {
     if (!triggerRef.current) return
     const rect = triggerRef.current.getBoundingClientRect()
-    const w = (activeTab === "custom" || activeTab === "week") ? 420 : 360
+    const maxW = typeof window !== 'undefined' ? window.innerWidth - 24 : 420
+    const desiredW = (activeTab === "custom" || activeTab === "week") ? 420 : 360
+    const w = Math.min(desiredW, maxW)
     let left = rect.left + rect.width / 2 - w / 2
     if (left < 12) left = 12
     if (left + w > window.innerWidth - 12) left = window.innerWidth - w - 12
@@ -144,7 +146,11 @@ export function PeriodSelector({ value, onChange }: PeriodSelectorProps) {
     setCalMonth({ y: ref.getFullYear(), m: ref.getMonth() })
     setMonthTabYear(ref.getFullYear())
     setDecadeStart(Math.floor(ref.getFullYear()/10)*10)
-    const newW = (mode === "custom" || mode === "week") ? 420 : 360
+    
+    const maxW = typeof window !== 'undefined' ? window.innerWidth - 24 : 420
+    const desiredW = (mode === "custom" || mode === "week") ? 420 : 360
+    const newW = Math.min(desiredW, maxW)
+    
     if (!triggerRef.current) return
     const rect = triggerRef.current.getBoundingClientRect()
     let left = rect.left + rect.width/2 - newW/2
@@ -244,7 +250,9 @@ export function PeriodSelector({ value, onChange }: PeriodSelectorProps) {
   // ── Render: Calendar ─────────────────────────────────────────────────────────
 
   function renderCalendar(mode: "custom" | "week") {
-    const cellSize = 52   // px per cell width
+    const maxCellSize = 52
+    const calculatedCellSize = Math.floor((popPos.width - 32) / 7)
+    const cellSize = Math.min(maxCellSize, Math.max(28, calculatedCellSize))
     const cellH    = 40   // px per cell height
 
     return (

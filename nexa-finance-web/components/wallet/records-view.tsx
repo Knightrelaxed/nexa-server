@@ -228,7 +228,7 @@ export function RecordsView() {
 
         {/* Mobile toolbar */}
         <div className="flex items-center gap-2 lg:hidden">
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Cari transaksi..." value={filtersState.search || ""} onChange={(e) => handleFilterChange("search", e.target.value)} className="pl-9 h-9" />
           </div>
@@ -275,7 +275,7 @@ export function RecordsView() {
                 </span>
               </label>
 
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 justify-center sm:justify-start px-2 mask-fade-edges">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 justify-center sm:justify-start px-2 mask-fade-edges min-w-0">
                 <Button onClick={handleEdit} size="sm" disabled={selectedIds.size !== 1} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", selectedIds.size === 1 ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
                   Edit
                 </Button>
@@ -358,7 +358,7 @@ export function RecordsView() {
                             </div>
 
                             {/* Category + User */}
-                            <div className="w-[110px] sm:w-[130px] shrink-0 min-w-0">
+                            <div className="flex-1 sm:flex-none sm:w-[130px] min-w-0">
                               <p className="text-[13px] font-semibold truncate">{t.category_name}</p>
                               <p className="text-[11px] text-muted-foreground truncate">{t.account_name}</p>
                             </div>
