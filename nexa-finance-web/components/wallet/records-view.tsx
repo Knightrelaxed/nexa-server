@@ -320,6 +320,9 @@ export function RecordsView() {
                   <Button onClick={handleEdit} size="sm" disabled={selectedIds.size !== 1} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", selectedIds.size === 1 ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
                     Edit
                   </Button>
+                  <Button onClick={() => toast.success("Fitur ekspor akan segera hadir")} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", isAnySelected ? "bg-[#f97316] hover:bg-[#ea580c] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
+                    Ekspor
+                  </Button>
                   <Button onClick={handleDelete} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", isAnySelected ? "bg-[#ef4444] hover:bg-[#dc2626] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
                     Hapus
                   </Button>
