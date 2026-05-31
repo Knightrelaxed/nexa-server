@@ -280,37 +280,53 @@ export function RecordsView() {
                 </span>
               </label>
 
-              <div className="flex items-center flex-1 justify-center sm:justify-start px-2 min-w-0">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm" disabled={!isAnySelected} className={cn(
-                      "h-8 px-3.5 gap-1.5 rounded-full shadow-sm shrink-0 transition-all",
-                      isAnySelected ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 cursor-not-allowed hover:bg-slate-100"
-                    )}>
-                      <ListChecks className="h-4 w-4" />
-                      <ChevronDown className="h-3 w-3 opacity-70" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-48 rounded-xl p-1.5 border-slate-100 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)]">
-                    <DropdownMenuItem onClick={handleEdit} disabled={selectedIds.size !== 1} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-slate-700">
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => toast.success("Fitur ekspor akan segera hadir")} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-orange-500 hover:text-orange-600 hover:bg-orange-50 focus:text-orange-600 focus:bg-orange-50">
-                      <FileOutput className="h-4 w-4" />
-                      Ekspor
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleDelete} disabled={!isAnySelected} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 focus:text-red-600 focus:bg-red-50">
-                      <Trash2 className="h-4 w-4" />
-                      Hapus
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator className="my-1 mx-2 bg-slate-100" />
-                    <DropdownMenuItem onClick={handleDuplicate} disabled={selectedIds.size < 2} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-blue-500 hover:text-blue-600 hover:bg-blue-50 focus:text-blue-600 focus:bg-blue-50">
-                      <Copy className="h-4 w-4" />
-                      Atasi Duplikasi
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+              <div className="flex items-center flex-1 px-2 min-w-0">
+                {/* Mobile Dropdown (hidden on sm+) */}
+                <div className="flex sm:hidden flex-1 justify-start">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" disabled={!isAnySelected} className={cn(
+                        "h-8 px-3.5 gap-1.5 rounded-full shadow-sm shrink-0 transition-all",
+                        isAnySelected ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 cursor-not-allowed hover:bg-slate-100"
+                      )}>
+                        <ListChecks className="h-4 w-4" />
+                        <ChevronDown className="h-3 w-3 opacity-70" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48 rounded-xl p-1.5 border-slate-100 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)]">
+                      <DropdownMenuItem onClick={handleEdit} disabled={selectedIds.size !== 1} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-slate-700">
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => toast.success("Fitur ekspor akan segera hadir")} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-orange-500 hover:text-orange-600 hover:bg-orange-50 focus:text-orange-600 focus:bg-orange-50">
+                        <FileOutput className="h-4 w-4" />
+                        Ekspor
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleDelete} disabled={!isAnySelected} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 focus:text-red-600 focus:bg-red-50">
+                        <Trash2 className="h-4 w-4" />
+                        Hapus
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="my-1 mx-2 bg-slate-100" />
+                      <DropdownMenuItem onClick={handleDuplicate} disabled={selectedIds.size < 2} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-blue-500 hover:text-blue-600 hover:bg-blue-50 focus:text-blue-600 focus:bg-blue-50">
+                        <Copy className="h-4 w-4" />
+                        Atasi Duplikasi
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Desktop Inline Buttons (hidden on mobile, centered) */}
+                <div className="hidden sm:flex items-center gap-1.5 flex-1 justify-center">
+                  <Button onClick={handleEdit} size="sm" disabled={selectedIds.size !== 1} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", selectedIds.size === 1 ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
+                    Edit
+                  </Button>
+                  <Button onClick={handleDelete} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", isAnySelected ? "bg-[#ef4444] hover:bg-[#dc2626] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
+                    Hapus
+                  </Button>
+                  <Button onClick={handleDuplicate} size="sm" disabled={selectedIds.size < 2} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", selectedIds.size >= 2 ? "bg-[#3b82f6] hover:bg-[#2563eb] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
+                    Atasi Duplikasi
+                  </Button>
+                </div>
               </div>
 
               <div className="shrink-0 text-right">
