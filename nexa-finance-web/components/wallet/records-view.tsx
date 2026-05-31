@@ -192,7 +192,7 @@ export function RecordsView() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 lg:gap-5 items-start">
+    <div className="flex flex-col lg:flex-row gap-4 lg:gap-5 items-stretch lg:items-start w-full">
 
       {/* ── Mobile Filter Drawer ── */}
       {mobileFilterOpen && (
@@ -224,10 +224,10 @@ export function RecordsView() {
       </div>
 
       {/* ── Main Content ── */}
-      <div className="flex-1 min-w-0 flex flex-col gap-3">
+      <div className="flex-1 min-w-0 flex flex-col gap-3 w-full">
 
         {/* Mobile toolbar */}
-        <div className="flex items-center gap-2 lg:hidden">
+        <div className="flex items-center gap-2 lg:hidden w-full">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Cari transaksi..." value={filtersState.search || ""} onChange={(e) => handleFilterChange("search", e.target.value)} className="pl-9 h-9" />
@@ -242,7 +242,7 @@ export function RecordsView() {
         </div>
 
         {/* Date Selector */}
-        <div className="flex justify-center">
+        <div className="flex justify-center w-full">
           <PeriodSelector value={period} onChange={setPeriod} />
         </div>
 
