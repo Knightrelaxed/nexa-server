@@ -63,40 +63,40 @@ export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete 
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-95 duration-200">
+      <div className="relative w-full max-w-[320px] bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-95 duration-200">
         {/* Header - colored by category */}
         <div
-          className="px-6 py-8 text-center relative"
+          className="px-5 py-5 text-center relative"
           style={{ backgroundColor: headerColor }}
         >
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-black/10 text-white/80 hover:text-white transition-colors"
+            className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-black/10 text-white/80 hover:text-white transition-colors"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
 
-          <div className="flex justify-center mb-3">
-            <div className="h-14 w-14 rounded-full bg-white flex items-center justify-center shadow-sm">
-              <Icon className="h-7 w-7" style={{ color: headerColor }} />
+          <div className="flex justify-center mb-2.5">
+            <div className="h-11 w-11 rounded-full bg-white flex items-center justify-center shadow-sm">
+              <Icon className="h-5 w-5" style={{ color: headerColor }} />
             </div>
           </div>
           
-          <h2 className="text-white/90 text-sm font-medium mb-1">{transaction.category_name}</h2>
-          <p className="text-white text-3xl font-bold tracking-tight">
+          <h2 className="text-white/90 text-xs font-medium mb-0.5">{transaction.category_name}</h2>
+          <p className="text-white text-2xl font-bold tracking-tight">
             {isExpense ? "-" : isTransfer ? "" : "+"}{formatIDR(transaction.amount)}
           </p>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-6 flex flex-col gap-5">
+        <div className="px-5 py-4 flex flex-col gap-4">
           {/* Status badge & Date */}
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <span className="text-sm text-slate-500 font-medium">Status</span>
-            <span className="px-2.5 py-1 rounded-md bg-green-50 text-green-700 text-xs font-semibold">Berhasil</span>
+            <span className="px-2.5 py-0.5 rounded-md bg-green-50 text-green-700 text-[11px] font-semibold">Berhasil</span>
           </div>
 
-          <div className="grid grid-cols-2 gap-y-4 text-sm">
+          <div className="grid grid-cols-2 gap-y-3 text-sm">
             <div className="flex flex-col gap-1">
               <span className="text-slate-500">Tanggal</span>
               <span className="font-semibold text-slate-800">{dateLabel}</span>
@@ -130,19 +130,19 @@ export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete 
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5 pt-4 border-t border-slate-100">
-            <span className="text-slate-500 text-sm">Deskripsi</span>
-            <p className="font-medium text-slate-800 text-[15px] leading-relaxed">
+          <div className="flex flex-col gap-1 pt-3 border-t border-slate-100">
+            <span className="text-slate-500 text-xs">Deskripsi</span>
+            <p className="font-medium text-slate-800 text-sm leading-relaxed">
               {transaction.description || "-"}
             </p>
           </div>
 
           {(onEdit || onDelete) && (
-            <div className="pt-2 flex gap-3">
+            <div className="pt-1 flex gap-2">
               {onDelete && (
                 <button 
                   onClick={onDelete}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-semibold transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm font-semibold transition-colors"
                 >
                   Hapus
                 </button>
@@ -150,7 +150,7 @@ export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete 
               {onEdit && (
                 <button 
                   onClick={onEdit}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors"
                 >
                   Edit
                 </button>
