@@ -213,8 +213,8 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         </div>
 
         {/* Two-column body */}
-        <form onSubmit={handleSubmit}>
-          <div className="flex divide-x divide-slate-100">
+        <form onSubmit={handleSubmit} className="flex flex-col max-h-[85vh]">
+          <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-100 overflow-y-auto">
 
             {/* ── LEFT COLUMN ── */}
             <div className="flex-1 px-6 py-5 flex flex-col gap-4">
@@ -441,39 +441,10 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="flex flex-col gap-2 mt-1">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full h-11 rounded-xl bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white font-semibold text-sm transition-all duration-200 shadow-sm disabled:opacity-60"
-                >
-                  {loading ? "Menyimpan..." : (initialData ? "Simpan" : "Tambah catatan")}
-                </button>
-                {initialData ? (
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={onClose}
-                    className="w-full h-10 rounded-xl border-2 border-slate-200 text-slate-500 hover:bg-slate-50 font-semibold text-sm transition-all duration-200 disabled:opacity-60"
-                  >
-                    Batal
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={handleSubmitAndNew}
-                    className="w-full h-10 rounded-xl border-2 border-[#10b981] text-[#10b981] hover:bg-[#10b981]/5 font-semibold text-sm transition-all duration-200 disabled:opacity-60"
-                  >
-                    Tambah dan buat lagi
-                  </button>
-                )}
-              </div>
             </div>
 
             {/* ── RIGHT COLUMN ── */}
-            <div className="w-72 px-6 py-5 flex flex-col gap-4 bg-slate-50/50">
+            <div className="w-full md:w-72 px-6 py-5 flex flex-col gap-4 bg-slate-50/50">
               <h3 className="text-base font-semibold text-slate-800">Detail lainnya</h3>
 
               {/* Notes / Description */}
@@ -503,7 +474,36 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
                 </Select>
               </div>
             </div>
+          </div>
 
+          {/* ── FOOTER / ACTIONS ── */}
+          <div className="px-6 py-4 border-t border-slate-100 bg-white flex flex-col gap-2 shrink-0">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full h-11 rounded-xl bg-[#10b981] hover:bg-[#059669] active:bg-[#047857] text-white font-semibold text-sm transition-all duration-200 shadow-sm disabled:opacity-60"
+            >
+              {loading ? "Menyimpan..." : (initialData ? "Simpan" : "Tambah catatan")}
+            </button>
+            {initialData ? (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={onClose}
+                className="w-full h-10 rounded-xl border-2 border-slate-200 text-slate-500 hover:bg-slate-50 font-semibold text-sm transition-all duration-200 disabled:opacity-60"
+              >
+                Batal
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleSubmitAndNew}
+                className="w-full h-10 rounded-xl border-2 border-[#10b981] text-[#10b981] hover:bg-[#10b981]/5 font-semibold text-sm transition-all duration-200 disabled:opacity-60"
+              >
+                Tambah dan buat lagi
+              </button>
+            )}
           </div>
         </form>
       </div>
