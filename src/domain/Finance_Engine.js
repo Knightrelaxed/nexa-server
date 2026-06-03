@@ -44,10 +44,23 @@ Transaksi: "${merchantName}"
 Daftar kategori (pilih SATU saja, tulis PERSIS):
 ${validCatNames.map(c => `- ${c}`).join('\n')}
 
-ATURAN:
-1. Gunakan inferensi cerdas. Contoh: "kopi latte" → "Kafe/Bar", "kopi" → "Kafe/Bar", "starbucks" → "Kafe/Bar", "GRAB FOOD" → "Restoran, makanan cepat saji", "GRAB TRANSPORT" → "Taksi", "nge gym" → "Olahraga aktif, kebugaran", "Waroeng Emdje" → "Restoran, makanan cepat saji", "Bakmi Jowo" → "Restoran, makanan cepat saji", "Amira Fotocopy" → "Alat tulis, peralatan", "Bisnis Kab. Sumenep" → "Layanan", "nieta kitchen" → "Restoran, makanan cepat saji", "nasi Padang" → "Restoran, makanan cepat saji", "beli Ades" → "Makanan dan minuman", "Indomaret" → "Belanja", "Shopee" → "Belanja online", "Menghutangi aji" → "Pinjaman, bunga", "rokok" → "Alkohol, tembakau".
-2. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu (misal: "Budi", "Agus"). JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya, misal "beli es teh", "ongkos", "pulsa"), JANGAN PERNAH memilih "Lainnya"! Kamu HARUS pintar menebak kategori yang paling mendekati deskripsi tersebut.
-3. HANYA balas nama kategori. Tanpa penjelasan, tanpa tanda kutip.`;
+PROSES KOGNITIF WAJIB (2 LANGKAH):
+1. IDENTIFIKASI OBJEK: Apa SUBSTANSI yang dibeli/dibayar? Jangan terkecoh oleh kata-kata permukaan!
+2. COCOKKAN: Pilih kategori yang paling dekat secara SEMANTIK dengan objek tersebut.
+
+ATURAN DISAMBIGUASI KRITIS:
+- "iuran" / "patungan" / "urunan" / "kas" untuk acara/kegiatan → kategori sosial/hiburan/acara, BUKAN makanan! (meskipun acaranya melibatkan makan)
+- "makrab" = "malam keakraban" = acara sosial kampus → kategori sosial/hiburan/acara, BUKAN makanan!
+- "rokok" / "sigaret" / "vape" / "liquid" / "cerutu" / "tembakau" → "Alkohol, tembakau" atau "Tembakau, Alkohol", BUKAN "Layanan"!
+- "bir" / "wine" / "alkohol" / "miras" → "Alkohol, tembakau" atau "Tembakau, Alkohol"
+- "grab" / "gojek" / "ojek" / "taxi" → kategori transportasi, BUKAN "Layanan"!
+
+CONTOH REFERENSI:
+"kopi latte" → "Kafe/Bar", "starbucks" → "Kafe/Bar", "GRAB FOOD" → "Restoran, makanan cepat saji", "GRAB TRANSPORT" → "Taksi", "nge gym" → "Olahraga aktif, kebugaran", "Waroeng Emdje" → "Restoran, makanan cepat saji", "Amira Fotocopy" → "Alat tulis, peralatan", "nieta kitchen" → "Restoran, makanan cepat saji", "nasi Padang" → "Restoran, makanan cepat saji", "beli Ades" → "Makanan dan minuman", "Indomaret" → "Belanja", "Shopee" → "Belanja online", "Menghutangi aji" → "Pinjaman, bunga", "rokok" → "Alkohol, tembakau", "iuran makrab" → kategori sosial/hiburan (BUKAN makanan!), "bayar ojol" → kategori transportasi.
+
+ATURAN LAINNYA:
+1. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu (misal: "Budi", "Agus"). JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya), JANGAN PERNAH memilih "Lainnya"!
+2. HANYA balas nama kategori. Tanpa penjelasan, tanpa tanda kutip.`;
     const aiResp = await callAI(prompt);
     let cat = aiResp.trim();
     // Strip quotes/whitespace if AI wraps the answer

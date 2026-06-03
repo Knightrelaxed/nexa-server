@@ -83,7 +83,32 @@ Output Anda HARUS berupa JSON valid tanpa markdown \`\`\`json, dengan format:
      //   → KHUSUS jika pengguna mengirim struk/gambar/teks dengan banyak item dan meminta "satu-satu dipisah" atau "pisahkan transaksinya", WAJIB gunakan action "RECORD_MULTIPLE" dan isi array "transactions" dengan objek masing-masing transaksi. DILARANG menggabungkan nominal jika disuruh memisah.
      //     - WAKTU: Jika pengguna HARI/TANGGAL ("kemarin", "lusa") TANPA menyebutkan JAM, buat perkiraan logis (misal 12:00 siang) dan isi field "time". TETAP gunakan action "RECORD". JANGAN PERNAH gunakan "INCOMPLETE_INFO" karena akan membuat nominal yang sudah diketik user hangus!
      //   → PENTING: Untuk action RECORD/EDIT/UPDATE_PENDING, pilih kategori spesifik HANYA dari opsi daftar [KATEGORI TRANSAKSI AKTIF].
-     //     - ATURAN KATEGORI: DILARANG KERAS menggunakan kategori "Lainnya" atau "Uncategorized" kecuali benar-benar tidak ada yang mendekati dari daftar [KATEGORI TRANSAKSI AKTIF]. Gunakan kemampuan inferensi Anda. Analisa tujuan/catatannya dengan cerdas!
+     //     - ATURAN KATEGORI (SANGAT KRITIS — BACA DENGAN TELITI):
+     //       DILARANG KERAS menggunakan kategori "Lainnya" atau "Uncategorized" kecuali benar-benar tidak ada yang mendekati.
+     //       PROSES KOGNITIF WAJIB (4 LANGKAH):
+     //       1. IDENTIFIKASI OBJEK: Apa yang DIBELI/DIBAYAR? (bukan siapa/di mana/bagaimana)
+     //       2. TENTUKAN TUJUAN INTI: Mengapa uang keluar? Apa fungsi utamanya?
+     //       3. COCOKKAN ke kategori yang paling SEMANTIK DEKAT di daftar [KATEGORI TRANSAKSI AKTIF]
+     //       4. VERIFIKASI: Apakah ada kategori lain yang LEBIH TEPAT? Jika ya, ganti!
+     //
+     //       ATURAN DISAMBIGUASI (SANGAT PENTING):
+     //       - Fokus pada OBJEK/SUBSTANSI transaksi, BUKAN kata-kata permukaan!
+     //       - "iuran" / "patungan" / "urunan" untuk acara/kegiatan → kategori SOSIAL/ACARA, BUKAN kategori makanan meskipun acaranya melibatkan makan!
+     //       - "makrab" = "malam keakraban" (acara sosial kampus). "iuran makrab" = kontribusi untuk acara sosial → BUKAN "Makanan dan Minuman"!
+     //       - "rokok" / "sigaret" / "vape" / "liquid" / "cerutu" / "tembakau" → kategori "Tembakau" atau "Tembakau, Alkohol", BUKAN "Layanan" atau "Lainnya"!
+     //       - "bir" / "wine" / "alkohol" / "miras" / "arak" / "vodka" / "whiskey" → kategori "Tembakau, Alkohol"
+     //       - "ojek" / "grab" / "gojek" / "taxi" / "bus" / "kereta" / "bensin" / "parkir" / "tol" → kategori Transportasi
+     //       - "kopi" / "makan" / "restoran" / "warteg" / "jajan" / "snack" / "minuman" → kategori Makanan
+     //       - "pulsa" / "kuota" / "internet" / "wifi" / "listrik" / "air PDAM" / "gas" → kategori Tagihan/Utilitas
+     //       - "laundry" / "salon" / "cukur" / "servis HP" / "reparasi" → kategori Layanan
+     //       - "sedekah" / "infaq" / "zakat" / "donasi" / "sumbangan" → kategori Donasi/Amal
+     //       - "tabungan" / "investasi" / "deposito" / "saham" / "reksadana" → kategori Tabungan/Investasi
+     //
+     //       CONTOH SALAH → BENAR (PELAJARI!):
+     //       ❌ "beli rokok" → "Layanan"          ✅ "beli rokok" → "Tembakau, Alkohol"
+     //       ❌ "iuran makrab" → "Makanan dan Minuman" ✅ "iuran makrab" → kategori Sosial/Acara/Hiburan (cari yang paling dekat di daftar!)
+     //       ❌ "bayar grab" → "Layanan"           ✅ "bayar grab" → "Transportasi"
+     //       ❌ "beli liquid vape" → "Belanja"      ✅ "beli liquid vape" → "Tembakau, Alkohol"
      //   → METODE PEMBAYARAN (field "payment_method"): Ekstrak HANYA jika user secara eksplisit menyebutkan atau sangat jelas tersirat. Gunakan inferensi cerdas:
      //     - "pakai QRIS", "scan QR", "bayar QR", "pake QR", "via QRIS" → "QRIS"
      //     - "transfer", "TF", "kirim ke rekening", "via ATM", "mobile banking", "via BCA/Mandiri/BRI/BNI" (tanpa QRIS) → "Transfer bank"
@@ -357,7 +382,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     // Bangun blok kategori aktif jika ada data
     if (categoriesResult.status === 'fulfilled' && categoriesResult.value && categoriesResult.value.length > 0) {
       const catLines = categoriesResult.value.map(c => `- ${c.name} (${c.type})`).join('\n');
-      activeCategoriesBlock = `\n[KATEGORI TRANSAKSI AKTIF — PAKAI NAMA PERSIS INI UNTUK FIELD "category" DI FINANCE]\n${catLines}\n`;
+      activeCategoriesBlock = `\n[KATEGORI TRANSAKSI AKTIF — PAKAI NAMA PERSIS INI UNTUK FIELD "category" DI FINANCE]\n${catLines}\n\n[PANDUAN PEMILIHAN KATEGORI]\nJANGAN mencocokkan kategori berdasarkan substring/kata kunci permukaan saja!\nGunakan PENALARAN SEMANTIK: tanyakan "Apa SUBSTANSI/OBJEK yang dibayar?" bukan "Kata apa yang mirip?".\nContoh penalaran benar:\n- "beli rokok" → objek = rokok (tembakau) → cari kategori yang mengandung tembakau/alkohol\n- "iuran makrab angkatan" → objek = iuran/kontribusi untuk acara sosial kampus → cari kategori sosial/hiburan/acara, BUKAN makanan\n- "bayar laundry" → objek = jasa cuci pakaian → kategori layanan/jasa\n- "grab ke kampus" → objek = transportasi → kategori transportasi\n`;
     }
   } catch (_) { /* Non-critical — never crash routing */ }
 
