@@ -170,7 +170,8 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
     ],
-    temperature
+    temperature,
+    max_tokens: 1500
   };
   if (jsonMode) requestBody.response_format = { type: 'json_object' };
 
@@ -198,7 +199,8 @@ async function callCerebras(prompt, systemInstruction, temperature, jsonMode = t
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
     ],
-    temperature
+    temperature,
+    max_tokens: 1500
   };
   if (jsonMode) requestBody.response_format = { type: 'json_object' };
 
@@ -228,7 +230,8 @@ async function callMistral(prompt, systemInstruction, temperature, jsonMode = tr
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
     ],
-    temperature
+    temperature,
+    max_tokens: 1500
   };
   if (jsonMode) requestBody.response_format = { type: 'json_object' };
 
@@ -256,7 +259,8 @@ async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode =
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
     ],
-    temperature
+    temperature,
+    max_tokens: 1500
   };
   if (jsonMode) requestBody.response_format = { type: 'json_object' };
 
