@@ -8,7 +8,7 @@ pinned: false
 app_port: 7860
 ---
 # N.E.X.A — Neural Extension Assistant for Intelligence
-> Chief of Staff AI — Immortality Protocol v3.0
+> Chief of Staff AI — Immortality Protocol v2.0
 
 **N.E.X.A** adalah asisten AI super cerdas bergaya "J.A.R.V.I.S" yang dirancang khusus untuk menjadi *Chief of Staff* bagi Tuan Faqih. Berbeda dengan chatbot konvensional, N.E.X.A beroperasi secara proaktif (*set-and-forget*), mengelola keuangan, agenda akademik, penjadwalan, hingga memonitor kedisiplinan digital pengguna.
 
@@ -108,7 +108,7 @@ Terletak di dalam direktori `nexa-finance-web/`, ini adalah antarmuka visual mod
 
 ---
 
-## 🛡️ Immortality Protocol v3.0
+## 🛡️ Immortality Protocol v2.0
 
 Untuk memastikan server di Hugging Face tidak pernah "tertidur" (*sleep*):
 1. **UptimeRobot / cron-job.org** melakukan ping berkala ke endpoint `GET /health`.
