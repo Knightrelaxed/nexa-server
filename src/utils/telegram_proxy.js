@@ -125,32 +125,26 @@ async function fetchProxyJSON(proxyUrl, timeoutMs = 15000, maxRetries = 3) {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await axios.get(proxyUrl, {
-        httpsAgent: httpAgent,
-        responseType: 'json',
-        signal: controller.signal,
-        timeout: timeoutMs
+      const response = await fetch(proxyUrl, {
+        method: 'GET',
+        signal: controller.signal
       });
       clearTimeout(timer);
       
-      // Axios auto-parses JSON, but we can double check
-      if (typeof response.data === 'string') {
-        try { return JSON.parse(response.data); } catch(e) { throw new Error(`Invalid JSON: ${response.data.substring(0, 100)}`); }
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      return response.data;
+      
+      return await response.json();
     } catch (err) {
       clearTimeout(timer);
-      const is5xx = err.response && err.response.status >= 500;
-      const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message.includes('timeout') || err.message.includes('canceled');
+      const isTimeout = err.name === 'AbortError' || err.message.includes('timeout') || err.message.includes('canceled');
 
-      if (attempt < maxRetries && (is5xx || isTimeout || !err.response)) {
+      if (attempt < maxRetries && (isTimeout || err.message.includes('socket disconnected') || err.message.includes('ECONNRESET') || err.message.includes('fetch'))) {
         await new Promise(r => setTimeout(r, 1000));
         continue;
       }
       
-      if (err.response) {
-        throw new Error(`HTTP ${err.response.status}: ${JSON.stringify(err.response.data || err.response.statusText)}`);
-      }
       throw new Error(`fetch proxy JSON failed: ${err.message}`);
     }
   }
