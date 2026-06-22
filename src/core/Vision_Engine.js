@@ -60,9 +60,10 @@ function getProxyUrls(targetUrl) {
   // Priority 1: Custom Cloudflare Relay
   if (env.TELEGRAM_PROXY_URL) {
     urls.push(`${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}`);
+  } else {
+    // Only fallback to AllOrigins if Custom Relay is missing, because AllOrigins is currently extremely slow/dead
+    urls.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`);
   }
-  // Priority 2: AllOrigins
-  urls.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`);
   return urls;
 }
 
