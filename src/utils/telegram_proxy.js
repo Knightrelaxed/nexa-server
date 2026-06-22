@@ -13,59 +13,75 @@ const { Transform, Readable } = require('stream');
  * @returns {Promise<string>} Base64 string
  */
 async function downloadProxyToBase64(proxyUrl, maxSize = 10 * 1024 * 1024) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 45000);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 45000);
 
-  let response;
-  try {
-    response = await fetch(proxyUrl, {
-      signal: controller.signal,
-      headers: { 'Accept': 'image/*, application/octet-stream' },
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!response.ok) {
-    throw new Error(`Proxy HTTP Error: ${response.status} ${response.statusText}`);
-  }
-
-  const declaredSize = parseInt(response.headers.get('content-length') ?? '0');
-  if (declaredSize > maxSize) {
-    await response.body?.cancel();
-    throw new Error(`File terlalu besar: ${declaredSize} bytes`);
-  }
-
-  const chunks = [];
-  let totalBytes = 0;
-  
-  if (response.body) {
-    // Untuk Node 18/20 web streams
-    const reader = response.body.getReader();
+    let response;
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        totalBytes += value.byteLength;
-        if (totalBytes > maxSize) {
-          await reader.cancel('exceeded size limit');
-          throw new Error('File melebihi batas ukuran saat streaming');
-        }
-        chunks.push(value);
-      }
+      response = await fetch(proxyUrl, {
+        signal: controller.signal,
+        headers: { 'Accept': 'image/*, application/octet-stream' },
+      });
     } catch (err) {
-      reader.cancel().catch(() => {});
-      throw err;
+      clearTimeout(timer);
+      const cause = err.cause ? ` (${err.cause.message})` : '';
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw new Error(`fetch failed${cause}`);
+    } finally {
+      clearTimeout(timer);
     }
-  } else {
-    // Fallback jika body null (tidak mungkin untuk file, tapi safety first)
-    const arrayBuffer = await response.arrayBuffer();
-    chunks.push(new Uint8Array(arrayBuffer));
-  }
 
-  const buffer = Buffer.concat(chunks.map(c => Buffer.from(c)));
-  return buffer.toString('base64');
+    if (!response.ok) {
+      if (response.status >= 500 && attempt < 3) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw new Error(`Proxy HTTP Error: ${response.status} ${response.statusText}`);
+    }
+
+    const declaredSize = parseInt(response.headers.get('content-length') ?? '0');
+    if (declaredSize > maxSize) {
+      await response.body?.cancel();
+      throw new Error(`File terlalu besar: ${declaredSize} bytes`);
+    }
+
+    const chunks = [];
+    let totalBytes = 0;
+    
+    if (response.body) {
+      const reader = response.body.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          totalBytes += value.byteLength;
+          if (totalBytes > maxSize) {
+            await reader.cancel('exceeded size limit');
+            throw new Error('File melebihi batas ukuran saat streaming');
+          }
+          chunks.push(value);
+        }
+      } catch (err) {
+        reader.cancel().catch(() => {});
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        throw err;
+      }
+    } else {
+      const arrayBuffer = await response.arrayBuffer();
+      chunks.push(new Uint8Array(arrayBuffer));
+    }
+
+    const buffer = Buffer.concat(chunks.map(c => Buffer.from(c)));
+    return buffer.toString('base64');
+  }
 }
 
 /**
@@ -140,30 +156,43 @@ async function cleanupFile(filePath) {
  * Fetch Native Node.js untuk JSON/Teks sederhana (Pengganti curl -sS)
  */
 async function fetchProxyJSON(proxyUrl, timeoutMs = 15000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  let response;
-  try {
-    response = await fetch(proxyUrl, {
-      signal: controller.signal,
-      headers: { 'Accept': 'application/json' },
-    });
-  } finally {
-    clearTimeout(timer);
-  }
+    let response;
+    try {
+      response = await fetch(proxyUrl, {
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' },
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      const cause = err.cause ? ` (${err.cause.message})` : '';
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw new Error(`fetch failed${cause}`);
+    } finally {
+      clearTimeout(timer);
+    }
 
-  if (!response.ok) {
-    const bodyText = await response.text();
-    throw new Error(`HTTP ${response.status}: ${bodyText}`);
-  }
+    if (!response.ok) {
+      if (response.status >= 500 && attempt < 3) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      const bodyText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${bodyText}`);
+    }
 
-  // Parse aman walau content type mungkin salah
-  const raw = await response.text();
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`Invalid JSON response: ${raw.substring(0, 100)}`);
+    const raw = await response.text();
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      throw new Error(`Invalid JSON response: ${raw.substring(0, 100)}`);
+    }
   }
 }
 
