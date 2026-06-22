@@ -84,9 +84,9 @@ async function downloadTelegramImageAsBase64(fileId) {
   const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
   console.log('[VISION] Step 1: Getting file info...');
 
-  // Race all proxies in parallel for maximum speed
+  // Retry with fast 6s timeout so 3 attempts fit inside Telegram's 25s webhook window
   const proxyUrls = getProxyUrls(getFileUrl);
-  const fileData = await fetchProxyJSON(proxyUrls, 20000, 3);
+  const fileData = await fetchProxyJSON(proxyUrls, 6000, 3);
   if (!fileData || !fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   const filePath = fileData.result.file_path;
   console.log('[VISION] Step 1 complete. File path acquired.');
