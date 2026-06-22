@@ -1148,6 +1148,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     if (message.photo && message.photo.length > 0) {
       try {
         console.log('[TELEGRAM] Photo received. Processing (11-Tier God Mode Vision)...');
+        const largestPhoto = message.photo[message.photo.length - 1];
         const visionDescription = await visionEngine.processTelegramImage(largestPhoto.file_id, message.caption || '');
         textInput = `[SISTEM PENGLIHATAN N.E.X.A TELAH MEMBACA GAMBAR]
 Deskripsi Gambar: ${visionDescription}
