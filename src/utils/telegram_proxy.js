@@ -1,9 +1,10 @@
-import { pipeline } from 'stream/promises';
-import { createWriteStream } from 'fs';
-import { unlink } from 'fs/promises';
-import path from 'path';
-import crypto from 'crypto';
-import os from 'os';
+const { pipeline } = require('stream/promises');
+const { createWriteStream } = require('fs');
+const { unlink } = require('fs/promises');
+const path = require('path');
+const crypto = require('crypto');
+const os = require('os');
+const { Transform, Readable } = require('stream');
 
 /**
  * Mengunduh file biner dari proxy ke Base64 (Untuk RAM - Vision Engine)
@@ -11,7 +12,7 @@ import os from 'os';
  * @param {number} maxSize Batas ukuran (default 10MB)
  * @returns {Promise<string>} Base64 string
  */
-export async function downloadProxyToBase64(proxyUrl, maxSize = 10 * 1024 * 1024) {
+async function downloadProxyToBase64(proxyUrl, maxSize = 10 * 1024 * 1024) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45000);
 
@@ -74,7 +75,7 @@ export async function downloadProxyToBase64(proxyUrl, maxSize = 10 * 1024 * 1024
  * @param {number} maxSize Batas ukuran (default 20MB)
  * @returns {Promise<{filePath: string, sizeBytes: number}>}
  */
-export async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize = 20 * 1024 * 1024) {
+async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize = 20 * 1024 * 1024) {
   const fileName = `nexa_${crypto.randomUUID()}.${extension}`;
   const filePath = path.join(os.tmpdir(), fileName);
 
@@ -101,7 +102,6 @@ export async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize =
   const fileStream = createWriteStream(filePath);
   let sizeBytes = 0;
 
-  const { Transform } = await import('stream');
   const sizeGuard = new Transform({
     transform(chunk, _encoding, callback) {
       sizeBytes += chunk.length;
@@ -114,7 +114,6 @@ export async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize =
   });
 
   try {
-    const { Readable } = await import('stream');
     await pipeline(
       Readable.fromWeb(response.body),
       sizeGuard,
@@ -132,7 +131,7 @@ export async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize =
  * Hapus file dari OS
  * @param {string} filePath 
  */
-export async function cleanupFile(filePath) {
+async function cleanupFile(filePath) {
   if (!filePath) return;
   await unlink(filePath).catch(() => {});
 }
@@ -140,7 +139,7 @@ export async function cleanupFile(filePath) {
 /**
  * Fetch Native Node.js untuk JSON/Teks sederhana (Pengganti curl -sS)
  */
-export async function fetchProxyJSON(proxyUrl, timeoutMs = 15000) {
+async function fetchProxyJSON(proxyUrl, timeoutMs = 15000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -167,3 +166,10 @@ export async function fetchProxyJSON(proxyUrl, timeoutMs = 15000) {
     throw new Error(`Invalid JSON response: ${raw.substring(0, 100)}`);
   }
 }
+
+module.exports = {
+  downloadProxyToBase64,
+  downloadProxyToFile,
+  cleanupFile,
+  fetchProxyJSON
+};
