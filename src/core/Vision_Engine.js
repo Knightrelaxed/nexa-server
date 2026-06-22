@@ -2,8 +2,7 @@ const env = require('../config/env');
 const { NEXA_PERSONALITY } = require('../config/personality');
 const axios = require('axios');
 const https = require('https');
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
+const { downloadProxyToBase64, fetchProxyJSON } = require('../utils/telegram_proxy.js');
 
 // IPv4 agent — forces Gemini API calls over IPv4 to avoid Hugging Face routing issues
 const ipv4Agent = new https.Agent({ family: 4, keepAlive: true });
@@ -73,28 +72,19 @@ function getProxyList(targetUrl) {
 }
 
 async function fetchJsonWithFailover(targetUrl, opts = {}) {
-  const maxBuffer = opts.maxBuffer || 5 * 1024 * 1024;
-  const timeout = opts.timeout || 30;
+  const timeoutMs = (opts.timeout || 30) * 1000;
   const proxies = getProxyList(targetUrl);
 
   for (const proxy of proxies) {
     try {
       console.log(`[VISION] Getting JSON via: ${proxy.name}...`);
-      // using -fsS so curl exits with error on 404/500
-      const result = await exec(
-        `curl -fsS --ipv4 --connect-timeout 15 --max-time ${timeout} "${proxy.url}"`,
-        { maxBuffer }
-      );
-      const raw = (result.stdout || '').trim();
-      if (raw.startsWith('{')) {
-        const parsed = JSON.parse(raw);
-        if (parsed.ok !== undefined) {
-          console.log(`[VISION] ${proxy.name} JSON fetch succeeded.`);
-          return parsed;
-        }
+      const parsed = await fetchProxyJSON(proxy.url, timeoutMs);
+      if (parsed.ok !== undefined) {
+        console.log(`[VISION] ${proxy.name} JSON fetch succeeded.`);
+        return parsed;
       }
     } catch (err) {
-      console.warn(`[VISION] ${proxy.name} JSON fetch failed: ${(err.stderr || err.message).substring(0, 150)}`);
+      console.warn(`[VISION] ${proxy.name} JSON fetch failed: ${(err.message).substring(0, 150)}`);
     }
   }
   throw new Error('All download paths failed to retrieve valid JSON from Telegram.');
@@ -113,7 +103,7 @@ async function downloadTelegramImageAsBase64(fileId) {
   if (!fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   const filePath = fileData.result.file_path;
 
-  // CRITICAL: Download binary via shell | base64 -w 0 — never convert binary in Node.js
+  // Mengunduh biner secara murni menggunakan Native Node.js
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
   const proxies = getProxyList(fileUrl);
 
@@ -123,19 +113,14 @@ async function downloadTelegramImageAsBase64(fileId) {
   for (const proxy of proxies) {
     try {
       console.log(`[VISION] Downloading binary via: ${proxy.name}...`);
-      // -fsS ensures it throws if HTTP status >= 400
-      const imageResult = await exec(
-        `curl -fsS --ipv4 --connect-timeout 15 --max-time 60 "${proxy.url}" | base64 -w 0`,
-        { maxBuffer: 20 * 1024 * 1024 }
-      );
-      const raw = imageResult.stdout.trim();
-      if (raw.length > 100) {
-        base64Data = raw;
+      const b64 = await downloadProxyToBase64(proxy.url, 20 * 1024 * 1024);
+      if (b64 && b64.length > 100) {
+        base64Data = b64;
         console.log(`[VISION] Image downloaded via ${proxy.name}. Base64 size:`, base64Data.length, 'chars');
         break;
       }
     } catch (err) {
-      console.warn(`[VISION] ${proxy.name} binary download failed: ${(err.stderr || err.message).substring(0, 150)}`);
+      console.warn(`[VISION] ${proxy.name} binary download failed: ${(err.message).substring(0, 150)}`);
     }
   }
 
