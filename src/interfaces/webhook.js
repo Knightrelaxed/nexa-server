@@ -1403,26 +1403,28 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         god_mode_trigger: false
       };
       console.log('[ROUTER] Generic continuation mapped to EMAIL follow-up.');
-    } else if (conversationContext) {
-      const globalFollowUpRouting = buildGlobalFollowUpRouting(textInput, conversationContext);
-      if (globalFollowUpRouting) {
-        routingData = globalFollowUpRouting;
-        console.log('[ROUTER] Global follow-up context override activated for intent:', routingData.intent);
-      }
     } else {
-      // Send to AI Router
-      routingData = await aiRouter.routeUserMessage(textInput, {
-        conversationContext,
-        pendingCalendarContext,
-        pendingEmailContext,
-        pendingDatabaseContext,
-        pendingVaultContext
-      });
-    }
-    if (!routingData) {
-      routingData = await aiRouter.routeUserMessage(textInput, {
-        conversationContext
-      });
+      // FIX TEMUAN 2: Coba global follow-up dulu jika ada conversationContext,
+      // tapi jika bukan perintah follow-up (return null), tetap kirim ke AI Router
+      // dengan SEMUA runtimeHints lengkap — bukan hanya conversationContext saja.
+      if (conversationContext) {
+        const globalFollowUpRouting = buildGlobalFollowUpRouting(textInput, conversationContext);
+        if (globalFollowUpRouting) {
+          routingData = globalFollowUpRouting;
+          console.log('[ROUTER] Global follow-up context override activated for intent:', routingData.intent);
+        }
+      }
+      // Jika bukan follow-up yang dikenali (routingData masih undefined), kirim ke AI Router
+      // dengan semua pending contexts agar AI Router tahu state runtime sistem saat ini.
+      if (!routingData) {
+        routingData = await aiRouter.routeUserMessage(textInput, {
+          conversationContext,
+          pendingCalendarContext,
+          pendingEmailContext,
+          pendingDatabaseContext,
+          pendingVaultContext
+        });
+      }
     }
     console.log('[ROUTER] Intent identified:', routingData.intent);
     conversationContext = {

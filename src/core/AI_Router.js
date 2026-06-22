@@ -2,8 +2,47 @@ const { executeWithFallback } = require('./Fallback_Engine');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 const { NEXA_PERSONALITY } = require('../config/personality');
 
-const CONTEXT_EXCHANGES = 10;
-const CONTEXT_MESSAGES_LIMIT = CONTEXT_EXCHANGES * 2; // 10 exchanges = 20 messages (user+nexa)
+
+
+// ============================================================
+// ADAPTIVE HISTORY — dynamic fetch limit based on context
+// Normal: 6 exchanges (12 msg) | Context-ref detected: 10 exchanges (20 msg)
+// ============================================================
+const CONTEXTUAL_REF_WORDS = [
+  'yang tadi', 'sebelumnya', 'lanjut', 'ubah itu', 'yang barusan',
+  'tadi bilang', 'hapus yang', 'yang itu', 'edit itu', 'hapus itu',
+];
+const HISTORY_CHAR_CAP = 10000; // ~2.500 token safety net (pesan N.E.X.A max 4.000 char)
+
+// ============================================================
+// PRE-FLIGHT CLASSIFIER — keyword banks untuk calendar gating
+// ============================================================
+const _CAL_TIME_KWS = [
+  'besok', 'lusa', 'kemarin', 'minggu depan', 'hari ini', 'malam ini',
+  'sore ini', 'pagi ini', 'senin', 'selasa', 'rabu', 'kamis', 'jumat',
+  'sabtu', 'tanggal', 'bulan depan',
+];
+const _CAL_DOMAIN_KWS = [
+  'jadwal', 'kalender', 'meeting', 'rapat', 'event', 'reminder',
+  'ingatkan', 'buat jadwal', 'agenda', 'matkul', 'kelas', 'kuliah',
+  'tugas hari ini', 'deadline', 'jadwal hari'
+];
+
+// ============================================================
+// PROGRESSIVE FACT INJECTION
+// ============================================================
+const FACT_KEYWORD_GROUPS = [
+  // Keuangan & transaksi
+  ['pengeluaran','beli','bayar','makan','jajan','harga','rb','ribu','qris','transfer','uang','tagihan','ongkos'],
+  // Waktu & jadwal (cross-domain: "kampus" bisa relevan ke FINANCE)
+  ['jadwal','jam','kuliah','kelas','meeting','rapat','besok','hari','agenda','kampus','ugm','skripsi'],
+  // Lokasi & aktivitas
+  ['kantor','toko','rumah','mall','warung','pergi','dari','ke','lokasi','tempat'],
+  // Preferensi & kebiasaan
+  ['preferensi','biasa','suka','kebiasaan','cara','gaya','selalu','favorit','rutin'],
+];
+const PROFILE_CORE_COUNT  = 20; // fakta tertua — selalu diinjeksi
+const PROFILE_KW_LIMIT    =  8; // max fakta tambahan dari keyword matching
 
 // ============================================================
 // PERSONAL FACTS CACHE (Module-level — lives as long as server runs)
@@ -260,6 +299,44 @@ function _detectSentiment(text) {
   return 'NEUTRAL';
 }
 
+/**
+ * Zero-latency pre-flight domain classifier.
+ * Detects whether the user message contains time/date references
+ * or calendar-specific keywords.
+ */
+function _preflightClassify(text) {
+  const t = text.toLowerCase();
+  const hasTime = _CAL_TIME_KWS.some(kw => t.includes(kw)) || /\d{1,2}:\d{2}/.test(text);
+  const hasCal  = _CAL_DOMAIN_KWS.some(kw => t.includes(kw));
+  return { hasTime, hasCal };
+}
+
+/**
+ * Progressive userProfile fact injection
+ */
+function _selectUserProfileFacts(userProfile, userMessage) {
+  if (!userProfile || userProfile.length === 0) return [];
+
+  // Oldest PROFILE_CORE_COUNT facts → always included (no filter)
+  const core      = userProfile.slice(0, PROFILE_CORE_COUNT);
+  const remaining = userProfile.slice(PROFILE_CORE_COUNT);
+  if (remaining.length === 0) return core;
+
+  const t = userMessage.toLowerCase();
+  const activeKws = FACT_KEYWORD_GROUPS
+    .filter(group => group.some(kw => t.includes(kw)))
+    .flat();
+
+  if (activeKws.length === 0) return core;
+
+  // fact is a plain string — use fact.toLowerCase(), NOT fact.content.toLowerCase()
+  const relevant = remaining.filter(fact =>
+    activeKws.some(kw => fact.toLowerCase().includes(kw))
+  );
+
+  return [...core, ...relevant.slice(0, PROFILE_KW_LIMIT)];
+}
+
 async function _fetchRecentFinanceSummary(limit) {
   try {
     const financeEngine = require('../domain/Finance_Engine');
@@ -297,19 +374,46 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // Silently score user's stress/urgency from writing style.
   // We do NOT call AI for this — it's pure heuristic (zero latency).
   const _sentimentScore = _detectSentiment(textInput);
+
+  // ── Pre-flight Domain Classifier (0 tokens, 0ms) ─────────────────────────
+  const { hasTime, hasCal } = _preflightClassify(textInput);
+  const _hasContextRef = CONTEXTUAL_REF_WORDS.some(kw => textInput.toLowerCase().includes(kw));
+
   // 1. Load personal facts (from cache — zero overhead after first call)
   const personalFacts = await loadPersonalFactsWithCache();
 
-  // 2. Contextual Retrieval (last 10 chat exchanges = 20 messages)
-  const memories = await supabaseMemories.getRecentMemories(CONTEXT_MESSAGES_LIMIT);
-  const contextStr = memories.length > 0
-    ? memories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n')
+  // 2. Contextual Retrieval — dynamic limit (Step 3: Adaptive History)
+  const _fetchLimit = _hasContextRef ? 20 : 12;
+  const _rawMemories = await supabaseMemories.getRecentMemories(_fetchLimit);
+
+  // Character safety net — trim oldest messages if total exceeds HISTORY_CHAR_CAP.
+  let _memories = _rawMemories;
+  const _totalHistChars = _rawMemories.reduce((s, m) => s + (m.content || '').length, 0);
+  if (_totalHistChars > HISTORY_CHAR_CAP) {
+    let _chars = 0;
+    const _kept = [];
+    for (let i = _rawMemories.length - 1; i >= 0; i--) {
+      const _len = (_rawMemories[i].content || '').length;
+      if (_chars + _len <= HISTORY_CHAR_CAP) {
+        _kept.unshift(_rawMemories[i]);
+        _chars += _len;
+      } else { continue; } // FIX BUG 2: Menggunakan continue agar tidak membuang pesan pendek yang lebih lama
+    }
+    // Pastikan tidak mulai dengan pesan 'nexa' tanpa pasangan user-nya
+    if (_kept.length > 0 && _kept[0].role === 'nexa') _kept.shift();
+    _memories = _kept;
+    console.log(`[ROUTER] History trimmed by char cap: ${_rawMemories.length}msg/${_totalHistChars}ch → ${_memories.length}msg/${_chars}ch`);
+  }
+
+  const contextStr = _memories.length > 0
+    ? _memories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n')
     : '[Tidak ada riwayat obrolan sebelumnya]';
 
-  // 3. Build personal facts context block
+  // 3. Build personal facts context block (Step 4: Progressive userProfile injection)
   let factsContext = '';
-  if (personalFacts.userProfile && personalFacts.userProfile.length > 0) {
-    factsContext += `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${personalFacts.userProfile.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+  const _selectedProfile = _selectUserProfileFacts(personalFacts.userProfile, textInput);
+  if (_selectedProfile.length > 0) {
+    factsContext += `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${_selectedProfile.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
   }
   if (personalFacts.coreIdentity && personalFacts.coreIdentity.length > 0) {
     factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${personalFacts.coreIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
@@ -327,9 +431,10 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // ISO date string in Jakarta (for AI date arithmetic in TASK/CALENDAR intents)
   const currentJakartaISO = `${_jkt.getFullYear()}-${String(_jkt.getMonth() + 1).padStart(2, '0')}-${String(_jkt.getDate()).padStart(2, '0')}`;
 
-  // Build next-7-days mini-calendar for reliable day→date mapping by the AI
+  // Build mini-calendar — conditionally gated by pre-flight classifier (Step 2)
+  const _calDays = hasCal ? 7 : (hasTime ? 3 : 0);
   const _miniCal = [];
-  for (let i = 0; i <= 7; i++) {
+  for (let i = 0; i <= _calDays; i++) {
     const d = new Date(_jkt.getTime() + i * 86400000);
     const ds = `${_jkt.getFullYear() === d.getFullYear() ? '' : d.getFullYear() + '-'}${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const dayFull = `${_DAYS[d.getDay()]}, ${d.getDate()} ${_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
@@ -381,8 +486,14 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
 
     // Bangun blok kategori aktif jika ada data
     if (categoriesResult.status === 'fulfilled' && categoriesResult.value && categoriesResult.value.length > 0) {
-      const catLines = categoriesResult.value.map(c => `- ${c.name} (${c.type})`).join('\n');
-      activeCategoriesBlock = `\n[KATEGORI TRANSAKSI AKTIF — PAKAI NAMA PERSIS INI UNTUK FIELD "category" DI FINANCE]\n${catLines}\n\n[PANDUAN PEMILIHAN KATEGORI]\nJANGAN mencocokkan kategori berdasarkan substring/kata kunci permukaan saja!\nGunakan PENALARAN SEMANTIK: tanyakan "Apa SUBSTANSI/OBJEK yang dibayar?" bukan "Kata apa yang mirip?".\nContoh penalaran benar:\n- "beli rokok" → objek = rokok (tembakau) → cari kategori yang mengandung tembakau/alkohol\n- "iuran makrab angkatan" → objek = iuran/kontribusi untuk acara sosial kampus → cari kategori sosial/hiburan/acara, BUKAN makanan\n- "bayar laundry" → objek = jasa cuci pakaian → kategori layanan/jasa\n- "grab ke kampus" → objek = transportasi → kategori transportasi\n`;
+      const _cats = categoriesResult.value;
+      const _income  = _cats.filter(c => c.type === 'income').map(c => c.name).join(', '); // FIX BUG 1: lowercase 'income'
+      const _expense = _cats.filter(c => c.type === 'expense').map(c => c.name).join(', '); // FIX BUG 1: lowercase 'expense'
+      const _catLines = [];
+      if (_income)  _catLines.push(`PEMASUKAN: ${_income}`);
+      if (_expense) _catLines.push(`PENGELUARAN: ${_expense}`);
+      
+      activeCategoriesBlock = `\n[KATEGORI TRANSAKSI AKTIF — PAKAI NAMA PERSIS INI UNTUK FIELD "category" DI FINANCE]\n${_catLines.join('\n')}\n\n[PANDUAN PEMILIHAN KATEGORI]\nJANGAN mencocokkan kategori berdasarkan substring/kata kunci permukaan saja!\nGunakan PENALARAN SEMANTIK: tanyakan "Apa SUBSTANSI/OBJEK yang dibayar?" bukan "Kata apa yang mirip?".\nContoh penalaran benar:\n- "beli rokok" → objek = rokok (tembakau) → cari kategori yang mengandung tembakau/alkohol\n- "iuran makrab angkatan" → objek = iuran/kontribusi untuk acara sosial kampus → cari kategori sosial/hiburan/acara, BUKAN makanan\n- "bayar laundry" → objek = jasa cuci pakaian → kategori layanan/jasa\n- "grab ke kampus" → objek = transportasi → kategori transportasi\n`;
     }
   } catch (_) { /* Non-critical — never crash routing */ }
 
@@ -421,11 +532,11 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
 ISO Date Hari Ini: ${currentJakartaISO}
-
-[KALENDER REFERENSI — 7 HARI KE DEPAN]
+${miniCalStr ? `
+[KALENDER REFERENSI${hasCal ? ' — 7 HARI KE DEPAN' : ''}]
 ${miniCalStr}
 (Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)
-
+` : ''}
 ${factsContext}${activeAccountsBlock}${activeCategoriesBlock}${sentimentBlock}${crossDomainBlock}
 [RIWAYAT KONTEKS RUNTIME]
 ${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
