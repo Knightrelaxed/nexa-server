@@ -340,36 +340,89 @@ async function extractVaultMetadataFromVision({ fileId, fileName, promptHint = '
   };
 }
 
+// ============================================================
+// PROXY HELPER
+// ============================================================
+function getProxyList(targetUrl) {
+  const proxies = [];
+
+  if (env.TELEGRAM_PROXY_URL) {
+    proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
+  }
+  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
+
+  return proxies;
+}
+
+async function fetchJsonWithFailover(targetUrl, opts = {}) {
+  const maxBuffer = opts.maxBuffer || 5 * 1024 * 1024;
+  const timeout = opts.timeout || 30;
+  const proxies = getProxyList(targetUrl);
+
+  for (const proxy of proxies) {
+    try {
+      console.log(`[VAULT] Getting JSON via: ${proxy.name}...`);
+      const result = await exec(
+        `curl -fsS --ipv4 --connect-timeout 15 --max-time ${timeout} "${proxy.url}"`,
+        { maxBuffer }
+      );
+      const raw = (result.stdout || '').trim();
+      if (raw.startsWith('{')) {
+        const parsed = JSON.parse(raw);
+        if (parsed.ok !== undefined) {
+          console.log(`[VAULT] ${proxy.name} JSON fetch succeeded.`);
+          return parsed;
+        }
+      }
+    } catch (err) {
+      console.warn(`[VAULT] ${proxy.name} JSON fetch failed: ${(err.stderr || err.message).substring(0, 150)}`);
+    }
+  }
+  throw new Error('All download paths failed to retrieve valid JSON from Telegram.');
+}
+
 async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
-  const proxyBase = env.TELEGRAM_PROXY_URL;
 
   const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
-  const proxiedGetFileUrl = proxyBase ? `${proxyBase}${encodeURIComponent(getFileUrl)}` : getFileUrl;
+  console.log('[VAULT] Step 1: Getting file info...');
 
-  const result = await exec(
-    `curl -sS --ipv4 --connect-timeout 15 --max-time 30 "${proxiedGetFileUrl}"`,
-    { maxBuffer: 2 * 1024 * 1024 }
-  );
-  const raw = String(result.stdout || '').trim();
-  if (!raw.startsWith('{')) throw new Error(`Telegram getFile non-JSON: ${raw.substring(0, 200)}`);
-  const parsed = JSON.parse(raw);
-  if (!parsed.ok || !parsed.result?.file_path) throw new Error(`Telegram getFile error: ${raw.substring(0, 200)}`);
+  const fileData = await fetchJsonWithFailover(getFileUrl);
+  if (!fileData.ok || !fileData.result?.file_path) {
+    throw new Error(`Telegram getFile error: ${JSON.stringify(fileData).substring(0, 200)}`);
+  }
 
-  const filePath = parsed.result.file_path;
+  const filePath = fileData.result.file_path;
   const ext = preferredExt || (filePath.includes('.') ? filePath.split('.').pop() : '');
   const tmpFilePath = path.join(os.tmpdir(), `nexa_vault_${Date.now()}${ext ? '.' + ext : ''}`);
 
-  const downloadUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const proxiedDownloadUrl = proxyBase ? `${proxyBase}${encodeURIComponent(downloadUrl)}` : downloadUrl;
+  const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+  const proxies = getProxyList(fileUrl);
 
-  await exec(
-    `curl -sS --ipv4 --connect-timeout 15 --max-time 60 -o "${tmpFilePath}" "${proxiedDownloadUrl}"`,
-    { maxBuffer: 5 * 1024 * 1024 }
-  );
+  console.log('[VAULT] Step 2: Downloading document binary...');
+  let downloaded = false;
 
-  const size = fs.existsSync(tmpFilePath) ? fs.statSync(tmpFilePath).size : 0;
-  if (size < 50) throw new Error(`Downloaded file too small (${size} bytes)`);
+  for (const proxy of proxies) {
+    try {
+      console.log(`[VAULT] Downloading binary via: ${proxy.name}...`);
+      await exec(
+        `curl -fsS --ipv4 --connect-timeout 15 --max-time 60 -o "${tmpFilePath}" "${proxy.url}"`,
+        { maxBuffer: 5 * 1024 * 1024 }
+      );
+      const size = fs.existsSync(tmpFilePath) ? fs.statSync(tmpFilePath).size : 0;
+      if (size > 50) {
+        console.log(`[VAULT] File downloaded via ${proxy.name}. Size: ${size} bytes`);
+        downloaded = true;
+        break;
+      }
+    } catch (err) {
+      console.warn(`[VAULT] ${proxy.name} binary download failed: ${(err.stderr || err.message).substring(0, 150)}`);
+    }
+  }
+
+  if (!downloaded) {
+    throw new Error('Document download failed across all proxies. The proxy may be timing out or blocked.');
+  }
 
   return { tmpFilePath, originalFilePath: filePath };
 }
@@ -383,7 +436,6 @@ async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
 async function sendTelegramOutbound(text, skipMemory = false) {
   try {
     if (!skipMemory) {
-      // Save ALL outbound Telegram messages to memory by default
       await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => { });
     }
 
@@ -392,21 +444,27 @@ async function sendTelegramOutbound(text, skipMemory = false) {
     const chatId = env.TELEGRAM_CHAT_ID.trim();
     const safeText = String(text).substring(0, 4000);
 
-    // Use GET method with query params — Telegram supports both GET and POST.
-    // Our Cloudflare Worker only forwards GET requests (fetch without body),
-    // so POST body would get lost.
     const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}`;
+    const proxies = getProxyList(telegramUrl);
 
-    const proxyBase = env.TELEGRAM_PROXY_URL;
-    const targetUrl = proxyBase
-      ? `${proxyBase}${encodeURIComponent(telegramUrl)}`
-      : telegramUrl;
+    let sent = false;
+    for (const proxy of proxies) {
+      try {
+        const result = await exec(
+          `curl -fsS --ipv4 --connect-timeout 10 --max-time 15 "${proxy.url}"`,
+          { maxBuffer: 1 * 1024 * 1024 }
+        );
+        console.log(`[TELEGRAM-OUTBOUND] Response via ${proxy.name}:`, result.stdout.substring(0, 200));
+        sent = true;
+        break;
+      } catch (err) {
+        console.warn(`[TELEGRAM-OUTBOUND] ${proxy.name} failed: ${(err.stderr || err.message).substring(0, 150)}`);
+      }
+    }
 
-    const result = await exec(
-      `curl -sS --ipv4 --connect-timeout 10 --max-time 15 "${targetUrl}"`,
-      { maxBuffer: 1 * 1024 * 1024 }
-    );
-    console.log('[TELEGRAM-OUTBOUND] Response:', result.stdout.substring(0, 200));
+    if (!sent) {
+      console.error('[TELEGRAM-OUTBOUND] Error: Failed to send message across all proxies.');
+    }
   } catch (e) {
     console.error('[TELEGRAM-OUTBOUND] Error:', e.stderr || e.message);
   }

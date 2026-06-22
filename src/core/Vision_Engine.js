@@ -56,77 +56,91 @@ ATURAN KELUARAN WAJIB:
 `;
 
 // ============================================================
-// PROXY HELPER — Tries custom proxy then fallback public proxies
+// PROXY HELPER
 // ============================================================
-async function fetchViaProxy(targetUrl, opts = {}) {
+function getProxyList(targetUrl) {
+  const proxies = [];
+
+  // Priority 1: Custom Cloudflare Relay
+  if (env.TELEGRAM_PROXY_URL) {
+    proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
+  }
+
+  // Priority 2: AllOrigins
+  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
+
+  return proxies;
+}
+
+async function fetchJsonWithFailover(targetUrl, opts = {}) {
   const maxBuffer = opts.maxBuffer || 5 * 1024 * 1024;
   const timeout = opts.timeout || 30;
-
-  const proxies = [
-    ...(env.TELEGRAM_PROXY_URL ? [{ name: 'Custom', fmt: (u) => `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(u)}` }] : []),
-    { name: 'corsproxy.io', fmt: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
-    { name: 'allorigins', fmt: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
-  ];
+  const proxies = getProxyList(targetUrl);
 
   for (const proxy of proxies) {
     try {
-      console.log(`[VISION] Trying proxy: ${proxy.name}...`);
-      const url = proxy.fmt(targetUrl);
+      console.log(`[VISION] Getting JSON via: ${proxy.name}...`);
+      // using -fsS so curl exits with error on 404/500
       const result = await exec(
-        `curl -sS --ipv4 --connect-timeout 15 --max-time ${timeout} "${url}"`,
+        `curl -fsS --ipv4 --connect-timeout 15 --max-time ${timeout} "${proxy.url}"`,
         { maxBuffer }
       );
-      if (result.stdout && result.stdout.trim().length > 0) {
-        console.log(`[VISION] Proxy ${proxy.name} succeeded.`);
-        return result.stdout;
+      const raw = (result.stdout || '').trim();
+      if (raw.startsWith('{')) {
+        const parsed = JSON.parse(raw);
+        if (parsed.ok !== undefined) {
+          console.log(`[VISION] ${proxy.name} JSON fetch succeeded.`);
+          return parsed;
+        }
       }
     } catch (err) {
-      console.warn(`[VISION] Proxy ${proxy.name} failed: ${(err.stderr || err.message).substring(0, 150)}`);
+      console.warn(`[VISION] ${proxy.name} JSON fetch failed: ${(err.stderr || err.message).substring(0, 150)}`);
     }
   }
-  throw new Error('All relay proxies failed. Set TELEGRAM_PROXY_URL to a working relay.');
+  throw new Error('All download paths failed to retrieve valid JSON from Telegram.');
 }
 
 // ============================================================
-// STEP 1: Download image as base64 via relay proxy
+// STEP 1: Download image as base64 via failover
 // ============================================================
 async function downloadTelegramImageAsBase64(fileId) {
   if (!env.TELEGRAM_BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
 
   const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
-  console.log('[VISION] Step 1: Getting file info via relay proxy...');
+  console.log('[VISION] Step 1: Getting file info...');
 
-  const raw = (await fetchViaProxy(getFileUrl)).trim();
-  if (!raw.startsWith('{')) {
-    throw new Error('Proxy returned non-JSON: ' + raw.substring(0, 200));
-  }
-
-  const fileData = JSON.parse(raw);
+  const fileData = await fetchJsonWithFailover(getFileUrl);
   if (!fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   const filePath = fileData.result.file_path;
 
   // CRITICAL: Download binary via shell | base64 -w 0 — never convert binary in Node.js
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const proxyBase = env.TELEGRAM_PROXY_URL || 'https://api.allorigins.win/raw?url=';
-  const proxiedFileUrl = `${proxyBase}${encodeURIComponent(fileUrl)}`;
+  const proxies = getProxyList(fileUrl);
 
-  console.log('[VISION] Step 2: Downloading image binary via relay proxy...');
-  let imageResult;
-  try {
-    imageResult = await exec(
-      `curl -sS --ipv4 --connect-timeout 15 --max-time 60 "${proxiedFileUrl}" | base64 -w 0`,
-      { maxBuffer: 20 * 1024 * 1024 }
-    );
-  } catch (err) {
-    console.error('[VISION] Image download STDERR:', err.stderr || 'no stderr');
-    throw new Error(`Image download failed: ${err.stderr || err.message}`);
+  console.log('[VISION] Step 2: Downloading image binary...');
+  let base64Data = '';
+  
+  for (const proxy of proxies) {
+    try {
+      console.log(`[VISION] Downloading binary via: ${proxy.name}...`);
+      // -fsS ensures it throws if HTTP status >= 400
+      const imageResult = await exec(
+        `curl -fsS --ipv4 --connect-timeout 15 --max-time 60 "${proxy.url}" | base64 -w 0`,
+        { maxBuffer: 20 * 1024 * 1024 }
+      );
+      const raw = imageResult.stdout.trim();
+      if (raw.length > 100) {
+        base64Data = raw;
+        console.log(`[VISION] Image downloaded via ${proxy.name}. Base64 size:`, base64Data.length, 'chars');
+        break;
+      }
+    } catch (err) {
+      console.warn(`[VISION] ${proxy.name} binary download failed: ${(err.stderr || err.message).substring(0, 150)}`);
+    }
   }
 
-  const base64Data = imageResult.stdout.trim();
-  console.log('[VISION] Image downloaded via proxy. Base64 size:', base64Data.length, 'chars');
-
-  if (base64Data.length < 100) {
-    throw new Error('Downloaded image too small — proxy may have returned error page');
+  if (!base64Data) {
+    throw new Error('Image download failed across all proxies. Proxy may be timing out or blocked.');
   }
 
   const ext = filePath.split('.').pop().toLowerCase();
