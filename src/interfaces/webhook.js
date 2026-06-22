@@ -365,7 +365,7 @@ async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
 
   // Race all proxies in parallel
   const proxyUrls = getProxyUrls(getFileUrl);
-  const fileData = await fetchProxyJSON(proxyUrls, 20000, 1);
+  const fileData = await fetchProxyJSON(proxyUrls, 20000, 3);
   if (!fileData || !fileData.ok || !fileData.result?.file_path) {
     throw new Error(`Telegram getFile error: ${JSON.stringify(fileData).substring(0, 200)}`);
   }
@@ -374,10 +374,7 @@ async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
   const ext = preferredExt || (filePath.includes('.') ? filePath.split('.').pop() : 'bin');
 
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const downloadProxyUrls = getProxyUrls(fileUrl).map((url, i) => ({
-    name: i === 0 && env.TELEGRAM_PROXY_URL ? 'Custom Relay' : 'AllOrigins',
-    url
-  }));
+  const downloadProxyUrls = getProxyUrls(fileUrl);
 
   console.log('[VAULT] Step 2: Downloading document binary (parallel race)...');
   const result = await downloadProxyToFile(downloadProxyUrls, ext, 20 * 1024 * 1024);

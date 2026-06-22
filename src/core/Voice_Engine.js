@@ -46,16 +46,13 @@ async function downloadVoiceToTempFile(fileId) {
 
   // Race all proxies in parallel — fastest wins
   const proxyUrls = getProxyUrls(getFileUrl);
-  const fileData = await fetchProxyJSON(proxyUrls, 20000, 1);
+  const fileData = await fetchProxyJSON(proxyUrls, 20000, 3);
   if (!fileData || !fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   const filePath = fileData.result.file_path;
   console.log('[VOICE] Step 1 complete. File path acquired.');
 
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const downloadProxyUrls = getProxyUrls(fileUrl).map((url, i) => ({
-    name: i === 0 && env.TELEGRAM_PROXY_URL ? 'Custom Relay' : 'AllOrigins',
-    url
-  }));
+  const downloadProxyUrls = getProxyUrls(fileUrl);
 
   console.log('[VOICE] Step 2: Downloading audio binary...');
   const result = await downloadProxyToFile(downloadProxyUrls, 'ogg', 20 * 1024 * 1024);

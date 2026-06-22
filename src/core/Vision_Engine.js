@@ -85,7 +85,7 @@ async function downloadTelegramImageAsBase64(fileId) {
 
   // Race all proxies in parallel for maximum speed
   const proxyUrls = getProxyUrls(getFileUrl);
-  const fileData = await fetchProxyJSON(proxyUrls, 20000, 1);
+  const fileData = await fetchProxyJSON(proxyUrls, 20000, 3);
   if (!fileData || !fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   const filePath = fileData.result.file_path;
   console.log('[VISION] Step 1 complete. File path acquired.');
