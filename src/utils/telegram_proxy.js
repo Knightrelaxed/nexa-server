@@ -8,8 +8,8 @@ const { Transform } = require('stream');
 const axios = require('axios');
 const https = require('https');
 
-// Gunakan IPv6 untuk menghindari blokir/tarpit Cloudflare IPv4 di Hugging Face
-const ipv6Agent = new https.Agent({ family: 6, keepAlive: true });
+// Gunakan agen HTTP standar dengan keepAlive. Hugging Face ternyata memblokir rute IPv6 (ENETUNREACH).
+const httpAgent = new https.Agent({ keepAlive: true });
 
 /**
  * Mengunduh file biner dari proxy ke Base64 (Untuk RAM - Vision Engine)
@@ -21,7 +21,7 @@ async function downloadProxyToBase64(proxyUrl, maxSize = 10 * 1024 * 1024) {
 
     try {
       const response = await axios.get(proxyUrl, {
-        httpsAgent: ipv6Agent,
+        httpsAgent: httpAgent,
         responseType: 'arraybuffer',
         signal: controller.signal,
         timeout: 45000,
@@ -126,7 +126,7 @@ async function fetchProxyJSON(proxyUrl, timeoutMs = 15000) {
 
     try {
       const response = await axios.get(proxyUrl, {
-        httpsAgent: ipv6Agent,
+        httpsAgent: httpAgent,
         responseType: 'json',
         signal: controller.signal,
         timeout: timeoutMs
