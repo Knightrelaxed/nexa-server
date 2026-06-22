@@ -365,7 +365,7 @@ async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
 
   // Race all proxies in parallel
   const proxyUrls = getProxyUrls(getFileUrl);
-  const fileData = await fetchProxyJSON(proxyUrls, 10000, 1);
+  const fileData = await fetchProxyJSON(proxyUrls, 20000, 1);
   if (!fileData || !fileData.ok || !fileData.result?.file_path) {
     throw new Error(`Telegram getFile error: ${JSON.stringify(fileData).substring(0, 200)}`);
   }

@@ -51,7 +51,7 @@ async function raceProxies(buildRequestFn, proxies, timeoutMs = 10000) {
 // ============================================================
 // FETCH JSON — Paralel Race (untuk getFile, sendMessage)
 // ============================================================
-async function fetchProxyJSON(proxyUrls, timeoutMs = 10000, maxRetries = 1) {
+async function fetchProxyJSON(proxyUrls, timeoutMs = 20000, maxRetries = 1) {
   // Support both legacy single-URL string and new array format
   const urlList = Array.isArray(proxyUrls)
     ? proxyUrls.map((u, i) => ({ name: `Proxy${i + 1}`, url: u }))

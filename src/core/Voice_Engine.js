@@ -46,7 +46,7 @@ async function downloadVoiceToTempFile(fileId) {
 
   // Race all proxies in parallel — fastest wins
   const proxyUrls = getProxyUrls(getFileUrl);
-  const fileData = await fetchProxyJSON(proxyUrls, 10000, 1);
+  const fileData = await fetchProxyJSON(proxyUrls, 20000, 1);
   if (!fileData || !fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   const filePath = fileData.result.file_path;
   console.log('[VOICE] Step 1 complete. File path acquired.');
