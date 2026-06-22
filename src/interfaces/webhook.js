@@ -1148,9 +1148,13 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     if (message.photo && message.photo.length > 0) {
       try {
         console.log('[TELEGRAM] Photo received. Processing (11-Tier God Mode Vision)...');
-        const largestPhoto = message.photo[message.photo.length - 1];
-        textInput = await visionEngine.processTelegramImage(largestPhoto.file_id, message.caption || '');
-        console.log('[VISION] Image analysis result:', textInput);
+        const visionDescription = await visionEngine.processTelegramImage(largestPhoto.file_id, message.caption || '');
+        textInput = `[SISTEM PENGLIHATAN N.E.X.A TELAH MEMBACA GAMBAR]
+Deskripsi Gambar: ${visionDescription}
+Konteks/Caption dari Tuan Faqih: "${message.caption || '(Tidak ada caption)'}"
+
+Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunakan 'Deskripsi Gambar' di atas sebagai matamu untuk menjawabnya secara natural.`;
+        console.log('[VISION] Image analysis result formatted for Router.');
       } catch (e) {
         console.error('[VISION] All 11 Vision Tiers FAILED:', e.message);
         await respondToTelegram('⚠️ Maaf Tuan, seluruh 11 lapisan sistem penglihatan N.E.X.A (4x Gemini 2.5 + 4x Groq + 2x Gemini 2.0 + HuggingFace) gagal merespons. Semua provider AI sedang down secara bersamaan.');
