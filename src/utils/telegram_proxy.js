@@ -4,12 +4,7 @@ const { unlink } = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
-const { Transform } = require('stream');
-const axios = require('axios');
-const https = require('https');
-
-// Gunakan agen HTTP standar dengan keepAlive. Hugging Face ternyata memblokir rute IPv6 (ENETUNREACH).
-const httpAgent = new https.Agent({ keepAlive: true });
+const { Transform, Readable } = require('stream');
 
 /**
  * Mengunduh file biner dari proxy ke Base64 (Untuk RAM - Vision Engine)
@@ -19,31 +14,70 @@ async function downloadProxyToBase64(proxyUrl, maxSize = 10 * 1024 * 1024) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 45000);
 
+    let response;
     try {
-      const response = await axios.get(proxyUrl, {
-        httpsAgent: httpAgent,
-        responseType: 'arraybuffer',
+      response = await fetch(proxyUrl, {
         signal: controller.signal,
-        timeout: 45000,
-        maxContentLength: maxSize
+        headers: { 'Accept': 'image/*, application/octet-stream' },
       });
-      clearTimeout(timer);
-      return Buffer.from(response.data).toString('base64');
     } catch (err) {
       clearTimeout(timer);
-      const is5xx = err.response && err.response.status >= 500;
-      const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message.includes('timeout');
-      
-      if (attempt < 3 && (is5xx || isTimeout || !err.response)) {
+      const cause = err.cause ? ` (${err.cause.message})` : '';
+      if (attempt < 3) {
         await new Promise(r => setTimeout(r, 1000));
         continue;
       }
-      
-      if (err.response) {
-        throw new Error(`Proxy HTTP Error: ${err.response.status} ${err.response.statusText}`);
-      }
-      throw new Error(`Download failed: ${err.message}`);
+      throw new Error(`fetch failed${cause}`);
+    } finally {
+      clearTimeout(timer);
     }
+
+    if (!response.ok) {
+      if (response.status >= 500 && attempt < 3) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw new Error(`Proxy HTTP Error: ${response.status} ${response.statusText}`);
+    }
+
+    const declaredSize = parseInt(response.headers.get('content-length') ?? '0');
+    if (declaredSize > maxSize) {
+      await response.body?.cancel();
+      throw new Error(`File terlalu besar: ${declaredSize} bytes`);
+    }
+
+    const chunks = [];
+    let totalBytes = 0;
+    
+    if (response.body) {
+      const reader = response.body.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          totalBytes += value.byteLength;
+          if (totalBytes > maxSize) {
+            await reader.cancel('exceeded size limit');
+            throw new Error('File melebihi batas ukuran saat streaming');
+          }
+          chunks.push(value);
+        }
+      } catch (err) {
+        reader.cancel().catch(() => {});
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        throw err;
+      }
+    } else {
+      const arrayBuffer = await response.arrayBuffer();
+      chunks.push(new Uint8Array(arrayBuffer));
+    }
+
+    const buffer = Buffer.concat(chunks.map(c => Buffer.from(c)));
+    return buffer.toString('base64');
   }
 }
 
@@ -59,24 +93,18 @@ async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize = 20 * 1
 
   let response;
   try {
-    response = await axios.get(proxyUrl, {
-      httpsAgent: ipv6Agent,
-      responseType: 'stream',
-      signal: controller.signal,
-      timeout: 120000
-    });
-  } catch (err) {
-    clearTimeout(timer);
-    if (err.response) {
-      throw new Error(`Proxy HTTP Error: ${err.response.status}`);
-    }
-    throw new Error(`Download request failed: ${err.message}`);
+    response = await fetch(proxyUrl, { signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
 
-  const declaredSize = parseInt(response.headers['content-length'] ?? '0');
+  if (!response.ok) {
+    throw new Error(`Proxy HTTP Error: ${response.status}`);
+  }
+
+  const declaredSize = parseInt(response.headers.get('content-length') ?? '0');
   if (declaredSize > maxSize) {
+    await response.body?.cancel();
     throw new Error(`Ukuran file (${declaredSize}) melebihi batas 20MB`);
   }
 
@@ -96,13 +124,13 @@ async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize = 20 * 1
 
   try {
     await pipeline(
-      response.data,
+      Readable.fromWeb(response.body),
       sizeGuard,
       fileStream
     );
   } catch (err) {
     await cleanupFile(filePath);
-    throw new Error(`Download stream gagal: ${err.message}`);
+    throw new Error(`Download gagal: ${err.message}`);
   }
 
   return { filePath, sizeBytes };
@@ -124,34 +152,38 @@ async function fetchProxyJSON(proxyUrl, timeoutMs = 15000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+    let response;
     try {
-      const response = await axios.get(proxyUrl, {
-        httpsAgent: httpAgent,
-        responseType: 'json',
+      response = await fetch(proxyUrl, {
         signal: controller.signal,
-        timeout: timeoutMs
+        headers: { 'Accept': 'application/json' },
       });
-      clearTimeout(timer);
-      
-      // Axios auto-parses JSON, but we can double check
-      if (typeof response.data === 'string') {
-        try { return JSON.parse(response.data); } catch(e) { throw new Error(`Invalid JSON: ${response.data.substring(0, 100)}`); }
-      }
-      return response.data;
     } catch (err) {
       clearTimeout(timer);
-      const is5xx = err.response && err.response.status >= 500;
-      const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message.includes('timeout') || err.message.includes('canceled');
-
-      if (attempt < 3 && (is5xx || isTimeout || !err.response)) {
+      const cause = err.cause ? ` (${err.cause.message})` : '';
+      if (attempt < 3) {
         await new Promise(r => setTimeout(r, 1000));
         continue;
       }
-      
-      if (err.response) {
-        throw new Error(`HTTP ${err.response.status}: ${JSON.stringify(err.response.data || err.response.statusText)}`);
+      throw new Error(`fetch failed${cause}`);
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+      if (response.status >= 500 && attempt < 3) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
       }
-      throw new Error(`fetch proxy JSON failed: ${err.message}`);
+      const bodyText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${bodyText}`);
+    }
+
+    const raw = await response.text();
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      throw new Error(`Invalid JSON response: ${raw.substring(0, 100)}`);
     }
   }
 }
