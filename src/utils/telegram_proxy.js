@@ -4,19 +4,13 @@ const { unlink } = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
-const { Transform } = require('stream');
-const axios = require('axios');
-const https = require('https');
-
-// Gunakan agen HTTP standar dengan keepAlive. Hugging Face memblokir rute IPv6 (ENETUNREACH).
-const httpAgent = new https.Agent({ keepAlive: true, family: 4 });
+const { Transform, Readable } = require('stream');
 
 // ============================================================
 // CORE: PARALLEL PROXY RACE — Kunci Kecepatan Utama
 // Menjalankan semua proxy BERSAMAAN. Yang berhasil pertama = yang digunakan.
-// Menghilangkan bottleneck serial "tunggu timeout dulu baru ganti proxy".
 // ============================================================
-async function raceProxies(buildRequestFn, proxies, timeoutMs = 10000) {
+async function raceProxies(buildRequestFn, proxies, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let failCount = 0;
@@ -32,7 +26,6 @@ async function raceProxies(buildRequestFn, proxies, timeoutMs = 10000) {
           if (!settled) {
             settled = true;
             resolve({ result, proxyName: proxy.name });
-            // Note: other in-flight requests will naturally abort/complete and be ignored
           }
         })
         .catch(err => {
@@ -48,18 +41,20 @@ async function raceProxies(buildRequestFn, proxies, timeoutMs = 10000) {
   });
 }
 
+// Helper to delay between retries
+const delay = ms => new Promise(res => setTimeout(res, ms));
+
 // ============================================================
 // FETCH JSON — Paralel Race (untuk getFile, sendMessage)
 // ============================================================
-async function fetchProxyJSON(proxyUrls, timeoutMs = 20000, maxRetries = 1) {
-  // Support both legacy single-URL string and new array format
+async function fetchProxyJSON(proxyUrls, timeoutMs = 20000, maxRetries = 3) {
   const urlList = Array.isArray(proxyUrls)
     ? proxyUrls.map((u, i) => ({ name: `Proxy${i + 1}`, url: u }))
     : [{ name: 'Proxy', url: proxyUrls }];
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const { result, proxyName } = await raceProxies(
+      const { result } = await raceProxies(
         async (url, signal) => {
           const response = await fetch(url, { method: 'GET', signal });
           if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -71,7 +66,7 @@ async function fetchProxyJSON(proxyUrls, timeoutMs = 20000, maxRetries = 1) {
       return result;
     } catch (err) {
       if (attempt < maxRetries) {
-        await new Promise(r => setTimeout(r, 500));
+        await delay(1000);
         continue;
       }
       throw new Error(`fetch proxy JSON failed: ${err.message}`);
@@ -81,87 +76,104 @@ async function fetchProxyJSON(proxyUrls, timeoutMs = 20000, maxRetries = 1) {
 
 // ============================================================
 // DOWNLOAD BASE64 — Paralel Race (untuk Vision Engine)
+// Menggunakan native fetch() untuk menghindari bug socket axios di HuggingFace
 // ============================================================
-async function downloadProxyToBase64(proxyUrls, maxSize = 10 * 1024 * 1024) {
+async function downloadProxyToBase64(proxyUrls, maxSize = 10 * 1024 * 1024, maxRetries = 3) {
   const urlList = Array.isArray(proxyUrls)
     ? proxyUrls.map((u, i) => ({ name: `Proxy${i + 1}`, url: u }))
     : [{ name: 'Proxy', url: proxyUrls }];
 
-  const { result } = await raceProxies(
-    async (url, signal) => {
-      const response = await axios.get(url, {
-        httpsAgent: httpAgent,
-        responseType: 'arraybuffer',
-        signal,
-        timeout: 40000,
-        maxContentLength: maxSize
-      });
-      const b64 = Buffer.from(response.data).toString('base64');
-      if (!b64 || b64.length < 100) throw new Error('Response too small or empty');
-      return b64;
-    },
-    urlList,
-    40000
-  );
-  return result;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const { result } = await raceProxies(
+        async (url, signal) => {
+          const response = await fetch(url, { method: 'GET', signal });
+          if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          
+          const arrayBuffer = await response.arrayBuffer();
+          if (arrayBuffer.byteLength > maxSize) throw new Error('File melebihi batas ukuran');
+          
+          const b64 = Buffer.from(arrayBuffer).toString('base64');
+          if (!b64 || b64.length < 100) throw new Error('Response terlalu kecil/kosong');
+          return b64;
+        },
+        urlList,
+        30000
+      );
+      return result;
+    } catch (err) {
+      if (attempt < maxRetries) {
+        console.warn(`[PROXY] Base64 download attempt ${attempt} failed, retrying...`);
+        await delay(1500);
+        continue;
+      }
+      throw new Error(`Base64 download failed: ${err.message}`);
+    }
+  }
 }
 
 // ============================================================
-// DOWNLOAD TO FILE — Paralel Race (untuk Voice Engine)
+// DOWNLOAD TO FILE — Paralel Race (untuk Voice Engine & Vault)
+// Menggunakan native fetch() dan Readable.fromWeb
 // ============================================================
-async function downloadProxyToFile(proxyUrls, extension = 'bin', maxSize = 20 * 1024 * 1024) {
+async function downloadProxyToFile(proxyUrls, extension = 'bin', maxSize = 20 * 1024 * 1024, maxRetries = 3) {
   const urlList = Array.isArray(proxyUrls)
     ? proxyUrls.map((u, i) => ({ name: `Proxy${i + 1}`, url: u }))
     : [{ name: 'Proxy', url: proxyUrls }];
 
-  // For streaming downloads, we try proxies in sequence (streaming can't race cleanly)
-  // But we use a short timeout per proxy so we fail fast
-  const errors = [];
-  for (const proxy of urlList) {
-    const fileName = `nexa_${crypto.randomUUID()}.${extension}`;
-    const filePath = path.join(os.tmpdir(), fileName);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000); // 30s max per proxy
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const errors = [];
+    for (const proxy of urlList) {
+      const fileName = `nexa_${crypto.randomUUID()}.${extension}`;
+      const filePath = path.join(os.tmpdir(), fileName);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 35000); 
 
-    try {
-      const response = await axios.get(proxy.url, {
-        httpsAgent: httpAgent,
-        responseType: 'stream',
-        signal: controller.signal,
-        timeout: 30000
-      });
-      clearTimeout(timer);
+      try {
+        const response = await fetch(proxy.url, { method: 'GET', signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 
-      const declaredSize = parseInt(response.headers['content-length'] ?? '0');
-      if (declaredSize > maxSize) throw new Error(`File terlalu besar: ${declaredSize} bytes`);
+        const declaredSize = parseInt(response.headers.get('content-length') ?? '0');
+        if (declaredSize > maxSize) throw new Error(`File terlalu besar: ${declaredSize} bytes`);
 
-      const fileStream = createWriteStream(filePath);
-      let sizeBytes = 0;
-      const sizeGuard = new Transform({
-        transform(chunk, _encoding, callback) {
-          sizeBytes += chunk.length;
-          if (sizeBytes > maxSize) {
-            callback(new Error(`File melebihi batas ${maxSize / 1024 / 1024}MB`));
-            return;
+        const fileStream = createWriteStream(filePath);
+        let sizeBytes = 0;
+        
+        const sizeGuard = new Transform({
+          transform(chunk, _encoding, callback) {
+            sizeBytes += chunk.length;
+            if (sizeBytes > maxSize) {
+              callback(new Error(`File melebihi batas ${maxSize / 1024 / 1024}MB`));
+              return;
+            }
+            callback(null, chunk);
           }
-          callback(null, chunk);
-        }
-      });
+        });
 
-      await pipeline(response.data, sizeGuard, fileStream);
-      console.log(`[PROXY] Audio downloaded via ${proxy.name}. Size: ${sizeBytes} bytes`);
-      return { filePath, sizeBytes };
+        // Convert Web Stream to Node Stream
+        const webStream = Readable.fromWeb(response.body);
+        await pipeline(webStream, sizeGuard, fileStream);
+        clearTimeout(timer);
 
-    } catch (err) {
-      clearTimeout(timer);
-      await cleanupFile(filePath).catch(() => {});
-      const msg = `${proxy.name} binary download failed: ${err.message.substring(0, 120)}`;
-      console.warn(`[PROXY] ${msg}`);
-      errors.push(msg);
+        console.log(`[PROXY] File downloaded via ${proxy.name}. Size: ${sizeBytes} bytes`);
+        return { filePath, sizeBytes };
+
+      } catch (err) {
+        clearTimeout(timer);
+        await cleanupFile(filePath).catch(() => {});
+        const msg = `${proxy.name} binary stream failed: ${err.message.substring(0, 120)}`;
+        errors.push(msg);
+      }
+    }
+
+    // Jika sampai sini, berarti semua proxy gagal di percobaan ini
+    if (attempt < maxRetries) {
+      console.warn(`[PROXY] Stream attempt ${attempt} failed on all proxies. Retrying...`);
+      await delay(1500);
+    } else {
+      throw new Error(`File download failed across all proxies. ${errors.join(' | ')}`);
     }
   }
-
-  throw new Error(`Audio download failed across all proxies. ${errors.join(' | ')}`);
 }
 
 // ============================================================
