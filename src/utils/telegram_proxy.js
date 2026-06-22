@@ -60,7 +60,7 @@ async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize = 20 * 1
   let response;
   try {
     response = await axios.get(proxyUrl, {
-      httpsAgent: ipv6Agent,
+      httpsAgent: httpAgent,
       responseType: 'stream',
       signal: controller.signal,
       timeout: 120000
