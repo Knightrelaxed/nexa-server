@@ -368,7 +368,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   if (runtimeHints && Object.keys(runtimeHints).length > 0) {
     const lines = [];
     if (runtimeHints.pendingEmailContext) {
-      lines.push(`- Status: Sedang membaca kotak masuk Email Livin. Kata kunci: "${runtimeHints.pendingEmailContext.searchKeyword || 'Semua'}".`);
+      lines.push(`- Status: Sedang membaca kotak masuk Email Finance. Kata kunci: "${runtimeHints.pendingEmailContext.searchKeyword || 'Semua'}".`);
     }
     if (runtimeHints.pendingDatabaseContext) {
       lines.push(`- Status: Sedang memanipulasi tabel database Supabase "${runtimeHints.pendingDatabaseContext.tableName}". Aksi terakhir: ${runtimeHints.pendingDatabaseContext.lastAction}.`);
@@ -510,7 +510,7 @@ PENTING: Balas HARUS dengan format JSON valid seperti berikut:
     "description": "isi jika user memberi deskripsi/catatan/tujuan pengeluaran (contoh: 'beli rokok dua batang', 'berangkat ke takom')",
     "category": "isi jika user menyebut kategori",
     "payment_method": "isi jika user menyebut metode pembayaran (contoh: 'tunai', 'qris', 'transfer')",
-    "account": "isi jika user menyebut nama bank/dompet (contoh: 'bank livin', 'bca', 'dana')"
+    "account": "isi jika user menyebut nama bank/dompet (contoh: 'bank mandiri', 'bca', 'dana')"
   }
 }
 Biarkan field di dalam 'updates' bernilai null jika user tidak menyebutkannya.`;

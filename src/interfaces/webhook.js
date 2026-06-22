@@ -714,7 +714,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       const raw = String(rawDate || '').trim();
       if (!raw) return null;
 
-      // Common Livin format: "Thu, 7 May 2026 21:38:01 +0700 (WIB)"
+      // Common Bank format: "Thu, 7 May 2026 21:38:01 +0700 (WIB)"
       // Remove trailing parenthetical timezone label to improve JS Date parsing consistency.
       const cleaned = raw.replace(/\s*\([^)]+\)\s*$/, '');
       let parsed = new Date(cleaned);
@@ -776,14 +776,14 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       const nominal = _parseFlexibleCurrency(raw);
       return isNaN(nominal) || nominal <= 0 ? null : nominal;
     };
-    const extractLivinTransactionsFromEmails = (emails) => {
+    const extractFinanceTransactionsFromEmails = (emails) => {
       const rows = [];
       for (const e of emails || []) {
         const blob = `${e.subject || ''}\n${e.body || ''}\n${e.snippet || ''}`;
         const nominal = extractNominalFromEmail(e);
         if (!nominal) continue;
 
-        let destination = 'Livin Transaction';
+        let destination = 'Auto-Sync Transaction';
         const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
         if (merchantMatch?.[1]) {
           let rawDest = merchantMatch[1].split('\n')[0]; // Take only the first line
@@ -1113,7 +1113,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           category: 'Auto-Buffer Recovery',
           description: 'Recovered from Telegram Buffer (Server was starting up)',
           time: transactionTime.toISOString()
-        }, 'TASKER_LIVIN');
+        }, 'TASKER_FINANCE');
 
         if (result.status === 'DUPLICATE') {
           await respondToTelegram(`⚠️ [BUFFER] Transaksi Rp${nominal.toLocaleString('id-ID')} ke ${merchant} sudah tercatat sebelumnya. Duplikasi diabaikan.`);
@@ -1236,7 +1236,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
 
     // ============================================================
     // PENDING FINANCE REPLY INTERCEPTOR (AI-Powered)
-    // Catches user replies aimed at a hanging Livin transaction
+    // Catches user replies aimed at a hanging Auto-Sync transaction
     // confirmation — BEFORE the AI Router gets a chance to
     // misinterpret them as a new RECORD intent.
     // Uses classifyPendingTransactionIntent() instead of rigid regex.
@@ -1514,10 +1514,10 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           const dayHint = parseDayOfMonthHint(textInput);
           let scopedEmails = filterEmailsByTemporalHint(candidateEmails, temporalHint);
           if (dayHint) scopedEmails = filterEmailsByDayOfMonth(scopedEmails, dayHint);
-          const txRows = extractLivinTransactionsFromEmails(scopedEmails);
+          const txRows = extractFinanceTransactionsFromEmails(scopedEmails);
 
           if (txRows.length === 0) {
-            domainReply = '📭 Data transaksi Livin tidak ditemukan di email yang dianalisis. Coba sebutkan rentang waktu yang lebih jelas, Tuan.';
+            domainReply = '📭 Data transaksi keuangan otomatis tidak ditemukan di email yang dianalisis. Coba sebutkan rentang waktu yang lebih jelas, Tuan.';
             break;
           }
 
@@ -1532,7 +1532,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
               // Skip failed row and continue
             }
           }
-          domainReply = `✅ Sinkronisasi Livin selesai.\n- Berhasil dicatat: <b>${success}</b>\n- Duplikasi diabaikan: <b>${duplicate}</b>\n- Sumber dianalisis: <b>${txRows.length}</b> transaksi email`;
+          domainReply = `✅ Sinkronisasi Keuangan selesai.\n- Berhasil dicatat: <b>${success}</b>\n- Duplikasi diabaikan: <b>${duplicate}</b>\n- Sumber dianalisis: <b>${txRows.length}</b> transaksi email`;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'READ_LATEST') {
           const ed = routingData.extracted_data;
           // Use precise search if any filter is present
@@ -1917,7 +1917,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               (dayHint && Boolean(pendingEmailContext?.lastBatch?.length));
 
             if (shouldRunEmailAnalytics) {
-              const searchKeywordForAnalytics = routingData.extracted_data.search_keyword || pendingEmailContext?.searchKeyword || 'livin';
+              const searchKeywordForAnalytics = routingData.extracted_data.search_keyword || pendingEmailContext?.searchKeyword || 'keuangan';
               const temporalHintForAnalytics = getEmailTemporalFilterFromText(textInput);
               const temporalQuerySuffixForAnalytics = getTemporalGmailQuerySuffix(temporalHintForAnalytics, dayHint);
               const analyticsQuery = `${searchKeywordForAnalytics}${temporalQuerySuffixForAnalytics}`;
@@ -1930,10 +1930,10 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               const total = scoped.length;
               if (dayHint) {
                 domainReply = total <= 0
-                  ? `📭 Saya tidak menemukan transaksi/email Livin pada tanggal <b>${dayHint}</b> di batch email terakhir.`
-                  : `📊 Pada tanggal <b>${dayHint}</b>, terdeteksi <b>${total}</b> transaksi/email Livin di batch yang saya analisis.`;
+                  ? `📭 Saya tidak menemukan transaksi/email keuangan pada tanggal <b>${dayHint}</b> di batch email terakhir.`
+                  : `📊 Pada tanggal <b>${dayHint}</b>, terdeteksi <b>${total}</b> transaksi/email keuangan di batch yang saya analisis.`;
               } else {
-                domainReply = `📊 Dari batch email terakhir, saya menemukan <b>${total}</b> email transaksi Livin yang relevan.`;
+                domainReply = `📊 Dari batch email terakhir, saya menemukan <b>${total}</b> email transaksi keuangan yang relevan.`;
               }
               pendingEmailContext = {
                 searchKeyword: searchKeywordForAnalytics,
@@ -2257,9 +2257,9 @@ router.post('/gmail', async (req, res) => {
   try {
     const financeEngine = require('../domain/Finance_Engine');
     // Instantly trigger polling logic without waiting for the 3-minute cron
-    const count = await financeEngine.pollLivinEmails();
+    const count = await financeEngine.pollFinanceEmails();
     if (count > 0) {
-      console.log(`[GMAIL WEBHOOK] Instantly processed ${count} new Livin transactions.`);
+      console.log(`[GMAIL WEBHOOK] Instantly processed ${count} new Auto-Sync transactions.`);
     }
   } catch (err) {
     console.error('[GMAIL WEBHOOK] Error processing instant poll:', err.message);

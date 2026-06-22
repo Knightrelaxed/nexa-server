@@ -44,17 +44,17 @@ function initCronJobs() {
     // Future expansion: RSS/Scraping for opportunities
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
-  // 3. Livin' Auto-Sync (Every 3 minutes)
+  // 3. Finance Auto-Sync (Every 3 minutes)
   cron.schedule('*/3 * * * *', async () => {
-    console.log('[CRON] Executing Livin Auto-Sync...');
+    console.log('[CRON] Executing Finance Auto-Sync...');
     try {
       const financeEngine = require('../domain/Finance_Engine');
-      const count = await financeEngine.pollLivinEmails();
+      const count = await financeEngine.pollFinanceEmails();
       if (count > 0) {
-        console.log(`[CRON] Livin Auto-Sync processed ${count} new transactions.`);
+        console.log(`[CRON] Finance Auto-Sync processed ${count} new transactions.`);
       }
     } catch (e) {
-      console.error('[CRON] Livin Auto-Sync failed:', e.message);
+      console.error('[CRON] Finance Auto-Sync failed:', e.message);
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
@@ -62,7 +62,7 @@ function initCronJobs() {
   // Scans Supabase for pending transactions where telegram_sent = false.
   // Retries sending the alert. If > 5 minutes old, auto-saves instead.
   // This ensures TLS blips (which last seconds to minutes) never silently
-  // swallow a Livin notification.
+  // swallow a finance notification.
   let watchdogRunning = false;
   setInterval(async () => {
     if (watchdogRunning) return; // prevent overlap if previous run is slow
@@ -94,7 +94,7 @@ function initCronJobs() {
             await financeEngine.autoSaveFromWatchdog(compositeKey, tx);
           } else if (!row.telegram_sent) {
             // Not yet sent to Telegram AND still within 5-min window — resend
-            const msg = await financeEngine.buildConfirmationMessage(tx, 'TRANSAKSI LIVIN TERBARU');
+            const msg = await financeEngine.buildConfirmationMessage(tx, 'SINKRONISASI KEUANGAN TERBARU');
             await sendTelegramOutbound(msg);
             await supabase.markPendingTransactionSent(compositeKey);
             console.log(`[WATCHDOG] ✅ Alert resent successfully for: ${compositeKey}`);

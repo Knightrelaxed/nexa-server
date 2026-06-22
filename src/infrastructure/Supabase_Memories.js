@@ -64,7 +64,7 @@ async function isDuplicateTransaction(compositeKey, transactionTime, checkPendin
   
   // ── Gate 1: Check nexa_finance_dedup ─────────────────────────────────────
   // Dedup window: 60 minutes (1 jam). Same nominal+merchant is allowed on different hours.
-  // This prevents double-recording from Livin email re-polling and manual Telegram inputs,
+  // This prevents double-recording from Finance Auto-Sync email re-polling and manual Telegram inputs,
   // but allows Tuan Faqih to record the same purchase (e.g. "Kopi Kenangan, Rp25.000") twice a day.
   const windowStart = new Date(transactionTime.getTime() - 60 * 60 * 1000).toISOString();
   const windowEnd   = new Date(transactionTime.getTime() + 60 * 60 * 1000).toISOString();
@@ -88,7 +88,7 @@ async function isDuplicateTransaction(compositeKey, transactionTime, checkPendin
   // ── Gate 2: Check nexa_pending_transactions ───────────────────────────────
   // Critical: a pending record exists when Telegram confirmation was queued
   // but the server restarted before the user responded. Without this check,
-  // pollLivinEmails would re-process the same email and write a DUPLICATE row
+  // pollFinanceEmails would re-process the same email and write a DUPLICATE row
   // to the database because nexa_finance_dedup is only written AFTER save.
   try {
     const { data: pendingData, error: pendingError } = await supabase

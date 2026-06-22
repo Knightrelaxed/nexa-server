@@ -14,7 +14,7 @@ const processingKeys = new Set();
 // In-memory cache for deletion confirmations
 const pendingDeletions = new Map();
 
-let isPollingLivin = false;
+let isPollingFinance = false;
 
 // AUDIT FIX: sendTelegramWithRetry REMOVED — it called api.telegram.org directly which is BLOCKED
 // on HF Docker. All Telegram sends from Finance_Engine must use sendTelegramOutbound() from
@@ -25,7 +25,7 @@ let isPollingLivin = false;
 async function _autoCategorizeMerchant(merchantName, currentCategory) {
   // If user/AI Router already chose a valid specific category, keep it.
   // MUST also treat placeholder strings as "needs categorization".
-  const INVALID_CATEGORIES = ['Lainnya', 'Livin Email', '[Menunggu Kategori AI/User]', 'Uncategorized'];
+  const INVALID_CATEGORIES = ['Lainnya', 'Finance Email', '[Menunggu Kategori AI/User]', 'Uncategorized'];
   if (currentCategory && !INVALID_CATEGORIES.includes(currentCategory) && currentCategory.trim() !== '' && !currentCategory.startsWith('[')) {
     return currentCategory;
   }
@@ -165,10 +165,10 @@ async function recoverPendingTransactions() {
 
 /**
  * Handle a finance transaction (Deduplication & Recording)
- * Called either via Tasker Webhook (source='TASKER_LIVIN') or AI Router Intent (source='TELEGRAM_MANUAL')
+ * Called either via Tasker Webhook (source='TASKER_FINANCE') or AI Router Intent (source='TELEGRAM_MANUAL')
  *
  * @param {object} data - { nominal, type, destination, category, description, time }
- * @param {string} source - 'TASKER_LIVIN' | 'GMAIL_POLLING' | 'TELEGRAM_MANUAL'
+ * @param {string} source - 'TASKER_FINANCE' | 'GMAIL_POLLING' | 'TELEGRAM_MANUAL'
  */
 async function processTransaction(data, source) {
   // CRITICAL: nominal may arrive as string in various formats (IDR: "3.600.000", plain: 3600000).
@@ -189,7 +189,7 @@ async function processTransaction(data, source) {
   console.log(`[FINANCE] Evaluating transaction: ${compositeKey} from ${source}`);
 
   // Deduplication — only for passive (automated) inputs, not manual Telegram entries
-  if (source === 'TASKER_LIVIN' || source === 'GMAIL_POLLING') {
+  if (source === 'TASKER_FINANCE' || source === 'GMAIL_POLLING') {
     // Pass false to skip pending check if we are already processing it.
     const isDuplicate = await supabase.isDuplicateTransaction(compositeKey, transactionTime, false);
     if (isDuplicate) {
@@ -229,12 +229,12 @@ async function processTransaction(data, source) {
     const smartCategory = await _autoCategorizeMerchant(combinedContext, data.category);
 
     // Nama akun: gunakan data.account jika ada (dari Telegram manual/AI Router).
-    // Jika otomatis dari Livin, paksa 'Bank Mandiri Livin'.
+    // Jika otomatis dari email Auto-Sync, paksa 'Bank Mandiri'.
     // Jika manual dan kosong, ambil akun aktif pertama dari database.
     let akunName = data.account && String(data.account).trim() ? String(data.account).trim() : null;
     if (!akunName) {
-      if (source === 'TASKER_LIVIN' || source === 'GMAIL_POLLING') {
-        akunName = 'Bank Mandiri Livin';
+      if (source === 'TASKER_FINANCE' || source === 'GMAIL_POLLING') {
+        akunName = 'Bank Mandiri';
       } else {
         const accounts = await supabaseFinance.getAccountsList();
         if (accounts && accounts.length > 0) {
@@ -749,7 +749,7 @@ async function undoDeleteTransaction() {
       txType:       deletedTx.type.toUpperCase(),
       nominal:      deletedTx.amount,
       categoryName: deletedTx.categories?.name || 'Lainnya',
-      accountName:  deletedTx.accounts?.name || 'Bank Mandiri Livin',
+      accountName:  deletedTx.accounts?.name || 'Bank Mandiri',
       description:  deletedTx.description,
       dateISO:      deletedTx.transaction_date,
       timeHHMM:     deletedTx.transaction_time,
@@ -898,7 +898,7 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
         }
 
         // Use TELEGRAM_MANUAL for non-email transactions to avoid strict email dedup
-        const source = pending.tx.isLivinEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL';
+        const source = pending.tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL';
         const res = await processTransaction(pending.tx, source);
         if (res && res.message) successMessages.push(res.message);
         processedCount++;
@@ -929,7 +929,7 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
     if (successMessages.length > 0) return successMessages.join('\n\n');
     return `✅ <b>Berhasil dicatat!</b> ${processedCount} transaksi telah dimasukkan ke dalam database keuangan Tuan.`;
   } else {
-    return `❌ <b>Dibatalkan.</b> ${skippedCount} transaksi Livin' diabaikan dan tidak dimasukkan ke dalam database.`;
+    return `❌ <b>Dibatalkan.</b> ${skippedCount} transaksi diabaikan dan tidak dimasukkan ke dalam database.`;
   }
 }
 
@@ -1005,17 +1005,17 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
 }
 
 /**
- * Automatically poll Gmail for new Livin' transaction emails, parse them, and record them.
+ * Automatically poll Gmail for new financial transaction emails, parse them, and record them.
  * Relies on Zero-Duplication Engine to prevent duplicate entries across polls.
  */
-async function pollLivinEmails() {
-  if (isPollingLivin) {
+async function pollFinanceEmails() {
+  if (isPollingFinance) {
     console.log('[FINANCE] Polling skipped: Another instance is already polling.');
     return 0;
   }
-  isPollingLivin = true;
+  isPollingFinance = true;
   try {
-    console.log('[FINANCE] Polling for new Livin emails...');
+    console.log('[FINANCE] Polling for new Finance emails...');
     const emails = await gmailClient.getLatestEmails('from:noreply.livin@bankmandiri.co.id', 15);
     if (!emails || emails.length === 0) return 0;
 
@@ -1052,7 +1052,7 @@ async function pollLivinEmails() {
       const isFailed = blob.toLowerCase().includes('tidak berhasil') || blob.toLowerCase().includes('gagal');
 
       // Extract Merchant/Destination
-      let destination = 'Livin Transaction';
+      let destination = 'Auto-Sync Transaction';
       const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
       if (merchantMatch?.[1]) {
         let rawDest = merchantMatch[1].split('\n')[0]; // Take only the first line
@@ -1115,7 +1115,7 @@ async function pollLivinEmails() {
       };
 
       try {
-        const msg = await requestTransactionConfirmation(tx, 'TRANSAKSI LIVIN TERBARU');
+        const msg = await requestTransactionConfirmation(tx, 'SINKRONISASI KEUANGAN TERBARU');
         if (msg) {
           // AUDIT FIX: Use sendTelegramOutbound (Cloudflare proxy) instead of direct axios.post.
           // Direct calls to api.telegram.org are BLOCKED on HF Docker. Previously relied on
@@ -1135,7 +1135,7 @@ async function pollLivinEmails() {
     console.error('[FINANCE] Polling failed:', error.message);
     return 0;
   } finally {
-    isPollingLivin = false;
+    isPollingFinance = false;
   }
 }
 
@@ -1143,7 +1143,7 @@ async function pollLivinEmails() {
  * Build the Telegram confirmation message text for a pending transaction.
  * Extracted as a shared helper so recovery and new confirmations use the same format.
  */
-async function _buildConfirmationMessage(tx, sourceLabel = 'TRANSAKSI LIVIN TERBARU') {
+async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGAN TERBARU') {
   const transactionTime = new Date(tx.time);
   const dateStr = transactionTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' });
   const timeStr = transactionTime.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.');
@@ -1233,7 +1233,7 @@ async function _autoSavePending(compositeKey, tx) {
     if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
     try {
       // Use 'TELEGRAM_MANUAL' to bypass strict email duplicate checks for user-initiated saves
-      const source = tx.isLivinEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL';
+      const source = tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL';
       await processTransaction(tx, source);
     } catch (e) {
       // BUG FIX 5: Notify user of silent failures
@@ -1856,7 +1856,7 @@ module.exports = {
   getPendingDeletionsContext,
   undoDeleteTransaction,
   editTransaction,
-  pollLivinEmails,
+  pollFinanceEmails,
   confirmPendingTransactions,
   updatePendingTransaction,
   requestTransactionConfirmation,
