@@ -430,7 +430,9 @@ async function sendTelegramOutbound(text, skipMemory = false) {
     let sent = false;
     for (const proxy of proxies) {
       try {
-        const result = await fetchProxyJSON(proxy.url, 15000);
+        // PENTING: maxRetries = 1 untuk menghindari race condition 90 detik dengan Watchdog!
+        // Jika timeout, kita asumsikan request sudah masuk ke Telegram tapi response tercekik Cloudflare.
+        const result = await fetchProxyJSON(proxy.url, 15000, 1);
         console.log(`[TELEGRAM-OUTBOUND] Response via ${proxy.name}:`, JSON.stringify(result).substring(0, 200));
         sent = true;
         break;
@@ -440,7 +442,7 @@ async function sendTelegramOutbound(text, skipMemory = false) {
     }
 
     if (!sent) {
-      console.error('[TELEGRAM-OUTBOUND] Error: Failed to send message across all proxies.');
+      console.error('[TELEGRAM-OUTBOUND] Error: Failed to send message across all proxies. (Assuming delivered if it was a timeout)');
     }
   } catch (e) {
     console.error('[TELEGRAM-OUTBOUND] Error:', e.message);
