@@ -1,5 +1,6 @@
 const googleTasks = require('../infrastructure/Google_Tasks');
 const googleWorkspace = require('../infrastructure/Google_Workspace');
+const notionClient = require('../infrastructure/Notion_Client');
 
 // ── CATEGORY KEYWORDS → LIST NAME MAPPING ──────────────────────────────────
 // Used for auto-categorization suggestion
@@ -145,6 +146,10 @@ async function executePendingTask(chatId, overrideListName = null) {
   }
 
   const task = await googleTasks.createTask({ title, notes, dueDate, listId });
+  
+  // [PHASE: Parallel Sync to Notion] - Fire and forget
+  notionClient.createTask(title, notes, dueDate).catch(e => console.error('[NOTION SYNC] Failed:', e.message));
+
   let msg = `✅ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil ditambahkan ke list <b>${escapeHtml(listName || 'Tugas Saya')}</b>.`;
   if (dueDate) {
     const d = new Date(dueDate.split('T')[0] + 'T00:00:00+07:00');
@@ -276,6 +281,10 @@ async function handleTaskIntent(extractedData, chatId = null) {
       }
 
       const task = await googleTasks.createTask({ title, notes: taskNotes, dueDate: resolvedDueDate || null, listId });
+      
+      // [PHASE: Parallel Sync to Notion] - Fire and forget
+      notionClient.createTask(title, taskNotes, resolvedDueDate || null).catch(e => console.error('[NOTION SYNC] Failed:', e.message));
+      
       let msg = `✅ Tugas '<b>${escapeHtml(task.title)}</b>' ditambahkan ke <b>${escapeHtml(resolvedList || 'Tugas Saya')}</b>.`;
       if (resolvedDueDate) {
         const dueDateObj = new Date(resolvedDueDate.split('T')[0] + 'T00:00:00+07:00');
@@ -410,6 +419,9 @@ async function handleTaskIntent(extractedData, chatId = null) {
       for (const t of matches) {
         await googleTasks.completeTask(t.id, t.listId);
         
+        // [PHASE: Parallel Sync to Notion]
+        notionClient.completeTask(t.title).catch(e => console.error('[NOTION SYNC] Failed:', e.message));
+        
         // [PHASE 4: Two-Way Status Sync]
         try {
           const events = await googleWorkspace.findEventByTitle(`⏰ DEADLINE: ${t.title}`);
@@ -436,7 +448,11 @@ async function handleTaskIntent(extractedData, chatId = null) {
       if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dihapus.' };
       const matches = await googleTasks.findTasksByKeyword(keyword);
       if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
-      for (const t of matches) await googleTasks.deleteTask(t.id, t.listId);
+      for (const t of matches) {
+        await googleTasks.deleteTask(t.id, t.listId);
+        // [PHASE: Parallel Sync to Notion]
+        notionClient.deleteTask(t.title).catch(e => console.error('[NOTION SYNC] Failed:', e.message));
+      }
       const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
       return { status: 'SUCCESS', message: `🗑️ Tugas ${names} berhasil dihapus.` };
     }

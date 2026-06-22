@@ -336,8 +336,9 @@ function initCronJobs() {
   // 11. Daily Memory Consolidation (23:59 WIB)
   // Reads all chat memories from today, extracts new permanent facts about the user,
   // and saves them to the User Profile table to give N.E.X.A long-term organic memory.
+  // [v2] DEDUP-AWARE: Reads existing memories first to prevent duplicate facts.
   cron.schedule('59 23 * * *', async () => {
-    console.log('[CRON-MEM] Executing Daily Memory Consolidation...');
+    console.log('[CRON-MEM] Executing Daily Memory Consolidation (Dedup-Aware v2)...');
     try {
       const supabaseMemories = require('../infrastructure/Supabase_Memories');
       const aiRouter = require('../core/AI_Router');
@@ -349,47 +350,73 @@ function initCronJobs() {
         return;
       }
 
+      // ── ANTI-DUPLIKASI: Baca memori yang SUDAH ADA di Supabase ────────────
+      // Tanpa langkah ini, AI akan mengekstrak "Tuan Faqih ingin menjadi diplomat"
+      // setiap hari walaupun fakta itu sudah tersimpan berkali-kali sebelumnya.
+      const existingFacts = await supabaseMemories.getPersonalFacts();
+      const existingFactsText = [
+        ...(existingFacts.userProfile || []),
+        ...(existingFacts.coreIdentity || [])
+      ].join('\n');
+      console.log(`[CRON-MEM] Loaded ${(existingFacts.userProfile?.length || 0) + (existingFacts.coreIdentity?.length || 0)} existing facts as dedup context.`);
+
       const chatLog = todayMemories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n');
-      
-      const prompt = `Anda adalah Subsistem Memori N.E.X.A. Tugas Anda adalah membaca transkrip obrolan hari ini antara Tuan Faqih dan N.E.X.A, lalu MENGEKSTRAK FAKTA PERMANEN baru.
-Syarat Fakta Permanen:
-- Harus berupa preferensi, kebiasaan, rutinitas, prinsip, atau fakta penting jangka panjang tentang Tuan Faqih.
-- JANGAN mengekstrak informasi sementara (misal: "Tuan sedang rapat hari ini", "Tuan baru beli kopi").
-- JANGAN mengekstrak jika tidak ada hal krusial.
-- Format teks harus lugas, misal: "Tuan Faqih lebih suka ditegur secara santai saat weekend."
 
-Transkrip Hari Ini:
-${chatLog.substring(0, 8000)} // Capped to prevent token overflow
+      const prompt = `Anda adalah Subsistem Memori N.E.X.A. Tugas Anda adalah membaca transkrip obrolan hari ini antara Tuan Faqih dan N.E.X.A, lalu MENGEKSTRAK hanya FAKTA PERMANEN BARU yang belum ada dalam memori yang sudah tersimpan.
 
-Keluarkan hasil EKSTRAKSI DALAM BENTUK ARRAY JSON SAJA. Jika tidak ada fakta permanen baru yang layak disimpan, kembalikan array kosong []. Jangan gunakan backtick markdown.`;
+=== MEMORI YANG SUDAH TERSIMPAN (JANGAN DUPLIKASI INI) ===
+${existingFactsText.substring(0, 4000)}
+
+=== TRANSKRIP OBROLAN HARI INI ===
+${chatLog.substring(0, 6000)}
+
+=== ATURAN EKSTRAKSI KETAT ===
+1. HANYA ekstrak fakta yang benar-benar BARU dan BELUM ADA di daftar memori di atas secara SEMANTIK. Jika fakta serupa sudah ada (walaupun kalimatnya sedikit berbeda), LEWATI — jangan duplikasi.
+2. Fakta harus berupa preferensi PERMANEN, kebiasaan, rutinitas, prinsip, atau identitas jangka panjang tentang Tuan Faqih.
+3. JANGAN ekstrak informasi sementara (misal: "Tuan baru saja beli kopi", "Tuan sedang ujian hari ini"). Hanya catat jika itu POLA atau KEBIASAAN baru yang belum diketahui.
+4. JANGAN ekstrak fakta yang sama persis hanya karena kalimatnya berbeda. Evaluasi secara makna.
+5. Jika tidak ada fakta baru yang layak, kembalikan array kosong [].
+6. Format teks harus spesifik dan lugas. Contoh baik: "Tuan Faqih lebih suka dikonfirmasi langsung tanpa proses verifikasi berulang saat mengoreksi nominal transaksi."
+
+Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backtick atau markdown apapun.`;
 
       const { executeWithFallback } = require('../core/Fallback_Engine');
-      const result = await executeWithFallback(prompt, "Anda adalah AI Pengekstrak Fakta. Output WAJIB JSON Array of Strings murni.", 0.2, true);
-      
+      const result = await executeWithFallback(
+        prompt,
+        "Anda adalah AI Pengekstrak Fakta Anti-Duplikasi. Output WAJIB JSON Array of Strings murni. Kembalikan [] jika tidak ada fakta baru yang genuinely belum tersimpan.",
+        0.15,
+        true
+      );
+
       try {
-        // Clean markdown block if GenAI decides to return it despite instructions
+        // Bersihkan jika AI tetap mengembalikan markdown block
         let cleanStr = result.replace(/```json/gi, '').replace(/```/g, '').trim();
         const firstBracket = cleanStr.indexOf('[');
         const lastBracket = cleanStr.lastIndexOf(']');
         if (firstBracket !== -1 && lastBracket > firstBracket) {
           cleanStr = cleanStr.substring(firstBracket, lastBracket + 1);
         }
-        
+
         const parsed = JSON.parse(cleanStr);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log(`[CRON-MEM] Extracted ${parsed.length} new facts.`);
+          console.log(`[CRON-MEM] Extracted ${parsed.length} genuinely new facts (dedup-aware).`);
           for (const fact of parsed) {
-            await supabaseMemories.saveUserProfile(fact);
+            if (typeof fact === 'string' && fact.trim().length > 10) {
+              await supabaseMemories.saveUserProfile(fact.trim());
+            }
           }
           aiRouter.invalidatePersonalFactsCache();
-          
-          // Optionally notify the user
-          await sendTelegramOutbound(`🧠 <b>Memory Consolidation Complete</b>\nSaya telah memproses memori obrolan hari ini dan mempelajari ${parsed.length} hal baru tentang Tuan.`);
+
+          await sendTelegramOutbound(
+            `🧠 <b>Memory Consolidation</b>\n` +
+            `Saya mempelajari <b>${parsed.length}</b> fakta baru tentang Tuan hari ini.\n` +
+            `<i>(Duplikasi otomatis diabaikan)</i>`
+          );
         } else {
-          console.log('[CRON-MEM] No new permanent facts found in today\'s logs.');
+          console.log('[CRON-MEM] No genuinely new facts found — all already known. No write performed.');
         }
       } catch (err) {
-        console.log('[CRON-MEM] AI did not return a valid JSON array or no facts found:', result);
+        console.log('[CRON-MEM] AI did not return a valid JSON array or no facts found:', result?.substring(0, 200));
       }
     } catch (e) {
       console.error('[CRON-MEM] Memory Consolidation failed:', e.message);

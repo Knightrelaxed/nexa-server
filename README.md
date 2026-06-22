@@ -8,21 +8,81 @@ pinned: false
 app_port: 7860
 ---
 # N.E.X.A — Neural Extension Assistant for Intelligence
-> Chief of Staff AI — Immortality Protocol v3.0 | Hugging Face Docker Space
+> Chief of Staff AI — Immortality Protocol v3.0
 
-**Stack:** Node.js 20 · Express 5 · Gemini 2.0 Flash · Groq Whisper · Supabase · Google Workspace  
-**Platform:** Hugging Face Docker Spaces (Free, Always-On)
+**N.E.X.A** adalah asisten AI super cerdas bergaya "J.A.R.V.I.S" yang dirancang khusus untuk menjadi *Chief of Staff* bagi Tuan Faqih. Berbeda dengan chatbot konvensional, N.E.X.A beroperasi secara proaktif (*set-and-forget*), mengelola keuangan, agenda akademik, penjadwalan, hingga memonitor kedisiplinan digital pengguna.
 
 ---
 
-## 🚀 Deployment
+## 🏗️ Arsitektur Sistem Utama
 
-1. Push repo ini ke **GitHub** (Private)
-2. Buat **Hugging Face Space** → SDK: Docker → Hardware: CPU Basic (Free)
-3. Sambungkan Space ke repo GitHub ini
-4. Masukkan semua **Secrets** di HF Space Settings (lihat tabel di bawah)
-5. Tunggu `Building` → `Running`
-6. Set Telegram Webhook:
+Arsitektur N.E.X.A terbagi menjadi dua entitas utama yang bekerja berdampingan:
+
+1. **N.E.X.A Core Server (Backend)**
+   - **Lokasi:** Root directory proyek ini.
+   - **Stack:** Node.js 20, Express.js.
+   - **Hosting:** Hugging Face Docker Spaces (Free, Always-On).
+   - **Peran:** Otak utama, pemroses bahasa natural, eksekutor otomasi, dan jembatan ke berbagai API pihak ketiga (Telegram, Google Workspace, LLMs, Supabase).
+
+2. **Nexa Finance Web (Frontend Dashboard)**
+   - **Lokasi:** Folder `/nexa-finance-web`
+   - **Stack:** Next.js (App Router), React.
+   - **Peran:** Aplikasi web visual bagi pengguna untuk memantau data yang telah diproses dan dicatat oleh N.E.X.A Core secara *real-time*.
+
+---
+
+## 🧠 Subsistem N.E.X.A Core
+
+Backend N.E.X.A beroperasi menggunakan berbagai subsistem pintar:
+
+### 1. AI Router & Fallback Engine
+- Mengklasifikasikan niat pengguna (*intent*) secara cerdas dari teks Telegram.
+- **Failover Anti-Mati:** Jika AI utama (Gemini 2.5 Flash) mengalami *down* atau *rate limit*, sistem otomatis beralih (*fallback*) secara mulus ke model cadangan (Groq Llama 4, Gemini 2.0 Flash) tanpa disadari oleh pengguna.
+
+### 2. Vision & Voice Engine (Multi-Tier)
+- **Vision Engine (11-Tier):** Menganalisis gambar yang dikirim pengguna. Mampu membaca teks dokumen, mengekstrak data dari tabel/struk, dan memberikan deskripsi natural. Jika provider utama gagal, ia akan beralih hingga 11 lapisan provider (termasuk Qwen2-VL di Hugging Face).
+- **Voice Engine (6-Tier):** Menerima pesan suara (*Voice Note*) dari Telegram dan mentranskripsinya secara akurat.
+
+### 3. Finance Engine
+- Bertanggung jawab mencatat, mengkategorikan, dan menganalisis transaksi.
+- **Fitur Khusus:** Deduplikasi pintar (mencegah catat ganda), pemulihan transaksi saat server *restart*, *auto-polling* email mutasi bank, dan mendukung instruksi ralat natural (misal: "Nexa, ubah yang tadi jadi 5 ribu").
+
+### 4. Memory & Contextual Awareness (Supabase)
+- **Konsolidasi Memori Harian:** Setiap pukul 23:59 WIB, N.E.X.A membaca seluruh transkrip obrolan pada hari itu. AI mengekstrak fakta permanen baru (rutinitas, preferensi) secara cerdas (tanpa menduplikasi data lama) ke dalam memori *Supabase* sehingga N.E.X.A terus berkembang semakin mengenali pengguna.
+- **Pembelajaran Pasif:** Otomatis belajar fakta baru di tengah percakapan secara *on-the-fly*.
+
+### 5. Proactive Cron & Behavioral Engine
+N.E.X.A tidak sekadar menunggu instruksi, tetapi menyapa duluan:
+- **05:30 WIB:** *Morning Briefing*
+- **12:00 WIB:** *Midday Pulse* (Ringkasan hari dan progres tugas)
+- **17:00 WIB:** *Evening Debrief* (Evaluasi pencapaian harian)
+- **21:00 WIB:** *Tomorrow Prep* (Persiapan agenda untuk esok)
+- **Proximity Alert:** Mengingatkan 30 menit sebelum jadwal kalender dimulai.
+
+### 6. God Mode & Digital Discipline
+Bekerja sama erat dengan aplikasi **Tasker** di Android pengguna. N.E.X.A bertindak sebagai polisi disiplin. Jika terdeteksi pengguna membuka aplikasi hiburan (TikTok/Instagram) > 30 menit, N.E.X.A mengirim *webhook* darurat untuk mematikan koneksi internet dan mengunci layar ponsel pengguna.
+
+---
+
+## 📊 Nexa Finance Web
+
+Terletak di dalam direktori `nexa-finance-web/`, ini adalah antarmuka visual modern untuk sistem keuangan N.E.X.A.
+
+- **Dashboard:** Menyajikan ringkasan makro tentang status keuangan (pemasukan, pengeluaran mingguan/bulanan, dan tren visual).
+- **Analytics:** Menganalisis pengeluaran berdasarkan kategori untuk mengetahui porsi bocor halus atau pos pengeluaran terbesar.
+- **Records:** Menampilkan daftar *ledger* transaksi secara detail, yang ditarik langsung dari database *Supabase* N.E.X.A.
+- **Sinkronisasi:** N.E.X.A Core yang bekerja di Telegram mengumpulkan dan mencatat data, sementara Nexa Finance Web bertugas menampilkannya dalam format GUI yang memanjakan mata untuk evaluasi berkala.
+
+---
+
+## 🚀 Deployment (Core Server)
+
+1. Push repo ini ke **GitHub** (Private).
+2. Buat **Hugging Face Space** → SDK: Docker → Hardware: CPU Basic (Free).
+3. Sambungkan Space ke repo GitHub ini.
+4. Masukkan semua **Secrets** di HF Space Settings (lihat tabel di bawah).
+5. Tunggu `Building` → `Running`.
+6. Set Telegram Webhook dengan URL Space Anda:
    ```
    https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<HF_USER>-nexa-server.hf.space/webhook/telegram
    ```
@@ -34,74 +94,23 @@ app_port: 7860
 | Variable | Keterangan |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Token dari @BotFather |
-| `TELEGRAM_CHAT_ID` | Chat ID Anda |
-| `GEMINI_API_KEY_PRIMARY` | Gemini API Key utama |
-| `GEMINI_API_KEY_BACKUP` | Gemini API Key cadangan |
-| `GROQ_API_KEY` | Groq Whisper (transkripsi suara) |
-| `OPENROUTER_API_KEY` | Llama 3.1 fallback (opsional) |
-| `WEATHER_API_KEY` | WeatherAPI.com |
-| `NEWS_API_KEY` | NewsData.io |
-| `NEXA_GODMODE_SECRET` | Bearer token untuk `/webhook/tasker` |
+| `TELEGRAM_CHAT_ID` | Chat ID Telegram Tuan Faqih (Proteksi Akses) |
+| `GEMINI_API_KEY_1`..`4` | API Key Google Gemini (Primary & Backup) |
+| `GROQ_API_KEY_1`..`4` | API Key Groq (Whisper & Llama Fallback) |
+| `HF_TOKEN` | Token akses HuggingFace API |
+| `NEXA_GODMODE_SECRET` | Bearer token untuk autentikasi rute `/webhook/tasker` |
 | `SUPABASE_URL` | URL project Supabase |
 | `SUPABASE_KEY` | Anon key Supabase |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Email robot Service Account |
-| `GOOGLE_PRIVATE_KEY` | Private key lengkap (termasuk `-----BEGIN...-----END-----`) |
-| `GOOGLE_SHEET_ID` | ID Google Sheet keuangan |
-| `GOOGLE_CALENDAR_ID` | ID Google Calendar (biasanya email Anda) |
-| `GOOGLE_DRIVE_FOLDER_ID` | ID folder Google Drive untuk 2nd Brain |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Email robot Service Account Google |
+| `GOOGLE_PRIVATE_KEY` | Private key lengkap Service Account |
 
-> ⚠️ **JANGAN** commit file `.env` ke GitHub. Sudah diproteksi `.gitignore`.
+> ⚠️ **JANGAN** commit file `.env` ke GitHub. Pastikan tetap berada di `.gitignore`.
 
 ---
 
-## 🌐 Endpoints
+## 🛡️ Immortality Protocol v3.0
 
-| Method | Path | Fungsi |
-|---|---|---|
-| `GET` | `/health` | Status server (uptime, memory, timestamp Jakarta) |
-| `POST` | `/webhook/telegram` | Terima pesan dari Telegram Bot |
-| `POST` | `/webhook/tasker` | Terima event dari Tasker Android (butuh Bearer token) |
-
----
-
-## 🤖 Tasker — 6 Profile Wajib
-
-| # | Profile | Fungsi |
-|---|---|---|
-| 1 | Sensor Keuangan Livin' | POST `FINANCE_PUSH` saat ada notifikasi transaksi |
-| 2 | Buffer Fallback | Kirim `[BUFFER] nominal \| merchant \| timestamp` via Telegram jika server tidak respons |
-| 3 | Screen-Time Monitor | POST `SCREEN_TIME_VIOLATION` setelah 30 menit buka app hiburan |
-| 4 | God Mode Executor | Matikan WiFi+Data+kunci layar saat terima notif `🔴 GOD MODE AKTIF` |
-| 5 | Alarm Dismissed | POST `ALARM_DISMISSED` saat alarm dimatikan → trigger Morning Briefing |
-| 6 | Watchdog Ping | POST `WATCHDOG_PING` setiap 2 jam → alert jika server mati |
-
-> 📖 Detail lengkap: `Plan/TASKER_AUTOMATION_GUIDE.md`
-
----
-
-## 🛡️ Immortality Protocol v3.0 — 4 Lapisan Anti-Sleep
-
-| Lapisan | Komponen | Interval |
-|---|---|---|
-| 1A | UptimeRobot → `GET /health` | Setiap 5 menit |
-| 1B | cron-job.org → `GET /health` | Setiap 10 menit |
-| 2 | Smart `/health` endpoint (uptime, memory, timestamp) | On demand |
-| 3 | Tasker Watchdog → `POST /webhook/tasker` WATCHDOG_PING | Setiap 2 jam |
-| 4 | Tasker Buffer → `[BUFFER]` via Telegram | Saat server cold start |
-
----
-
-## 🗄️ Database (Supabase)
-
-Jalankan `database/schema.sql` di Supabase SQL Editor **sebelum deploy**. Tabel:
-- `nexa_chat_memories` — Konteks obrolan (memori AI)
-- `nexa_finance_dedup` — Deduplikasi transaksi keuangan
-- `nexa_2nd_brain` — Arsip ide mentah
-
----
-
-## ⚠️ Security
-
-- `/webhook/telegram` → diproteksi `TELEGRAM_CHAT_ID` lock (hanya Anda yang bisa akses)
-- `/webhook/tasker` → diproteksi `Authorization: Bearer <NEXA_GODMODE_SECRET>`
-- File `nexa-core-*.json` (Service Account key) **DILARANG** masuk ke repo (sudah di `.gitignore`)
+Untuk memastikan server di Hugging Face tidak pernah "tertidur" (*sleep*):
+1. **UptimeRobot / cron-job.org** melakukan ping berkala ke endpoint `GET /health`.
+2. **Tasker Watchdog** mengirim sinyal ping dari Android setiap 2 jam via Telegram/Webhook.
+3. **Tasker Buffer System** menampung transaksi finansial sementara secara lokal di HP jika server N.E.X.A kebetulan sedang *restart* atau lambat, lalu mengirim ulang (`[BUFFER]`) saat server online kembali.

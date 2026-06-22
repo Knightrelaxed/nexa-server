@@ -325,3 +325,31 @@ Semua 8 pilar di atas hanya menggunakan layanan yang **sudah aktif dan gratis**:
 | 8 | 8.3 Tasker Context | Sedang | ⭐⭐⭐⭐ |
 
 > *"The difference between a tool and a partner is initiative. Phase 6 transforms N.E.X.A from a reactive tool into a proactive partner."*
+
+---
+
+### 8.9 Notion Advanced Integrations (Future Development)
+
+Meskipun saat ini N.E.X.A mengandalkan Google Workspace (Tasks, Docs, Calendar) dan Supabase untuk efisiensi utama, **Notion API** telah diintegrasikan secara paralel di `Task_Manager.js` dan siap diaktifkan kapan saja. 
+
+Berikut adalah peta jalan (*roadmap*) pemanfaatan tingkat lanjut Notion untuk masa depan:
+
+1. **Zettelkasten / Second Brain Hub**
+   - Menjadikan Notion sebagai "Daftar Isi Pintar" (*Index*) yang menghubungkan dokumen Google Docs Anda menggunakan *Bi-directional Linking*.
+   - **Fitur N.E.X.A:** *Idea Capture*. Pengguna dapat mengirimkan pesan teks singkat ke N.E.X.A yang akan langsung diteruskan sebagai *node* baru di *Knowledge Graph* Notion Anda.
+
+2. **Manajemen Proyek Kompleks (Skripsi / Pengembangan N.E.X.A)**
+   - Menggunakan *Kanban Board* dan *Relational Database* di Notion.
+   - **Fitur N.E.X.A:** *Stall Detector*. N.E.X.A memantau papan Kanban dan memberikan teguran proaktif via Telegram jika sebuah kartu tugas tertahan di kolom "In Progress" melebihi tenggat waktu wajar (misal: 14 hari).
+
+3. **Personal CRM (Jaringan Relasi)**
+   - Menyimpan *database* kontak profesional (Dosen, Kolega, Kating) beserta riwayat interaksi.
+   - **Fitur N.E.X.A:** *Networking Reminder*. *Watchdog* mingguan akan mendeteksi jika kontak penting belum disapa dalam X bulan, lalu menyarankan *draft* pesan *catch-up*.
+
+4. **Subscription & Asset Inventory**
+   - Melacak aset fisik (buku yang dipinjam teman) dan layanan berlangganan (Netflix, API, Hosting) beserta jadwal penagihannya.
+   - **Fitur N.E.X.A:** Terintegrasi dengan *Finance Engine* untuk memproyeksikan tagihan yang akan datang dan mengirimkan tagihan penagihan otomatis ke teman yang meminjam barang.
+
+5. **Content Consumption & Resonance Calendar**
+   - Pusat pangkalan data untuk artikel, jurnal, video, dan buku yang dikonsumsi (menggunakan Notion Web Clipper).
+   - **Fitur N.E.X.A:** Pengguna dapat meminta N.E.X.A untuk mengambil, merangkum, dan membacakan inti dari artikel yang belum sempat dibaca di daftar antrean Notion.

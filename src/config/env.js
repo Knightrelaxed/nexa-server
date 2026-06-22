@@ -44,4 +44,8 @@ module.exports = {
 
   // Serper.dev Web Search API
   SERPER_API_KEY: process.env.SERPER_API_KEY,
+
+  // Notion API
+  NOTION_API_KEY: process.env.NOTION_API_KEY,
+  NOTION_TASKS_DB_ID: process.env.NOTION_TASKS_DB_ID,
 };
