@@ -83,7 +83,7 @@ function invalidatePersonalFactsCache() {
   console.log('[ROUTER] Personal facts cache invalidated. Will re-fetch on next message.');
 }
 
-const ROUTER_SYSTEM_PROMPT = \`
+const ROUTER_SYSTEM_PROMPT = `
 ${NEXA_PERSONALITY}
 
 [COGNITIVE & ROUTING TASKS]
@@ -138,7 +138,7 @@ OUTPUT JSON FORMAT:
   },
   "god_mode_trigger": false
 }
-\`;
+`;
 
 // ============================================================
 // CROSS-DOMAIN FUSION & SENTIMENT HELPERS
