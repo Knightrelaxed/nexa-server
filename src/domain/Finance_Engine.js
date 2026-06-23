@@ -1056,8 +1056,8 @@ async function pollFinanceEmails() {
       const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
       if (merchantMatch?.[1]) {
         let rawDest = merchantMatch[1].split('\n')[0]; // Take only the first line
-        rawDest = rawDest.replace(/&nbsp;/ig, ' ');
-        rawDest = rawDest.replace(/&\w+;/g, ' '); // Strip other HTML entities
+        rawDest = rawDest.replace(/&nbsp;?/ig, ' ');
+        rawDest = rawDest.replace(/&\w+;?/g, ' '); // Strip other HTML entities
         rawDest = rawDest.replace(/\s*-?\s*ID\s+Tanggal.*$/i, ''); // Strip trailing ID Tanggal
         rawDest = rawDest.replace(/\s*-?\s*Tanggal.*$/i, ''); // Strip trailing Tanggal
         destination = rawDest.replace(/\s+/g, ' ').trim().substring(0, 80);
