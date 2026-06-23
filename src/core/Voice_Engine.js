@@ -27,12 +27,28 @@ const GEMINI_NATIVE_KEYS = [
 // ============================================================
 // PROXY HELPER
 // ============================================================
+// Proxy list untuk JSON (getFile API) - Custom Relay cocok untuk ini
 function getProxyList(targetUrl) {
   const proxies = [];
 
   if (env.TELEGRAM_PROXY_URL) {
     proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
   }
+  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
+
+  return proxies;
+}
+
+// Proxy list untuk BINARY download (audio/gambar)
+// Custom Relay TIDAK digunakan di sini karena Cloudflare Worker timeout saat streaming file besar.
+// Langsung hit Telegram, lalu AllOrigins sebagai fallback.
+function getBinaryProxyList(targetUrl) {
+  const proxies = [];
+
+  // Priority 1: Direct URL (Hugging Face bisa akses api.telegram.org/file/ langsung)
+  proxies.push({ name: 'Direct', url: targetUrl });
+
+  // Priority 2: AllOrigins sebagai fallback
   proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
 
   return proxies;
@@ -73,13 +89,14 @@ async function downloadVoiceToTempFile(fileId) {
 
   // Download audio binary directly to disk via stream
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const proxies = getProxyList(fileUrl);
+  // Gunakan getBinaryProxyList - Custom Relay dilewati karena Cloudflare Worker timeout saat stream file besar
+  const proxies = getBinaryProxyList(fileUrl);
 
   console.log('[VOICE] Step 2: Downloading audio binary...');
 
   for (const proxy of proxies) {
     try {
-      console.log(`[VOICE] Downloading binary via: ${proxy.name}...`);
+      console.log(`[VOICE] Downloading binary via: ${proxy.name} (${proxy.url.substring(0, 60)}...)`);
       const result = await downloadProxyToFile(proxy.url, 'ogg', 20 * 1024 * 1024);
       if (result.sizeBytes > 100) {
         console.log(`[VOICE] Audio downloaded via ${proxy.name}. Size: ${result.sizeBytes} bytes`);

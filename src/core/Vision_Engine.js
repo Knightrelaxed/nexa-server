@@ -57,6 +57,7 @@ ATURAN KELUARAN WAJIB:
 // ============================================================
 // PROXY HELPER
 // ============================================================
+// Proxy list untuk JSON (getFile API) - Custom Relay cocok untuk ini
 function getProxyList(targetUrl) {
   const proxies = [];
 
@@ -68,6 +69,17 @@ function getProxyList(targetUrl) {
   // Priority 2: AllOrigins
   proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
 
+  return proxies;
+}
+
+// Proxy list untuk BINARY download (gambar/audio)
+// Custom Relay TIDAK digunakan karena Cloudflare Worker timeout saat streaming file besar.
+function getBinaryProxyList(targetUrl) {
+  const proxies = [];
+  // Priority 1: Direct URL (Hugging Face bisa akses api.telegram.org/file/ langsung)
+  proxies.push({ name: 'Direct', url: targetUrl });
+  // Priority 2: AllOrigins sebagai fallback
+  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
   return proxies;
 }
 
@@ -105,14 +117,15 @@ async function downloadTelegramImageAsBase64(fileId) {
 
   // Mengunduh biner secara murni menggunakan Native Node.js
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const proxies = getProxyList(fileUrl);
+  // Gunakan getBinaryProxyList - Custom Relay dilewati karena Cloudflare Worker timeout saat stream file besar
+  const proxies = getBinaryProxyList(fileUrl);
 
   console.log('[VISION] Step 2: Downloading image binary...');
   let base64Data = '';
   
   for (const proxy of proxies) {
     try {
-      console.log(`[VISION] Downloading binary via: ${proxy.name}...`);
+      console.log(`[VISION] Downloading binary via: ${proxy.name} (${proxy.url.substring(0, 60)}...)`);
       const b64 = await downloadProxyToBase64(proxy.url, 20 * 1024 * 1024);
       if (b64 && b64.length > 100) {
         base64Data = b64;
