@@ -8,9 +8,6 @@ const { Transform } = require('stream');
 const axios = require('axios');
 const https = require('https');
 
-// Gunakan agen HTTP standar tanpa keepAlive untuk mencegah socket mati diam-diam (ENOTFOUND/TLS Disconnect)
-const httpAgent = new https.Agent({ keepAlive: false });
-
 /**
  * Mengunduh file biner dari proxy ke Base64 (Untuk RAM - Vision Engine)
  */
@@ -21,7 +18,6 @@ async function downloadProxyToBase64(proxyUrl, maxSize = 10 * 1024 * 1024) {
 
     try {
       const response = await axios.get(proxyUrl, {
-        httpsAgent: httpAgent,
         responseType: 'arraybuffer',
         signal: controller.signal,
         timeout: 45000,
@@ -60,7 +56,6 @@ async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize = 20 * 1
   let response;
   try {
     response = await axios.get(proxyUrl, {
-      httpsAgent: httpAgent,
       responseType: 'stream',
       signal: controller.signal,
       timeout: 120000
@@ -126,7 +121,6 @@ async function fetchProxyJSON(proxyUrl, timeoutMs = 15000, maxRetries = 3) {
 
     try {
       const response = await axios.get(proxyUrl, {
-        httpsAgent: httpAgent,
         responseType: 'json',
         signal: controller.signal,
         timeout: timeoutMs
