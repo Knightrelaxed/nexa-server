@@ -5,7 +5,7 @@ const https = require('https');
 const { downloadProxyToBase64, fetchProxyJSON } = require('../utils/telegram_proxy.js');
 
 // IPv4 agent — forces Gemini API calls over IPv4 to avoid Hugging Face routing issues
-const ipv4Agent = new https.Agent({ family: 4, keepAlive: true });
+const ipv4Agent = new https.Agent({ family: 4 });
 
 // ============================================================
 // MULTI-KEY POOL — Built at startup, null slots are skipped
