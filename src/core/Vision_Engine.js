@@ -84,7 +84,7 @@ async function fetchJsonWithFailover(targetUrl, opts = {}) {
         return parsed;
       }
     } catch (err) {
-      console.warn(`[VISION] ${proxy.name} JSON fetch failed: ${(err.message).substring(0, 150)}`);
+      console.warn(`[VISION] ${proxy.name} JSON fetch failed: [${err.code || 'NO_CODE'}] ${err.message}`);
     }
   }
   throw new Error('All download paths failed to retrieve valid JSON from Telegram.');
@@ -120,7 +120,7 @@ async function downloadTelegramImageAsBase64(fileId) {
         break;
       }
     } catch (err) {
-      console.warn(`[VISION] ${proxy.name} binary download failed: ${(err.message).substring(0, 150)}`);
+      console.warn(`[VISION] ${proxy.name} binary download failed: [${err.code || 'NO_CODE'}] ${err.message}`);
     }
   }
 
