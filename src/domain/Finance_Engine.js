@@ -1065,7 +1065,7 @@ async function pollFinanceEmails() {
 
       // Date parsing
       let dateIso = new Date().toISOString();
-      const transactionTime = msg.date ? new Date(msg.date) : new Date();
+      const transactionTime = e.date ? new Date(e.date) : new Date();
       if (!isNaN(transactionTime.getTime())) dateIso = transactionTime.toISOString();
 
       const cleanMerchant = destination.toLowerCase().replace(/[^a-z0-9]/g, '');
