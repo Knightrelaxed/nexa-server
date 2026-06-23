@@ -24,20 +24,41 @@ const GEMINI_NATIVE_KEYS = [
   env.GEMINI_API_KEY_2,
 ].filter(Boolean);
 
-// Build proxy URL list for parallel racing
-function getProxyUrls(targetUrl) {
-  const urls = [];
+// ============================================================
+// PROXY HELPER
+// ============================================================
+function getProxyList(targetUrl) {
+  const proxies = [];
+
   if (env.TELEGRAM_PROXY_URL) {
-    urls.push(`${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}`);
-  } else {
-    // Only fallback to AllOrigins if Custom Relay is missing, because AllOrigins is currently extremely slow/dead
-    urls.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`);
+    proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
   }
-  return urls;
+  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
+
+  return proxies;
+}
+
+async function fetchJsonWithFailover(targetUrl, opts = {}) {
+  const timeoutMs = (opts.timeout || 30) * 1000;
+  const proxies = getProxyList(targetUrl);
+
+  for (const proxy of proxies) {
+    try {
+      console.log(`[VOICE] Getting JSON via: ${proxy.name}...`);
+      const parsed = await fetchProxyJSON(proxy.url, timeoutMs);
+      if (parsed.ok !== undefined) {
+        console.log(`[VOICE] ${proxy.name} JSON fetch succeeded.`);
+        return parsed;
+      }
+    } catch (err) {
+      console.warn(`[VOICE] ${proxy.name} JSON fetch failed: ${(err.message).substring(0, 150)}`);
+    }
+  }
+  throw new Error('All download paths failed to retrieve valid JSON from Telegram.');
 }
 
 // ============================================================
-// STEP 1: Download voice note from Telegram via parallel race
+// STEP 1: Download voice note from Telegram via failover
 // Returns: local temp file path
 // ============================================================
 async function downloadVoiceToTempFile(fileId) {
@@ -46,19 +67,30 @@ async function downloadVoiceToTempFile(fileId) {
   const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
   console.log('[VOICE] Step 1: Getting file info...');
 
-  // Retry with fast 6s timeout so 3 attempts fit inside Telegram's 25s webhook window
-  const proxyUrls = getProxyUrls(getFileUrl);
-  const fileData = await fetchProxyJSON(proxyUrls, 6000, 3);
-  if (!fileData || !fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
+  const fileData = await fetchJsonWithFailover(getFileUrl);
+  if (!fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   const filePath = fileData.result.file_path;
-  console.log('[VOICE] Step 1 complete. File path acquired.');
 
+  // Download audio binary directly to disk via stream
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const downloadProxyUrls = getProxyUrls(fileUrl);
+  const proxies = getProxyList(fileUrl);
 
   console.log('[VOICE] Step 2: Downloading audio binary...');
-  const result = await downloadProxyToFile(downloadProxyUrls, 'ogg', 20 * 1024 * 1024);
-  return result.filePath;
+
+  for (const proxy of proxies) {
+    try {
+      console.log(`[VOICE] Downloading binary via: ${proxy.name}...`);
+      const result = await downloadProxyToFile(proxy.url, 'ogg', 20 * 1024 * 1024);
+      if (result.sizeBytes > 100) {
+        console.log(`[VOICE] Audio downloaded via ${proxy.name}. Size: ${result.sizeBytes} bytes`);
+        return result.filePath;
+      }
+    } catch (err) {
+      console.warn(`[VOICE] ${proxy.name} binary download failed: ${(err.message).substring(0, 150)}`);
+    }
+  }
+
+  throw new Error('Audio download failed across all proxies. The proxy may be timing out or blocked.');
 }
 
 // ============================================================

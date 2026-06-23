@@ -54,25 +54,40 @@ ATURAN KELUARAN WAJIB:
 - Jika ada caption dari pengguna, instruksi/konteks caption tersebut HARUS menjadi fokus utama dari arah narasimu, dan sertakan interpretasi maksud Tuan Faqih di bagian akhir.
 `;
 
-// Build a list of proxy URLs for a given target URL
-function getProxyUrls(targetUrl) {
-  const urls = [];
+// ============================================================
+// PROXY HELPER
+// ============================================================
+function getProxyList(targetUrl) {
+  const proxies = [];
+
   // Priority 1: Custom Cloudflare Relay
   if (env.TELEGRAM_PROXY_URL) {
-    urls.push(`${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}`);
-  } else {
-    // Only fallback to AllOrigins if Custom Relay is missing, because AllOrigins is currently extremely slow/dead
-    urls.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`);
+    proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
   }
-  return urls;
+
+  // Priority 2: AllOrigins
+  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
+
+  return proxies;
 }
 
-// For backwards compatibility
-function getProxyList(targetUrl) {
-  return getProxyUrls(targetUrl).map((url, i) => ({
-    name: i === 0 && env.TELEGRAM_PROXY_URL ? 'Custom Relay' : 'AllOrigins',
-    url
-  }));
+async function fetchJsonWithFailover(targetUrl, opts = {}) {
+  const timeoutMs = (opts.timeout || 30) * 1000;
+  const proxies = getProxyList(targetUrl);
+
+  for (const proxy of proxies) {
+    try {
+      console.log(`[VISION] Getting JSON via: ${proxy.name}...`);
+      const parsed = await fetchProxyJSON(proxy.url, timeoutMs);
+      if (parsed.ok !== undefined) {
+        console.log(`[VISION] ${proxy.name} JSON fetch succeeded.`);
+        return parsed;
+      }
+    } catch (err) {
+      console.warn(`[VISION] ${proxy.name} JSON fetch failed: ${(err.message).substring(0, 150)}`);
+    }
+  }
+  throw new Error('All download paths failed to retrieve valid JSON from Telegram.');
 }
 
 // ============================================================
@@ -84,19 +99,34 @@ async function downloadTelegramImageAsBase64(fileId) {
   const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
   console.log('[VISION] Step 1: Getting file info...');
 
-  // Retry with fast 6s timeout so 3 attempts fit inside Telegram's 25s webhook window
-  const proxyUrls = getProxyUrls(getFileUrl);
-  const fileData = await fetchProxyJSON(proxyUrls, 6000, 3);
-  if (!fileData || !fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
+  const fileData = await fetchJsonWithFailover(getFileUrl);
+  if (!fileData.ok) throw new Error('Telegram getFile error: ' + JSON.stringify(fileData));
   const filePath = fileData.result.file_path;
-  console.log('[VISION] Step 1 complete. File path acquired.');
 
+  // Mengunduh biner secara murni menggunakan Native Node.js
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const downloadProxyUrls = getProxyUrls(fileUrl);
+  const proxies = getProxyList(fileUrl);
 
-  console.log('[VISION] Step 2: Downloading image binary (parallel race)...');
-  const base64Data = await downloadProxyToBase64(downloadProxyUrls, 20 * 1024 * 1024);
-  console.log('[VISION] Image ready. Base64 size:', base64Data.length, 'chars');
+  console.log('[VISION] Step 2: Downloading image binary...');
+  let base64Data = '';
+  
+  for (const proxy of proxies) {
+    try {
+      console.log(`[VISION] Downloading binary via: ${proxy.name}...`);
+      const b64 = await downloadProxyToBase64(proxy.url, 20 * 1024 * 1024);
+      if (b64 && b64.length > 100) {
+        base64Data = b64;
+        console.log(`[VISION] Image downloaded via ${proxy.name}. Base64 size:`, base64Data.length, 'chars');
+        break;
+      }
+    } catch (err) {
+      console.warn(`[VISION] ${proxy.name} binary download failed: ${(err.message).substring(0, 150)}`);
+    }
+  }
+
+  if (!base64Data) {
+    throw new Error('Image download failed across all proxies. Proxy may be timing out or blocked.');
+  }
 
   const ext = filePath.split('.').pop().toLowerCase();
   let mimeType = 'image/jpeg';
