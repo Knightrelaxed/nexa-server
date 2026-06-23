@@ -9,7 +9,7 @@ const axios = require('axios');
 const https = require('https');
 
 // Gunakan agen HTTP standar dengan keepAlive. Hugging Face ternyata memblokir rute IPv6 (ENETUNREACH).
-const httpAgent = new https.Agent({ keepAlive: true });
+const httpAgent = new https.Agent({ family: 4, keepAlive: true });
 
 /**
  * Mengunduh file biner dari proxy ke Base64 (Untuk RAM - Vision Engine)
