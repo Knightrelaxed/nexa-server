@@ -8,11 +8,11 @@ const { Transform } = require('stream');
 const axios = require('axios');
 const https = require('https');
 
-// FIX HUGGING FACE DEAD SOCKETS (FIXED v2):
-// Now safely outside webhook context, we can use keepAlive: true.
-// maxSockets: 5 prevents overwhelming HF NAT with too many concurrent connections.
-// family: 4 forces IPv4 to bypass Node 20 IPv6 routing issues on HF.
-const proxyAgent = new https.Agent({ keepAlive: true, family: 4, maxSockets: 5 });
+// FIX HUGGING FACE DEAD SOCKETS:
+// keepAlive MUST be false. Hugging Face's aggressive NAT drops idle outbound sockets
+// without sending FIN/RST. If keepAlive is true, Node.js reuses a dead socket and
+// fails immediately with "Client network socket disconnected before secure TLS connection".
+const proxyAgent = new https.Agent({ keepAlive: false, family: 4 });
 
 /**
  * Mengunduh file biner dari proxy ke Base64 (Untuk RAM - Vision Engine)
