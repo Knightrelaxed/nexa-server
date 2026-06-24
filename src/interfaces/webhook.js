@@ -1033,12 +1033,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       }
 
       if (intent === 'USER_PROFILE' || intent === 'CORE_IDENTITY') {
-        const action = data.action || 'READ';
+        const action = data.action || (data.content ? 'APPEND' : 'READ');
         if (action === 'APPEND' && !data.content) {
-          return 'â “ Fakta/aturan yang ingin ditambahkan apa, Tuan?';
+          return '❓ Fakta/aturan yang ingin ditambahkan apa, Tuan?';
         }
         if (action === 'DELETE' && !data.search_keyword) {
-          return 'â “ Item mana yang ingin dihapus dari memori, Tuan?';
+          return '❓ Item mana yang ingin dihapus dari memori, Tuan?';
         }
       }
 
@@ -1830,7 +1830,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
 
       case 'USER_PROFILE':
         if (routingData.extracted_data) {
-          const action = routingData.extracted_data.action || 'READ';
+          const action = routingData.extracted_data.action || (routingData.extracted_data.content ? 'APPEND' : 'READ');
           if (action === 'APPEND' && routingData.extracted_data.content) {
             await supabaseMemories.saveUserProfile(routingData.extracted_data.content);
             invalidatePersonalFactsCache();
@@ -1860,7 +1860,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
 
       case 'CORE_IDENTITY':
         if (routingData.extracted_data) {
-          const action = routingData.extracted_data.action || 'READ';
+          const action = routingData.extracted_data.action || (routingData.extracted_data.content ? 'APPEND' : 'READ');
           if (action === 'APPEND' && routingData.extracted_data.content) {
             await supabaseMemories.saveCoreIdentity(routingData.extracted_data.content);
             invalidatePersonalFactsCache();
