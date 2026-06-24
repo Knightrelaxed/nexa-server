@@ -212,13 +212,77 @@ async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
 }
 
 // ============================================================
-// MAIN ENTRY POINT — 6-TIER GOD MODE VOICE FALLBACK
-// Tier 1-4: Groq Whisper Large v3 (4 Keys)
-// Tier 5-6: Gemini 2.0 Flash Native Audio (2 Keys)
-// Fallback Final: Throw descriptive error for Telegram alert
+// TIER 0: WORKER TRANSCRIPTION — The Game Changer
+// Worker mendownload audio DAN memanggil Groq langsung dari Cloudflare.
+// N.E.X.A hanya menerima JSON kecil berisi teks transkripsi.
+// TIDAK ADA file biner besar yang perlu diunduh oleh HF container!
+// ============================================================
+async function callWorkerTranscription(fileId) {
+  if (!env.TELEGRAM_PROXY_URL || !env.TELEGRAM_BOT_TOKEN) {
+    throw new Error('Worker URL or Bot Token not configured');
+  }
+
+  // Step 1: Dapatkan file_path dari Telegram (JSON kecil — PASTI berhasil)
+  const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
+  const proxyUrl = `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(getFileUrl)}`;
+  
+  console.log('[VOICE-W0] Getting file path via Worker...');
+  const fileData = await fetchProxyJSON(proxyUrl, 30000);
+  if (!fileData.ok || !fileData.result?.file_path) {
+    throw new Error(`Telegram getFile error: ${JSON.stringify(fileData).substring(0, 100)}`);
+  }
+  const filePath = fileData.result.file_path;
+  console.log('[VOICE-W0] File path obtained:', filePath);
+
+  // Step 2: Pilih Groq key secara round-robin
+  if (GROQ_KEYS.length === 0) throw new Error('No Groq API keys configured');
+  const groqKey = GROQ_KEYS[Math.floor(Math.random() * GROQ_KEYS.length)];
+
+  // Step 3: Perintahkan Worker untuk download+transcribe
+  // Worker URL base-nya adalah env.TELEGRAM_PROXY_URL yang berakhir dengan "?url="
+  // Kita ekstrak base URL-nya untuk endpoint POST
+  const workerBaseUrl = env.TELEGRAM_PROXY_URL.replace(/\?url=$/, '').replace(/\/+$/, '');
+  const transcribeUrl = `${workerBaseUrl}/transcribe`;
+
+  console.log('[VOICE-W0] Requesting Worker to transcribe...');
+  const response = await axios.post(transcribeUrl, {
+    file_path: filePath,
+    bot_token: env.TELEGRAM_BOT_TOKEN,
+    groq_key: groqKey,
+  }, {
+    timeout: 90000, // 90 detik cukup untuk download audio + transcription
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const result = response.data;
+  if (!result.ok || !result.text) {
+    throw new Error(`Worker transcription failed: ${result.error || 'empty result'}`);
+  }
+
+  console.log('[VOICE-W0] Worker transcription SUCCESS! Length:', result.text.length);
+  return result.text;
+}
+
+// ============================================================
+// MAIN ENTRY POINT — 7-TIER GOD MODE VOICE FALLBACK
+// Tier 0:   Worker Transcription (Cloudflare does everything)
+// Tier 1-4: Groq Whisper Large v3 (4 Keys) + local file
+// Tier 5-6: Gemini 2.0 Flash Native Audio (2 Keys) + local file
 // ============================================================
 async function transcribeTelegramVoice(fileId) {
-  // Download audio ONCE — reused across all tiers
+  // ============================================================
+  // TIER 0: Coba Worker Transcription DULU (no binary download!)
+  // ============================================================
+  try {
+    const workerResult = await callWorkerTranscription(fileId);
+    return workerResult;
+  } catch (workerErr) {
+    console.warn(`[VOICE-W0] Worker Transcription FAILED: ${workerErr.message}. Falling back to local download...`);
+  }
+
+  // ============================================================
+  // TIER 1-6: Download audio ONCE, then try all AI providers
+  // ============================================================
   let tmpFilePath = null;
   try {
     tmpFilePath = await downloadVoiceToTempFile(fileId);
@@ -258,7 +322,7 @@ async function transcribeTelegramVoice(fileId) {
     }
 
     // FALLBACK FINAL — All tiers exhausted
-    throw new Error('⚠️ VOICE DOWN TOTAL: Semua 6 Tier Telinga N.E.X.A gagal (4x Groq Whisper + 2x Gemini Native Audio).');
+    throw new Error('⚠️ VOICE DOWN TOTAL: Semua 7 Tier Telinga N.E.X.A gagal (Worker + 4x Groq Whisper + 2x Gemini Native Audio).');
 
   } finally {
     // Always clean up temp file — even if all tiers fail

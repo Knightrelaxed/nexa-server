@@ -305,10 +305,85 @@ async function callHuggingFaceVision(imageData, caption, systemPromptOverride = 
 }
 
 // ============================================================
-// MAIN ENTRY POINT — 11-TIER GOD MODE VISION FALLBACK
+// TIER 0: WORKER VISION — The Game Changer
+// Worker mendownload gambar DAN memanggil Gemini langsung dari Cloudflare.
+// N.E.X.A hanya menerima JSON kecil berisi teks deskripsi.
+// TIDAK ADA file biner besar yang perlu diunduh oleh HF container!
+// ============================================================
+async function callWorkerVision(fileId, caption = '', systemPromptOverride = '') {
+  if (!env.TELEGRAM_PROXY_URL || !env.TELEGRAM_BOT_TOKEN) {
+    throw new Error('Worker URL or Bot Token not configured');
+  }
+
+  // Step 1: Dapatkan file_path dari Telegram (JSON kecil — PASTI berhasil)
+  const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
+  const proxyUrl = `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(getFileUrl)}`;
+  
+  console.log('[VISION-W0] Getting file path via Worker...');
+  const fileData = await fetchProxyJSON(proxyUrl, 30000);
+  if (!fileData.ok || !fileData.result?.file_path) {
+    throw new Error(`Telegram getFile error: ${JSON.stringify(fileData).substring(0, 100)}`);
+  }
+  const filePath = fileData.result.file_path;
+  console.log('[VISION-W0] File path obtained:', filePath);
+
+  // Step 2: Pilih Gemini 2.5 key secara round-robin
+  if (GEMINI_25_KEYS.length === 0) throw new Error('No Gemini 2.5 API keys configured');
+  const geminiKey = GEMINI_25_KEYS[Math.floor(Math.random() * GEMINI_25_KEYS.length)];
+
+  // Step 3: Perintahkan Worker untuk download+vision
+  const workerBaseUrl = env.TELEGRAM_PROXY_URL.replace(/\?url=$/, '').replace(/\/+$/, '');
+  const visionUrl = `${workerBaseUrl}/vision`;
+
+  const captionContext = caption
+    ? `\nCaption dari pengguna: "${caption}". Gunakan ini sebagai petunjuk utama.`
+    : '\nTidak ada caption. Analisis gambar secara mandiri.';
+
+  const finalSystemPrompt = systemPromptOverride || (VISION_SYSTEM_PROMPT + captionContext);
+
+  console.log('[VISION-W0] Requesting Worker to process vision...');
+  const response = await axios.post(visionUrl, {
+    file_path: filePath,
+    bot_token: env.TELEGRAM_BOT_TOKEN,
+    gemini_key: geminiKey,
+    prompt: 'Analisis gambar ini sekarang.',
+    system_prompt: finalSystemPrompt
+  }, {
+    timeout: 90000, // 90 detik
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const result = response.data;
+  if (!result.ok || !result.description) {
+    throw new Error(`Worker vision failed: ${result.error || 'empty result'}`);
+  }
+
+  console.log('[VISION-W0] Worker vision SUCCESS! Length:', result.description.length);
+  return result.description;
+}
+
+// ============================================================
+// MAIN ENTRY POINT — 12-TIER GOD MODE VISION FALLBACK
+// Tier 0:   Worker Vision (Cloudflare does everything)
+// Tier 1-4: Gemini 2.5 Flash (Premium Quality, 4 Keys) + local file
+// Tier 5-8: Groq Llama 4 Scout 17B (Balanced, 4 Keys) + local file
+// Tier 9-10: Gemini 2.0 Flash (Generous Quota, 2 Keys) + local file
+// Tier 11: Hugging Face Qwen2-VL (Safety Net) + local file
 // ============================================================
 async function processTelegramImage(fileId, caption = '', systemPromptOverride = '') {
-  // Download image ONCE — reused across ALL tiers
+  // ============================================================
+  // TIER 0: Coba Worker Vision DULU (no binary download!)
+  // ============================================================
+  try {
+    const workerResult = await callWorkerVision(fileId, caption, systemPromptOverride);
+    return workerResult;
+  } catch (workerErr) {
+    console.warn(`[VISION-W0] Worker Vision FAILED: ${workerErr.message}. Falling back to local download...`);
+  }
+
+  // ============================================================
+  // TIER 1-11: Download image ONCE, then try all AI providers
+  // ============================================================
   console.log('[VISION] Downloading image from Telegram...');
   const imageData = await downloadTelegramImageAsBase64(fileId);
   console.log('[VISION] Image ready. Base64 size:', imageData.data.length, 'chars');
@@ -356,7 +431,7 @@ async function processTelegramImage(fileId, caption = '', systemPromptOverride =
   }
 
   // FALLBACK FINAL — All tiers exhausted, alert user via Telegram
-  throw new Error('⚠️ VISION DOWN TOTAL: Semua 11 Tier Vision Engine gagal (4x Gemini 2.5 + 4x Groq + 2x Gemini 2.0 + HuggingFace).');
+  throw new Error('⚠️ VISION DOWN TOTAL: Semua 12 Tier Vision Engine gagal (Worker + 4x Gemini 2.5 + 4x Groq + 2x Gemini 2.0 + HuggingFace).');
 }
 
 module.exports = { processTelegramImage };
