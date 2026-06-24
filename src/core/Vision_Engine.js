@@ -73,12 +73,16 @@ function getProxyList(targetUrl) {
 }
 
 // Proxy list untuk BINARY download (gambar/audio)
-// Custom Relay TIDAK digunakan karena Cloudflare Worker timeout saat streaming file besar.
+// Worker v2.0 sekarang mendukung streaming biner penuh!
 function getBinaryProxyList(targetUrl) {
   const proxies = [];
-  // Priority 1: Direct URL (Hugging Face bisa akses api.telegram.org/file/ langsung)
+  // Priority 1: Custom Relay (Cloudflare Worker v2.0 - mendukung binary streaming)
+  if (env.TELEGRAM_PROXY_URL) {
+    proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
+  }
+  // Priority 2: Direct URL (fallback langsung ke Telegram)
   proxies.push({ name: 'Direct', url: targetUrl });
-  // Priority 2: AllOrigins sebagai fallback
+  // Priority 3: AllOrigins sebagai last resort
   proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
   return proxies;
 }
