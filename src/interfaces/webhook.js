@@ -1842,8 +1842,10 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           } else if (action === 'READ') {
              const facts = await supabaseMemories.getPersonalFacts();
              if (facts.userProfile && facts.userProfile.length > 0) {
-                const list = facts.userProfile.map((f, i) => `${i+1}. ${f}`).join('\n');
-                domainReply = `🧠 **Fakta Personal Tuan Faqih yang Saya Ingat:**\n\n${list}`;
+                const list = facts.userProfile.map(f => `- ${f}`).join('\n');
+                const prompt = `Tuliskan kembali secara luwes, hangat, dan ringkas daftar fakta permanen yang saya ingat tentang Tuan Faqih berikut ini:\n${list}\nGunakan gaya asisten pribadi premium. Sampaikan bahwa N.E.X.A akan selalu mengingat ini. Jangan gunakan bullet points jika bisa dirangkum dalam paragraf yang mengalir.`;
+                const aiRouter = require('../core/AI_Router');
+                domainReply = await aiRouter.callAI(prompt);
              } else {
                 domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen tentang Tuan Faqih.`;
              }
@@ -1865,8 +1867,10 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           } else if (action === 'READ') {
              const facts = await supabaseMemories.getPersonalFacts();
              if (facts.coreIdentity && facts.coreIdentity.length > 0) {
-                const list = facts.coreIdentity.map((f, i) => `${i+1}. ${f}`).join('\n');
-                domainReply = `🤖 **Aturan Sikap & Identitas Inti N.E.X.A:**\n\n${list}`;
+                const list = facts.coreIdentity.map(f => `- ${f}`).join('\n');
+                const prompt = `Tuliskan kembali secara luwes, berwibawa, dan ringkas aturan sikap dan identitas inti (Core Identity) N.E.X.A berikut ini:\n${list}\nGunakan gaya asisten pribadi cerdas. Sampaikan bahwa N.E.X.A akan selalu mematuhi pedoman ini.`;
+                const aiRouter = require('../core/AI_Router');
+                domainReply = await aiRouter.callAI(prompt);
              } else {
                 domainReply = `🤖 Saat ini tidak ada aturan identitas inti khusus yang diterapkan.`;
              }
