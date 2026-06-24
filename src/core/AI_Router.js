@@ -134,7 +134,7 @@ OUTPUT JSON FORMAT:
     //   - DELETE_ALL_ROWS Triggers: "hapus riwayat chat" (table: nexa_chat_memories), "bersihkan vault" (table: nexa_vault_items)
     // 2ND_BRAIN: { action: "APPEND|READ|EDIT|DELETE", title, content, search_keyword }
     // USER_PROFILE|CORE_IDENTITY: { action: "APPEND|READ|DELETE", content, search_keyword }
-    //   - READ Triggers: "apa yang kamu ingat tentangku" (isi search_keyword dengan topik spesifik jika user bertanya spesifik misal "tentang keuangan", atau biarkan null/kosong jika pertanyaan sangat general "apa yang kamu ingat").
+    //   - READ Triggers: "apa yang kamu ingat tentangku" (set search_keyword to specific topic like "keuangan", or leave null for general queries).
     // WEB_SEARCH: { query, type: "search|news" }
   },
   "god_mode_trigger": false
