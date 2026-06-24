@@ -1440,20 +1440,22 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
 
     // Passive Background Learning (Auto-Extraction)
     if (routingData.learned_user_facts && Array.isArray(routingData.learned_user_facts) && routingData.learned_user_facts.length > 0) {
+      const aiRouter = require('../core/AI_Router');
       for (const fact of routingData.learned_user_facts) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
           console.log('[ROUTER] Passive Learning - User Fact:', fact);
-          await supabaseMemories.saveUserProfile(fact);
+          await aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE');
         }
       }
       invalidatePersonalFactsCache();
     }
 
     if (routingData.learned_core_identities && Array.isArray(routingData.learned_core_identities) && routingData.learned_core_identities.length > 0) {
+      const aiRouter = require('../core/AI_Router');
       for (const fact of routingData.learned_core_identities) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
           console.log('[ROUTER] Passive Learning - Core Identity:', fact);
-          await supabaseMemories.saveCoreIdentity(fact);
+          await aiRouter.deduplicateAndSaveFact(fact, 'CORE_IDENTITY');
         }
       }
       invalidatePersonalFactsCache();
@@ -1832,9 +1834,10 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         if (routingData.extracted_data) {
           const action = routingData.extracted_data.action || (routingData.extracted_data.content ? 'APPEND' : 'READ');
           if (action === 'APPEND' && routingData.extracted_data.content) {
-            await supabaseMemories.saveUserProfile(routingData.extracted_data.content);
+            const aiRouter = require('../core/AI_Router');
+            const saved = await aiRouter.deduplicateAndSaveFact(routingData.extracted_data.content, 'USER_PROFILE');
             invalidatePersonalFactsCache();
-            domainReply = `✅ Fakta personal tersimpan ke database profil. Saya akan selalu mengingatnya, Tuan.`;
+            domainReply = saved ? `✅ Fakta personal tersimpan ke database profil. Saya akan selalu mengingatnya, Tuan.` : `✅ Saya sudah mengingat hal tersebut sebelumnya, Tuan.`;
           } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
             const success = await supabaseMemories.deleteFromUserProfile(routingData.extracted_data.search_keyword);
             invalidatePersonalFactsCache();
@@ -1862,9 +1865,10 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         if (routingData.extracted_data) {
           const action = routingData.extracted_data.action || (routingData.extracted_data.content ? 'APPEND' : 'READ');
           if (action === 'APPEND' && routingData.extracted_data.content) {
-            await supabaseMemories.saveCoreIdentity(routingData.extracted_data.content);
+            const aiRouter = require('../core/AI_Router');
+            const saved = await aiRouter.deduplicateAndSaveFact(routingData.extracted_data.content, 'CORE_IDENTITY');
             invalidatePersonalFactsCache();
-            domainReply = `✅ Aturan identitas inti N.E.X.A telah diperbarui.`;
+            domainReply = saved ? `✅ Aturan identitas inti N.E.X.A telah diperbarui.` : `✅ Pedoman tersebut sudah ada di memori saya, Tuan.`;
           } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
             const success = await supabaseMemories.deleteFromCoreIdentity(routingData.extracted_data.search_keyword);
             invalidatePersonalFactsCache();

@@ -569,4 +569,62 @@ BALAS HANYA dengan satu kata: YES, NO, atau AMBIGUOUS. Tanpa penjelasan apapun.`
   }
 }
 
-module.exports = { routeUserMessage, invalidatePersonalFactsCache, callAI, classifyPendingTransactionIntent, classifyYesNo };
+/**
+ * Smart Deduplication System
+ * Compares newFact with existing facts.
+ */
+async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
+  const existingFactsObj = await loadPersonalFactsWithCache();
+  const existingFacts = type === 'USER_PROFILE' ? existingFactsObj.userProfile : existingFactsObj.coreIdentity;
+  
+  if (!existingFacts || existingFacts.length === 0) {
+    if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
+    else await supabaseMemories.saveCoreIdentity(newFact);
+    return true;
+  }
+
+  const prompt = `Berikut adalah memori yang SUDAH TERSIMPAN:\n${existingFacts.map((f, i) => `[ID: ${i}] ${f}`).join('\n')}
+
+Memori BARU yang akan disimpan: "${newFact}"
+
+Tugasmu: Deteksi apakah memori baru ini duplikat, versi lebih lengkap, atau sepenuhnya baru.
+- Jika SEPENUHNYA BARU dan informasinya belum ada, balas: NEW
+- Jika informasi ini adalah VERSI LEBIH LENGKAP/DETAIL dari memori lama [ID: X], balas: UPDATE [ID]
+- Jika informasi ini SAMA PERSIS, MAKNANYA SAMA, atau KURANG LENGKAP dari memori yang sudah ada, balas: DUPLICATE
+
+Contoh balasan: "NEW", "UPDATE 2", "DUPLICATE".
+Jawab HANYA dengan salah satu dari 3 format tersebut. JANGAN beri penjelasan.`;
+
+  const result = await executeWithFallback(prompt, "You are a strict data deduplication AI. Reply ONLY in the requested exact format.", 0.1, false);
+  const decision = String(result).trim().toUpperCase();
+
+  if (decision.startsWith('NEW')) {
+    if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
+    else await supabaseMemories.saveCoreIdentity(newFact);
+    return true;
+  } else if (decision.startsWith('UPDATE')) {
+    const match = decision.match(/UPDATE\s+(\d+)/);
+    if (match) {
+      const idx = parseInt(match[1], 10);
+      if (existingFacts[idx]) {
+        if (type === 'USER_PROFILE') {
+          await supabaseMemories.deleteFromUserProfile(existingFacts[idx]);
+          await supabaseMemories.saveUserProfile(newFact);
+        } else {
+          await supabaseMemories.deleteFromCoreIdentity(existingFacts[idx]);
+          await supabaseMemories.saveCoreIdentity(newFact);
+        }
+        return true;
+      }
+    }
+    // Fallback if regex fails
+    if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
+    else await supabaseMemories.saveCoreIdentity(newFact);
+    return true;
+  } else {
+    console.log(`[ROUTER] Deduplication: Skipped duplicate fact - ${newFact}`);
+    return false;
+  }
+}
+
+module.exports = { routeUserMessage, invalidatePersonalFactsCache, callAI, classifyPendingTransactionIntent, classifyYesNo, deduplicateAndSaveFact };
