@@ -583,19 +583,9 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
     return true;
   }
 
-  const prompt = `Berikut adalah memori yang SUDAH TERSIMPAN:\n${existingFacts.map((f, i) => `[ID: ${i}] ${f}`).join('\n')}
+  const prompt = `EXISTING FACTS:\n${existingFacts.map((f, i) => `[${i}] ${f}`).join('\n')}\n\nNEW FACT: "${newFact}"\n\nTASK: Compare NEW FACT against EXISTING FACTS. Reply ONLY with:\n- "NEW": If totally new.\n- "UPDATE [ID]": If more detailed/complete than fact [ID].\n- "DUPLICATE": If exact match or less detailed.`;
 
-Memori BARU yang akan disimpan: "${newFact}"
-
-Tugasmu: Deteksi apakah memori baru ini duplikat, versi lebih lengkap, atau sepenuhnya baru.
-- Jika SEPENUHNYA BARU dan informasinya belum ada, balas: NEW
-- Jika informasi ini adalah VERSI LEBIH LENGKAP/DETAIL dari memori lama [ID: X], balas: UPDATE [ID]
-- Jika informasi ini SAMA PERSIS, MAKNANYA SAMA, atau KURANG LENGKAP dari memori yang sudah ada, balas: DUPLICATE
-
-Contoh balasan: "NEW", "UPDATE 2", "DUPLICATE".
-Jawab HANYA dengan salah satu dari 3 format tersebut. JANGAN beri penjelasan.`;
-
-  const result = await executeWithFallback(prompt, "You are a strict data deduplication AI. Reply ONLY in the requested exact format.", 0.1, false);
+  const result = await executeWithFallback(prompt, "Reply strictly in requested format.", 0.1, false);
   const decision = String(result).trim().toUpperCase();
 
   if (decision.startsWith('NEW')) {
