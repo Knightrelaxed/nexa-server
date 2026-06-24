@@ -459,7 +459,7 @@ Balas HANYA dengan teks biasa. JANGAN gunakan format JSON. JANGAN gunakan markdo
 Berikan jawaban yang informatif dan ringkas.`;
 
 async function callAI(prompt) {
-  const result = await executeWithFallback(prompt, PLAIN_TEXT_SYSTEM_PROMPT, 0.5);
+  const result = await executeWithFallback(prompt, PLAIN_TEXT_SYSTEM_PROMPT, 0.5, false);
   let text = String(result).trim();
   // If the model wrapped its answer in JSON anyway, extract the first string value
   try {
