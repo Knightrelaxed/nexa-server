@@ -44,6 +44,98 @@ async function downloadProxyToBase64(proxyUrl, maxSize = 10 * 1024 * 1024) {
 }
 
 /**
+ * Mengunduh file melalui Cloudflare Worker v3.0 dengan mode b64=true
+ * Worker mengubah biner → Base64 JSON, lalu kita decode di sini.
+ * Ini bypass firewall HF yang memblokir biner besar!
+ * Digunakan oleh Vision Engine (mengembalikan Base64 string)
+ */
+async function downloadRelayB64ToBase64(relayBaseUrl, targetUrl, maxSize = 20 * 1024 * 1024) {
+  const proxyUrl = `${relayBaseUrl}${encodeURIComponent(targetUrl)}&b64=true`;
+  
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90000);
+
+    try {
+      const response = await axios.get(proxyUrl, {
+        responseType: 'json',
+        signal: controller.signal,
+        timeout: 90000
+      });
+      clearTimeout(timer);
+
+      const data = response.data;
+      if (!data.ok || !data.data) {
+        throw new Error(`Relay B64 error: ${data.error || 'no data'}`);
+      }
+      if (data.size > maxSize) {
+        throw new Error(`File size ${data.size} exceeds limit ${maxSize}`);
+      }
+      return data.data; // Base64 string siap pakai
+    } catch (err) {
+      clearTimeout(timer);
+      const is5xx = err.response && err.response.status >= 500;
+      const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message.includes('timeout') || err.message.includes('canceled');
+      
+      if (attempt < 3 && (is5xx || isTimeout || !err.response)) {
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+        continue;
+      }
+      throw new Error(`Relay B64 (Vision) failed: ${err.message}`);
+    }
+  }
+}
+
+/**
+ * Mengunduh file melalui Cloudflare Worker v3.0 dengan mode b64=true
+ * Worker mengubah biner → Base64 JSON, decode di sini, simpan ke disk.
+ * Digunakan oleh Voice Engine (mengembalikan path file temp)
+ */
+async function downloadRelayB64ToFile(relayBaseUrl, targetUrl, extension = 'ogg', maxSize = 20 * 1024 * 1024) {
+  const proxyUrl = `${relayBaseUrl}${encodeURIComponent(targetUrl)}&b64=true`;
+  const fileName = `nexa_${crypto.randomUUID()}.${extension}`;
+  const filePath = path.join(os.tmpdir(), fileName);
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90000);
+
+    try {
+      const response = await axios.get(proxyUrl, {
+        responseType: 'json',
+        signal: controller.signal,
+        timeout: 90000
+      });
+      clearTimeout(timer);
+
+      const data = response.data;
+      if (!data.ok || !data.data) {
+        throw new Error(`Relay B64 error: ${data.error || 'no data'}`);
+      }
+      if (data.size > maxSize) {
+        throw new Error(`File size ${data.size} exceeds limit ${maxSize}`);
+      }
+
+      // Decode base64 → Buffer → tulis ke disk
+      const buffer = Buffer.from(data.data, 'base64');
+      require('fs').writeFileSync(filePath, buffer);
+      
+      return { filePath, sizeBytes: data.size };
+    } catch (err) {
+      clearTimeout(timer);
+      const is5xx = err.response && err.response.status >= 500;
+      const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message.includes('timeout') || err.message.includes('canceled');
+      
+      if (attempt < 3 && (is5xx || isTimeout || !err.response)) {
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+        continue;
+      }
+      throw new Error(`Relay B64 (Voice) failed: ${err.message}`);
+    }
+  }
+}
+
+/**
  * Streaming file biner dari proxy langsung ke Disk (Untuk Voice & Vault)
  */
 async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize = 20 * 1024 * 1024) {
@@ -153,6 +245,8 @@ async function fetchProxyJSON(proxyUrl, timeoutMs = 15000, maxRetries = 3) {
 module.exports = {
   downloadProxyToBase64,
   downloadProxyToFile,
+  downloadRelayB64ToBase64,
+  downloadRelayB64ToFile,
   cleanupFile,
   fetchProxyJSON
 };

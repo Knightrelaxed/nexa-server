@@ -2,7 +2,7 @@ const env = require('../config/env');
 const { NEXA_PERSONALITY } = require('../config/personality');
 const axios = require('axios');
 const https = require('https');
-const { downloadProxyToBase64, fetchProxyJSON } = require('../utils/telegram_proxy.js');
+const { downloadProxyToBase64, downloadRelayB64ToBase64, fetchProxyJSON } = require('../utils/telegram_proxy.js');
 
 // IPv4 agent — forces Gemini API calls over IPv4 to avoid Hugging Face routing issues
 const ipv4Agent = new https.Agent({ family: 4 });
@@ -73,17 +73,22 @@ function getProxyList(targetUrl) {
 }
 
 // Proxy list untuk BINARY download (gambar/audio)
-// Worker v2.0 sekarang mendukung streaming biner penuh!
+// Worker v3.0: Custom Relay menggunakan mode b64=true (JSON) agar lolos HF egress firewall
 function getBinaryProxyList(targetUrl) {
   const proxies = [];
-  // Priority 1: Custom Relay (Cloudflare Worker v2.0 - mendukung binary streaming)
+  // Priority 1: Custom Relay v3.0 mode b64=true
   if (env.TELEGRAM_PROXY_URL) {
-    proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
+    proxies.push({ 
+      name: 'Custom Relay B64',
+      url: env.TELEGRAM_PROXY_URL,  // base URL saja
+      targetUrl: targetUrl,         // target asli
+      useB64: true
+    });
   }
-  // Priority 2: Direct URL (fallback langsung ke Telegram)
-  proxies.push({ name: 'Direct', url: targetUrl });
-  // Priority 3: AllOrigins sebagai last resort
-  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
+  // Priority 2: Direct URL
+  proxies.push({ name: 'Direct', url: targetUrl, useB64: false });
+  // Priority 3: AllOrigins
+  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, useB64: false });
   return proxies;
 }
 
@@ -129,8 +134,17 @@ async function downloadTelegramImageAsBase64(fileId) {
   
   for (const proxy of proxies) {
     try {
-      console.log(`[VISION] Downloading binary via: ${proxy.name} (${proxy.url.substring(0, 60)}...)`);
-      const b64 = await downloadProxyToBase64(proxy.url, 20 * 1024 * 1024);
+      console.log(`[VISION] Downloading binary via: ${proxy.name}...`);
+      
+      let b64;
+      if (proxy.useB64) {
+        // Mode B64: Cloudflare Worker encode biner jadi JSON (bypass HF egress firewall)
+        b64 = await downloadRelayB64ToBase64(proxy.url, proxy.targetUrl, 20 * 1024 * 1024);
+      } else {
+        // Mode normal
+        b64 = await downloadProxyToBase64(proxy.url, 20 * 1024 * 1024);
+      }
+      
       if (b64 && b64.length > 100) {
         base64Data = b64;
         console.log(`[VISION] Image downloaded via ${proxy.name}. Base64 size:`, base64Data.length, 'chars');

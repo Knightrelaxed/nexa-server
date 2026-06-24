@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const axios = require('axios');
-const { downloadProxyToFile, fetchProxyJSON } = require('../utils/telegram_proxy.js');
+const { downloadProxyToFile, downloadRelayB64ToFile, fetchProxyJSON } = require('../utils/telegram_proxy.js');
 const env = require('../config/env');
 const Groq = require('groq-sdk');
 
@@ -40,20 +40,25 @@ function getProxyList(targetUrl) {
 }
 
 // Proxy list untuk BINARY download (audio/gambar)
-// Worker v2.0 sekarang mendukung streaming biner penuh!
+// Worker v3.0: Custom Relay menggunakan mode b64=true (JSON) agar lolos HF egress firewall
 function getBinaryProxyList(targetUrl) {
   const proxies = [];
 
-  // Priority 1: Custom Relay (Cloudflare Worker v2.0 - mendukung binary streaming)
+  // Priority 1: Custom Relay v3.0 mode b64=true (Cloudflare encode biner jadi JSON)
   if (env.TELEGRAM_PROXY_URL) {
-    proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
+    proxies.push({ 
+      name: 'Custom Relay B64', 
+      url: env.TELEGRAM_PROXY_URL,  // base URL saja
+      targetUrl: targetUrl,         // target asli
+      useB64: true                  // flag untuk mode B64
+    });
   }
 
   // Priority 2: Direct URL (fallback langsung ke Telegram)
-  proxies.push({ name: 'Direct', url: targetUrl });
+  proxies.push({ name: 'Direct', url: targetUrl, useB64: false });
 
   // Priority 3: AllOrigins sebagai last resort
-  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
+  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, useB64: false });
 
   return proxies;
 }
@@ -100,8 +105,17 @@ async function downloadVoiceToTempFile(fileId) {
 
   for (const proxy of proxies) {
     try {
-      console.log(`[VOICE] Downloading binary via: ${proxy.name} (${proxy.url.substring(0, 60)}...)`);
-      const result = await downloadProxyToFile(proxy.url, 'ogg', 20 * 1024 * 1024);
+      console.log(`[VOICE] Downloading binary via: ${proxy.name}...`);
+      
+      let result;
+      if (proxy.useB64) {
+        // Mode B64: Cloudflare Worker encode biner jadi JSON (bypass HF egress firewall)
+        result = await downloadRelayB64ToFile(proxy.url, proxy.targetUrl, 'ogg', 20 * 1024 * 1024);
+      } else {
+        // Mode normal: streaming langsung
+        result = await downloadProxyToFile(proxy.url, 'ogg', 20 * 1024 * 1024);
+      }
+      
       if (result.sizeBytes > 100) {
         console.log(`[VOICE] Audio downloaded via ${proxy.name}. Size: ${result.sizeBytes} bytes`);
         return result.filePath;
