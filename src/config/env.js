@@ -4,7 +4,9 @@ module.exports = {
   PORT: process.env.PORT || 3000,
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
-  TELEGRAM_PROXY_URL: process.env.TELEGRAM_PROXY_URL, // Cloudflare Worker relay for Vision image downloads
+  TELEGRAM_PROXY_URL: process.env.TELEGRAM_PROXY_URL, // Legacy relay (workers.dev is BLOCKED on HF — use NEXA_VERCEL_RELAY_URL)
+  NEXA_VERCEL_RELAY_URL: process.env.NEXA_VERCEL_RELAY_URL, // Vercel relay base, e.g. https://nexa-relay.vercel.app
+  NEXA_RELAY_SECRET: process.env.NEXA_RELAY_SECRET, // Shared secret for Vercel relay auth
   TELEGRAM_WEBHOOK_SECRET_TOKEN: process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN, // Optional hardening: verify X-Telegram-Bot-Api-Secret-Token header
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_KEY: process.env.SUPABASE_KEY,

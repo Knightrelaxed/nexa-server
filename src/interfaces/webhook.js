@@ -3,6 +3,7 @@ const router = express.Router();
 const https = require('https');
 const fs = require('fs');
 const { downloadProxyToFile, fetchProxyJSON } = require('../utils/telegram_proxy.js');
+const { buildProxyChain, sendTelegramMessage } = require('../utils/telegram_network');
 const path = require('path');
 const os = require('os');
 const env = require('../config/env');
@@ -343,14 +344,7 @@ async function extractVaultMetadataFromVision({ fileId, fileName, promptHint = '
 // PROXY HELPER
 // ============================================================
 function getProxyList(targetUrl) {
-  const proxies = [];
-
-  if (env.TELEGRAM_PROXY_URL) {
-    proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
-  }
-  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
-
-  return proxies;
+  return buildProxyChain(targetUrl);
 }
 
 async function fetchJsonWithFailover(targetUrl, opts = {}) {
@@ -360,7 +354,7 @@ async function fetchJsonWithFailover(targetUrl, opts = {}) {
   for (const proxy of proxies) {
     try {
       console.log(`[VAULT] Getting JSON via: ${proxy.name}...`);
-      const parsed = await fetchProxyJSON(proxy.url, timeoutMs);
+      const parsed = await fetchProxyJSON(proxy.url, timeoutMs, 3, proxy.headers);
       if (parsed.ok !== undefined) {
         console.log(`[VAULT] ${proxy.name} JSON fetch succeeded.`);
         return parsed;
@@ -422,61 +416,34 @@ async function sendTelegramOutbound(text, skipMemory = false) {
     if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
     const botToken = env.TELEGRAM_BOT_TOKEN.trim();
     const chatId = env.TELEGRAM_CHAT_ID.trim();
-    const safeText = String(text).substring(0, 4000);
 
-    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}`;
-    const proxies = getProxyList(telegramUrl);
-
-    let sent = false;
-    for (const proxy of proxies) {
-      try {
-        // PENTING: maxRetries = 1 untuk menghindari race condition 90 detik dengan Watchdog!
-        // Jika timeout, kita asumsikan request sudah masuk ke Telegram tapi response tercekik Cloudflare.
-        const result = await fetchProxyJSON(proxy.url, 15000, 1);
-        console.log(`[TELEGRAM-OUTBOUND] Response via ${proxy.name}:`, JSON.stringify(result).substring(0, 200));
-        sent = true;
-        break;
-      } catch (err) {
-        console.warn(`[TELEGRAM-OUTBOUND] ${proxy.name} failed: ${(err.message).substring(0, 150)}`);
-      }
-    }
-
-    if (!sent) {
-      console.error('[TELEGRAM-OUTBOUND] Error: Failed to send message across all proxies. (Assuming delivered if it was a timeout)');
-      throw new Error('Failed to send message across all proxies');
-    }
+    const result = await sendTelegramMessage(text, chatId, botToken);
+    console.log('[TELEGRAM-OUTBOUND] Sent via relay:', JSON.stringify(result).substring(0, 200));
   } catch (e) {
     console.error('[TELEGRAM-OUTBOUND] Error:', e.message);
-    throw e; // Wajib dilempar agar caller tahu pengiriman gagal
+    throw e;
   }
 }
 
 // ============================================================
-// TELEGRAM WEBHOOK â€” Webhook Response Method
+// TELEGRAM WEBHOOK — Webhook Response Method (PRIMARY)
 // ============================================================
-// ARCHITECTURE: Instead of making outbound HTTP calls to
-// api.telegram.org (which HF Docker BLOCKS), we embed the reply
-// DIRECTLY in the HTTP response body. Telegram reads it and
-// delivers the message. Zero outbound connections needed.
-// Docs: https://core.telegram.org/bots/api#making-requests-when-getting-updates
+// HF intentionally blocks outbound to api.telegram.org and *.workers.dev.
+// Telegram allows embedding Bot API calls IN the webhook HTTP response body.
+// This delivers replies with ZERO outbound connections. Docs:
+// https://core.telegram.org/bots/api#making-requests-when-getting-updates
+// Outbound relay (Vercel) is only for cron/tasker/timeout callbacks.
 // ============================================================
 router.post('/telegram', security.telegramWebhookSecret, security.telegramIdentityLock, (req, res) => {
   const message = req.body?.message || req.body?.edited_message;
 
-  // ============================================================
-  // ARSITEKTUR ASINKRON â€” SOLUSI HF EGRESS FIREWALL
-  // ============================================================
-  // Kirim 200 OK ke Telegram SEGERA agar socket webhook ditutup
-  // dengan bersih SEBELUM N.E.X.A mencoba koneksi outbound apapun.
-  // Ini mencegah Node.js HTTP Agent menghancurkan koneksi TLS
-  // outbound (ke Cloudflare/Telegram) saat res.end() dipanggil.
-  // Seluruh proses AI, Voice, Vision berjalan di background.
-  // ============================================================
-  res.status(200).send('OK');
+  if (!message) {
+    return res.status(200).send('OK');
+  }
 
-  if (!message) return;
+  // DO NOT send res.status(200) here — keep connection open for webhook response
+  let webhookReply = null;
 
-  // Seluruh logika dijalankan di background, SETELAH res sudah terkirim
   setImmediate(async () => {
     // Helper: escape untrusted strings for HTML parse_mode
     const escapeHtml = (str) => String(str)
@@ -486,14 +453,28 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       .replace(/"/g, '&quot;');
 
     // ============================================================
-    // respondToTelegram â€” Sekarang SELALU menggunakan outbound relay
-    // (webhook response slot sudah ditutup di atas)
+    // respondToTelegram — Capture reply for webhook response (zero outbound)
     // ============================================================
     const respondToTelegram = async (text, skipMemory = false) => {
       if (!skipMemory) {
         await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => { });
       }
-      return sendTelegramOutbound(text, true); // skipMemory=true karena sudah disimpan di atas
+      webhookReply = String(text).substring(0, 4000);
+    };
+
+    const deliverWebhookReply = () => {
+      if (res.headersSent) return;
+      if (webhookReply) {
+        console.log('[TELEGRAM] Delivering via webhook response (zero outbound)');
+        res.status(200).json({
+          method: 'sendMessage',
+          chat_id: message.chat.id,
+          text: webhookReply,
+          parse_mode: 'HTML',
+        });
+      } else {
+        res.status(200).send('OK');
+      }
     };
 
     let textInput = message.text;
@@ -2137,7 +2118,9 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
 
     } catch (error) {
       console.error('[TELEGRAM] Error processing message:', error.message);
-      await respondToTelegram(`âš ï¸ N.E.X.A mengalami gangguan internal:\n<code>${escapeHtml(error.message)}</code>\n\nSilakan cek log server di Hugging Face Space dashboard.`);
+      webhookReply = `⚠️ N.E.X.A mengalami gangguan internal:\n<code>${escapeHtml(error.message)}</code>\n\nSilakan cek log server di Hugging Face Space dashboard.`;
+    } finally {
+      deliverWebhookReply();
     }
   }); // END setImmediate
 });

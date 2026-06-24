@@ -3,6 +3,7 @@ const { NEXA_PERSONALITY } = require('../config/personality');
 const axios = require('axios');
 const https = require('https');
 const { downloadProxyToBase64, downloadRelayB64ToBase64, fetchProxyJSON } = require('../utils/telegram_proxy.js');
+const { buildProxyChain, postToRelay } = require('../utils/telegram_network');
 
 // IPv4 agent — forces Gemini API calls over IPv4 to avoid Hugging Face routing issues
 const ipv4Agent = new https.Agent({ family: 4 });
@@ -59,36 +60,27 @@ ATURAN KELUARAN WAJIB:
 // ============================================================
 // Proxy list untuk JSON (getFile API) - Custom Relay cocok untuk ini
 function getProxyList(targetUrl) {
-  const proxies = [];
-
-  // Priority 1: Custom Cloudflare Relay
-  if (env.TELEGRAM_PROXY_URL) {
-    proxies.push({ name: 'Custom Relay', url: `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(targetUrl)}` });
-  }
-
-  // Priority 2: AllOrigins
-  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
-
-  return proxies;
+  return buildProxyChain(targetUrl);
 }
 
 // Proxy list untuk BINARY download (gambar/audio)
 // Worker v3.0: Custom Relay menggunakan mode b64=true (JSON) agar lolos HF egress firewall
 function getBinaryProxyList(targetUrl) {
   const proxies = [];
-  // Priority 1: Custom Relay v3.0 mode b64=true
-  if (env.TELEGRAM_PROXY_URL) {
-    proxies.push({ 
-      name: 'Custom Relay B64',
-      url: env.TELEGRAM_PROXY_URL,  // base URL saja
-      targetUrl: targetUrl,         // target asli
-      useB64: true
+  const relayBase = env.NEXA_VERCEL_RELAY_URL || env.TELEGRAM_PROXY_URL;
+  if (relayBase) {
+    proxies.push({
+      name: 'Vercel Relay B64',
+      url: relayBase.replace(/\?url=$/, '').replace(/\/+$/, ''),
+      targetUrl,
+      useB64: true,
     });
   }
-  // Priority 2: Direct URL
-  proxies.push({ name: 'Direct', url: targetUrl, useB64: false });
-  // Priority 3: AllOrigins
-  proxies.push({ name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, useB64: false });
+  proxies.push({
+    name: 'AllOrigins',
+    url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+    useB64: false,
+  });
   return proxies;
 }
 
@@ -99,7 +91,7 @@ async function fetchJsonWithFailover(targetUrl, opts = {}) {
   for (const proxy of proxies) {
     try {
       console.log(`[VISION] Getting JSON via: ${proxy.name}...`);
-      const parsed = await fetchProxyJSON(proxy.url, timeoutMs);
+      const parsed = await fetchProxyJSON(proxy.url, timeoutMs, 3, proxy.headers);
       if (parsed.ok !== undefined) {
         console.log(`[VISION] ${proxy.name} JSON fetch succeeded.`);
         return parsed;
@@ -311,54 +303,51 @@ async function callHuggingFaceVision(imageData, caption, systemPromptOverride = 
 // TIDAK ADA file biner besar yang perlu diunduh oleh HF container!
 // ============================================================
 async function callWorkerVision(fileId, caption = '', systemPromptOverride = '') {
-  if (!env.TELEGRAM_PROXY_URL || !env.TELEGRAM_BOT_TOKEN) {
-    throw new Error('Worker URL or Bot Token not configured');
+  const relayBase = env.NEXA_VERCEL_RELAY_URL || env.TELEGRAM_PROXY_URL;
+  if (!relayBase || !env.TELEGRAM_BOT_TOKEN) {
+    throw new Error('Vercel relay URL or Bot Token not configured');
   }
 
-  // Step 1: Dapatkan file_path dari Telegram (JSON kecil — PASTI berhasil)
   const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`;
-  const proxyUrl = `${env.TELEGRAM_PROXY_URL}${encodeURIComponent(getFileUrl)}`;
-  
-  console.log('[VISION-W0] Getting file path via Worker...');
-  const fileData = await fetchProxyJSON(proxyUrl, 30000);
-  if (!fileData.ok || !fileData.result?.file_path) {
+  const proxies = getProxyList(getFileUrl);
+
+  console.log('[VISION-W0] Getting file path via relay...');
+  let fileData = null;
+  for (const proxy of proxies) {
+    try {
+      fileData = await fetchProxyJSON(proxy.url, 30000, 2, proxy.headers);
+      if (fileData?.ok) break;
+    } catch (e) {
+      console.warn(`[VISION-W0] getFile via ${proxy.name} failed: ${e.message}`);
+    }
+  }
+  if (!fileData?.ok || !fileData.result?.file_path) {
     throw new Error(`Telegram getFile error: ${JSON.stringify(fileData).substring(0, 100)}`);
   }
   const filePath = fileData.result.file_path;
-  console.log('[VISION-W0] File path obtained:', filePath);
 
-  // Step 2: Pilih Gemini 2.5 key secara round-robin
   if (GEMINI_25_KEYS.length === 0) throw new Error('No Gemini 2.5 API keys configured');
   const geminiKey = GEMINI_25_KEYS[Math.floor(Math.random() * GEMINI_25_KEYS.length)];
-
-  // Step 3: Perintahkan Worker untuk download+vision
-  const workerBaseUrl = env.TELEGRAM_PROXY_URL.replace(/\?url=$/, '').replace(/\/+$/, '');
-  const visionUrl = `${workerBaseUrl}/vision`;
 
   const captionContext = caption
     ? `\nCaption dari pengguna: "${caption}". Gunakan ini sebagai petunjuk utama.`
     : '\nTidak ada caption. Analisis gambar secara mandiri.';
-
   const finalSystemPrompt = systemPromptOverride || (VISION_SYSTEM_PROMPT + captionContext);
 
-  console.log('[VISION-W0] Requesting Worker to process vision...');
-  const response = await axios.post(visionUrl, {
+  console.log('[VISION-W0] Requesting Vercel relay to process vision...');
+  const result = await postToRelay('/api/vision', {
     file_path: filePath,
     bot_token: env.TELEGRAM_BOT_TOKEN,
     gemini_key: geminiKey,
     prompt: 'Analisis gambar ini sekarang.',
-    system_prompt: finalSystemPrompt
-  }, {
-    timeout: 90000, // 90 detik
-    headers: { 'Content-Type': 'application/json' },
+    system_prompt: finalSystemPrompt,
   });
 
-  const result = response.data;
   if (!result.ok || !result.description) {
-    throw new Error(`Worker vision failed: ${result.error || 'empty result'}`);
+    throw new Error(`Relay vision failed: ${result.error || 'empty result'}`);
   }
 
-  console.log('[VISION-W0] Worker vision SUCCESS! Length:', result.description.length);
+  console.log('[VISION-W0] Relay vision SUCCESS! Length:', result.description.length);
   return result.description;
 }
 
