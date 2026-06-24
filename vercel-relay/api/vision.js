@@ -29,7 +29,10 @@ export default async function handler(req, res) {
 
     const imgBytes = Buffer.from(await imgResp.arrayBuffer());
     const base64Image = imgBytes.toString('base64');
-    const contentType = imgResp.headers.get('content-type') || 'image/jpeg';
+    let contentType = imgResp.headers.get('content-type') || 'image/jpeg';
+    if (contentType.includes('application/octet-stream') || contentType.includes('application/json')) {
+      contentType = file_path.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    }
 
     const geminiPrompt = prompt || 'Deskripsikan gambar ini secara detail dalam Bahasa Indonesia.';
     const sysPrompt = system_prompt || '';
