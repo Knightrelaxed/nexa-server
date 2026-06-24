@@ -342,18 +342,24 @@ async function callWorkerVision(fileId, caption = '', systemPromptOverride = '')
   const finalSystemPrompt = systemPromptOverride || (VISION_SYSTEM_PROMPT + captionContext);
 
   console.log('[VISION-W0] Requesting Worker to process vision...');
-  const response = await axios.post(visionUrl, {
-    file_path: filePath,
-    bot_token: env.TELEGRAM_BOT_TOKEN,
-    gemini_key: geminiKey,
-    prompt: 'Analisis gambar ini sekarang.',
-    system_prompt: finalSystemPrompt
-  }, {
-    timeout: 90000, // 90 detik
-    headers: { 'Content-Type': 'application/json' },
+  const response = await fetch(visionUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
+    body: JSON.stringify({
+      file_path: filePath,
+      bot_token: env.TELEGRAM_BOT_TOKEN,
+      gemini_key: geminiKey,
+      prompt: 'Analisis gambar ini sekarang.',
+      system_prompt: finalSystemPrompt
+    }),
+    signal: AbortSignal.timeout(90000) // 90 detik
   });
 
-  const result = response.data;
+  if (!response.ok) {
+    throw new Error(`Worker returned HTTP ${response.status}: ${await response.text()}`);
+  }
+
+  const result = await response.json();
   if (!result.ok || !result.description) {
     throw new Error(`Worker vision failed: ${result.error || 'empty result'}`);
   }

@@ -245,16 +245,22 @@ async function callWorkerTranscription(fileId) {
   const transcribeUrl = `${workerBaseUrl}/transcribe`;
 
   console.log('[VOICE-W0] Requesting Worker to transcribe...');
-  const response = await axios.post(transcribeUrl, {
-    file_path: filePath,
-    bot_token: env.TELEGRAM_BOT_TOKEN,
-    groq_key: groqKey,
-  }, {
-    timeout: 90000, // 90 detik cukup untuk download audio + transcription
-    headers: { 'Content-Type': 'application/json' },
+  const response = await fetch(transcribeUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
+    body: JSON.stringify({
+      file_path: filePath,
+      bot_token: env.TELEGRAM_BOT_TOKEN,
+      groq_key: groqKey,
+    }),
+    signal: AbortSignal.timeout(90000) // 90 detik cukup untuk download audio + transcription
   });
 
-  const result = response.data;
+  if (!response.ok) {
+    throw new Error(`Worker returned HTTP ${response.status}: ${await response.text()}`);
+  }
+
+  const result = await response.json();
   if (!result.ok || !result.text) {
     throw new Error(`Worker transcription failed: ${result.error || 'empty result'}`);
   }

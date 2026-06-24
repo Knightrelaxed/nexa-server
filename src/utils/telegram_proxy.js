@@ -218,40 +218,33 @@ async function cleanupFile(filePath) {
 }
 
 /**
- * Fetch untuk JSON/Teks sederhana
+ * Fetch untuk JSON/Teks sederhana menggunakan Native Fetch (Bypass Axios socket issues)
  */
 async function fetchProxyJSON(proxyUrl, timeoutMs = 15000, maxRetries = 3) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
     try {
-      const response = await axios.get(proxyUrl, {
-        responseType: 'json',
-        signal: controller.signal,
-        timeout: timeoutMs,
-        httpsAgent: proxyAgent,
-        headers: { 'Connection': 'close' }
+      const response = await fetch(proxyUrl, {
+        method: 'GET',
+        headers: { 'Connection': 'close' },
+        signal: AbortSignal.timeout(timeoutMs)
       });
-      clearTimeout(timer);
-      
-      // Axios auto-parses JSON, but we can double check
-      if (typeof response.data === 'string') {
-        try { return JSON.parse(response.data); } catch(e) { throw new Error(`Invalid JSON: ${response.data.substring(0, 100)}`); }
-      }
-      return response.data;
-    } catch (err) {
-      clearTimeout(timer);
-      const is5xx = err.response && err.response.status >= 500;
-      const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message.includes('timeout') || err.message.includes('canceled');
 
-      if (attempt < maxRetries && (is5xx || isTimeout || !err.response)) {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      }
+
+      const text = await response.text();
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error(`Invalid JSON: ${text.substring(0, 100)}`);
+      }
+    } catch (err) {
+      const isTimeout = err.name === 'TimeoutError' || err.message.includes('timeout') || err.message.includes('fetch failed');
+      
+      if (attempt < maxRetries && (isTimeout || err.message.includes('500') || err.message.includes('502'))) {
         await new Promise(r => setTimeout(r, 1000));
         continue;
-      }
-      
-      if (err.response) {
-        throw new Error(`HTTP ${err.response.status}: ${JSON.stringify(err.response.data || err.response.statusText)}`);
       }
       throw new Error(`fetch proxy JSON failed: ${err.message}`);
     }
