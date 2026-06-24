@@ -8,6 +8,11 @@ const { Transform } = require('stream');
 const axios = require('axios');
 const https = require('https');
 
+// FIX HUGGING FACE DEAD SOCKETS:
+// Disable keepAlive completely to prevent Axios from reusing dead sockets
+// that Hugging Face's aggressive NAT drops silently.
+const proxyAgent = new https.Agent({ keepAlive: false, family: 4 });
+
 /**
  * Mengunduh file biner dari proxy ke Base64 (Untuk RAM - Vision Engine)
  */
@@ -21,7 +26,9 @@ async function downloadProxyToBase64(proxyUrl, maxSize = 10 * 1024 * 1024) {
         responseType: 'arraybuffer',
         signal: controller.signal,
         timeout: 45000,
-        maxContentLength: maxSize
+        maxContentLength: maxSize,
+        httpsAgent: proxyAgent,
+        headers: { 'Connection': 'close' }
       });
       clearTimeout(timer);
       return Buffer.from(response.data).toString('base64');
@@ -60,7 +67,9 @@ async function downloadRelayB64ToBase64(relayBaseUrl, targetUrl, maxSize = 20 * 
       const response = await axios.get(proxyUrl, {
         responseType: 'json',
         signal: controller.signal,
-        timeout: 90000
+        timeout: 90000,
+        httpsAgent: proxyAgent,
+        headers: { 'Connection': 'close' }
       });
       clearTimeout(timer);
 
@@ -104,7 +113,9 @@ async function downloadRelayB64ToFile(relayBaseUrl, targetUrl, extension = 'ogg'
       const response = await axios.get(proxyUrl, {
         responseType: 'json',
         signal: controller.signal,
-        timeout: 90000
+        timeout: 90000,
+        httpsAgent: proxyAgent,
+        headers: { 'Connection': 'close' }
       });
       clearTimeout(timer);
 
@@ -150,7 +161,9 @@ async function downloadProxyToFile(proxyUrl, extension = 'bin', maxSize = 20 * 1
     response = await axios.get(proxyUrl, {
       responseType: 'stream',
       signal: controller.signal,
-      timeout: 120000
+      timeout: 120000,
+      httpsAgent: proxyAgent,
+      headers: { 'Connection': 'close' }
     });
   } catch (err) {
     clearTimeout(timer);
@@ -215,7 +228,9 @@ async function fetchProxyJSON(proxyUrl, timeoutMs = 15000, maxRetries = 3) {
       const response = await axios.get(proxyUrl, {
         responseType: 'json',
         signal: controller.signal,
-        timeout: timeoutMs
+        timeout: timeoutMs,
+        httpsAgent: proxyAgent,
+        headers: { 'Connection': 'close' }
       });
       clearTimeout(timer);
       
