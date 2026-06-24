@@ -1055,7 +1055,7 @@ async function pollFinanceEmails() {
       let destination = 'Auto-Sync Transaction';
       const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
       if (merchantMatch?.[1]) {
-        let rawDest = merchantMatch[1].split('\n')[0]; // Take only the first line
+        let rawDest = merchantMatch[1].trim().split(/[\r\n]+/)[0]; // Take only the first line safely
         rawDest = rawDest.replace(/&nbsp;?/ig, ' ');
         rawDest = rawDest.replace(/&\w+;?/g, ' '); // Strip other HTML entities
         rawDest = rawDest.replace(/\s*-?\s*ID\s+Tanggal.*$/i, ''); // Strip trailing ID Tanggal
@@ -1085,8 +1085,8 @@ async function pollFinanceEmails() {
         try {
           const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
           const failedMsg = `⚠️ <b>TRANSFER GAGAL</b>\n\nTujuan: ${destination}\nNominal: ${nominalFmt}\n\n<i>N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam catatan keuangan Anda.</i>`;
-          const { sendTelegramOutbound } = require('../interfaces/webhook');
-          await sendTelegramOutbound(failedMsg);
+          const { sendTelegramMessage } = require('../utils/telegram_network');
+          await sendTelegramMessage(failedMsg, env.TELEGRAM_CHAT_ID, env.TELEGRAM_BOT_TOKEN);
         } catch (_sendErr) {
           console.warn('[FINANCE] Failed transfer alert could not be sent:', _sendErr.message);
         }
@@ -1120,8 +1120,8 @@ async function pollFinanceEmails() {
           // AUDIT FIX: Use sendTelegramOutbound (Cloudflare proxy) instead of direct axios.post.
           // Direct calls to api.telegram.org are BLOCKED on HF Docker. Previously relied on
           // 90-second Watchdog retry as a workaround. Now sends immediately via proxy.
-          const { sendTelegramOutbound } = require('../interfaces/webhook');
-          await sendTelegramOutbound(msg);
+          const { sendTelegramMessage } = require('../utils/telegram_network');
+          await sendTelegramMessage(msg, env.TELEGRAM_CHAT_ID, env.TELEGRAM_BOT_TOKEN);
           // Mark as sent so Watchdog doesn't redundantly resend 90s later
           await supabase.markPendingTransactionSent(compositeKey);
         }
