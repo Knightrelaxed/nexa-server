@@ -443,9 +443,11 @@ async function sendTelegramOutbound(text, skipMemory = false) {
 
     if (!sent) {
       console.error('[TELEGRAM-OUTBOUND] Error: Failed to send message across all proxies. (Assuming delivered if it was a timeout)');
+      throw new Error('Failed to send message across all proxies');
     }
   } catch (e) {
     console.error('[TELEGRAM-OUTBOUND] Error:', e.message);
+    throw e; // Wajib dilempar agar caller tahu pengiriman gagal
   }
 }
 
