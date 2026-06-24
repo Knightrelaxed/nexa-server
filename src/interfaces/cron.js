@@ -407,9 +407,11 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
           }
           aiRouter.invalidatePersonalFactsCache();
 
+          const factsList = parsed.map((f, i) => `${i + 1}. ${f}`).join('\n');
           await sendTelegramOutbound(
             `🧠 <b>Memory Consolidation</b>\n` +
-            `Saya mempelajari <b>${parsed.length}</b> fakta baru tentang Tuan hari ini.\n` +
+            `Saya mempelajari <b>${parsed.length}</b> fakta baru tentang Tuan hari ini:\n\n` +
+            `${factsList}\n\n` +
             `<i>(Duplikasi otomatis diabaikan)</i>`
           );
         } else {
