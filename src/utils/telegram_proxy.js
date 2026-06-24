@@ -8,10 +8,11 @@ const { Transform } = require('stream');
 const axios = require('axios');
 const https = require('https');
 
-// FIX HUGGING FACE DEAD SOCKETS:
-// Disable keepAlive completely to prevent Axios from reusing dead sockets
-// that Hugging Face's aggressive NAT drops silently.
-const proxyAgent = new https.Agent({ keepAlive: false, family: 4 });
+// FIX HUGGING FACE DEAD SOCKETS (FIXED v2):
+// Now safely outside webhook context, we can use keepAlive: true.
+// maxSockets: 5 prevents overwhelming HF NAT with too many concurrent connections.
+// family: 4 forces IPv4 to bypass Node 20 IPv6 routing issues on HF.
+const proxyAgent = new https.Agent({ keepAlive: true, family: 4, maxSockets: 5 });
 
 /**
  * Mengunduh file biner dari proxy ke Base64 (Untuk RAM - Vision Engine)
