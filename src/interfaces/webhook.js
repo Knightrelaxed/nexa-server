@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const router = express.Router();
 const https = require('https');
 const fs = require('fs');
@@ -1821,7 +1821,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             ).catch(e => { console.error('[2ND_BRAIN] Google Doc error:', e); return null; });
 
             if (docUrl) {
-              domainReply = `âœ… Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;
+              domainReply = `✅ Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;
             }
             console.log(`[2ND_BRAIN] Saved IDEA to Supabase and Google Docs.`);
           }
@@ -1834,11 +1834,19 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           if (action === 'APPEND' && routingData.extracted_data.content) {
             await supabaseMemories.saveUserProfile(routingData.extracted_data.content);
             invalidatePersonalFactsCache();
-            domainReply = `âœ… Fakta personal tersimpan ke database profil. Saya akan selalu mengingatnya, Tuan.`;
+            domainReply = `✅ Fakta personal tersimpan ke database profil. Saya akan selalu mengingatnya, Tuan.`;
           } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
             const success = await supabaseMemories.deleteFromUserProfile(routingData.extracted_data.search_keyword);
             invalidatePersonalFactsCache();
-            domainReply = success ? `ðŸ—‘ï¸ Fakta personal berhasil dihapus dari memori permanen.` : `âŒ Gagal menemukan fakta tersebut di profil Anda.`;
+            domainReply = success ? `🗑️ Fakta personal berhasil dihapus dari memori permanen.` : `❌ Gagal menemukan fakta tersebut di profil Anda.`;
+          } else if (action === 'READ') {
+             const facts = await supabaseMemories.getPersonalFacts();
+             if (facts.userProfile && facts.userProfile.length > 0) {
+                const list = facts.userProfile.map((f, i) => `${i+1}. ${f}`).join('\n');
+                domainReply = `🧠 **Fakta Personal Tuan Faqih yang Saya Ingat:**\n\n${list}`;
+             } else {
+                domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen tentang Tuan Faqih.`;
+             }
           }
         }
         break;
@@ -1849,11 +1857,19 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           if (action === 'APPEND' && routingData.extracted_data.content) {
             await supabaseMemories.saveCoreIdentity(routingData.extracted_data.content);
             invalidatePersonalFactsCache();
-            domainReply = `âœ… Aturan identitas inti N.E.X.A telah diperbarui.`;
+            domainReply = `✅ Aturan identitas inti N.E.X.A telah diperbarui.`;
           } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
             const success = await supabaseMemories.deleteFromCoreIdentity(routingData.extracted_data.search_keyword);
             invalidatePersonalFactsCache();
-            domainReply = success ? `ðŸ—‘ï¸ Aturan identitas inti berhasil dihapus.` : `âŒ Gagal menemukan aturan tersebut di sistem.`;
+            domainReply = success ? `🗑️ Aturan identitas inti berhasil dihapus.` : `❌ Gagal menemukan aturan tersebut di sistem.`;
+          } else if (action === 'READ') {
+             const facts = await supabaseMemories.getPersonalFacts();
+             if (facts.coreIdentity && facts.coreIdentity.length > 0) {
+                const list = facts.coreIdentity.map((f, i) => `${i+1}. ${f}`).join('\n');
+                domainReply = `🤖 **Aturan Sikap & Identitas Inti N.E.X.A:**\n\n${list}`;
+             } else {
+                domainReply = `🤖 Saat ini tidak ada aturan identitas inti khusus yang diterapkan.`;
+             }
           }
         }
         break;

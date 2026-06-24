@@ -133,7 +133,7 @@ OUTPUT JSON FORMAT:
     // DATABASE: { action: "LIST_TABLES|READ_TABLE|INSERT_ROW|UPDATE_ROW|DELETE_ROW|DELETE_ALL_ROWS|DELETE_ALL_ROWS_CONFIRMED|CANCEL_ACTION", table_name, row_id, search_keyword, max_results, row_data: {}, update_data: {} }
     //   - DELETE_ALL_ROWS Triggers: "hapus riwayat chat" (table: nexa_chat_memories), "bersihkan vault" (table: nexa_vault_items)
     // 2ND_BRAIN: { action: "APPEND|READ|EDIT|DELETE", title, content, search_keyword }
-    // USER_PROFILE|CORE_IDENTITY: { action: "APPEND|DELETE", content, search_keyword }
+    // USER_PROFILE|CORE_IDENTITY: { action: "APPEND|READ|DELETE", content, search_keyword }
     // WEB_SEARCH: { query, type: "search|news" }
   },
   "god_mode_trigger": false
