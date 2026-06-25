@@ -222,13 +222,19 @@ export function BudgetGroupModal({ open, onClose, onSuccess, initialData }: Budg
                   <label key={cat.id} className={cn("flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-colors border",
                     selectedCats.includes(cat.id) ? "bg-emerald-50 border-emerald-200" : "bg-white border-slate-100 hover:border-slate-300"
                   )}>
+                    <input 
+                      type="checkbox" 
+                      className="hidden"
+                      checked={selectedCats.includes(cat.id)}
+                      onChange={() => toggleCategory(cat.id)}
+                    />
                     <div className={cn("w-5 h-5 rounded flex items-center justify-center shrink-0 transition-colors",
-                      selectedCats.includes(cat.id) ? "bg-emerald-500 text-white" : "border border-slate-300 bg-white"
+                      selectedCats.includes(cat.id) ? "bg-emerald-500 text-white border-emerald-500" : "border border-slate-300 bg-white"
                     )}>
                       {selectedCats.includes(cat.id) && <Check className="h-3.5 w-3.5" />}
                     </div>
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      {cat.icon_key && <span className="text-base shrink-0">{/* Wait, in Nexa categories icons are text emojis? Need to check */}</span>}
+                      {cat.icon_key && <span className="text-base shrink-0">{cat.icon_key}</span>}
                       <span className="text-sm font-medium text-slate-700 truncate">{cat.name}</span>
                     </div>
                   </label>
@@ -253,7 +259,7 @@ export function BudgetGroupModal({ open, onClose, onSuccess, initialData }: Budg
                       placeholder="0"
                       value={dailyAmount}
                       onChange={(e) => setDailyAmount(e.target.value)}
-                      className="h-10 rounded-lg pl-7 text-sm font-medium"
+                      className="h-10 rounded-lg pl-8 text-sm font-medium"
                     />
                   </div>
                 </div>
@@ -267,7 +273,7 @@ export function BudgetGroupModal({ open, onClose, onSuccess, initialData }: Budg
                       placeholder="0"
                       value={weeklyAmount}
                       onChange={(e) => setWeeklyAmount(e.target.value)}
-                      className="h-10 rounded-lg pl-7 text-sm font-medium"
+                      className="h-10 rounded-lg pl-8 text-sm font-medium"
                     />
                   </div>
                 </div>
@@ -281,7 +287,7 @@ export function BudgetGroupModal({ open, onClose, onSuccess, initialData }: Budg
                       placeholder="0"
                       value={monthlyAmount}
                       onChange={(e) => setMonthlyAmount(e.target.value)}
-                      className="h-10 rounded-lg pl-7 text-sm font-medium"
+                      className="h-10 rounded-lg pl-8 text-sm font-medium"
                     />
                   </div>
                 </div>
