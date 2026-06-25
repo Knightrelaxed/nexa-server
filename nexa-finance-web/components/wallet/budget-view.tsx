@@ -40,6 +40,14 @@ export function BudgetView() {
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [loading, setLoading] = useState(true)
   const [expenses, setExpenses] = useState<{ category_id: string, amount: number }[]>([])
+  
+  // State for config forms
+  const [globalConfig, setGlobalConfig] = useState<Record<string, string>>({
+    daily: '',
+    weekly: '',
+    monthly: ''
+  })
+  const [isSaving, setIsSaving] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -60,7 +68,16 @@ export function BudgetView() {
     ])
 
     setGroups(grpResult.data || [])
-    setBudgets(bdgResult.data || [])
+    const fetchedBudgets = bdgResult.data || []
+    setBudgets(fetchedBudgets)
+    
+    // Initialize config inputs
+    setGlobalConfig({
+      daily: fetchedBudgets.find(b => b.budget_group_id === null && b.period === 'daily')?.amount.toString() || '',
+      weekly: fetchedBudgets.find(b => b.budget_group_id === null && b.period === 'weekly')?.amount.toString() || '',
+      monthly: fetchedBudgets.find(b => b.budget_group_id === null && b.period === 'monthly')?.amount.toString() || ''
+    })
+
     setExpenses(expResult.data || [])
     setLoading(false)
   }, [period.start.getTime(), period.end.getTime()])
@@ -116,6 +133,33 @@ export function BudgetView() {
     ? (totalExpense / globalBudget.amount) * 100
     : 0
   const globalColor = getStatusColor(globalPct)
+
+  const handleSaveGlobalConfig = async () => {
+    setIsSaving(true)
+    const toUpsert = []
+    for (const p of ['daily', 'weekly', 'monthly']) {
+      const amountStr = globalConfig[p]
+      if (amountStr) {
+        toUpsert.push({
+          budget_group_id: null,
+          period: p,
+          amount: parseFloat(amountStr),
+          is_active: true
+        })
+      }
+    }
+    
+    if (toUpsert.length > 0) {
+      const { error } = await supabase.from('budgets').upsert(toUpsert, { onConflict: 'budget_group_id, period' })
+      if (!error) {
+        alert("Jatah Global berhasil diperbarui!")
+        await loadData()
+      } else {
+        alert("Gagal menyimpan: " + error.message)
+      }
+    }
+    setIsSaving(false)
+  }
 
   if (loading) {
     return (
@@ -271,7 +315,6 @@ export function BudgetView() {
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {['daily', 'weekly', 'monthly'].map(p => {
-                const b = budgets.find(x => x.budget_group_id === null && x.period === p)
                 const label = p === 'daily' ? 'Harian' : p === 'weekly' ? 'Mingguan' : 'Bulanan'
                 return (
                   <div key={p} className="space-y-2">
@@ -281,7 +324,8 @@ export function BudgetView() {
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">Rp</span>
                         <input 
                           type="number" 
-                          defaultValue={b?.amount || ''} 
+                          value={globalConfig[p]} 
+                          onChange={(e) => setGlobalConfig(prev => ({ ...prev, [p]: e.target.value }))}
                           className="w-full rounded-lg border border-slate-200 pl-8 pr-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                           placeholder="0"
                         />
@@ -292,8 +336,8 @@ export function BudgetView() {
               })}
             </div>
             <div className="mt-4 flex justify-end">
-              <Button className="rounded-full bg-emerald-500 hover:bg-emerald-600 gap-2">
-                <Save className="h-4 w-4" /> Simpan Global
+              <Button onClick={handleSaveGlobalConfig} disabled={isSaving} className="rounded-full bg-emerald-500 hover:bg-emerald-600 gap-2">
+                <Save className="h-4 w-4" /> {isSaving ? "Menyimpan..." : "Simpan Global"}
               </Button>
             </div>
           </Card>
