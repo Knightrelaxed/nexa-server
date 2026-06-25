@@ -98,7 +98,7 @@ export function SettingsCategories() {
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold text-slate-800">Daftar Kategori</h2>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleOpenArchive} className="text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50">
+          <Button variant="outline" onClick={handleOpenArchive} className="text-gray-500 hover:text-gray-700 border-gray-300 hover:bg-gray-100">
             <Archive className="mr-2 h-4 w-4" /> Arsip
           </Button>
           <Button onClick={() => handleOpenModal()} className="bg-emerald-500 hover:bg-emerald-600">
