@@ -425,9 +425,48 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
+  // 12. Weekly Budget Recap (Sunday 23:59 WIB)
+  cron.schedule('59 23 * * 0', async () => {
+    console.log('[CRON-BUDGET] Executing Weekly Budget Recap...');
+    try {
+      const budgetEngine = require('../domain/Budget_Engine');
+      const { sendTelegramOutbound } = require('./webhook');
+      const msg = await budgetEngine.generatePeriodicRecap('weekly');
+      if (msg) {
+        await sendTelegramOutbound(msg);
+        console.log('[CRON-BUDGET] Weekly Recap sent.');
+      }
+    } catch (e) {
+      console.error('[CRON-BUDGET] Weekly Recap failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
+  // 13. Monthly Budget Recap (Last Day of Month 23:59 WIB)
+  cron.schedule('59 23 28-31 * *', async () => {
+    try {
+      const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1);
+      
+      if (tomorrow.getDate() === 1) { // Today is the last day
+        console.log('[CRON-BUDGET] Executing Monthly Budget Recap...');
+        const budgetEngine = require('../domain/Budget_Engine');
+        const { sendTelegramOutbound } = require('./webhook');
+        const msg = await budgetEngine.generatePeriodicRecap('monthly');
+        if (msg) {
+          await sendTelegramOutbound(msg);
+          console.log('[CRON-BUDGET] Monthly Recap sent.');
+        }
+      }
+    } catch (e) {
+      console.error('[CRON-BUDGET] Monthly Recap failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   console.log('[CRON] 🛡️ Telegram Alert Watchdog active (90s interval).');
   console.log('[CRON-P6] ✅ Phase 6 Proactive Crons active: Proximity, Midday, Evening, Tomorrow, Weekly Review.');
   console.log('[CRON-MEM] 🧠 Memory Consolidation active (23:59 WIB).');
+  console.log('[CRON-BUDGET] 📊 Budget Recaps active (End of Week & Month).');
 }
 
 module.exports = { initCronJobs };

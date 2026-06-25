@@ -185,6 +185,72 @@ async function checkAndAlertBudget(newTransactionData) {
   }
 }
 
+/**
+ * Generate recap of budgets matching targetPeriod
+ */
+async function generatePeriodicRecap(targetPeriod) {
+  try {
+    const txDate = new Date();
+    const budgets = await supabaseFinance.getBudgets();
+    if (!budgets || budgets.length === 0) return null;
+
+    // Filter budget by targetPeriod
+    const applicableBudgets = budgets.filter(b => b.period === targetPeriod && Number(b.amount) > 0);
+    if (applicableBudgets.length === 0) return null;
+
+    let totalSaved = 0;
+    let totalOver = 0;
+    let lines = [];
+
+    for (const budget of applicableBudgets) {
+      const budgetAmount = Number(budget.amount);
+      const { start, end } = getStartAndEndOf(targetPeriod, txDate);
+      
+      let categoryIds = null;
+      let name = 'GLOBAL';
+      if (budget.budget_group_id && budget.budget_groups) {
+        categoryIds = budget.budget_groups.category_ids;
+        name = budget.budget_groups.name;
+      }
+
+      const spent = await supabaseFinance.getExpenseSumByCategories(categoryIds, start, end);
+      const percentage = (spent / budgetAmount) * 100;
+      
+      const isOver = percentage >= 100;
+      const isWarning = percentage >= 80 && percentage < 100;
+      const statusIcon = isOver ? '❌' : (isWarning ? '⚠️' : '✅');
+      const safeStr = isOver ? 'Over' : 'Aman';
+
+      lines.push(`${statusIcon} <b>${name.toUpperCase()}:</b> ${safeStr} (${formatRp(spent)} / ${formatRp(budgetAmount)} — ${Math.round(percentage)}%)`);
+
+      if (isOver) {
+        totalOver += (spent - budgetAmount);
+      } else {
+        totalSaved += (budgetAmount - spent);
+      }
+    }
+
+    const title = targetPeriod === 'weekly' ? '📊 <b>Rekap Anggaran Minggu Ini</b>' : '📊 <b>Rekap Anggaran Bulan Ini</b>';
+    let msg = `${title}\n\n`;
+    msg += lines.join('\n');
+    msg += `\n\n`;
+
+    if (totalSaved > totalOver) {
+      msg += `💡 <i>Sisa jatah ${targetPeriod === 'weekly' ? 'mingguan' : 'bulanan'} Anda berhasil dihemat sebesar ${formatRp(totalSaved - totalOver)}.</i>`;
+    } else if (totalOver > totalSaved) {
+      msg += `💸 <i>Secara total, Anda melebihi jatah ${targetPeriod === 'weekly' ? 'mingguan' : 'bulanan'} sebesar ${formatRp(totalOver - totalSaved)}.</i>`;
+    } else {
+      msg += `⚖️ <i>Pengeluaran Anda pas sesuai anggaran.</i>`;
+    }
+
+    return msg;
+  } catch (error) {
+    console.error('[BUDGET_ENGINE] generatePeriodicRecap error:', error);
+    return null;
+  }
+}
+
 module.exports = {
-  checkAndAlertBudget
+  checkAndAlertBudget,
+  generatePeriodicRecap
 };
