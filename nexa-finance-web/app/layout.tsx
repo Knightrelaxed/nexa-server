@@ -50,7 +50,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="id" className="bg-background">
+    <html lang="id" className="bg-background" suppressHydrationWarning>
       <head>
         {/* PWA - Service Worker Registration */}
         <script
@@ -67,7 +67,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${geist.className} antialiased`}>
+      <body className={`${geist.className} antialiased`} suppressHydrationWarning>
         <SupabaseProvider>
           {children}
           <Toaster position="bottom-right" richColors closeButton />

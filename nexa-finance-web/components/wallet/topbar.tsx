@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { Wallet, Plus, LogOut, Server, Menu } from "lucide-react"
+import { Wallet, Plus, Server, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { AddTransactionModal } from "./add-transaction-modal"
@@ -14,6 +14,7 @@ const tabs = [
   { href: "/dashboard", label: "Dasbor" },
   { href: "/accounts",  label: "Akun" },
   { href: "/records",   label: "Catatan" },
+  { href: "/budget",    label: "Anggaran" },
   { href: "/analytics", label: "Analitik" },
   { href: "/settings",  label: "Pengaturan" },
 ]

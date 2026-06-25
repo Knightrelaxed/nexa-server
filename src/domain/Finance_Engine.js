@@ -287,9 +287,30 @@ async function processTransaction(data, source) {
       await behaviorEngine.logFinanceRecord({
         type: isIncome ? 'INCOME' : 'EXPENSE',
         nominal,
-        category: data.category || 'Lainnya'
+        // Gunakan smartCategory (hasil AI kategorisasi final) agar log lebih akurat
+        category: smartCategory || data.category || 'Lainnya'
       });
     } catch (_) { /* Never let behavior logging crash the finance flow */ }
+
+    // [BUDGET ENGINE] Check limits and alert if exceeding thresholds
+    if (!isIncome) {
+      try {
+        const budgetEngine = require('./Budget_Engine');
+        const alertMsg = await budgetEngine.checkAndAlertBudget({
+          nominal,
+          categoryName: smartCategory,
+          description: data.description || data.destination || '-',
+          date: transactionTime
+        });
+        if (alertMsg) {
+          const { sendTelegramOutbound } = require('../interfaces/webhook');
+          // Kirim secara asinkron tanpa nge-block response ke user
+          sendTelegramOutbound(alertMsg).catch(e => console.error('[BUDGET] Telegram alert failed:', e.message));
+        }
+      } catch (err) {
+        console.error('[FINANCE] Budget check failed (non-fatal):', err.message);
+      }
+    }
 
     const nominalFormatted = `Rp${nominal.toLocaleString('id-ID')}`;
     const paymentMethodLine = paymentMethod ? `\n💳 <b>Metode:</b> ${paymentMethod}` : '';
@@ -539,14 +560,17 @@ async function getFinanceAnalytics(dateText = null) {
         endDate.setDate(startDate.getDate() + 6);
       } else if (lowerDate.includes('tahun')) {
         timeLabel = 'Tahun Ini';
-        startDate = new Date(startDate.getFullYear(), 0, 1);
-        endDate = new Date(startDate.getFullYear(), 11, 31);
+        const thisYear = new Date().getFullYear();
+        startDate = new Date(thisYear, 0, 1);
+        endDate = new Date(thisYear, 11, 31);
       } else if (lowerDate.includes('hari')) {
         timeLabel = 'Hari Ini';
       } else if (lowerDate.includes('kemarin') || lowerDate.includes('lalu') || lowerDate.includes('sebelum')) {
         timeLabel = 'Bulan Kemarin';
-        startDate = new Date(startDate.getFullYear(), startDate.getMonth() - 1, 1);
-        endDate = new Date(startDate.getFullYear(), startDate.getMonth(), 0);
+        // Simpan referensi ke now SEBELUM startDate diubah untuk menghindari bug saat Januari
+        const nowRef = new Date();
+        startDate = new Date(nowRef.getFullYear(), nowRef.getMonth() - 1, 1);
+        endDate = new Date(nowRef.getFullYear(), nowRef.getMonth(), 0); // hari terakhir bulan lalu
       } else {
         startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
         endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
