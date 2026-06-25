@@ -113,6 +113,23 @@ export async function archiveCategory(id: string) {
   if (error) throw error;
 }
 
+export async function fetchArchivedCategories(): Promise<DbCategory[]> {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('is_archived', true)
+    .order('type', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as DbCategory[];
+}
+
+export async function unarchiveCategory(id: string) {
+  const { error } = await supabase.from('categories').update({ is_archived: false }).eq('id', id);
+  if (error) throw error;
+}
+
 // ----------------------------------------------------------------
 // Transactions
 // ----------------------------------------------------------------

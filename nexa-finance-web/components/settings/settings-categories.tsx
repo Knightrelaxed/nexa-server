@@ -2,12 +2,12 @@
 
 import { useState } from "react"
 import { useCategories } from "@/hooks/use-finance-data"
-import { createCategory, updateCategory, archiveCategory } from "@/lib/supabase/queries"
+import { createCategory, updateCategory, archiveCategory, fetchArchivedCategories, unarchiveCategory } from "@/lib/supabase/queries"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Edit2, Archive, Loader2 } from "lucide-react"
+import { Plus, Edit2, Archive, Loader2, ArchiveRestore } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
@@ -20,6 +20,9 @@ export function SettingsCategories() {
   const [editingCat, setEditingCat] = useState<DbCategory | null>(null)
   const [formData, setFormData] = useState({ name: "", type: "expense", icon_key: "shopping-bag", group_name: "Lainnya" })
   const [isSaving, setIsSaving] = useState(false)
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false)
+  const [archivedCategories, setArchivedCategories] = useState<DbCategory[]>([])
+  const [isLoadingArchived, setIsLoadingArchived] = useState(false)
 
   const handleOpenModal = (cat?: DbCategory) => {
     if (cat) {
@@ -63,6 +66,30 @@ export function SettingsCategories() {
     }
   }
 
+  const handleOpenArchive = async () => {
+    setIsArchiveModalOpen(true)
+    setIsLoadingArchived(true)
+    try {
+      const data = await fetchArchivedCategories()
+      setArchivedCategories(data)
+    } catch (e: any) {
+      toast.error("Gagal mengambil data arsip")
+    } finally {
+      setIsLoadingArchived(false)
+    }
+  }
+
+  const handleRestore = async (id: string) => {
+    try {
+      await unarchiveCategory(id)
+      toast.success("Kategori berhasil dipulihkan")
+      await refetch()
+      setArchivedCategories(prev => prev.filter(c => c.id !== id))
+    } catch (e: any) {
+      toast.error("Gagal memulihkan kategori", { description: e.message })
+    }
+  }
+
   const expenses = categories.filter(c => c.type === 'expense')
   const incomes = categories.filter(c => c.type === 'income')
 
@@ -70,9 +97,14 @@ export function SettingsCategories() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold text-slate-800">Daftar Kategori</h2>
-        <Button onClick={() => handleOpenModal()} className="bg-emerald-500 hover:bg-emerald-600">
-          <Plus className="mr-2 h-4 w-4" /> Tambah Kategori
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleOpenArchive} className="text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50">
+            <Archive className="mr-2 h-4 w-4" /> Arsip
+          </Button>
+          <Button onClick={() => handleOpenModal()} className="bg-emerald-500 hover:bg-emerald-600">
+            <Plus className="mr-2 h-4 w-4" /> Tambah Kategori
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -203,6 +235,46 @@ export function SettingsCategories() {
                 {isSaving ? <Loader2 className="animate-spin h-5 w-5" /> : "Simpan"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL KATEGORI ARSIP */}
+      <Dialog open={isArchiveModalOpen} onOpenChange={setIsArchiveModalOpen}>
+        <DialogContent className="w-[92vw] max-w-lg p-0 overflow-hidden rounded-2xl border-0 shadow-2xl gap-0 bg-slate-50">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <Archive className="h-5 w-5 text-slate-500" /> Kategori Diarsipkan
+            </h2>
+          </div>
+          <div className="p-4 max-h-[60vh] overflow-y-auto">
+            {isLoadingArchived ? (
+              <div className="flex justify-center p-8"><Loader2 className="animate-spin text-slate-400" /></div>
+            ) : archivedCategories.length === 0 ? (
+              <div className="text-center p-8 text-slate-500">Tidak ada kategori di arsip.</div>
+            ) : (
+              <div className="space-y-3">
+                {archivedCategories.map(c => {
+                  const Icon = ICON_MAP[c.icon_key] || ICON_MAP['more-horizontal']
+                  return (
+                    <div key={c.id} className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200/60 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg bg-slate-100 text-slate-500`}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm text-slate-900">{c.name}</p>
+                          <p className="text-xs text-muted-foreground">{c.type === 'income' ? 'Pemasukan' : 'Pengeluaran'} • {c.group_name || "Lainnya"}</p>
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => handleRestore(c.id)} className="h-8 text-emerald-600 border-emerald-200 hover:bg-emerald-50">
+                        <ArchiveRestore className="h-3.5 w-3.5 mr-1" /> Pulihkan
+                      </Button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
