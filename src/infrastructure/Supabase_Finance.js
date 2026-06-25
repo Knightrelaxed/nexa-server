@@ -52,7 +52,7 @@ async function _loadCategories() {
 
   const { data, error } = await supabaseFinance
     .from('categories')
-    .select('id, name, type')
+    .select('id, name, type, group_name')
     .eq('is_archived', false)
     .order('sort_order', { ascending: true });
 
