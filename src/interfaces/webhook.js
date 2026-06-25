@@ -1843,19 +1843,15 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             invalidatePersonalFactsCache();
             domainReply = success ? `🗑️ Fakta personal berhasil dihapus dari memori permanen.` : `❌ Gagal menemukan fakta tersebut di profil Anda.`;
           } else if (action === 'READ') {
-             const keyword = routingData.extracted_data.search_keyword;
-             if (!keyword || keyword.trim() === '' || keyword.toLowerCase() === 'semua') {
-                domainReply = `🧠 Saya menyimpan puluhan catatan permanen tentang profil, prinsip, dan keseharian Tuan Faqih. Agar lebih relevan, bagian spesifik apa yang ingin Tuan ketahui? (misalnya: "Apa yang kamu tahu tentang hobi saya?", atau "tentang keuangan")`;
+             const keyword = routingData.extracted_data.search_keyword || textInput;
+             const facts = await supabaseMemories.getPersonalFacts();
+             if (facts.userProfile && facts.userProfile.length > 0) {
+                const list = facts.userProfile.map(f => `- ${f}`).join('\n');
+                const prompt = `Berikut adalah daftar seluruh fakta permanen tentang profil Tuan Faqih:\n${list}\n\nTuan Faqih berkata/bertanya: "${keyword}".\nTugasmu: Jawablah berdasarkan fakta-fakta yang relevan saja, rangkum menjadi cerita yang luwes, hangat, dan asisten-sentris. Jangan gunakan bullet points jika bisa dirangkum mengalir.`;
+                const aiRouter = require('../core/AI_Router');
+                domainReply = await aiRouter.callAI(prompt);
              } else {
-                const facts = await supabaseMemories.getPersonalFacts();
-                if (facts.userProfile && facts.userProfile.length > 0) {
-                   const list = facts.userProfile.map(f => `- ${f}`).join('\n');
-                   const prompt = `Berikut adalah daftar seluruh fakta permanen tentang Tuan Faqih:\n${list}\n\nTuan Faqih sedang bertanya spesifik tentang: "${keyword}".\nTugasmu: Pilihlah HANYA fakta-fakta yang relevan dengan pertanyaan/topik "${keyword}", lalu rangkum menjadi cerita yang luwes, hangat, dan asisten-sentris. Jika TIDAK ADA fakta yang relevan dengan "${keyword}", katakan dengan sopan bahwa kamu belum memiliki catatan permanen terkait hal tersebut. Jangan gunakan bullet points jika bisa dirangkum mengalir.`;
-                   const aiRouter = require('../core/AI_Router');
-                   domainReply = await aiRouter.callAI(prompt);
-                } else {
-                   domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen tentang Tuan Faqih.`;
-                }
+                domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen tentang Tuan Faqih.`;
              }
           }
         }
@@ -1874,19 +1870,15 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             invalidatePersonalFactsCache();
             domainReply = success ? `🗑️ Aturan identitas inti berhasil dihapus.` : `❌ Gagal menemukan aturan tersebut di sistem.`;
           } else if (action === 'READ') {
-             const keyword = routingData.extracted_data.search_keyword;
-             if (!keyword || keyword.trim() === '' || keyword.toLowerCase() === 'semua') {
-                domainReply = `🤖 Saya memiliki beberapa aturan identitas inti dan pedoman sikap (Core Identity). Aspek apa yang ingin Tuan tinjau? (misalnya: "aturan tentang merespons pesan" atau "gaya komunikasimu")`;
+             const keyword = routingData.extracted_data.search_keyword || textInput;
+             const facts = await supabaseMemories.getPersonalFacts();
+             if (facts.coreIdentity && facts.coreIdentity.length > 0) {
+                const list = facts.coreIdentity.map(f => `- ${f}`).join('\n');
+                const prompt = `Berikut adalah daftar seluruh aturan sikap dan identitas inti (Core Identity) N.E.X.A:\n${list}\n\nTuan Faqih berkata/bertanya: "${keyword}".\nTugasmu: Jawablah dengan gaya bahasa yang luwes, hangat, dan berwibawa berdasarkan pedoman identitasmu di atas. Jika pertanyaannya berupa sapaan atau obrolan santai tentang siapa dirimu, jawablah sewajarnya sebagai asisten. Jangan meminta Tuan Faqih untuk menyebutkan aspek tertentu kecuali dia memang meminta daftar aturan secara spesifik.`;
+                const aiRouter = require('../core/AI_Router');
+                domainReply = await aiRouter.callAI(prompt);
              } else {
-                const facts = await supabaseMemories.getPersonalFacts();
-                if (facts.coreIdentity && facts.coreIdentity.length > 0) {
-                   const list = facts.coreIdentity.map(f => `- ${f}`).join('\n');
-                   const prompt = `Berikut adalah daftar seluruh aturan sikap dan identitas inti (Core Identity) N.E.X.A:\n${list}\n\nTuan Faqih bertanya tentang: "${keyword}".\nTugasmu: Pilihlah HANYA aturan yang relevan dengan "${keyword}", lalu rangkum secara luwes dan berwibawa. Jika tidak ada aturan yang relevan, katakan dengan sopan bahwa tidak ada pedoman khusus tentang hal tersebut.`;
-                   const aiRouter = require('../core/AI_Router');
-                   domainReply = await aiRouter.callAI(prompt);
-                } else {
-                   domainReply = `🤖 Saat ini tidak ada aturan identitas inti khusus yang diterapkan.`;
-                }
+                domainReply = `🤖 Saat ini tidak ada aturan identitas inti khusus yang diterapkan.`;
              }
           }
         }
