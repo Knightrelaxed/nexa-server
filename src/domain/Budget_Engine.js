@@ -159,7 +159,7 @@ async function checkAndAlertBudget(newTransactionData) {
           const s = statuses['weekly'];
           const statusIcon = s.isOver ? '❌' : (s.isWarning ? '⚠️' : '✅');
           const safeStr = s.isOver ? 'Melebihi batas!' : 'Aman';
-          msg += `📅 Status Minggu Ini: ${statusIcon} ${safeStr} (${formatRp(s.spent)} dari ${formatRp(s.amount)} — ${Math.round(s.percentage)}%)\n`;
+          msg += `📅 Status Minggu Ini: ${statusIcon} ${safeStr} (${formatRp(s.spent)} dari ${formatRp(s.amount)} — ${Math.round(s.percentage)}%)\n\n`;
         }
 
         // Format Monthly
@@ -167,7 +167,7 @@ async function checkAndAlertBudget(newTransactionData) {
           const s = statuses['monthly'];
           const statusIcon = s.isOver ? '❌' : (s.isWarning ? '⚠️' : '✅');
           const safeStr = s.isOver ? 'Melebihi batas!' : 'Aman';
-          msg += `📆 Status Bulan Ini: ${statusIcon} ${safeStr} (${formatRp(s.spent)} dari ${formatRp(s.amount)} — ${Math.round(s.percentage)}%)\n`;
+          msg += `📆 Status Bulan Ini: ${statusIcon} ${safeStr} (${formatRp(s.spent)} dari ${formatRp(s.amount)} — ${Math.round(s.percentage)}%)\n\n`;
         }
 
         alertMessages.push(msg);
@@ -232,7 +232,7 @@ async function generatePeriodicRecap(targetPeriod) {
 
     const title = targetPeriod === 'weekly' ? '📊 Rekap Anggaran Minggu Ini' : '📊 Rekap Anggaran Bulan Ini';
     let msg = `${title}\n\n`;
-    msg += lines.join('\n');
+    msg += lines.join('\n\n');
     msg += `\n\n`;
 
     if (totalSaved > totalOver) {
