@@ -162,16 +162,26 @@ export function PeriodSelector({ value, onChange }: PeriodSelectorProps) {
   // ── Arrow nav ────────────────────────────────────────────────────────────────
 
   function handlePrev() {
-    if (activeTab === "month") { const d = new Date(value.start.getFullYear(), value.start.getMonth()-1,1); onChange(makeMonthPeriod(d.getFullYear(), d.getMonth())) }
-    else if (activeTab === "week") { const d = new Date(value.start); d.setDate(d.getDate()-7); onChange(makeWeekPeriod(d)); setCalMonth({y:d.getFullYear(),m:d.getMonth()}) }
-    else if (activeTab === "year") { onChange(makeYearPeriod(value.start.getFullYear()-1)) }
-    else { const d = new Date(calMonth.y, calMonth.m-1,1); setCalMonth({y:d.getFullYear(),m:d.getMonth()}) }
+    if (value.mode === "month") { const d = new Date(value.start.getFullYear(), value.start.getMonth()-1,1); onChange(makeMonthPeriod(d.getFullYear(), d.getMonth())) }
+    else if (value.mode === "week") { const d = new Date(value.start); d.setDate(d.getDate()-7); onChange(makeWeekPeriod(d)); setCalMonth({y:d.getFullYear(),m:d.getMonth()}) }
+    else if (value.mode === "year") { onChange(makeYearPeriod(value.start.getFullYear()-1)) }
+    else if (value.mode === "custom") {
+      const days = Math.round((value.end.getTime() - value.start.getTime()) / 86400000) + 1;
+      const newStart = new Date(value.start); newStart.setDate(newStart.getDate() - days);
+      const newEnd = new Date(value.end); newEnd.setDate(newEnd.getDate() - days);
+      onChange(makeCustomPeriod(newStart, newEnd));
+    }
   }
   function handleNext() {
-    if (activeTab === "month") { const d = new Date(value.start.getFullYear(), value.start.getMonth()+1,1); onChange(makeMonthPeriod(d.getFullYear(), d.getMonth())) }
-    else if (activeTab === "week") { const d = new Date(value.start); d.setDate(d.getDate()+7); onChange(makeWeekPeriod(d)); setCalMonth({y:d.getFullYear(),m:d.getMonth()}) }
-    else if (activeTab === "year") { onChange(makeYearPeriod(value.start.getFullYear()+1)) }
-    else { const d = new Date(calMonth.y, calMonth.m+1,1); setCalMonth({y:d.getFullYear(),m:d.getMonth()}) }
+    if (value.mode === "month") { const d = new Date(value.start.getFullYear(), value.start.getMonth()+1,1); onChange(makeMonthPeriod(d.getFullYear(), d.getMonth())) }
+    else if (value.mode === "week") { const d = new Date(value.start); d.setDate(d.getDate()+7); onChange(makeWeekPeriod(d)); setCalMonth({y:d.getFullYear(),m:d.getMonth()}) }
+    else if (value.mode === "year") { onChange(makeYearPeriod(value.start.getFullYear()+1)) }
+    else if (value.mode === "custom") {
+      const days = Math.round((value.end.getTime() - value.start.getTime()) / 86400000) + 1;
+      const newStart = new Date(value.start); newStart.setDate(newStart.getDate() + days);
+      const newEnd = new Date(value.end); newEnd.setDate(newEnd.getDate() + days);
+      onChange(makeCustomPeriod(newStart, newEnd));
+    }
   }
 
   // ── Calendar days ────────────────────────────────────────────────────────────
