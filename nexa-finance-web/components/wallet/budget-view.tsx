@@ -8,6 +8,7 @@ import { formatIDR, formatIDRCompact } from "@/lib/wallet-data"
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts"
 import { Plus, Edit2, Trash2, PiggyBank, Target, Utensils, Bus, ShoppingBag, HeartPulse, Film, Book, Briefcase, Zap, AlertTriangle, AlertCircle, Save } from "lucide-react"
 import { PeriodSelector, defaultPeriod, type PeriodValue } from "./period-selector"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -152,10 +153,10 @@ export function BudgetView() {
     if (toUpsert.length > 0) {
       const { error } = await supabase.from('budgets').upsert(toUpsert, { onConflict: 'budget_group_id, period' })
       if (!error) {
-        alert("Jatah Global berhasil diperbarui!")
+        toast.success("Jatah Global berhasil diperbarui!")
         await loadData()
       } else {
-        alert("Gagal menyimpan: " + error.message)
+        toast.error("Gagal menyimpan: " + error.message)
       }
     }
     setIsSaving(false)
