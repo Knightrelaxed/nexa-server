@@ -10,6 +10,17 @@ import { Plus, Edit2, Trash2, PiggyBank, Target, Utensils, Bus, ShoppingBag, Hea
 import { PeriodSelector, defaultPeriod, type PeriodValue } from "./period-selector"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { BudgetGroupModal } from "./budget-group-modal"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 const ICON_MAP: Record<string, React.ElementType> = {
   utensils: Utensils, bus: Bus, "shopping-bag": ShoppingBag, film: Film,
@@ -49,6 +60,11 @@ export function BudgetView() {
     monthly: ''
   })
   const [isSaving, setIsSaving] = useState(false)
+
+  // Modals state
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<any>(null)
+  const [groupToDelete, setGroupToDelete] = useState<any>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -160,6 +176,28 @@ export function BudgetView() {
       }
     }
     setIsSaving(false)
+  }
+
+  const handleEditGroup = (g: BudgetGroup) => {
+    // Embed budgets to the group data
+    const groupBudgets = budgets.filter(b => b.budget_group_id === g.id)
+    setEditingGroup({
+      ...g,
+      budgets: groupBudgets
+    })
+    setIsGroupModalOpen(true)
+  }
+
+  const handleDeleteGroup = async () => {
+    if (!groupToDelete) return
+    const { error } = await supabase.from('budget_groups').delete().eq('id', groupToDelete.id)
+    if (error) {
+      toast.error("Gagal menghapus kelompok: " + error.message)
+    } else {
+      toast.success("Kelompok berhasil dihapus secara permanen!")
+      await loadData()
+    }
+    setGroupToDelete(null)
   }
 
   if (loading) {
@@ -357,8 +395,18 @@ export function BudgetView() {
                       <h4 className="font-bold text-slate-800">{g.name}</h4>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-md transition-colors"><Edit2 className="h-4 w-4" /></button>
-                      <button className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"><Trash2 className="h-4 w-4" /></button>
+                      <button 
+                        onClick={() => handleEditGroup(g)}
+                        className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-md transition-colors"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button 
+                        onClick={() => setGroupToDelete(g)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
                   
@@ -381,7 +429,14 @@ export function BudgetView() {
               )
             })}
             
-            <button className="rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-500 transition-colors flex flex-col items-center justify-center p-8 gap-3 min-h-[160px]">
+            
+            <button 
+              onClick={() => {
+                setEditingGroup(null)
+                setIsGroupModalOpen(true)
+              }}
+              className="rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-500 transition-colors flex flex-col items-center justify-center p-8 gap-3 min-h-[160px]"
+            >
               <div className="h-10 w-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400">
                 <Plus className="h-5 w-5" />
               </div>
@@ -390,6 +445,32 @@ export function BudgetView() {
           </div>
         </div>
       )}
+
+      {/* Modals */}
+      <BudgetGroupModal 
+        open={isGroupModalOpen} 
+        onClose={() => setIsGroupModalOpen(false)} 
+        onSuccess={loadData}
+        initialData={editingGroup}
+      />
+
+      <AlertDialog open={!!groupToDelete} onOpenChange={(open) => !open && setGroupToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Kelompok Kategori?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tindakan ini akan menghapus permanen kelompok "{groupToDelete?.name}" beserta konfigurasi anggarannya. Data transaksi tidak akan terhapus. Apakah Anda yakin?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteGroup} className="bg-red-500 hover:bg-red-600">
+              Hapus Permanen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   )
 }
