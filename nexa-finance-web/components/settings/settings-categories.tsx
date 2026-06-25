@@ -208,11 +208,16 @@ export function SettingsCategories() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Makanan & Minuman">Makanan & Minuman</SelectItem>
+                    <SelectItem value="Perumahan & Kamar">Perumahan & Kamar</SelectItem>
                     <SelectItem value="Transportasi">Transportasi</SelectItem>
+                    <SelectItem value="Komunikasi">Komunikasi</SelectItem>
+                    <SelectItem value="Gaya Hidup & Sosial">Gaya Hidup & Sosial</SelectItem>
+                    <SelectItem value="Kesehatan">Kesehatan</SelectItem>
+                    <SelectItem value="Perawatan & Kecantikan">Perawatan & Kecantikan</SelectItem>
                     <SelectItem value="Belanja">Belanja</SelectItem>
-                    <SelectItem value="Hiburan & Kehidupan">Hiburan</SelectItem>
-                    <SelectItem value="Perumahan">Perumahan</SelectItem>
-                    <SelectItem value="Kendaraan">Kendaraan</SelectItem>
+                    <SelectItem value="Administrasi & Kewajiban">Administrasi & Kewajiban</SelectItem>
+                    <SelectItem value="Investasi">Investasi</SelectItem>
+                    <SelectItem value="Penyesuaian (Sistem)">Penyesuaian (Sistem)</SelectItem>
                     <SelectItem value="Lainnya">Lainnya</SelectItem>
                   </SelectContent>
                 </Select>
