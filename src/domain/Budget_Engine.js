@@ -145,7 +145,7 @@ async function checkAndAlertBudget(newTransactionData) {
         if (statuses['daily']) {
           const s = statuses['daily'];
           const statusIcon = s.isOver ? '❌' : (s.isWarning ? '⚠️' : '✅');
-          msg += `📊 <b>Status Hari Ini:</b> ${statusIcon}\n`;
+          msg += `📊 Status Hari Ini: ${statusIcon}\n`;
           msg += `   Terpakai: ${generateProgressBar(s.percentage)} ${formatRp(s.spent)}\n`;
           if (s.isOver) {
              msg += `   Over: ${formatRp(s.spent - s.amount)}\n\n`;
@@ -159,7 +159,7 @@ async function checkAndAlertBudget(newTransactionData) {
           const s = statuses['weekly'];
           const statusIcon = s.isOver ? '❌' : (s.isWarning ? '⚠️' : '✅');
           const safeStr = s.isOver ? 'Melebihi batas!' : 'Aman';
-          msg += `📅 <b>Status Minggu Ini:</b> ${statusIcon} ${safeStr} (${formatRp(s.spent)} dari ${formatRp(s.amount)} — ${Math.round(s.percentage)}%)\n`;
+          msg += `📅 Status Minggu Ini: ${statusIcon} ${safeStr} (${formatRp(s.spent)} dari ${formatRp(s.amount)} — ${Math.round(s.percentage)}%)\n`;
         }
 
         // Format Monthly
@@ -167,7 +167,7 @@ async function checkAndAlertBudget(newTransactionData) {
           const s = statuses['monthly'];
           const statusIcon = s.isOver ? '❌' : (s.isWarning ? '⚠️' : '✅');
           const safeStr = s.isOver ? 'Melebihi batas!' : 'Aman';
-          msg += `📆 <b>Status Bulan Ini:</b> ${statusIcon} ${safeStr} (${formatRp(s.spent)} dari ${formatRp(s.amount)} — ${Math.round(s.percentage)}%)\n`;
+          msg += `📆 Status Bulan Ini: ${statusIcon} ${safeStr} (${formatRp(s.spent)} dari ${formatRp(s.amount)} — ${Math.round(s.percentage)}%)\n`;
         }
 
         alertMessages.push(msg);
