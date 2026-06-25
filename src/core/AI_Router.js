@@ -357,11 +357,29 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     // Bangun blok kategori aktif jika ada data
     if (categoriesResult.status === 'fulfilled' && categoriesResult.value && categoriesResult.value.length > 0) {
       const _cats = categoriesResult.value;
-      const _income  = _cats.filter(c => c.type === 'income').map(c => c.name).join(', '); // FIX BUG 1: lowercase 'income'
-      const _expense = _cats.filter(c => c.type === 'expense').map(c => c.name).join(', '); // FIX BUG 1: lowercase 'expense'
       const _catLines = [];
-      if (_income)  _catLines.push(`PEMASUKAN: ${_income}`);
-      if (_expense) _catLines.push(`PENGELUARAN: ${_expense}`);
+      
+      const buildGroupedString = (typeLabel, filterType) => {
+        const filtered = _cats.filter(c => c.type === filterType);
+        if (filtered.length === 0) return '';
+        const groups = {};
+        filtered.forEach(c => {
+          const g = c.group_name || 'Lainnya';
+          if (!groups[g]) groups[g] = [];
+          groups[g].push(c.name);
+        });
+        const lines = [`${typeLabel}:`];
+        for (const [g, names] of Object.entries(groups)) {
+          lines.push(`  - [${g}]: ${names.join(', ')}`);
+        }
+        return lines.join('\n');
+      };
+      
+      const _incomeStr = buildGroupedString('PEMASUKAN', 'income');
+      const _expenseStr = buildGroupedString('PENGELUARAN', 'expense');
+      
+      if (_incomeStr) _catLines.push(_incomeStr);
+      if (_expenseStr) _catLines.push(_expenseStr);
       
       activeCategoriesBlock = `\n[KATEGORI TRANSAKSI AKTIF — PAKAI NAMA PERSIS INI UNTUK FIELD "category" DI FINANCE]\n${_catLines.join('\n')}\n\n[PANDUAN PEMILIHAN KATEGORI]\nJANGAN mencocokkan kategori berdasarkan substring/kata kunci permukaan saja!\nGunakan PENALARAN SEMANTIK: tanyakan "Apa SUBSTANSI/OBJEK yang dibayar?" bukan "Kata apa yang mirip?".\nContoh penalaran benar:\n- "beli rokok" → objek = rokok (tembakau) → cari kategori yang mengandung tembakau/alkohol\n- "iuran makrab angkatan" → objek = iuran/kontribusi untuk acara sosial kampus → cari kategori sosial/hiburan/acara, BUKAN makanan\n- "bayar laundry" → objek = jasa cuci pakaian → kategori layanan/jasa\n- "grab ke kampus" → objek = transportasi → kategori transportasi\n`;
     }
