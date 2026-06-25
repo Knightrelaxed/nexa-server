@@ -153,11 +153,11 @@ export function BudgetView() {
 
   const handleSaveGlobalConfig = async () => {
     setIsSaving(true)
-    const toUpsert = []
+    const toInsert = []
     for (const p of ['daily', 'weekly', 'monthly']) {
       const amountStr = globalConfig[p]
-      if (amountStr) {
-        toUpsert.push({
+      if (amountStr && !isNaN(parseFloat(amountStr))) {
+        toInsert.push({
           budget_group_id: null,
           period: p,
           amount: parseFloat(amountStr),
@@ -166,14 +166,21 @@ export function BudgetView() {
       }
     }
     
-    if (toUpsert.length > 0) {
-      const { error } = await supabase.from('budgets').upsert(toUpsert, { onConflict: 'budget_group_id, period' })
+    // Hapus semua budget global lama terlebih dahulu
+    // karena Postgres constraint tidak berlaku untuk nilai NULL
+    await supabase.from('budgets').delete().is('budget_group_id', null)
+
+    if (toInsert.length > 0) {
+      const { error } = await supabase.from('budgets').insert(toInsert)
       if (!error) {
         toast.success("Jatah Global berhasil diperbarui!")
         await loadData()
       } else {
         toast.error("Gagal menyimpan: " + error.message)
       }
+    } else {
+      toast.success("Jatah Global berhasil dikosongkan!")
+      await loadData()
     }
     setIsSaving(false)
   }
