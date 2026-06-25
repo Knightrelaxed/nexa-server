@@ -21,6 +21,16 @@ import {
   CartesianGrid,
 } from "recharts"
 import { cn } from "@/lib/utils"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 const ACCOUNT_ICON: Record<string, React.ElementType> = {
   bank:       Banknote,
@@ -115,6 +125,10 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
 
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editTx, setEditTx] = useState<any>(null)
+  
+  // Modal confirm states
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [confirmDuplicateOpen, setConfirmDuplicateOpen] = useState(false)
 
   const handleEdit = () => {
     if (selectedIds.size !== 1) return
@@ -126,36 +140,41 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
     }
   }
 
-  const handleDelete = async () => {
+  const handleDeleteClick = () => {
     if (selectedIds.size === 0) return
-    if (confirm(`Hapus ${selectedIds.size} catatan?`)) {
-      try {
-        await deleteTransactions(Array.from(selectedIds))
-        toast.success("Catatan berhasil dihapus")
-        setSelectedIds(new Set())
-        refetch()
-      } catch (err) {
-        toast.error("Gagal menghapus catatan")
-      }
+    setConfirmDeleteOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (selectedIds.size === 0) return
+    try {
+      await deleteTransactions(Array.from(selectedIds))
+      toast.success("Catatan berhasil dihapus")
+      setSelectedIds(new Set())
+      refetch()
+    } catch (err) {
+      toast.error("Gagal menghapus catatan")
     }
   }
 
-  const handleDuplicate = async () => {
+  const handleDuplicateClick = () => {
     if (selectedIds.size < 2) {
       toast.error("Pilih minimal 2 catatan untuk diatasi duplikasinya")
       return
     }
+    setConfirmDuplicateOpen(true)
+  }
+
+  const handleDuplicateConfirm = async () => {
     const ids = Array.from(selectedIds)
     const removeIds = ids.slice(1)
-    if (confirm(`1 catatan akan dipertahankan, ${removeIds.length} catatan akan dihapus. Lanjutkan?`)) {
-      try {
-        await deleteTransactions(removeIds)
-        toast.success("Duplikasi berhasil diatasi")
-        setSelectedIds(new Set())
-        refetch()
-      } catch (err) {
-        toast.error("Gagal mengatasi duplikasi")
-      }
+    try {
+      await deleteTransactions(removeIds)
+      toast.success("Duplikasi berhasil diatasi")
+      setSelectedIds(new Set())
+      refetch()
+    } catch (err) {
+      toast.error("Gagal mengatasi duplikasi")
     }
   }
 
@@ -388,10 +407,10 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
               <Button onClick={handleEdit} size="sm" disabled={selectedIds.size !== 1} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full transition-colors", selectedIds.size === 1 ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-100")}>
                 Edit
               </Button>
-              <Button onClick={handleDelete} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full transition-colors", isAnySelected ? "bg-[#ef4444] hover:bg-[#dc2626] text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-100")}>
+              <Button onClick={handleDeleteClick} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full transition-colors", isAnySelected ? "bg-[#ef4444] hover:bg-[#dc2626] text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-100")}>
                 Hapus
               </Button>
-              <Button onClick={handleDuplicate} size="sm" disabled={selectedIds.size < 2} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full transition-colors", selectedIds.size >= 2 ? "bg-[#3b82f6] hover:bg-[#2563eb] text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-100")}>
+              <Button onClick={handleDuplicateClick} size="sm" disabled={selectedIds.size < 2} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full transition-colors", selectedIds.size >= 2 ? "bg-[#3b82f6] hover:bg-[#2563eb] text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-100")}>
                 Atasi Duplikasi
               </Button>
             </div>
@@ -454,7 +473,7 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                           {/* Category + User */}
                           <div className="w-[110px] sm:w-[130px] shrink-0 min-w-0">
                             <p className="text-[13px] font-semibold truncate">{t.category_name}</p>
-                            <p className="text-[11px] text-muted-foreground">faqih</p>
+                            {t.payment_method && <p className="text-[11px] text-muted-foreground">{t.payment_method.toUpperCase()}</p>}
                           </div>
 
                           {/* Account */}
@@ -537,6 +556,41 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
           </div>
         </div>
       )}
+      {/* Modals for Destructive Actions */}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Catatan?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Apakah Anda yakin ingin menghapus permanen {selectedIds.size} catatan yang dipilih? Data yang dihapus tidak dapat dikembalikan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-red-500 hover:bg-red-600">
+              Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmDuplicateOpen} onOpenChange={setConfirmDuplicateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Atasi Duplikasi?</AlertDialogTitle>
+            <AlertDialogDescription>
+              1 catatan akan dipertahankan, dan {selectedIds.size - 1} catatan lainnya akan dihapus. Lanjutkan?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDuplicateConfirm} className="bg-blue-500 hover:bg-blue-600">
+              Atasi Duplikasi
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   )
 }
