@@ -333,7 +333,7 @@ export function BudgetView() {
                             <span className="text-[11px] text-muted-foreground ml-1">/ {formatIDRCompact(g.budgetAmount)}</span>
                           </div>
                         </div>
-                        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
                           <div className={cn("h-full rounded-full transition-all duration-500", getStatusBg(g.percentage))}
                             style={{ width: `${Math.min(100, g.percentage)}%` }} />
                         </div>
