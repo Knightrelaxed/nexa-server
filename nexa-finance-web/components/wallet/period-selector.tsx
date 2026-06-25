@@ -66,7 +66,7 @@ function makeYearPeriod(y: number): PeriodValue {
   const start = new Date(y,0,1); const end = new Date(y,11,31)
   return { mode:"year", start, end, label: fmtLabel("year",start,end) }
 }
-function makeCustomPeriod(a: Date, b: Date): PeriodValue {
+export function makeCustomPeriod(a: Date, b: Date): PeriodValue {
   const s = startOfDay(a < b ? a : b); const e = startOfDay(a < b ? b : a)
   return { mode:"custom", start:s, end:e, label: fmtLabel("custom",s,e) }
 }

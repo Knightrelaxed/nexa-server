@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { formatIDR, formatIDRCompact } from "@/lib/wallet-data"
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts"
 import { Plus, Edit2, Trash2, PiggyBank, Target, Utensils, Bus, ShoppingBag, HeartPulse, Film, Book, Briefcase, Zap, AlertTriangle, AlertCircle, Save } from "lucide-react"
-import { PeriodSelector, defaultPeriod, type PeriodValue } from "./period-selector"
+import { PeriodSelector, defaultPeriod, makeCustomPeriod, type PeriodValue } from "./period-selector"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { BudgetGroupModal } from "./budget-group-modal"
@@ -47,7 +47,7 @@ interface Budget {
 export function BudgetView() {
   const [activeTab, setActiveTab] = useState<'visual' | 'config'>('visual')
   // Gunakan lazy initializer yang eksplisit untuk menghindari ambiguitas
-  const [period, setPeriod] = useState<PeriodValue>(() => defaultPeriod())
+  const [period, setPeriod] = useState<PeriodValue>(() => makeCustomPeriod(new Date(), new Date()))
   const [groups, setGroups] = useState<BudgetGroup[]>([])
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [loading, setLoading] = useState(true)
