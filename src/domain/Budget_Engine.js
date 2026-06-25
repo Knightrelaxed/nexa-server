@@ -221,7 +221,7 @@ async function generatePeriodicRecap(targetPeriod) {
       const statusIcon = isOver ? '❌' : (isWarning ? '⚠️' : '✅');
       const safeStr = isOver ? 'Over' : 'Aman';
 
-      lines.push(`${statusIcon} <b>${name.toUpperCase()}:</b> ${safeStr} (${formatRp(spent)} / ${formatRp(budgetAmount)} — ${Math.round(percentage)}%)`);
+      lines.push(`${statusIcon} ${name.toUpperCase()}: ${safeStr} (${formatRp(spent)} / ${formatRp(budgetAmount)} — ${Math.round(percentage)}%)`);
 
       if (isOver) {
         totalOver += (spent - budgetAmount);
@@ -230,17 +230,17 @@ async function generatePeriodicRecap(targetPeriod) {
       }
     }
 
-    const title = targetPeriod === 'weekly' ? '📊 <b>Rekap Anggaran Minggu Ini</b>' : '📊 <b>Rekap Anggaran Bulan Ini</b>';
+    const title = targetPeriod === 'weekly' ? '📊 Rekap Anggaran Minggu Ini' : '📊 Rekap Anggaran Bulan Ini';
     let msg = `${title}\n\n`;
     msg += lines.join('\n');
     msg += `\n\n`;
 
     if (totalSaved > totalOver) {
-      msg += `💡 <i>Sisa jatah ${targetPeriod === 'weekly' ? 'mingguan' : 'bulanan'} Anda berhasil dihemat sebesar ${formatRp(totalSaved - totalOver)}.</i>`;
+      msg += `💡 Sisa jatah ${targetPeriod === 'weekly' ? 'mingguan' : 'bulanan'} Anda berhasil dihemat sebesar ${formatRp(totalSaved - totalOver)}.`;
     } else if (totalOver > totalSaved) {
-      msg += `💸 <i>Secara total, Anda melebihi jatah ${targetPeriod === 'weekly' ? 'mingguan' : 'bulanan'} sebesar ${formatRp(totalOver - totalSaved)}.</i>`;
+      msg += `💸 Secara total, Anda melebihi jatah ${targetPeriod === 'weekly' ? 'mingguan' : 'bulanan'} sebesar ${formatRp(totalOver - totalSaved)}.`;
     } else {
-      msg += `⚖️ <i>Pengeluaran Anda pas sesuai anggaran.</i>`;
+      msg += `⚖️ Pengeluaran Anda pas sesuai anggaran.`;
     }
 
     return msg;
