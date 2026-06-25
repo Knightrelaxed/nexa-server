@@ -9,6 +9,7 @@ import { useCategories } from "@/hooks/use-finance-data"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { ICON_MAP } from "@/lib/wallet-data"
 
 interface BudgetGroupModalProps {
   open: boolean
@@ -234,7 +235,10 @@ export function BudgetGroupModal({ open, onClose, onSuccess, initialData }: Budg
                       {selectedCats.includes(cat.id) && <Check className="h-3.5 w-3.5" />}
                     </div>
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      {cat.icon_key && <span className="text-base shrink-0">{cat.icon_key}</span>}
+                      {cat.icon_key && (() => {
+                        const CatIcon = ICON_MAP[cat.icon_key] || Target
+                        return <CatIcon className="h-4 w-4 shrink-0 text-slate-500" />
+                      })()}
                       <span className="text-sm font-medium text-slate-700 truncate">{cat.name}</span>
                     </div>
                   </label>
