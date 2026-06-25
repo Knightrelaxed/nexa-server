@@ -164,7 +164,7 @@ export function Sidebar({
               {showMore && (
                 <div className="space-y-0.5">
                   {[
-                    { label: "Anggaran", icon: PiggyBank, href: "#" },
+                    { label: "Anggaran", icon: PiggyBank, href: "/budget" },
                     { label: "Tujuan", icon: Target, href: "#" },
                     { label: "Berulang", icon: Repeat, href: "#" },
                     { label: "Kartu Kredit", icon: CreditCard, href: "#" },
