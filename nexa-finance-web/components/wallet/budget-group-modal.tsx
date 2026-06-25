@@ -218,7 +218,7 @@ export function BudgetGroupModal({ open, onClose, onSuccess, initialData }: Budg
               <label className="block text-sm font-semibold mb-2 text-slate-800">
                 Pilih Kategori <span className="text-muted-foreground font-normal ml-1">({selectedCats.length} terpilih)</span>
               </label>
-              <div className="grid grid-cols-2 gap-2 border border-slate-200 rounded-xl p-3 bg-slate-50 max-h-48 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border border-slate-200 rounded-xl p-3 bg-slate-50 max-h-48 overflow-y-auto">
                 {expenseCategories.map(cat => (
                   <label key={cat.id} className={cn("flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-colors border",
                     selectedCats.includes(cat.id) ? "bg-emerald-50 border-emerald-200" : "bg-white border-slate-100 hover:border-slate-300"
