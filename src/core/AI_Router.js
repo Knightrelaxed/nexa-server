@@ -99,7 +99,7 @@ Analyze the user's message, chat history, and context. Determine the ABSOLUTE IN
 CRITICAL ROUTING RULES:
 1. FINANCE: NEVER use INCOMPLETE_INFO. If details missing, use action RECORD with description '-'. Let backend ask.
 2. FINANCE UPDATE_PENDING: ONLY output fields explicitly mentioned (e.g. payment_method, account). Leave others null. DO NOT overwrite with empty strings.
-3. CONTEXT INFERENCE: For short follow-ups ("yang tadi", "hapus itu"), read [STATUS AKTIF N.E.X.A SAAT INI] and [RIWAYAT OBROLAN] to bind to the active domain (FINANCE/TASK/CALENDAR). DO NOT default to NORMAL_CHAT.
+3. CONTEXT INFERENCE: For short follow-ups ("iya", "lanjut", "ubah harganya", "hapus itu"), strictly use "Intent Sebelumnya" and "Data Aktif Terakhir" from [STATUS AKTIF] to infer the action. DO NOT default to NORMAL_CHAT.
 4. DATABASE: STRICTLY for Supabase tables. NEVER use for "Buku kas"/"Tabel keuangan" (Use FINANCE). DO NOT invent actions (No "DELETE_ROWS").
 5. PASSIVE LEARNING: "learned_user_facts" ONLY for PERMANENT facts not yet in [FAKTA PERMANEN]. Empty array [] if casual chat.
 6. ISO DATES: 'start' & 'end' MUST be ISO 8601 +07:00 (e.g., "2026-05-07T19:00:00+07:00").
@@ -433,8 +433,16 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     if (runtimeHints.pendingVaultContext) {
       lines.push(`- Status: Sedang memproses unggahan dokumen/gambar ke 2nd Brain Vault.`);
     }
-    if (runtimeHints.conversationContext && runtimeHints.conversationContext.lastAssistantReply) {
-      lines.push(`- INGAT BAIK-BAIK, pesan N.E.X.A yang paling terakhir dikirim ke user adalah:\n  "${runtimeHints.conversationContext.lastAssistantReply}"`);
+    if (runtimeHints.conversationContext) {
+      const ctx = runtimeHints.conversationContext;
+      if (ctx.intent) lines.push(`- Intent Sebelumnya: ${ctx.intent}`);
+      if (ctx.extractedData) {
+        const miniData = JSON.stringify(ctx.extractedData);
+        if (miniData.length < 500) lines.push(`- Data Aktif Terakhir: ${miniData}`);
+      }
+      if (ctx.lastAssistantReply) {
+        lines.push(`- Pesan terakhir N.E.X.A: "${ctx.lastAssistantReply}"`);
+      }
     }
     if (lines.length > 0) {
       runtimeContextBlock = `\n[STATUS AKTIF N.E.X.A SAAT INI (SANGAT PENTING UNTUK FOLLOW-UP)]\n${lines.join('\n')}\n`;
