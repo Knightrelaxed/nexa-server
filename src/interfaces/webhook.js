@@ -1662,7 +1662,8 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             if (calData.action === 'READ') {
               const { executeWithFallback } = require('../core/Fallback_Engine');
               const { NEXA_PERSONALITY } = require('../config/personality');
-              const prompt = `Tuan Faqih bertanya tentang kalendernya: "${textInput}"\n\nData Kalender yang Ditemukan:\n${calResult.message}\n\nTugas: Jawablah pertanyaan Tuan Faqih dengan ringkas, natural, dan langsung ke intinya berdasarkan data kalender di atas. Jika data tidak menyebutkan secara spesifik apa yang ditanyakan (contoh: tidak ada di jadwal), sampaikan dengan jujur. Jangan menggunakan format JSON.`;
+              const todayStr = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+              const prompt = `Konteks Waktu Saat Ini (Asia/Jakarta): ${todayStr}\nTuan Faqih bertanya: "${textInput}"\n\nData Kalender yang Ditemukan:\n${calResult.message}\n\nTugas: Jawablah pertanyaan Tuan Faqih secara natural dan langsung ke intinya.\nPENTING: Jika Tuan HANYA bertanya tentang hari/tanggal (misal: "besok hari apa", "sekarang tanggal berapa"), berikan jawabannya langsung berdasarkan 'Konteks Waktu Saat Ini' (dan hitung manual jika untuk besok/lusa) tanpa perlu mengaitkannya dengan agenda kalender kosong. Jika bertanya tentang agenda, barulah gunakan 'Data Kalender yang Ditemukan'. Jangan gunakan format JSON.`;
               const answer = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.5, false);
               domainReply = answer;
             } else {
