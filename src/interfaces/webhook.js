@@ -1305,7 +1305,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           taskManager.pendingTaskCategories.delete(chatId);
 
           const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-          const extractPrompt = `Dari kalimat user berikut, ekstrak waktu MULAI pengerjaan sebagai ISO 8601 dengan offset +07:00.\nISO date hari ini: ${todayIso}.\nJika user menyebut "besok", gunakan tanggal besok. Jika tidak ada waktu jam yang spesifik, balas ONLY_TIME_BLOCKING.\nBalas HANYA dengan ISO string (contoh: 2026-06-27T20:00:00+07:00) atau teks ONLY_TIME_BLOCKING.\n\nKalimat user: "${textInput}"`;
+          const extractPrompt = `Extract task START time from the user text as ISO 8601 with +07:00 offset. Today's ISO date: ${todayIso}. If no specific time is mentioned, reply ONLY_TIME_BLOCKING. Reply ONLY with the ISO string or ONLY_TIME_BLOCKING.\n\nUser text: "${textInput}"`;
           let calStartTime = null;
           try {
             const aiResp = await callAI(extractPrompt);
@@ -1320,7 +1320,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           // Ekstrak durasi dari teks user (default 60 menit)
           let durationMins = pendingTask.durationMins || 60;
           try {
-            const durPrompt = `Dari kalimat user berikut, ekstrak durasi pengerjaan dalam menit. Jawab HANYA dengan angka bulat. Jika tidak disebutkan, jawab 0.\n\nKalimat: "${textInput}"`;
+            const durPrompt = `Extract task duration in minutes from the user text. Reply ONLY with an integer. If not mentioned, reply 0.\n\nUser text: "${textInput}"`;
             const durResp = await callAI(durPrompt);
             const parsedDur = parseInt(durResp.trim());
             if (!isNaN(parsedDur) && parsedDur > 0) durationMins = parsedDur;
