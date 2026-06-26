@@ -44,6 +44,13 @@ const FACT_KEYWORD_GROUPS = [
 const PROFILE_CORE_COUNT  = 20; // fakta tertua — selalu diinjeksi
 const PROFILE_KW_LIMIT    =  8; // max fakta tambahan dari keyword matching
 
+const SYSTEM_KEYWORD_GROUPS = [
+  // Sistem, teknologi, dan arsitektur backend
+  ['sistem', 'arsitektur', 'server', 'database', 'supabase', 'api', 'prompt', 'memori', 'webhook', 'cron', 'error', 'bug', 'versi', 'update', 'teknologi', 'engine', 'vision', 'voice', 'suara', 'gambar', 'foto', 'kemampuan', 'bisa apa', 'fitur']
+];
+const IDENTITY_CORE_COUNT = 10;
+const IDENTITY_KW_LIMIT   = 8;
+
 // ============================================================
 // PERSONAL FACTS CACHE (Module-level — lives as long as server runs)
 // Zero overhead after first fetch. Invalidated when new PERSONAL_FACT is saved.
@@ -207,6 +214,31 @@ function _selectUserProfileFacts(userProfile, userMessage) {
   return [...core, ...relevant.slice(0, PROFILE_KW_LIMIT)];
 }
 
+/**
+ * Progressive coreIdentity fact injection
+ */
+function _selectCoreIdentityFacts(coreIdentity, userMessage) {
+  if (!coreIdentity || coreIdentity.length === 0) return [];
+
+  // Oldest IDENTITY_CORE_COUNT facts → always included (no filter)
+  const core      = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
+  const remaining = coreIdentity.slice(IDENTITY_CORE_COUNT);
+  if (remaining.length === 0) return core;
+
+  const t = userMessage.toLowerCase();
+  const activeKws = SYSTEM_KEYWORD_GROUPS
+    .filter(group => group.some(kw => t.includes(kw)))
+    .flat();
+
+  if (activeKws.length === 0) return core;
+
+  const relevant = remaining.filter(fact =>
+    activeKws.some(kw => fact.toLowerCase().includes(kw))
+  );
+
+  return [...core, ...relevant.slice(0, IDENTITY_KW_LIMIT)];
+}
+
 async function _fetchRecentFinanceSummary(limit) {
   try {
     const financeEngine = require('../domain/Finance_Engine');
@@ -286,7 +318,8 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     factsContext += `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${_selectedProfile.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
   }
   if (personalFacts.coreIdentity && personalFacts.coreIdentity.length > 0) {
-    factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${personalFacts.coreIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+    const _selectedIdentity = _selectCoreIdentityFacts(personalFacts.coreIdentity, textInput);
+    factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${_selectedIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
   }
 
   // 3.5. Inject Current Jakarta Time — manually built to be runtime-safe on any Node/Bun version
