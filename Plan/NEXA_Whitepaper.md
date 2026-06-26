@@ -334,16 +334,19 @@ Selain itu, ada **Character Safety Net** (`HISTORY_CHAR_CAP = 10.000`): jika tot
 
 #### 3.3.3 Progressive Fact Injection — Memori Adaptif
 
-`_selectUserProfileFacts()` tidak menyuntikkan seluruh memori Tuan Faqih ke setiap prompt (boros token). Sebaliknya:
-- **20 fakta tertua**: Selalu diinjeksi (fakta inti—tidak berubah, selalu relevan).
-- **Fakta tambahan** dari sisanya: Hanya diinjeksi jika kata kunci pesan cocok dengan `FACT_KEYWORD_GROUPS`:
-  - Keuangan: `['pengeluaran','beli','bayar','makan','transfer','uang',...]`
-  - Jadwal: `['jadwal','kuliah','meeting','besok','kampus','ugm','skripsi',...]`
-  - Lokasi: `['kantor','toko','rumah','mall','pergi','ke','lokasi',...]`
-  - Preferensi: `['suka','kebiasaan','favorit','rutin',...]`
-- Maksimal 8 fakta tambahan dari keyword matching (`PROFILE_KW_LIMIT = 8`).
+Sistem tidak lagi menyuntikkan seluruh memori Tuan Faqih atau seluruh identitas teknis ke setiap prompt (boros token). Terdapat dua mesin injeksi progresif yang berjalan murni secara sinkron (0ms overhead):
 
-Hasilnya: prompt AI tetap fokus dan tidak overloaded dengan fakta yang tidak relevan.
+1. **`_selectUserProfileFacts()` (Data Pribadi Tuan Faqih):**
+   - **20 fakta tertua**: Selalu diinjeksi (fakta inti—tidak berubah, selalu relevan).
+   - **Fakta tambahan**: Hanya diinjeksi jika kata kunci pesan cocok dengan `FACT_KEYWORD_GROUPS` (seputar keuangan, jadwal, lokasi, preferensi).
+   - Maksimal 8 fakta tambahan ditarik dari sisa database (`PROFILE_KW_LIMIT = 8`).
+
+2. **`_selectCoreIdentityFacts()` (Data Teknis Sistem N.E.X.A):**
+   - **10 fakta tertua**: Selalu diinjeksi (aturan inti tentang sifat, desain, dan privasi).
+   - **Fakta tambahan**: Hanya diinjeksi jika kata kunci pesan mencakup `SYSTEM_KEYWORD_GROUPS` (seperti arsitektur, server, database, webhook, versi).
+   - Maksimal 5 fakta tambahan ditarik dari sisa database (`IDENTITY_KW_LIMIT = 5`).
+
+Hasilnya: prompt AI tetap fokus dan tidak *overloaded* dengan fakta yang tidak relevan, secara drastis memotong beban token (terutama saat menggunakan model besar seperti Llama 70B atau Gemini 2.5) tanpa mengurangi kecerdasan maupun kesadaran diri N.E.X.A.
 
 #### 3.3.4 Cross-Domain Context Fusion — Prompt Multi-Dimensi
 
