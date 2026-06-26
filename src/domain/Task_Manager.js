@@ -132,8 +132,10 @@ async function executePendingTask(chatId, overrideListName = null) {
   if (pending.timerId) clearTimeout(pending.timerId);
   pendingTaskCategories.delete(chatId);
 
-  const { title, notes, dueDate, durationMins, hasAutonomousBlock } = pending;
+  // Destructure semua field termasuk konteks sinkronisasi kalender (BUG #1 FIX)
+  const { title, notes, dueDate, durationMins, syncCalendar, calendarStartTime } = pending;
   const listName = overrideListName || pending.listName;
+  const effDuration = durationMins || 60;
 
   let listId = '@default';
   if (listName && listName !== 'Tugas Saya') {
@@ -146,25 +148,96 @@ async function executePendingTask(chatId, overrideListName = null) {
   }
 
   const task = await googleTasks.createTask({ title, notes, dueDate, listId });
-  
+
   // [PHASE: Parallel Sync to Notion] - Fire and forget
   notionClient.createTask(title, notes, dueDate).catch(e => console.error('[NOTION SYNC] Failed:', e.message));
 
   let msg = `✅ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil ditambahkan ke list <b>${escapeHtml(listName || 'Tugas Saya')}</b>.`;
   if (dueDate) {
     const d = new Date(dueDate.split('T')[0] + 'T00:00:00+07:00');
-    msg += `\n📅 Deadline: ${d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
-    
-    // Auto-create calendar block if time is specified
-    const hasCalBlock = await autoCreateCalendarBlock(title, dueDate, durationMins || 30);
-    if (hasCalBlock) {
-      if (hasAutonomousBlock) {
-        msg += `\n🤖 <b>Autonomous Time-Blocking:</b> Menemukan slot kosong dan otomatis menambahkan blok kerja ${durationMins} menit di Kalender!`;
+    msg += `\n📅 Deadline: <b>${d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}</b>`;
+  }
+
+  // ── Sinkronisasi Kalender (jika syncCalendar === true dari CONFIRM_LIST flow) ──
+  if (syncCalendar === true) {
+    let calStart = calendarStartTime || null;
+    // Validasi: tolak waktu midnight
+    if (calStart) {
+      const isMidnight = calStart.includes('T00:00:00.000Z') || calStart.includes('T00:00:00Z') ||
+        calStart.includes('T17:00:00.000Z') || calStart.includes('T17:00:00Z') || calStart.includes('T00:00:00+');
+      if (isMidnight) calStart = null;
+    }
+
+    if (calStart) {
+      // Buat blok kerja di waktu yang ditentukan user, format +07:00
+      const calEndMs = new Date(calStart).getTime() + effDuration * 60000;
+      const calEnd = new Date(calEndMs).toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }).replace(' ', 'T') + '+07:00';
+      try {
+        await googleWorkspace.createCalendarEvent(
+          `⏰ BLOK KERJA: ${title}`,
+          calStart,
+          calEnd,
+          'Otomatis dijadwalkan oleh N.E.X.A untuk sesi pengerjaan tugas.'
+        );
+        const calTimeLabel = new Date(calStart).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+        msg += `\n📅 Sesi kerja dijadwalkan di Kalender: <b>${calTimeLabel} WIB</b> selama <b>${effDuration} menit</b>.`;
+      } catch (e) {
+        console.warn('[TASKS] Failed to create calendar work block:', e.message);
+      }
+    } else {
+      // Tidak ada calendar_start_time → Autonomous Time-Blocking
+      const nowMs = Date.now();
+      const timeMinIso = new Date(nowMs).toISOString();
+      let timeMaxIso;
+      if (dueDate) {
+        const targetDateMs = new Date(dueDate.split('T')[0] + 'T00:00:00+07:00').getTime();
+        timeMaxIso = new Date(Math.max(nowMs + 24 * 3600000, targetDateMs + 24 * 3600000 - 1)).toISOString();
       } else {
-        msg += `\n📅 Otomatis menambahkan blok waktu di Google Calendar!`;
+        timeMaxIso = new Date(nowMs + 7 * 24 * 3600000).toISOString();
+      }
+      try {
+        const { findEmptySlot } = require('../infrastructure/Google_Workspace');
+        const slot = await findEmptySlot(effDuration, timeMinIso, timeMaxIso);
+        if (slot) {
+          const calEndMs = new Date(slot.start).getTime() + effDuration * 60000;
+          const calEnd = new Date(calEndMs).toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }).replace(' ', 'T') + '+07:00';
+          await googleWorkspace.createCalendarEvent(
+            `⏰ BLOK KERJA: ${title}`,
+            slot.start,
+            calEnd,
+            'Otomatis dijadwalkan oleh N.E.X.A Autonomous Time-Blocking.'
+          );
+          const slotLabel = new Date(slot.start).toLocaleString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+          msg += `\n🤖 <b>Autonomous Time-Blocking:</b> Slot kosong ditemukan — blok kerja <b>${effDuration} menit</b> ditambahkan pada <b>${slotLabel}</b>!`;
+        } else {
+          msg += `\n⚠️ Tidak ditemukan slot kosong untuk sesi kerja. Silakan atur secara manual di Kalender.`;
+        }
+      } catch (e) {
+        console.error('[AUTONOMOUS BLOCKING] Failed to find slot:', e.message);
+      }
+    }
+
+    // Event DEADLINE merah jika ada due_date
+    if (dueDate) {
+      try {
+        const deadlineDateStr = dueDate.split('T')[0];
+        const deadlineStart = `${deadlineDateStr}T00:00:00+07:00`;
+        const deadlineEnd = `${deadlineDateStr}T23:59:00+07:00`;
+        await googleWorkspace.createCalendarEvent(
+          `🔴 DEADLINE: ${title}`,
+          deadlineStart,
+          deadlineEnd,
+          `Deadline untuk tugas: ${title}`,
+          '', [], '', '11'
+        );
+        const deadlineDateObj = new Date(deadlineDateStr + 'T00:00:00+07:00');
+        msg += `\n🔴 Event deadline <b>merah</b> ditambahkan di Kalender: <b>${deadlineDateObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' })}</b>.`;
+      } catch (e) {
+        console.warn('[TASKS] Failed to create deadline calendar event:', e.message);
       }
     }
   }
+
   return { status: 'SUCCESS', message: msg };
 }
 
@@ -172,7 +245,7 @@ async function executePendingTask(chatId, overrideListName = null) {
  * Main handler for TASK intent from AI Router
  */
 async function handleTaskIntent(extractedData, chatId = null) {
-  const { action, title, due_date, notes, search_keyword, list_name, parent_task_keyword, duration_minutes } = extractedData;
+  const { action, title, due_date, notes, search_keyword, list_name, parent_task_keyword, duration_minutes, sync_calendar, calendar_start_time } = extractedData;
   console.log(`[TASKS] Executing Task Intent: ${action}`);
 
   try {
@@ -181,80 +254,32 @@ async function handleTaskIntent(extractedData, chatId = null) {
       if (!title) return { status: 'FAILED', message: '❌ Mohon sebutkan nama tugasnya, Tuan.' };
 
       let taskNotes = notes || '';
-      let timeLabel = null;
-      let durationMins = duration_minutes || 0; // AI Router extracts this naturally
-      let hasAutonomousBlock = false;
-      let resolvedDueDate = due_date;
+      // Duration for the calendar WORK BLOCK (default 60 menit jika tidak disebutkan)
+      const durationMins = (duration_minutes && duration_minutes > 0) ? duration_minutes : 60;
 
-      // [AI-DRIVEN DURATION]: If AI Router detected a duration, use it.
-      // If NOT detected (null/0) AND task has a deadline, proactively ask the user.
-      if (!durationMins && resolvedDueDate && chatId) {
-        // Return PENDING_DURATION — NEXA will ask the user how long the task takes
-        return {
-          status: 'PENDING_DURATION',
-          title,
-          notes: taskNotes,
-          due_date: resolvedDueDate,
-          list_name,
-          chatId,
-          message: `⏱️ Tugas '<b>${escapeHtml(title)}</b>' sudah saya catat.\n\nKira-kira <b>berapa lama</b> waktu yang dibutuhkan untuk mengerjakannya, Tuan?\n<i>(Contoh: "2 jam", "45 menit", "30m")\nSaya akan otomatis mencarikan slot kosong di Kalender Tuan!</i>\n\n<i>⏳ Jika tidak ada respons dalam 5 menit, tugas akan dibuat tanpa blok waktu otomatis.</i>`
-        };
+      // ── STEP 1: Tentukan apakah perlu sinkronisasi kalender ──
+      // sync_calendar = true  → user sudah minta sinkronisasi (mungkin beserta calendar_start_time)
+      // sync_calendar = false → user tidak mau disinkron, jadikan floating task
+      // sync_calendar = null  → user belum menyebutkan, TANYA dulu
+      if (sync_calendar === null || sync_calendar === undefined) {
+        // User belum menyebutkan preferensi sinkronisasi → tanya dulu
+        if (chatId) {
+          return {
+            status: 'PENDING_SYNC_CONFIRM',
+            title,
+            notes: taskNotes,
+            due_date: due_date || null,
+            list_name,
+            duration_minutes: durationMins,
+            chatId,
+            message: `📋 Tugas '<b>${escapeHtml(title)}</b>' siap dicatat!${due_date ? `\n📅 Deadline: <b>${new Date(due_date.split('T')[0] + 'T00:00:00+07:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}</b>` : ''}\n\n🗓️ Apakah Tuan ingin menjadwalkan <b>waktu pengerjaannya</b> di Kalender juga?\n\n• Balas <b>"Ya, [waktu]"</b> — contoh: <i>"Ya, besok jam 8 malam"</i>\n• Balas <b>"Tidak"</b> — tugas bebas dikerjakan kapan saja\n\n<i>⏳ Jika tidak ada respons dalam 5 menit, tugas akan disimpan tanpa blok kalender.</i>`
+          };
+        }
+        // Jika tidak ada chatId (cron/webhook lain), buat saja langsung sebagai floating task
       }
 
-      // If duration was provided (from AI or from PENDING_DURATION confirmation)
-      if (durationMins > 0) {
-        // CRITICAL FIX: Only extract explicit time if due_date has an EXPLICIT 'T' time component.
-        if (resolvedDueDate && resolvedDueDate.includes('T')) {
-          const isMidnightUTC = resolvedDueDate.includes('T00:00:00.000Z') || resolvedDueDate.includes('T00:00:00Z') || resolvedDueDate.includes('T17:00:00.000Z') || resolvedDueDate.includes('T17:00:00Z') || resolvedDueDate.includes('T00:00:00+');
-          if (!isMidnightUTC) {
-            const dueMs = new Date(resolvedDueDate);
-            if (!isNaN(dueMs.getTime())) {
-              const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
-              if (h && h !== '00:00') {
-                timeLabel = h + ' WIB';
-                taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
-              }
-            }
-          }
-        } else if (resolvedDueDate) {
-          // [AUTONOMOUS TIME BLOCKING]
-          // Date only AND duration is known! Find an empty slot automatically.
-          const targetDateMs = new Date(resolvedDueDate.split('T')[0] + 'T00:00:00+07:00').getTime();
-          const nowMs = Date.now();
-          const timeMinIso = new Date(nowMs).toISOString();
-          const timeMaxIso = new Date(Math.max(nowMs + 24 * 3600000, targetDateMs + 24 * 3600000 - 1)).toISOString();
-
-          try {
-            const { findEmptySlot } = require('../infrastructure/Google_Workspace');
-            const slot = await findEmptySlot(durationMins, timeMinIso, timeMaxIso);
-            if (slot) {
-              resolvedDueDate = slot.start;
-              const dueMs = new Date(resolvedDueDate);
-              const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
-              timeLabel = `${h} WIB (Auto-Blocked)`;
-              taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
-              hasAutonomousBlock = true;
-            }
-          } catch (e) {
-            console.error('[AUTONOMOUS BLOCKING] Failed to find slot:', e.message);
-          }
-        }
-      } else if (resolvedDueDate && resolvedDueDate.includes('T')) {
-        // No duration but explicit time — just label it
-        const isMidnightUTC = resolvedDueDate.includes('T00:00:00.000Z') || resolvedDueDate.includes('T00:00:00Z') || resolvedDueDate.includes('T17:00:00.000Z') || resolvedDueDate.includes('T17:00:00Z') || resolvedDueDate.includes('T00:00:00+');
-        if (!isMidnightUTC) {
-          const dueMs = new Date(resolvedDueDate);
-          if (!isNaN(dueMs.getTime())) {
-            const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
-            if (h && h !== '00:00') {
-              timeLabel = h + ' WIB';
-              taskNotes = taskNotes ? `⏰ Jam: ${timeLabel}\n${taskNotes}` : `⏰ Jam: ${timeLabel}`;
-            }
-          }
-        }
-      }
-
-      // Determine target list
+      // ── STEP 2: Eksekusi pembuatan tugas ──
+      // Resolve list target
       let resolvedList = list_name || null;
       let isSuggested = false;
       if (!resolvedList) {
@@ -262,14 +287,12 @@ async function handleTaskIntent(extractedData, chatId = null) {
         isSuggested = !!resolvedList;
       }
 
-      // If chatId is provided and we auto-suggested a list (not explicitly asked), set up 5-min confirmation
+      // Jika list disarankan otomatis (bukan dari user), minta konfirmasi list (existing flow)
       if (chatId && resolvedList && resolvedList !== 'Tugas Saya' && isSuggested) {
-        return { status: 'PENDING_CONFIRM', pendingListName: resolvedList, title, notes: taskNotes, due_date: resolvedDueDate, durationMins, hasAutonomousBlock, chatId };
+        return { status: 'PENDING_CONFIRM', pendingListName: resolvedList, title, notes: taskNotes, due_date: due_date || null, sync_calendar: sync_calendar || false, calendar_start_time: calendar_start_time || null, durationMins, hasAutonomousBlock: false, chatId };
       }
 
-      // If no chatId or list is default, create directly without confirmation
-
-      // Otherwise create directly in the specified or default list
+      // Dapatkan listId
       let listId = '@default';
       if (resolvedList && resolvedList !== 'Tugas Saya') {
         try {
@@ -280,29 +303,123 @@ async function handleTaskIntent(extractedData, chatId = null) {
         }
       }
 
-      const task = await googleTasks.createTask({ title, notes: taskNotes, dueDate: resolvedDueDate || null, listId });
-      
+      // Buat tugas di Google Tasks — due_date MURNI sebagai deadline
+      // Google Tasks hanya menerima format tanggal (bukan waktu), jadi kita kirim hanya tanggal
+      const taskDueDate = due_date ? due_date : null;
+      const task = await googleTasks.createTask({ title, notes: taskNotes, dueDate: taskDueDate, listId });
+
       // [PHASE: Parallel Sync to Notion] - Fire and forget
-      notionClient.createTask(title, taskNotes, resolvedDueDate || null).catch(e => console.error('[NOTION SYNC] Failed:', e.message));
-      
+      notionClient.createTask(title, taskNotes, taskDueDate).catch(e => console.error('[NOTION SYNC] Failed:', e.message));
+
       let msg = `✅ Tugas '<b>${escapeHtml(task.title)}</b>' ditambahkan ke <b>${escapeHtml(resolvedList || 'Tugas Saya')}</b>.`;
-      if (resolvedDueDate) {
-        const dueDateObj = new Date(resolvedDueDate.split('T')[0] + 'T00:00:00+07:00');
-        msg += `\n📅 Deadline: ${dueDateObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}`;
-        if (timeLabel) msg += ` jam ${timeLabel}`;
-        
-        // Auto-create calendar block if time is specified
-        const hasCalBlock = await autoCreateCalendarBlock(title, resolvedDueDate, durationMins);
-        if (hasCalBlock) {
-          if (hasAutonomousBlock) {
-            msg += `\n🤖 <b>Autonomous Time-Blocking:</b> Menemukan slot kosong dan otomatis menambahkan blok kerja ${durationMins} menit di Kalender!`;
+
+      // Tampilkan info deadline jika ada
+      if (due_date) {
+        const dueDateObj = new Date(due_date.split('T')[0] + 'T00:00:00+07:00');
+        msg += `\n📅 Deadline: <b>${dueDateObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' })}</b>`;
+      }
+
+      // ── STEP 3: Sinkronisasi Kalender ──
+      if (sync_calendar === true) {
+        let calStartTime = calendar_start_time || null;
+        let hasAutonomousBlock = false;
+
+        if (calStartTime) {
+          // Validasi: jangan pakai waktu midnight UTC
+          const isMidnight = calStartTime.includes('T00:00:00.000Z') || calStartTime.includes('T00:00:00Z') || calStartTime.includes('T17:00:00.000Z') || calStartTime.includes('T17:00:00Z') || calStartTime.includes('T00:00:00+');
+          if (isMidnight) calStartTime = null;
+        }
+
+        if (calStartTime) {
+          // Gunakan calendar_start_time yang diberikan user sebagai waktu blok kerja
+          // BUG #2 FIX: format +07:00 agar konsisten, hindari campuran UTC(Z) dan offset
+          const calEndMs = new Date(calStartTime).getTime() + durationMins * 60000;
+          const calEnd = new Date(calEndMs).toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }).replace(' ', 'T') + '+07:00';
+          try {
+            await googleWorkspace.createCalendarEvent(
+              `⏰ BLOK KERJA: ${title}`,
+              calStartTime,
+              calEnd,
+              'Otomatis dijadwalkan oleh N.E.X.A untuk sesi pengerjaan tugas.'
+            );
+            const calStartMs = new Date(calStartTime);
+            const calTimeLabel = calStartMs.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+            msg += `\n📅 Sesi kerja dijadwalkan di Kalender: <b>${calTimeLabel} WIB</b> selama <b>${durationMins} menit</b>.`;
+          } catch (e) {
+            console.warn('[TASKS] Failed to create calendar work block:', e.message);
+          }
+        } else {
+          // Tidak ada calendar_start_time → cari slot kosong (Autonomous Time-Blocking)
+          const refDate = due_date ? due_date : null;
+          const nowMs = Date.now();
+          const timeMinIso = new Date(nowMs).toISOString();
+          let timeMaxIso;
+          if (refDate) {
+            const targetDateMs = new Date(refDate.split('T')[0] + 'T00:00:00+07:00').getTime();
+            timeMaxIso = new Date(Math.max(nowMs + 24 * 3600000, targetDateMs + 24 * 3600000 - 1)).toISOString();
           } else {
-            msg += `\n📅 Otomatis menambahkan blok waktu di Google Calendar!`;
+            timeMaxIso = new Date(nowMs + 7 * 24 * 3600000).toISOString();
+          }
+
+          try {
+            const { findEmptySlot } = require('../infrastructure/Google_Workspace');
+            const slot = await findEmptySlot(durationMins, timeMinIso, timeMaxIso);
+            if (slot) {
+              // BUG #2 FIX: format +07:00 agar konsisten
+              const calEndMs = new Date(slot.start).getTime() + durationMins * 60000;
+              const calEnd = new Date(calEndMs).toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }).replace(' ', 'T') + '+07:00';
+              await googleWorkspace.createCalendarEvent(
+                `⏰ BLOK KERJA: ${title}`,
+                slot.start,
+                calEnd,
+                'Otomatis dijadwalkan oleh N.E.X.A Autonomous Time-Blocking.'
+              );
+              hasAutonomousBlock = true;
+              const slotMs = new Date(slot.start);
+              const slotLabel = slotMs.toLocaleString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+              msg += `\n🤖 <b>Autonomous Time-Blocking:</b> Slot kosong ditemukan — blok kerja <b>${durationMins} menit</b> ditambahkan pada <b>${slotLabel}</b>!`;
+            } else {
+              msg += `\n⚠️ Tidak ditemukan slot kosong untuk sesi kerja. Silakan atur secara manual di Kalender.`;
+            }
+          } catch (e) {
+            console.error('[AUTONOMOUS BLOCKING] Failed to find slot:', e.message);
           }
         }
+
+        // Tambahkan event DEADLINE di Kalender dengan warna merah (Tomato = color_id 11)
+        // hanya jika due_date ada
+        if (due_date) {
+          try {
+            const deadlineDateStr = due_date.split('T')[0];
+            // Buat event seharian (all-day) sebagai penanda deadline
+            const deadlineStart = `${deadlineDateStr}T00:00:00+07:00`;
+            const deadlineEnd = `${deadlineDateStr}T23:59:00+07:00`;
+            await googleWorkspace.createCalendarEvent(
+              `🔴 DEADLINE: ${title}`,
+              deadlineStart,
+              deadlineEnd,
+              `Deadline untuk tugas: ${title}`,
+              '', // location
+              [], // reminders
+              '', // recurrence
+              '11' // color_id 11 = Tomato (merah)
+            );
+            const deadlineDateObj = new Date(deadlineDateStr + 'T00:00:00+07:00');
+            msg += `\n🔴 Event deadline <b>merah</b> ditambahkan di Kalender: <b>${deadlineDateObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' })}</b>.`;
+          } catch (e) {
+            console.warn('[TASKS] Failed to create deadline calendar event:', e.message);
+          }
+        }
+      } else {
+        // sync_calendar === false: tidak ada sinkronisasi kalender
+        if (due_date) {
+          msg += `\n✔️ Tugas ini bersifat <i>floating</i> — bebas dikerjakan kapan saja sebelum deadline.`;
+        }
       }
+
       return { status: 'SUCCESS', message: msg };
     }
+
 
     // ── CREATE_SUBTASK ───────────────────────────────────────
     if (action === 'CREATE_SUBTASK') {
@@ -424,7 +541,8 @@ async function handleTaskIntent(extractedData, chatId = null) {
         
         // [PHASE 4: Two-Way Status Sync]
         try {
-          const events = await googleWorkspace.findEventByTitle(`⏰ DEADLINE: ${t.title}`);
+          // BUG #3 FIX: prefix disinkronkan dengan format event baru yang dibuat di CREATE
+          const events = await googleWorkspace.findEventByTitle(`🔴 DEADLINE: ${t.title}`);
           if (events && events.length > 0) {
             await googleWorkspace.updateCalendarEventColor(events[0].id, '8'); // 8 = Graphite
             syncedEvents++;

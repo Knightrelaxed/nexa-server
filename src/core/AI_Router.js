@@ -131,7 +131,13 @@ OUTPUT JSON FORMAT:
     //   - EDIT/DELETE last tx: set search_keyword="LATEST" (Triggers: "hapus yang tadi", "ubah yang barusan").
     // CALENDAR: { action: "CREATE|DELETE|UPDATE|READ|READ_TODAY|READ_UPCOMING", summary, start: "ISO+07:00", end: "ISO+07:00", description, eventId, location, reminder_minutes: [], recurrence: "RRULE...", color_id }
     //   - Triggers: READ_TODAY -> "jadwal hari ini", READ_UPCOMING -> "jadwal minggu ini"
-    // TASK: { action: "CREATE|CREATE_SUBTASK|CREATE_MULTIPLE|READ|READ_LIST|READ_LISTS|READ_TODAY|READ_UPCOMING|READ_OVERDUE|READ_DONE|COMPLETE|DELETE|EDIT|MOVE|CLEAR_DONE|SET_PRIORITY", title, due_date: "ISO+07:00|null", notes, search_keyword, list_name, parent_task_keyword, priority: "HIGH|NORMAL", duration_minutes: number|null, tasks: [] }
+    // TASK: { action: "CREATE|CREATE_SUBTASK|CREATE_MULTIPLE|READ|READ_LIST|READ_LISTS|READ_TODAY|READ_UPCOMING|READ_OVERDUE|READ_DONE|COMPLETE|DELETE|EDIT|MOVE|CLEAR_DONE|SET_PRIORITY", title, due_date: "ISO+07:00|null", notes, search_keyword, list_name, parent_task_keyword, priority: "HIGH|NORMAL", duration_minutes: number|null, tasks: [], sync_calendar: true|false|null, calendar_start_time: "ISO+07:00|null" }
+    //   CRITICAL TASK FIELD RULES:
+    //   - due_date: STRICTLY the task DEADLINE (kapan tugas harus selesai). Contoh: "deadline 2 hari lagi" → due_date = lusa. BUKAN waktu mulai pengerjaan.
+    //   - calendar_start_time: Waktu MULAI BLOK KERJA di kalender (kapan user akan mengerjakan). Contoh: "besok jam 8 malam" → calendar_start_time = besok 20:00. BUKAN due_date.
+    //   - sync_calendar: true jika user SECARA EKSPLISIT menyebutkan waktu/jam pengerjaan ATAU meminta sinkronisasi kalender. false jika user SECARA EKSPLISIT menolak sinkronisasi. null jika user TIDAK menyebutkan sama sekali soal kalender/waktu pengerjaan (akan ditanya oleh sistem).
+    //   - duration_minutes: Durasi blok kerja di kalender dalam menit. Ekstrak jika user menyebutkan (contoh: "2 jam" → 120, "45 menit" → 45). null jika tidak disebutkan (default 60 menit akan dipakai sistem).
+    //   - Contoh instruksi lengkap: "catat besok saya harus mengerjakan makalah jam 8 malam, deadlinenya tinggal 2 hari" → title="Mengerjakan makalah", calendar_start_time="besok T20:00+07:00", due_date="lusa ISO", sync_calendar=true, duration_minutes=null
     //   - COMPLETE Trigger: "tandai tugas essay sebagai selesai"
     //   - DELETE Trigger: "hapus tugas essay Arab"
     //   - EDIT Trigger: "ubah deadline tugas essay jadi Senin"

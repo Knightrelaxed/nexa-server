@@ -1273,7 +1273,80 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         return;
       }
 
+
+      // ── HANDLER: User menjawab pertanyaan sinkronisasi kalender ──
+      if (pendingTask.type === 'CONFIRM_SYNC') {
+        const { classifyYesNo, callAI } = require('../core/AI_Router');
+        const syncContext = `sinkronisasi tugas "${pendingTask.title}" ke kalender`;
+        const verdict = await classifyYesNo(textInput, syncContext);
+        console.log(`[TASK SYNC INTERCEPTOR] AI verdict: "${verdict}" for input: "${textInput}"`);
+
+        if (verdict === 'NO') {
+          // User tidak mau sinkronisasi → buat floating task langsung
+          if (pendingTask.timerId) clearTimeout(pendingTask.timerId);
+          taskManager.pendingTaskCategories.delete(chatId);
+          const floatResult = await taskManager.handleTaskIntent({
+            action: 'CREATE',
+            title: pendingTask.title,
+            notes: pendingTask.notes,
+            due_date: pendingTask.dueDate,
+            list_name: pendingTask.listName,
+            duration_minutes: pendingTask.durationMins,
+            sync_calendar: false,
+            calendar_start_time: null,
+          }, null);
+          if (floatResult && floatResult.message) await respondToTelegram(floatResult.message);
+          return;
+        }
+
+        if (verdict === 'YES') {
+          // User mau sinkronisasi → ekstrak waktu pengerjaan dari teks user
+          if (pendingTask.timerId) clearTimeout(pendingTask.timerId);
+          taskManager.pendingTaskCategories.delete(chatId);
+
+          const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+          const extractPrompt = `Dari kalimat user berikut, ekstrak waktu MULAI pengerjaan sebagai ISO 8601 dengan offset +07:00.\nISO date hari ini: ${todayIso}.\nJika user menyebut "besok", gunakan tanggal besok. Jika tidak ada waktu jam yang spesifik, balas ONLY_TIME_BLOCKING.\nBalas HANYA dengan ISO string (contoh: 2026-06-27T20:00:00+07:00) atau teks ONLY_TIME_BLOCKING.\n\nKalimat user: "${textInput}"`;
+          let calStartTime = null;
+          try {
+            const aiResp = await callAI(extractPrompt);
+            const cleaned = aiResp.trim();
+            if (cleaned !== 'ONLY_TIME_BLOCKING' && cleaned.includes('T') && (cleaned.includes('+') || cleaned.includes('Z'))) {
+              calStartTime = cleaned;
+            }
+          } catch (e) {
+            console.warn('[TASK SYNC INTERCEPTOR] Failed to extract calendar_start_time:', e.message);
+          }
+
+          // Ekstrak durasi dari teks user (default 60 menit)
+          let durationMins = pendingTask.durationMins || 60;
+          try {
+            const durPrompt = `Dari kalimat user berikut, ekstrak durasi pengerjaan dalam menit. Jawab HANYA dengan angka bulat. Jika tidak disebutkan, jawab 0.\n\nKalimat: "${textInput}"`;
+            const durResp = await callAI(durPrompt);
+            const parsedDur = parseInt(durResp.trim());
+            if (!isNaN(parsedDur) && parsedDur > 0) durationMins = parsedDur;
+          } catch (e) { /* pakai default */ }
+
+          const syncResult = await taskManager.handleTaskIntent({
+            action: 'CREATE',
+            title: pendingTask.title,
+            notes: pendingTask.notes,
+            due_date: pendingTask.dueDate,
+            list_name: pendingTask.listName,
+            duration_minutes: durationMins,
+            sync_calendar: true,
+            calendar_start_time: calStartTime,
+          }, null);
+          if (syncResult && syncResult.message) await respondToTelegram(syncResult.message);
+          return;
+        }
+
+        // AMBIGUOUS — Tanya kembali
+        await respondToTelegram(`🤔 Maaf Tuan, saya kurang menangkap. Apakah tugas '<b>${escapeHtml(pendingTask.title)}</b>' ingin dijadwalkan di Kalender?\n\n• <b>Ya</b>, besok jam 8 malam\n• <b>Tidak</b>`);
+        return;
+      }
+
       if (pendingTask.type === 'CONFIRM_DURATION') {
+
         const { callAI } = require('../core/AI_Router');
         const aiPrompt = `User replies: "${textInput}". Extract the intended duration in minutes. If no duration is mentioned, respond with "0".`;
         const aiResp = await callAI(aiPrompt);
@@ -1704,6 +1777,9 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
               listName: taskResult.pendingListName,
               durationMins: taskResult.durationMins,
               hasAutonomousBlock: taskResult.hasAutonomousBlock,
+              // BUG #1 FIX: simpan konteks sinkronisasi kalender agar tidak hilang
+              syncCalendar: taskResult.sync_calendar || false,
+              calendarStartTime: taskResult.calendar_start_time || null,
               timerId,
               chatId: pendingId
             });
@@ -1740,7 +1816,50 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             });
 
             domainReply = taskResult.message;
+          } else if (taskResult && taskResult.status === 'PENDING_SYNC_CONFIRM') {
+            // ── Set up 5-minute timer — auto-create as floating task if no response ──
+            const { pendingTaskCategories } = taskManager;
+            const pendingId = chatId || 'default';
+            const old = pendingTaskCategories.get(pendingId);
+            if (old && old.timerId) clearTimeout(old.timerId);
+
+            const timerId = setTimeout(async () => {
+              if (pendingTaskCategories.has(pendingId)) {
+                try {
+                  // Timeout → buat floating task tanpa sinkronisasi kalender
+                  const pd = pendingTaskCategories.get(pendingId);
+                  pendingTaskCategories.delete(pendingId);
+                  const floatRes = await taskManager.handleTaskIntent({
+                    action: 'CREATE',
+                    title: pd.title,
+                    notes: pd.notes,
+                    due_date: pd.dueDate,
+                    list_name: pd.listName,
+                    duration_minutes: pd.durationMins,
+                    sync_calendar: false,
+                    calendar_start_time: null,
+                  }, null);
+                  if (floatRes && floatRes.message) {
+                    await sendTelegramOutbound(floatRes.message + '\n\n<i>(Tugas disimpan tanpa sinkronisasi kalender karena tidak ada respons dalam 5 menit)</i>');
+                  }
+                } catch (e) { console.error('[TASK SYNC] Auto-create floating failed:', e.message); }
+              }
+            }, 5 * 60 * 1000);
+
+            pendingTaskCategories.set(pendingId, {
+              type: 'CONFIRM_SYNC',
+              title: taskResult.title,
+              notes: taskResult.notes,
+              dueDate: taskResult.due_date,
+              listName: taskResult.list_name,
+              durationMins: taskResult.duration_minutes || 60,
+              timerId,
+              chatId: pendingId
+            });
+
+            domainReply = taskResult.message;
           } else if (taskResult && taskResult.message) {
+
             domainReply = taskResult.message;
           }
         }
