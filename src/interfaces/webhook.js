@@ -1663,7 +1663,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
               const { executeWithFallback } = require('../core/Fallback_Engine');
               const { NEXA_PERSONALITY } = require('../config/personality');
               const todayStr = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-              const prompt = `Konteks Waktu Saat Ini (Asia/Jakarta): ${todayStr}\nTuan Faqih bertanya: "${textInput}"\n\nData Kalender yang Ditemukan:\n${calResult.message}\n\nTugas: Jawablah pertanyaan Tuan Faqih secara natural dan langsung ke intinya.\nPENTING: Jika Tuan HANYA bertanya tentang hari/tanggal (misal: "besok hari apa", "sekarang tanggal berapa"), berikan jawabannya langsung berdasarkan 'Konteks Waktu Saat Ini' (dan hitung manual jika untuk besok/lusa) tanpa perlu mengaitkannya dengan agenda kalender kosong. Jika bertanya tentang agenda, barulah gunakan 'Data Kalender yang Ditemukan'. Jangan gunakan format JSON.`;
+              const prompt = `System Time (Asia/Jakarta): ${todayStr}\nUser Asked: "${textInput}"\n\nCalendar Data:\n${calResult.message}\n\nTask:\n1. Answer the user directly and naturally IN INDONESIAN.\n2. CRITICAL: If the user only asks about the day/date (e.g., "what day is tomorrow"), calculate and answer using ONLY the System Time. Do NOT mention the empty calendar.\n3. If they ask about events, use the Calendar Data.\n4. Output plain text only, NO JSON.`;
               const answer = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.5, false);
               domainReply = answer;
             } else {
