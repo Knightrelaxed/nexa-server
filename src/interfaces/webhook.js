@@ -1849,7 +1849,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
                 const aiRouter = require('../core/AI_Router');
                 const relevantFacts = aiRouter.selectUserProfileFacts(facts.userProfile, textInput);
                 const list = relevantFacts.map(f => `- ${f}`).join('\n');
-                const prompt = `Berikut adalah daftar fakta permanen tentang profil Tuan Faqih (terfilter otomatis berdasarkan relevansi kata kunci):\n${list}\n\nTuan Faqih berkata/bertanya: "${keyword}".\nTugasmu: Jawablah berdasarkan fakta-fakta yang relevan saja, rangkum menjadi cerita yang luwes, hangat, dan asisten-sentris. Jangan gunakan bullet points jika bisa dirangkum mengalir.`;
+                const prompt = `FILTERED PERMANENT FACTS ABOUT TUAN FAQIH:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user's question using ONLY the relevant facts above. Summarize them into a warm, natural narrative from an assistant's perspective. Do NOT use bullet points. MUST answer in fluent, elegant Indonesian.`;
                 domainReply = await aiRouter.callAI(prompt);
              } else {
                 domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen tentang Tuan Faqih.`;
@@ -1877,7 +1877,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
                 const aiRouter = require('../core/AI_Router');
                 const relevantIdentity = aiRouter.selectCoreIdentityFacts(facts.coreIdentity, textInput);
                 const list = relevantIdentity.map(f => `- ${f}`).join('\n');
-                const prompt = `Berikut adalah daftar aturan sikap dan identitas inti (Core Identity) N.E.X.A (terfilter otomatis):\n${list}\n\nTuan Faqih berkata/bertanya: "${keyword}".\nTugasmu: Jawablah dengan gaya bahasa yang luwes, hangat, dan berwibawa berdasarkan pedoman identitasmu di atas. Jika pertanyaannya berupa sapaan atau obrolan santai tentang siapa dirimu, jawablah sewajarnya sebagai asisten. Jangan meminta Tuan Faqih untuk menyebutkan aspek tertentu kecuali dia memang meminta daftar aturan secara spesifik.`;
+                const prompt = `FILTERED N.E.X.A CORE IDENTITIES & RULES:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user gracefully and authoritatively based on your identity rules above. If it's a casual greeting, respond naturally as an assistant. Do NOT ask the user to specify aspects unless they requested the full list. MUST answer in fluent, elegant Indonesian.`;
                 domainReply = await aiRouter.callAI(prompt);
              } else {
                 domainReply = `🤖 Saat ini tidak ada aturan identitas inti khusus yang diterapkan.`;
