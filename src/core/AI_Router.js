@@ -669,7 +669,7 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
 }
 
 module.exports = { routeUserMessage, invalidatePersonalFactsCache,
-  deduplicateAndSaveFact,
+  deduplicateAndSaveFact, callAI, classifyPendingTransactionIntent, classifyYesNo,
   selectUserProfileFacts: _selectUserProfileFacts,
   selectCoreIdentityFacts: _selectCoreIdentityFacts
 };
