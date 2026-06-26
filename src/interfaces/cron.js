@@ -362,7 +362,7 @@ function initCronJobs() {
 
       const chatLog = todayMemories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n');
 
-      const prompt = `Anda adalah Subsistem Memori N.E.X.A. Tugas Anda adalah membaca transkrip obrolan hari ini antara Tuan Faqih dan N.E.X.A, lalu MENGEKSTRAK hanya FAKTA PERMANEN BARU yang belum ada dalam memori yang sudah tersimpan.
+      const prompt = `Anda adalah Subsistem Memori N.E.X.A. Tugas Anda adalah membaca transkrip obrolan hari ini antara Tuan Faqih dan N.E.X.A, lalu MENGEKSTRAK HANYA FAKTA PERMANEN JANGKA PANJANG (Personality, Core Preferences, Rules of Engagement) yang belum ada dalam memori yang sudah tersimpan.
 
 === MEMORI YANG SUDAH TERSIMPAN (JANGAN DUPLIKASI INI) ===
 ${existingFactsText.substring(0, 4000)}
@@ -370,13 +370,15 @@ ${existingFactsText.substring(0, 4000)}
 === TRANSKRIP OBROLAN HARI INI ===
 ${chatLog.substring(0, 6000)}
 
-=== ATURAN EKSTRAKSI KETAT ===
-1. HANYA ekstrak fakta yang benar-benar BARU dan BELUM ADA di daftar memori di atas secara SEMANTIK. Jika fakta serupa sudah ada (walaupun kalimatnya sedikit berbeda), LEWATI — jangan duplikasi.
-2. Fakta harus berupa preferensi PERMANEN, kebiasaan, rutinitas, prinsip, atau identitas jangka panjang tentang Tuan Faqih.
-3. JANGAN ekstrak informasi sementara (misal: "Tuan baru saja beli kopi", "Tuan sedang ujian hari ini"). Hanya catat jika itu POLA atau KEBIASAAN baru yang belum diketahui.
-4. JANGAN ekstrak fakta yang sama persis hanya karena kalimatnya berbeda. Evaluasi secara makna.
-5. Jika tidak ada fakta baru yang layak, kembalikan array kosong [].
-6. Format teks harus spesifik dan lugas. Contoh baik: "Tuan Faqih lebih suka dikonfirmasi langsung tanpa proses verifikasi berulang saat mengoreksi nominal transaksi."
+=== ATURAN EKSTRAKSI KETAT (CRITICAL) ===
+1. HANYA ekstrak SIFAT/KEPRIBADIAN PERMANEN, NILAI HIDUP, KEBIASAAN KONSISTEN, atau ATURAN INTERAKSI (misal: "Tuan tidak suka dipanggil dengan formal", "Tuan alergi kacang", "Tuan selalu bangun jam 4 pagi").
+2. DILARANG KERAS (TIDAK BOLEH) mengekstrak hal-hal berikut:
+   - Transaksi atau pembelian tunggal (misal: beli nasi telur pakai QRIS, beli kopi).
+   - Angka/data keuangan (misal: anggaran harian Rp50.000, batas saldo, harga barang). Ini diurus oleh mesin terpisah.
+   - Jadwal, agenda, atau tugas spesifik (misal: jadwal rapat besok, deadline tugas).
+3. HANYA ekstrak fakta yang benar-benar BARU secara semantik. Jika sudah ada di memori tersimpan, ABAIKAN (jangan duplikasi).
+4. Jika obrolan hari ini hanya berisi rutinitas mencatat uang, tugas, sapaan, atau aktivitas harian biasa, ANDA WAJIB mengembalikan array kosong []. Ini sangat normal dan sangat diharapkan.
+5. Format output: kalimat third-person yang baku dan lugas.
 
 Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backtick atau markdown apapun.`;
 
