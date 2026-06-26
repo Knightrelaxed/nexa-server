@@ -49,7 +49,7 @@ const SYSTEM_KEYWORD_GROUPS = [
   ['sistem', 'arsitektur', 'server', 'database', 'supabase', 'api', 'prompt', 'memori', 'webhook', 'cron', 'error', 'bug', 'versi', 'update', 'teknologi', 'engine', 'vision', 'voice', 'suara', 'gambar', 'foto', 'kemampuan', 'bisa apa', 'fitur']
 ];
 const IDENTITY_CORE_COUNT = 10;
-const IDENTITY_KW_LIMIT   = 8;
+const IDENTITY_KW_LIMIT   = 5;
 
 // ============================================================
 // PERSONAL FACTS CACHE (Module-level — lives as long as server runs)
@@ -668,4 +668,8 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
   }
 }
 
-module.exports = { routeUserMessage, invalidatePersonalFactsCache, callAI, classifyPendingTransactionIntent, classifyYesNo, deduplicateAndSaveFact };
+module.exports = { routeUserMessage, invalidatePersonalFactsCache,
+  deduplicateAndSaveFact,
+  selectUserProfileFacts: _selectUserProfileFacts,
+  selectCoreIdentityFacts: _selectCoreIdentityFacts
+};
