@@ -108,12 +108,3 @@ Untuk memastikan server di Hugging Face tidak pernah "tertidur" (*sleep*):
 3. **Tasker Buffer System** menampung transaksi finansial sementara secara lokal di HP jika server N.E.X.A kebetulan sedang *restart* atau lambat, lalu mengirim ulang (`[BUFFER]`) saat server online kembali.
 
 
----
-title: NEXA Core Server
-emoji: 🤖
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
-app_port: 7860
----
