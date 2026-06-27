@@ -244,6 +244,23 @@ async function getUpcomingTasks(daysAhead = 7, listId = null) {
 }
 
 /**
+ * Get tasks due within a specific ISO date range
+ */
+async function getTasksByDateRange(startIso, endIso, listId = null) {
+  const tasks = await getActiveTasks(listId);
+  const startStr = startIso ? new Date(startIso).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }) : null;
+  const endStr = endIso ? new Date(endIso).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }) : null;
+  
+  return tasks.filter(t => {
+    if (!t.due) return false;
+    const d = t.due.split('T')[0];
+    if (startStr && endStr) return d >= startStr && d <= endStr;
+    if (startStr) return d === startStr;
+    return false;
+  });
+}
+
+/**
  * Find a task list by name, or create it if it doesn't exist.
  * Returns the list object { id, title }.
  */
@@ -361,6 +378,7 @@ module.exports = {
   getTasksDueTomorrow,
   getOverdueTasks,
   getUpcomingTasks,
+  getTasksByDateRange,
   completeTask,
   deleteTask,
   editTask,

@@ -249,85 +249,108 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
     }
     else if (action === 'READ') {
       let events;
-      let contextLabel = 'Agenda hari ini:';
+      let tasks = [];
+      
+      // Determine the dashboard title and fetch data
+      let dashboardTitle = 'DASHBOARD AGENDA';
+      let dateLabel = '';
+      
       if (start && end) {
         events = await googleWorkspace.getEventsByDateRange(start, end);
-        contextLabel = `Agenda dari ${new Date(start).toLocaleDateString('id-ID')} sampai ${new Date(end).toLocaleDateString('id-ID')}:`;
+        tasks = await googleTasks.getTasksByDateRange(start, end);
+        const sDate = new Date(start).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        const eDate = new Date(end).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        dateLabel = sDate === eDate ? sDate : `Dari ${sDate} sampai ${eDate}`;
       } else if (start) {
-        // If only start is provided, assume that specific day
         const startDate = new Date(start);
         const endDate = new Date(startDate);
         endDate.setHours(23, 59, 59, 999);
         events = await googleWorkspace.getEventsByDateRange(start, endDate.toISOString());
-        contextLabel = `Agenda untuk tanggal ${startDate.toLocaleDateString('id-ID')}:`;
+        tasks = await googleTasks.getTasksByDateRange(start, endDate.toISOString());
+        dateLabel = startDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
       } else {
+        // Fallback to today if no date provided
         events = await googleWorkspace.getTodaysEvents();
+        tasks = await googleTasks.getTasksDueToday();
+        dateLabel = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        dashboardTitle = 'DASHBOARD HARI INI';
       }
 
-      // If a summary search keyword was provided, filter the events
+      // If a summary search keyword was provided, filter the events (not tasks, as summary applies to calendar)
       if (summary) {
         const keyword = summary.toLowerCase();
         events = events.filter(e => (e.summary || '').toLowerCase().includes(keyword));
-        contextLabel = `Hasil pencarian jadwal untuk '${summary}':`;
-      }
-
-      if (!events || events.length === 0) {
-        return { status: 'SUCCESS', message: `${contextLabel}\n(Kosong / Tidak ada jadwal yang ditemukan)` };
+        dashboardTitle = `HASIL PENCARIAN: '${summary.toUpperCase()}'`;
       }
       
-      const eventLines = await Promise.all(events.map(async (e, i) => {
-        const startRaw = e.start?.dateTime || e.start?.date;
-        const endRaw = e.end?.dateTime || e.end?.date;
-        
-        let timeLabel = '';
-        if (e.start?.dateTime && e.end?.dateTime) {
-           const sTime = new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-           const eTime = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-           const sDate = new Date(startRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
-           timeLabel = `${sDate} ${sTime} - ${eTime}`;
-        } else {
-           const sDate = new Date(startRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
-           timeLabel = `${sDate} (Sepanjang hari)`;
-        }
-        let line = `${i + 1}. ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
+      let msg = `🗓️ <b>${dashboardTitle}</b>\n<i>${dateLabel}</i>\n`;
 
-        // [PREDICTIVE CONTEXT ENGINE]
-        const lowerSummary = (e.summary || '').toLowerCase();
-        const importantKeywords = ['rapat', 'meeting', 'seminar', 'ujian', 'proyek', 'presentasi', 'kuliah', 'tugas', 'sidang', 'bimbingan'];
-        const isImportant = importantKeywords.some(kw => lowerSummary.includes(kw));
-        
-        if (isImportant) {
-          try {
-            const { readDatabaseTable } = require('../infrastructure/Supabase_Memories');
-            
-            let searchKw = lowerSummary;
-            for (const kw of importantKeywords) {
-              searchKw = searchKw.replace(kw, '').trim();
+      // 1. Calendar Events
+      if (events && events.length > 0) {
+        msg += `\n📅 <b>JADWAL (${events.length}):</b>\n`;
+        const eventLines = await Promise.all(events.map(async (e) => {
+          const startRaw = e.start?.dateTime || e.start?.date;
+          const endRaw = e.end?.dateTime || e.end?.date;
+          let timeLabel = 'Sepanjang hari';
+          if (e.start?.dateTime && e.end?.dateTime) {
+            const sTime = new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+            const eTime = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+            // Check if it spans multiple days
+            const sDate = new Date(startRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' });
+            const eDate = new Date(endRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' });
+            if (sDate !== eDate) {
+               timeLabel = `${sDate} ${sTime} - ${eDate} ${eTime}`;
+            } else {
+               timeLabel = `${sTime} - ${eTime}`;
             }
-            
-            if (searchKw.length >= 3) {
-              const vaultRes = await readDatabaseTable('nexa_vault_items', { searchKeyword: searchKw, limit: 1 });
-              const hasVault = vaultRes.success && vaultRes.rows && vaultRes.rows.length > 0;
-              
-              const brainRes = await readDatabaseTable('nexa_2nd_brain', { searchKeyword: searchKw, limit: 1 });
-              const hasBrain = brainRes.success && brainRes.rows && brainRes.rows.length > 0;
-              
-              if (hasVault || hasBrain) {
-                const foundItems = [];
-                if (hasVault) foundItems.push(`Dokumen Vault`);
-                if (hasBrain) foundItems.push(`Catatan Memori`);
-                line += `\n   🔗 <i>(Konteks Tersedia: ${foundItems.join(' & ')} terkait '${searchKw}')</i>`;
-              }
-            }
-          } catch (err) {
-            console.error('[AGENDA] Context prediction failed:', err.message);
+          } else {
+             const sDate = new Date(startRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' });
+             timeLabel = `${sDate} (Sepanjang hari)`;
           }
-        }
-        return line;
-      }));
-      const eventList = eventLines.join('\n');
-      
-      return { status: 'SUCCESS', message: `${contextLabel}\n${eventList}` };
+          
+          let line = `   ▸ ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
+
+          // [PREDICTIVE CONTEXT ENGINE]
+          const lowerSummary = (e.summary || '').toLowerCase();
+          const importantKeywords = ['rapat', 'meeting', 'seminar', 'ujian', 'proyek', 'presentasi', 'kuliah', 'tugas', 'sidang', 'bimbingan'];
+          const isImportant = importantKeywords.some(kw => lowerSummary.includes(kw));
+          
+          if (isImportant) {
+            try {
+              const { readDatabaseTable } = require('../infrastructure/Supabase_Memories');
+              let searchKw = lowerSummary;
+              for (const kw of importantKeywords) { searchKw = searchKw.replace(kw, '').trim(); }
+              if (searchKw.length >= 3) {
+                const vaultRes = await readDatabaseTable('nexa_vault_items', { searchKeyword: searchKw, limit: 1 });
+                const hasVault = vaultRes.success && vaultRes.rows && vaultRes.rows.length > 0;
+                const brainRes = await readDatabaseTable('nexa_2nd_brain', { searchKeyword: searchKw, limit: 1 });
+                const hasBrain = brainRes.success && brainRes.rows && brainRes.rows.length > 0;
+                
+                if (hasVault || hasBrain) {
+                  const foundItems = [];
+                  if (hasVault) foundItems.push(`Dokumen Vault`);
+                  if (hasBrain) foundItems.push(`Catatan Memori`);
+                  line += `\n     🔗 <i>(Konteks Tersedia: ${foundItems.join(' & ')} terkait '${searchKw}')</i>`;
+                }
+              }
+            } catch (err) { }
+          }
+          return line;
+        }));
+        msg += eventLines.join('\n');
+      } else {
+        msg += `\n📅 <b>JADWAL:</b> Tidak ada jadwal.\n`;
+      }
+
+      // 2. Tasks Due
+      if (tasks && tasks.length > 0) {
+        msg += `\n\n🟡 <b>TUGAS JATUH TEMPO (${tasks.length}):</b>\n`;
+        msg += tasks.map(t => `   🔲 ${t.title}${t.notes ? `\n      📝 ${t.notes.split('\n')[0]}` : ''}`).join('\n');
+      } else {
+        msg += `\n\n📋 <b>TUGAS:</b> Tidak ada tugas yang jatuh tempo pada periode ini.`;
+      }
+
+      return { status: 'SUCCESS', message: msg };
     }
     else if (action === 'READ_TODAY') {
       // ── UNIFIED DAILY DASHBOARD: Calendar + Tasks ─────────
