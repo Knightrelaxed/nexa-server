@@ -1762,7 +1762,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
                   const { executeWithFallback } = require('../core/Fallback_Engine');
                   const { NEXA_PERSONALITY } = require('../config/personality');
                   
-                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Dashboard:\n${calResult.message}\n\nTugas: Berikan obrolan singkat yang ramah (1-2 kalimat) mengenai isi jadwal di atas. Berikan saran persiapan, peringatan, atau semangat (misalnya jika padat sarankan istirahat, jika kosong sarankan bersantai). JANGAN membaca ulang semua isi jadwal, cukup analisis maknanya secara umum sebagai asisten pribadi yang perhatian.`;
+                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Dashboard:\n${calResult.message}\n\nTask: Write a 1-2 sentence friendly response IN INDONESIAN analyzing the schedule above. Act as a caring personal assistant. Provide a brief prep suggestion or encouragement based on how busy the schedule is. DO NOT repeat the events. Keep it concise, warm, and natural.`;
                   
                   const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
                   if (advice && !advice.includes('DUMB_MODE')) {
