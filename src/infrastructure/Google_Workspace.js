@@ -282,7 +282,7 @@ async function deleteCalendarEvent(eventId, mode = 'THIS_ONLY') {
     calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
     eventId: targetId
   });
-  return { deleted: targetId, mode };
+    return { deleted: targetId, mode };
 }
 
 /**
@@ -290,21 +290,9 @@ async function deleteCalendarEvent(eventId, mode = 'THIS_ONLY') {
  */
 async function getTodaysEvents() {
   const { calendar } = getClients();
-
-  // Jakarta is UTC+7, so offset = 7 * 60 * 60 * 1000 ms
-  const jakartaOffsetMs = 7 * 60 * 60 * 1000;
-  const nowUtc = new Date();
-  // Get current time in Jakarta
-  const nowJakarta = new Date(nowUtc.getTime() + jakartaOffsetMs);
-  // Build start of day in Jakarta (midnight), then convert back to UTC ISO
-  const startOfDayJakarta = new Date(nowJakarta);
-  startOfDayJakarta.setHours(0, 0, 0, 0);
-  const endOfDayJakarta = new Date(nowJakarta);
-  endOfDayJakarta.setHours(23, 59, 59, 999);
-  
-  // Convert back: subtract the offset to get the UTC equivalent
-  const timeMin = new Date(startOfDayJakarta.getTime() - jakartaOffsetMs).toISOString();
-  const timeMax = new Date(endOfDayJakarta.getTime() - jakartaOffsetMs).toISOString();
+  const jakartaDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  const timeMin = `${jakartaDateStr}T00:00:00+07:00`;
+  const timeMax = `${jakartaDateStr}T23:59:59+07:00`;
 
   const response = await calendar.events.list({
     calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
@@ -322,26 +310,12 @@ async function getTodaysEvents() {
  */
 async function getTomorrowsEvents() {
   const { calendar } = getClients();
-
-  // Jakarta is UTC+7, so offset = 7 * 60 * 60 * 1000 ms
-  const jakartaOffsetMs = 7 * 60 * 60 * 1000;
-  const nowUtc = new Date();
   
-  // Get current time in Jakarta
-  const nowJakarta = new Date(nowUtc.getTime() + jakartaOffsetMs);
+  // Add 24 hours to current time and format as Jakarta date
+  const tmrwDateStr = new Date(Date.now() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
   
-  // Add 1 day
-  nowJakarta.setDate(nowJakarta.getDate() + 1);
-  
-  // Build start of tomorrow in Jakarta (midnight), then convert back to UTC ISO
-  const startOfTmrwJakarta = new Date(nowJakarta);
-  startOfTmrwJakarta.setHours(0, 0, 0, 0);
-  const endOfTmrwJakarta = new Date(nowJakarta);
-  endOfTmrwJakarta.setHours(23, 59, 59, 999);
-  
-  // Convert back: subtract the offset to get the UTC equivalent
-  const timeMin = new Date(startOfTmrwJakarta.getTime() - jakartaOffsetMs).toISOString();
-  const timeMax = new Date(endOfTmrwJakarta.getTime() - jakartaOffsetMs).toISOString();
+  const timeMin = `${tmrwDateStr}T00:00:00+07:00`;
+  const timeMax = `${tmrwDateStr}T23:59:59+07:00`;
 
   const response = await calendar.events.list({
     calendarId: env.GOOGLE_CALENDAR_ID || 'primary',

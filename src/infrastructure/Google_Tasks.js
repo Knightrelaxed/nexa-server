@@ -212,9 +212,7 @@ async function getTasksDueToday(listId = null) {
  */
 async function getTasksDueTomorrow(listId = null) {
   const tasks = await getActiveTasks(listId);
-  const tmrw = new Date();
-  tmrw.setHours(tmrw.getHours() + 24);
-  const tmrwStr = tmrw.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
+  const tmrwStr = new Date(Date.now() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
   return tasks.filter(t => t.due && t.due.startsWith(tmrwStr));
 }
 
@@ -233,9 +231,7 @@ async function getOverdueTasks(listId = null) {
 async function getUpcomingTasks(daysAhead = 7, listId = null) {
   const tasks = await getActiveTasks(listId);
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-  const futureDate = new Date();
-  futureDate.setDate(futureDate.getDate() + daysAhead);
-  const futureStr = futureDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  const futureStr = new Date(Date.now() + daysAhead * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
   return tasks.filter(t => {
     if (!t.due) return false;
     const d = t.due.split('T')[0];

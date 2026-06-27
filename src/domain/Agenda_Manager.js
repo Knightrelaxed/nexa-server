@@ -445,9 +445,8 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
     }
     else if (action === 'READ_TOMORROW') {
       // ── UNIFIED DAILY DASHBOARD (TOMORROW): Calendar + Tasks ─────────
-      const tmrw = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-      tmrw.setDate(tmrw.getDate() + 1);
-      const tmrwLabel = tmrw.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      const tmrw = new Date(Date.now() + 86400000);
+      const tmrwLabel = tmrw.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
       let msg = `🗓️ <b>DASHBOARD BESOK</b>\n<i>${tmrwLabel}</i>\n`;
 
       // 1. Calendar events tomorrow
@@ -524,14 +523,12 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
     }
     else if (action === 'READ_UPCOMING') {
       // ── 7-DAY FORWARD VIEW: Calendar + Tasks ──────────────
-      // Use locale-aware date calculation for Jakarta timezone
-      const nowJakarta = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-      const startOfToday = new Date(nowJakarta); startOfToday.setHours(0, 0, 0, 0);
-      const endOf7Days = new Date(nowJakarta); endOf7Days.setDate(endOf7Days.getDate() + 7); endOf7Days.setHours(23, 59, 59, 999);
-
-      // Convert back to UTC for Google Calendar API
-      const timeMin = new Date(startOfToday.toLocaleString('en-US', { timeZone: 'UTC' })).toISOString();
-      const timeMax = new Date(endOf7Days.toLocaleString('en-US', { timeZone: 'UTC' })).toISOString();
+      // Robust locale-aware date calculation for Jakarta timezone
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      const futureStr = new Date(Date.now() + 7 * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      
+      const timeMin = `${todayStr}T00:00:00+07:00`;
+      const timeMax = `${futureStr}T23:59:59+07:00`;
 
       let msg = `📆 <b>7 HARI KE DEPAN</b>\n`;
 
