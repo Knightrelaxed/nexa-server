@@ -37,7 +37,7 @@ async function _autoCategorizeMerchant(merchantName, currentCategory) {
     const categories = await supabaseFinance.getCategoriesList();
     const validCatNames = categories.map(c => c.name);
 
-    const prompt = `Kamu adalah mesin kategorisasi transaksi keuangan. Analisa tujuan/catatan transaksi berikut dan pilih SATU kategori yang paling tepat.
+    const prompt = `Kamu adalah mesin kategorisasi transaksi keuangan. Analisa tujuan/catatan transaksi berikut dan pilih SATU kategori yang paling tepat dari daftar.
 
 Transaksi: "${merchantName}"
 
@@ -46,21 +46,21 @@ ${validCatNames.map(c => `- ${c}`).join('\n')}
 
 PROSES KOGNITIF WAJIB (2 LANGKAH):
 1. IDENTIFIKASI OBJEK: Apa SUBSTANSI yang dibeli/dibayar? Jangan terkecoh oleh kata-kata permukaan!
-2. COCOKKAN: Pilih kategori yang paling dekat secara SEMANTIK dengan objek tersebut.
+2. COCOKKAN: Pilih kategori yang paling dekat secara SEMANTIK dengan objek tersebut DARI DAFTAR DI ATAS.
 
 ATURAN DISAMBIGUASI KRITIS:
-- "iuran" / "patungan" / "urunan" / "kas" untuk acara/kegiatan → kategori sosial/hiburan/acara, BUKAN makanan! (meskipun acaranya melibatkan makan)
+- "iuran" / "patungan" / "urunan" / "kas" untuk acara/kegiatan → kategori sosial/hiburan/acara, BUKAN makanan!
 - "makrab" = "malam keakraban" = acara sosial kampus → kategori sosial/hiburan/acara, BUKAN makanan!
-- "rokok" / "sigaret" / "vape" / "liquid" / "cerutu" / "tembakau" → "Alkohol, tembakau" atau "Tembakau, Alkohol", BUKAN "Layanan"!
-- "bir" / "wine" / "alkohol" / "miras" → "Alkohol, tembakau" atau "Tembakau, Alkohol"
+- "rokok" / "sigaret" / "vape" / "liquid" / "cerutu" / "tembakau" → WAJIB pilih "Tembakau, Alkohol" atau "Alkohol, tembakau", JANGAN jawab "Rokok" karena tidak ada di daftar!
+- "bir" / "wine" / "alkohol" / "miras" → WAJIB pilih "Tembakau, Alkohol" atau "Alkohol, tembakau"
 - "grab" / "gojek" / "ojek" / "taxi" → kategori transportasi, BUKAN "Layanan"!
 
 CONTOH REFERENSI:
-"kopi latte" → "Kafe/Bar", "starbucks" → "Kafe/Bar", "GRAB FOOD" → "Restoran, makanan cepat saji", "GRAB TRANSPORT" → "Taksi", "nge gym" → "Olahraga aktif, kebugaran", "Waroeng Emdje" → "Restoran, makanan cepat saji", "Amira Fotocopy" → "Alat tulis, peralatan", "nieta kitchen" → "Restoran, makanan cepat saji", "nasi Padang" → "Restoran, makanan cepat saji", "beli Ades" → "Makanan dan minuman", "Indomaret" → "Belanja", "Shopee" → "Belanja online", "Menghutangi aji" → "Pinjaman, bunga", "rokok" → "Alkohol, tembakau", "iuran makrab" → kategori sosial/hiburan (BUKAN makanan!), "bayar ojol" → kategori transportasi.
+"kopi latte" → "Kafe/Bar", "starbucks" → "Kafe/Bar", "GRAB FOOD" → "Restoran, makanan cepat saji", "GRAB TRANSPORT" → "Taksi", "nge gym" → "Olahraga aktif, kebugaran", "nasi Padang" → "Restoran, makanan cepat saji", "beli Ades" → "Makanan dan minuman", "Indomaret" → "Belanja", "Shopee" → "Belanja online", "rokok" → "Tembakau, Alkohol", "iuran makrab" → "Kegiatan Sosial".
 
 ATURAN LAINNYA:
-1. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu (misal: "Budi", "Agus"). JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya), JANGAN PERNAH memilih "Lainnya"!
-2. HANYA balas nama kategori. Tanpa penjelasan, tanpa tanda kutip.`;
+1. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu. JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya), JANGAN PERNAH memilih "Lainnya"!
+2. HANYA balas nama kategori dari daftar. Tanpa penjelasan, tanpa tanda kutip, jangan pernah membuat kategori baru.`;
     const aiResp = await callAI(prompt);
     let cat = aiResp.trim();
     // Strip quotes/whitespace if AI wraps the answer
@@ -965,7 +965,20 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
 
   let msg = '';
   for (const [key, pending] of pendingConfirmations.entries()) {
-    if (newDescription) pending.tx.description = newDescription;
+    if (newDescription) {
+      pending.tx.description = newDescription;
+      
+      // If user gives a new description but NO explicit category, 
+      // let's re-run the AI categorizer so the preview reflects the correct category
+      if (!newCategory) {
+        const dest = pending.tx.destination && pending.tx.destination !== 'Unknown' ? pending.tx.destination : '';
+        const desc = pending.tx.description;
+        const combinedContext = [dest, desc].filter(Boolean).join(' - ') || 'Unknown';
+        
+        // Pass null as currentCategory so AI is forced to re-evaluate based on the new description
+        pending.tx.category = await _autoCategorizeMerchant(combinedContext, null);
+      }
+    }
     
     // ── VALIDASI KATEGORI ────────────────────────────────────────────────────────
     if (newCategory) {

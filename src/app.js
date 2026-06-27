@@ -8,6 +8,9 @@
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
+// Initialize Self-Awareness logger
+require('./utils/logger');
+
 const express = require('express');
 const morgan = require('morgan');
 const cors = require('cors');

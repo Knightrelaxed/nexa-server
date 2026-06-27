@@ -2274,6 +2274,18 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         }
         break;
       }
+      case 'DIAGNOSE_SYSTEM': {
+        const logger = require('../utils/logger');
+        const aiRouter = require('../core/AI_Router');
+        const recentLogs = logger.getRecentLogs();
+        if (!recentLogs || recentLogs.trim() === '') {
+          domainReply = '✅ Sistem berjalan normal. Belum ada log baru yang terekam di memori saat ini.';
+        } else {
+          // Send to AI for diagnosis
+          domainReply = await aiRouter.analyzeSystemLogs(textInput, recentLogs);
+        }
+        break;
+      }
     }
 
     // Send reply via Webhook Response Method (ZERO outbound needed)

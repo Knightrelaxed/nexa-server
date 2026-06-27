@@ -122,7 +122,7 @@ Payment Method Extraction (Infer if obvious, else null):
 OUTPUT JSON FORMAT:
 {
   "reasoning": "1-2 sentences of logical analysis binding context and intent.",
-  "intent": "FINANCE|CALENDAR|TASK|EMAIL|DATABASE|WEB_SEARCH|DISCIPLINE|2ND_BRAIN|USER_PROFILE|CORE_IDENTITY|INCOMPLETE_INFO|NORMAL_CHAT",
+  "intent": "FINANCE|CALENDAR|TASK|EMAIL|DATABASE|WEB_SEARCH|DISCIPLINE|2ND_BRAIN|USER_PROFILE|CORE_IDENTITY|DIAGNOSE_SYSTEM|INCOMPLETE_INFO|NORMAL_CHAT",
   "reply_message": "Natural Indonesian response (mandatory for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE).",
   "learned_user_facts": ["New permanent facts, or empty"],
   "learned_core_identities": ["New interaction rules, or empty"],
@@ -151,6 +151,8 @@ OUTPUT JSON FORMAT:
     //   - READ Triggers: "apa yang kamu ingat tentangku" (set action="READ". CRITICAL: ALWAYS extract specific topic into search_keyword if mentioned, e.g. "cita-cita", "keuangan". Leave null ONLY if the query is general).
     //   - DELETE Triggers: "hapus ingatanku tentang kopi" (set action="DELETE", fill 'search_keyword').
     // WEB_SEARCH: { query, type: "search|news" }
+    // DIAGNOSE_SYSTEM: { action: "READ_LOGS", search_keyword: string }
+    //   - Triggers: "cek log", "apa yang kamu lakukan tadi", "kenapa error", "baca log sistem"
   },
   "god_mode_trigger": false
 }
@@ -682,8 +684,80 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
   }
 }
 
+/**
+ * Analyzes the recent system logs for diagnostic purposes
+ */
+async function analyzeSystemLogs(userQuestion, logText) {
+  const personalFacts = await loadPersonalFactsWithCache();
+  
+  // Tuan Faqih's Optimization: Smart Scoring Algorithm for absolute priority
+  // Skip the 10 core personality facts (slice 10)
+  const questionWords = userQuestion.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  
+  // Extract common error codes/keywords from the log to boost relevant facts
+  const errorKeywords = ['503', '429', '401', '403', 'timeout', 'failed', 'error', 'exception', 'crash'];
+  const logTextLower = logText.toLowerCase();
+  const activeErrorKeywords = errorKeywords.filter(ek => logTextLower.includes(ek));
+
+  const scoredIdentities = (personalFacts.coreIdentity || []).slice(10).map(fact => {
+    let score = 0;
+    const factLower = fact.toLowerCase();
+    
+    // 1. Log Prefix Matching (Score +100 - Absolute Priority)
+    const match = fact.match(/\[([A-Z0-9_-]+)\]/);
+    if (match && match[0] && logText.includes(match[0])) {
+      score += 100;
+    }
+    
+    // 2. Log Error Keyword Matching (Score +50)
+    // e.g. If log contains "503", facts discussing "503" get boosted.
+    activeErrorKeywords.forEach(ek => {
+      if (factLower.includes(ek)) score += 50;
+    });
+
+    // 3. User Question Keyword Matching (Score +10 per word)
+    questionWords.forEach(w => {
+      if (factLower.includes(w)) score += 10;
+    });
+
+    return { fact, score };
+  });
+
+  // Filter out zero scores, sort descending by score, and take top 20
+  const relevantIdentities = scoredIdentities
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 20)
+    .map(item => item.fact);
+
+  const coreIdentityStr = relevantIdentities
+    .map(fact => `- ${fact}`)
+    .join('\n');
+
+  const prompt = `You are a System Administrator for an AI assistant named N.E.X.A.
+The user (Tuan Faqih) is asking about the current system status or recent logs.
+
+[N.E.X.A CORE SYSTEM ARCHITECTURE & IDENTITY]
+${coreIdentityStr || "No specific architecture context provided."}
+
+Read the terminal log snippet below and provide a concise, relaxed analysis or answer (in Indonesian).
+Explain technically but make it easy to understand what just happened behind the scenes, using your CORE SYSTEM ARCHITECTURE to contextualize the log events.
+
+USER QUESTION: "${userQuestion}"
+
+[LATEST SYSTEM LOGS]
+${logText}
+
+Rules:
+1. Get straight to the point, maximum 3-4 sentences.
+2. If there is an error, state the cause and whether it has been handled by the fallback system.
+3. Never leak full API Keys/Tokens if they happen to be recorded in the logs.`;
+
+  return await executeWithFallback(prompt, "Jawab dengan bahasa Indonesia santai namun teknis.", 0.3, false);
+}
+
 module.exports = { routeUserMessage, invalidatePersonalFactsCache,
-  deduplicateAndSaveFact, callAI, classifyPendingTransactionIntent, classifyYesNo,
+  deduplicateAndSaveFact, callAI, classifyPendingTransactionIntent, classifyYesNo, analyzeSystemLogs,
   selectUserProfileFacts: _selectUserProfileFacts,
   selectCoreIdentityFacts: _selectCoreIdentityFacts
 };
