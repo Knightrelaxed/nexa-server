@@ -478,6 +478,15 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     };
 
     let textInput = message.text;
+    
+    // [FEATURE] Reply-Awareness
+    // Inject the original message context if the user explicitly replies to a message.
+    if (textInput && message.reply_to_message && message.reply_to_message.text) {
+      const originalMsg = message.reply_to_message.text;
+      const snippet = originalMsg.length > 100 ? originalMsg.substring(0, 100) + '...' : originalMsg;
+      textInput = `[Menanggapi pesan N.E.X.A: "${snippet}"]\n${textInput}`;
+    }
+
     const captionText = message.caption || '';
     const vaultTriggerText = `${textInput || ''} ${captionText || ''}`.toLowerCase();
 
