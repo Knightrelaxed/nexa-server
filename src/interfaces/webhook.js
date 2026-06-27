@@ -1742,6 +1742,38 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
 
           if (calResult && calResult.message) {
             domainReply = calResult.message;
+            
+            // Add a friendly follow-up message only for present/future queries
+            const action = calData.action;
+            let isPast = false;
+            
+            if (calData.start) {
+              const reqDate = new Date(calData.start);
+              const jakartaDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+              const todayJakartaStart = new Date(`${jakartaDateStr}T00:00:00+07:00`);
+              if (reqDate < todayJakartaStart) {
+                isPast = true;
+              }
+            }
+            
+            if (!isPast && ['READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(action)) {
+              setTimeout(async () => {
+                try {
+                  const { executeWithFallback } = require('../core/Fallback_Engine');
+                  const { NEXA_PERSONALITY } = require('../config/personality');
+                  const { sendTelegramOutbound } = require('../infrastructure/Telegram_Client');
+                  
+                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Dashboard:\n${calResult.message}\n\nTugas: Berikan obrolan singkat yang ramah (1-2 kalimat) mengenai isi jadwal di atas. Berikan saran persiapan, peringatan, atau semangat (misalnya jika padat sarankan istirahat, jika kosong sarankan bersantai). JANGAN membaca ulang semua isi jadwal, cukup analisis maknanya secara umum sebagai asisten pribadi yang perhatian.`;
+                  
+                  const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
+                  if (advice && !advice.includes('DUMB_MODE')) {
+                    await sendTelegramOutbound(advice);
+                  }
+                } catch (err) {
+                  console.error('[CALENDAR] Failed to generate conversational advice:', err.message);
+                }
+              }, 1500); // Wait 1.5s so the Dashboard arrives first
+            }
           }
         }
         break;
