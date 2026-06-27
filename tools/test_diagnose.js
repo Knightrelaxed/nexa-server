@@ -5,16 +5,17 @@ const aiRouter = require('../src/core/AI_Router');
 async function runTest() {
   console.log("=== MEMULAI TESTING DIAGNOSE_SYSTEM ===");
   
-  // 1. Simulasikan sistem sedang berjalan (Normal/Tanpa Error)
+  // 1. Simulasikan sistem sedang berjalan (Skenario Error Token Gmail)
   console.log("[SERVER] N.E.X.A Engine v2.0 started on port 3000");
-  console.log("[TELEGRAM] Received webhook message: 'buatkan jadwal rapat besok'");
-  console.log("[ROUTER] Intent identified: CALENDAR_CREATE");
-  console.log("[CALENDAR] Checking Google Calendar for conflicts tomorrow...");
-  console.log("[CALENDAR] Free slot found. Creating event: Rapat");
-  console.log("[SUPABASE] Saving conversation context to short-term memory.");
+  console.log("[CRON] Starting finance email polling (3-minute interval)...");
+  console.log("[GMAIL] Attempting to fetch latest emails from inbox.");
+  console.error("[GMAIL] Error fetching emails: invalid_grant (Token has been expired or revoked).");
+  console.warn("[GMAIL] Invalid_grant detected! Resetting gmailClient to null.");
+  console.warn("[TELEGRAM-OUTBOUND] Sending emergency alert: Google OAuth token expired.");
+  console.error("[GMAIL] Halting email polling to prevent spam until token is refreshed.");
 
   // 2. Simulasikan user bertanya santai
-  const userQuestion = "Nex, kamu lagi ngerjain apa di belakang layar?";
+  const userQuestion = "Nex, kok dari pagi mutasi bank mandiri saya gak masuk-masuk ke laporan ya?";
   console.log(`\nPERTANYAAN USER: "${userQuestion}"`);
 
   // 3. Panggil fungsi analyzeSystemLogs
