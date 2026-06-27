@@ -503,6 +503,14 @@ async function handleTaskIntent(extractedData, chatId = null) {
       return { status: 'SUCCESS', message: `🟡 <b>Tugas Hari Ini (${tasks.length}):</b>\n\n${list}` };
     }
 
+    // ── READ_TOMORROW ───────────────────────────────────────
+    if (action === 'READ_TOMORROW') {
+      const tasks = await googleTasks.getTasksDueTomorrow();
+      if (tasks.length === 0) return { status: 'SUCCESS', message: '✅ Tidak ada tugas yang jatuh tempo besok, Tuan.' };
+      const list = tasks.map((t, i) => formatTask(t, i)).join('\n\n');
+      return { status: 'SUCCESS', message: `🟠 <b>Tugas Besok (${tasks.length}):</b>\n\n${list}` };
+    }
+
     // ── READ_UPCOMING ───────────────────────────────────────
     if (action === 'READ_UPCOMING') {
       const tasks = await googleTasks.getUpcomingTasks(7);

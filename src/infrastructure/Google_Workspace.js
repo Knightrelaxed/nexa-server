@@ -318,6 +318,43 @@ async function getTodaysEvents() {
 }
 
 /**
+ * Helper: Get all calendar events scheduled for tomorrow (Jakarta Timezone aware)
+ */
+async function getTomorrowsEvents() {
+  const { calendar } = getClients();
+
+  // Jakarta is UTC+7, so offset = 7 * 60 * 60 * 1000 ms
+  const jakartaOffsetMs = 7 * 60 * 60 * 1000;
+  const nowUtc = new Date();
+  
+  // Get current time in Jakarta
+  const nowJakarta = new Date(nowUtc.getTime() + jakartaOffsetMs);
+  
+  // Add 1 day
+  nowJakarta.setDate(nowJakarta.getDate() + 1);
+  
+  // Build start of tomorrow in Jakarta (midnight), then convert back to UTC ISO
+  const startOfTmrwJakarta = new Date(nowJakarta);
+  startOfTmrwJakarta.setHours(0, 0, 0, 0);
+  const endOfTmrwJakarta = new Date(nowJakarta);
+  endOfTmrwJakarta.setHours(23, 59, 59, 999);
+  
+  // Convert back: subtract the offset to get the UTC equivalent
+  const timeMin = new Date(startOfTmrwJakarta.getTime() - jakartaOffsetMs).toISOString();
+  const timeMax = new Date(endOfTmrwJakarta.getTime() - jakartaOffsetMs).toISOString();
+
+  const response = await calendar.events.list({
+    calendarId: env.GOOGLE_CALENDAR_ID || 'primary',
+    timeMin,
+    timeMax,
+    singleEvents: true,
+    orderBy: 'startTime'
+  });
+
+  return response.data.items || [];
+}
+
+/**
  * Get events within a specific date range
  */
 async function getEventsByDateRange(timeMin, timeMax) {
@@ -677,6 +714,7 @@ module.exports = {
   findEventByTitle,
   deleteCalendarEvent,
   getTodaysEvents,
+  getTomorrowsEvents,
   getEventsByDateRange,
   checkCalendarConflicts,
   appendToIdeaDoc,

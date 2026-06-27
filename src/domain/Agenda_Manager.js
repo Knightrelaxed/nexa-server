@@ -420,6 +420,85 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
 
       return { status: 'SUCCESS', message: msg };
     }
+    else if (action === 'READ_TOMORROW') {
+      // ── UNIFIED DAILY DASHBOARD (TOMORROW): Calendar + Tasks ─────────
+      const tmrw = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+      tmrw.setDate(tmrw.getDate() + 1);
+      const tmrwLabel = tmrw.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      let msg = `🗓️ <b>DASHBOARD BESOK</b>\n<i>${tmrwLabel}</i>\n`;
+
+      // 1. Calendar events tomorrow
+      try {
+        const events = await googleWorkspace.getTomorrowsEvents();
+        if (events && events.length > 0) {
+          msg += `\n📅 <b>JADWAL (${events.length}):</b>\n`;
+          const eventLines = await Promise.all(events.map(async (e) => {
+            const startRaw = e.start?.dateTime || e.start?.date;
+            const endRaw = e.end?.dateTime || e.end?.date;
+            let timeLabel = 'Sepanjang hari';
+            if (e.start?.dateTime && e.end?.dateTime) {
+              const s = new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+              const en = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+              timeLabel = `${s} - ${en}`;
+            }
+            
+            let line = `   ▸ ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
+
+            // [PREDICTIVE CONTEXT ENGINE]
+            const lowerSummary = (e.summary || '').toLowerCase();
+            const importantKeywords = ['rapat', 'meeting', 'seminar', 'ujian', 'proyek', 'presentasi', 'kuliah', 'tugas', 'sidang', 'bimbingan'];
+            const isImportant = importantKeywords.some(kw => lowerSummary.includes(kw));
+            
+            if (isImportant) {
+              try {
+                const { readDatabaseTable } = require('../infrastructure/Supabase_Memories');
+                
+                let searchKw = lowerSummary;
+                for (const kw of importantKeywords) {
+                  searchKw = searchKw.replace(kw, '').trim();
+                }
+                
+                if (searchKw.length >= 3) {
+                  const vaultRes = await readDatabaseTable('nexa_vault_items', { searchKeyword: searchKw, limit: 1 });
+                  const hasVault = vaultRes.success && vaultRes.rows && vaultRes.rows.length > 0;
+                  
+                  const brainRes = await readDatabaseTable('nexa_2nd_brain', { searchKeyword: searchKw, limit: 1 });
+                  const hasBrain = brainRes.success && brainRes.rows && brainRes.rows.length > 0;
+                  
+                  if (hasVault || hasBrain) {
+                    const foundItems = [];
+                    if (hasVault) foundItems.push(`Dokumen Vault`);
+                    if (hasBrain) foundItems.push(`Catatan Memori`);
+                    line += `\n     🔗 <i>(Konteks Tersedia: ${foundItems.join(' & ')} terkait '${searchKw}')</i>`;
+                  }
+                }
+              } catch (err) {
+                console.error('[AGENDA] Context prediction failed:', err.message);
+              }
+            }
+            return line;
+          }));
+          msg += eventLines.join('\n');
+        } else {
+          msg += `\n📅 <b>JADWAL:</b> Tidak ada jadwal besok.\n`;
+        }
+      } catch (e) {
+        msg += `\n📅 <b>JADWAL:</b> Gagal memuat (${e.message})\n`;
+      }
+
+      // 2. Tasks due tomorrow
+      try {
+        const tomorrowTasks = await googleTasks.getTasksDueTomorrow();
+        if (tomorrowTasks.length > 0) {
+          msg += `\n\n🟡 <b>TUGAS BESOK (${tomorrowTasks.length}):</b>\n`;
+          msg += tomorrowTasks.map(t => `   🔲 ${t.title}${t.notes ? `\n      📝 ${t.notes.split('\n')[0]}` : ''}`).join('\n');
+        } else {
+          msg += `\n\n📋 <b>TUGAS BESOK:</b> Tidak ada tugas jatuh tempo besok.`;
+        }
+      } catch (e) { /* ignore */ }
+
+      return { status: 'SUCCESS', message: msg };
+    }
     else if (action === 'READ_UPCOMING') {
       // ── 7-DAY FORWARD VIEW: Calendar + Tasks ──────────────
       // Use locale-aware date calculation for Jakarta timezone

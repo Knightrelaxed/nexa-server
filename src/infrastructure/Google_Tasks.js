@@ -208,6 +208,17 @@ async function getTasksDueToday(listId = null) {
 }
 
 /**
+ * Get tasks due specifically tomorrow (Jakarta timezone)
+ */
+async function getTasksDueTomorrow(listId = null) {
+  const tasks = await getActiveTasks(listId);
+  const tmrw = new Date();
+  tmrw.setHours(tmrw.getHours() + 24);
+  const tmrwStr = tmrw.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
+  return tasks.filter(t => t.due && t.due.startsWith(tmrwStr));
+}
+
+/**
  * Get tasks past their due date (overdue, still active)
  */
 async function getOverdueTasks(listId = null) {
@@ -347,6 +358,7 @@ module.exports = {
   getActiveTasks,
   getCompletedTasks,
   getTasksDueToday,
+  getTasksDueTomorrow,
   getOverdueTasks,
   getUpcomingTasks,
   completeTask,
