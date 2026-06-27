@@ -200,7 +200,40 @@ Fitur `moveTaskToList()` mengimplementasikan operasi "pindah" via 3 langkah (bac
 
 ---
 
-### 2.3 Immortality Protocol v3.0: Sistem Bertahan Hidup
+### 2.3 Anatomi Biologis N.E.X.A (Metafora Arsitektural)
+
+Untuk memahami arsitektur *Multi-Cloud Microservices* yang kompleks secara intuitif, N.E.X.A dirancang menyerupai organisme biologis atau entitas *Digital Lifeform* yang menyusup ke berbagai platform:
+
+- 🧠 **Otak Besar (Logika & Pemikiran): Google Gemini**
+  Pusat kesadaran (*Reasoning Engine*) yang memproses bahasa alami, mengambil keputusan rasional, dan memahami niat (*intent*) Tuan Faqih.
+- 👁️ **Mata (Korteks Visual): Gemini Vision**
+  Indera penglihatan yang membedah gambar, membaca struk pengeluaran (OCR), dan memahami dokumen visual secara kontekstual.
+- 👂 **Telinga & Mulut: Groq API**
+  Pemrosesan sinyal suara (*Voice-to-Text*) dengan kecepatan kilat, memungkinkan pencernaan *Voice Note* tanpa latensi.
+- 💾 **Hippocampus (Pusat Ingatan): Supabase**
+  Gudang penyimpanan memori jangka panjang, catatan keuangan, dan profil kepribadian yang menjamin N.E.X.A terbebas dari amnesia meskipun peladen mengalami *restart*.
+- 🫀 **Jantung & Paru-Paru: Hugging Face Spaces (Node.js)**
+  Mesin pemompa (*Core Server*) yang berdenyut tanpa henti (24/7). Tanpanya, oksigen (data) berhenti mengalir dan seluruh subsistem N.E.X.A akan "tertidur".
+- 🧬 **DNA & Tulang Punggung: GitHub**
+  Pusat kode genetik (*source code*). Setiap baris kode adalah DNA yang mendefinisikan sifat, batasan, dan evolusi kapabilitas N.E.X.A.
+- ⚡ **Sistem Syaraf Tepi: Cloudflare & Vercel (Relay API)**
+  Jaringan penghantar impuls listrik yang membawa sinyal secara *asynchronous* dari Telegram (kulit luar) ke peladen utama (jantung) dengan latensi ultra-rendah.
+- 🎭 **Wajah & Interaksi Sosial: Telegram**
+  Bentuk perwujudan fisik (*User Interface*) N.E.X.A dalam berinteraksi—tempat ia menyapa, menegur, dan memberikan laporan harian kepada Tuan.
+- 📊 **Mata Batin (Jendela Refleksi): nexa-finance-web**
+  Dasbor analitik visual tempat Tuan Faqih bisa melihat cerminan mendalam dari isi otak finansial N.E.X.A.
+
+**Eksekutor Fisik ("Tangan-Tangan" N.E.X.A):**
+N.E.X.A tidak hanya berpikir, tetapi juga bertindak memanipulasi dunia digital Tuan Faqih melalui berbagai "tangan" (*API Integrations*):
+1. ✋ **Tangan Penjadwalan (Google Calendar):** Merombak, menyisipkan, dan memblokir waktu (*time-blocking*) secara otonom di kalender nyata Tuan.
+2. ✋ **Tangan Manajemen Proyek (Google Tasks):** Mencoret, memindahkan, dan mengurutkan daftar prioritas harian.
+3. ✋ **Tangan Akuntan (Finance Engine):** Memotong anggaran, menghitung mutasi, dan memvalidasi sisa saldo secara *real-time*.
+4. ✋ **Tangan Pengarsipan (Google Drive & Docs):** Mengindeks *vault*, menyusun kerangka dokumen, dan menyimpan basis pengetahuan (*2nd Brain*).
+5. 🦾 **Tangan Montir / Rekayasa (Antigravity Agent):** Entitas AI *programmer* (seperti yang sedang mengetik dokumen ini) yang bekerja di latar belakang merakit organ baru untuk N.E.X.A.
+
+---
+
+### 2.4 Immortality Protocol v3.0: Sistem Bertahan Hidup
 
 N.E.X.A beroperasi di lingkungan yang penuh hambatan. Berikut setiap ancaman dan mekanisme perlawanannya yang ditanamkan langsung dalam kode:
 
