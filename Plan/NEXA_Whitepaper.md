@@ -222,6 +222,12 @@ Untuk memahami arsitektur *Multi-Cloud Microservices* yang kompleks secara intui
   Bentuk perwujudan fisik (*User Interface*) N.E.X.A dalam berinteraksi—tempat ia menyapa, menegur, dan memberikan laporan harian kepada Tuan.
 - 📊 **Mata Batin (Jendela Refleksi): nexa-finance-web**
   Dasbor analitik visual tempat Tuan Faqih bisa melihat cerminan mendalam dari isi otak finansial N.E.X.A.
+- 📧 **Kelenjar Reseptor Finansial: Gmail API**
+  Ujung syaraf peraba yang memantau kotak masuk secara pasif. Saat ada email mutasi dari bank, ia mengirimkan impuls ke *Finance Engine* tanpa disuruh.
+- 🌦️ **Indera Peraba Lingkungan Eksternal: WeatherAPI & NewsAPI**
+  Organ sensorik yang menyerap data suhu, cuaca, dan berita global setiap subuh untuk diracik menjadi *Morning Briefing*.
+- ⚡ **Alat Pacu Jantung (Pacemaker): cron-job.org / UptimeRobot**
+  Pemberi "kejutan listrik" (ping) berkala setiap 5 menit ke *endpoint* `/health` agar jantung N.E.X.A (Hugging Face) tidak pernah berhenti berdetak.
 
 **Eksekutor Fisik ("Tangan-Tangan" N.E.X.A):**
 N.E.X.A tidak hanya berpikir, tetapi juga bertindak memanipulasi dunia digital Tuan Faqih melalui berbagai "tangan" (*API Integrations*):
@@ -229,6 +235,7 @@ N.E.X.A tidak hanya berpikir, tetapi juga bertindak memanipulasi dunia digital T
 2. ✋ **Tangan Manajemen Proyek (Google Tasks):** Mencoret, memindahkan, dan mengurutkan daftar prioritas harian.
 3. ✋ **Tangan Akuntan (Finance Engine):** Memotong anggaran, menghitung mutasi, dan memvalidasi sisa saldo secara *real-time*.
 4. ✋ **Tangan Pengarsipan (Google Drive & Docs):** Mengindeks *vault*, menyusun kerangka dokumen, dan menyimpan basis pengetahuan (*2nd Brain*).
+5. ✋ **Tangan Kidal / Memori Ekstra (Notion API):** Melakukan pencatatan ganda (*dual-write*). Saat tangan kanan menulis di Google Tasks, tangan kiri menyalinnya ke papan Notion secara paralel.
 
 ---
 
