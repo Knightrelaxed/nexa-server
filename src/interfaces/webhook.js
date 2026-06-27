@@ -1761,7 +1761,6 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
                 try {
                   const { executeWithFallback } = require('../core/Fallback_Engine');
                   const { NEXA_PERSONALITY } = require('../config/personality');
-                  const { sendTelegramOutbound } = require('../infrastructure/Telegram_Client');
                   
                   const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Dashboard:\n${calResult.message}\n\nTugas: Berikan obrolan singkat yang ramah (1-2 kalimat) mengenai isi jadwal di atas. Berikan saran persiapan, peringatan, atau semangat (misalnya jika padat sarankan istirahat, jika kosong sarankan bersantai). JANGAN membaca ulang semua isi jadwal, cukup analisis maknanya secara umum sebagai asisten pribadi yang perhatian.`;
                   
