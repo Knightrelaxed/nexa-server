@@ -1741,16 +1741,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           }
 
           if (calResult && calResult.message) {
-            if (calData.action === 'READ') {
-              const { executeWithFallback } = require('../core/Fallback_Engine');
-              const { NEXA_PERSONALITY } = require('../config/personality');
-              const todayStr = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-              const prompt = `System Time (Asia/Jakarta): ${todayStr}\nUser Asked: "${textInput}"\n\nCalendar Data:\n${calResult.message}\n\nTask:\n1. Answer IN INDONESIAN as a highly polite, warm, and friendly personal assistant.\n2. If the user ONLY asks about the day/date (e.g., "what day is tomorrow"), answer using ONLY System Time. Do not mention events.\n3. If they ask about their schedule/events and Calendar Data is empty, explicitly state that their schedule is empty/free in a very warm tone. DO NOT ask if they want to check their schedule.\n4. Output plain text only, NO JSON.`;
-              const answer = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.5, false);
-              domainReply = answer;
-            } else {
-              domainReply = calResult.message;
-            }
+            domainReply = calResult.message;
           }
         }
         break;
