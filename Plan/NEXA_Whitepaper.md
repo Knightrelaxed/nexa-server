@@ -229,7 +229,6 @@ N.E.X.A tidak hanya berpikir, tetapi juga bertindak memanipulasi dunia digital T
 2. ✋ **Tangan Manajemen Proyek (Google Tasks):** Mencoret, memindahkan, dan mengurutkan daftar prioritas harian.
 3. ✋ **Tangan Akuntan (Finance Engine):** Memotong anggaran, menghitung mutasi, dan memvalidasi sisa saldo secara *real-time*.
 4. ✋ **Tangan Pengarsipan (Google Drive & Docs):** Mengindeks *vault*, menyusun kerangka dokumen, dan menyimpan basis pengetahuan (*2nd Brain*).
-5. 🦾 **Tangan Montir / Rekayasa (Antigravity Agent):** Entitas AI *programmer* (seperti yang sedang mengetik dokumen ini) yang bekerja di latar belakang merakit organ baru untuk N.E.X.A.
 
 ---
 
