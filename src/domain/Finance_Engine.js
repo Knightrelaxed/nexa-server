@@ -966,7 +966,23 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
   let msg = '';
   for (const [key, pending] of pendingConfirmations.entries()) {
     if (newDescription) pending.tx.description = newDescription;
-    if (newCategory) pending.tx.category = newCategory;
+    
+    // ── VALIDASI KATEGORI ────────────────────────────────────────────────────────
+    if (newCategory) {
+      const categories = await supabaseFinance.getCategoriesList();
+      const normalizedInput = newCategory.toLowerCase().replace(/\s+/g, '');
+      const matched = categories.find(c => {
+        const normalizedName = c.name.toLowerCase().replace(/\s+/g, '');
+        return normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
+      });
+      
+      if (matched) {
+        pending.tx.category = matched.name;
+      } else {
+        // Fallback to AI categorizer if fuzzy match fails
+        pending.tx.category = await _autoCategorizeMerchant(newCategory, null);
+      }
+    }
     if (newNominal) {
       const parsed = _parseFlexibleCurrency(newNominal);
       if (!isNaN(parsed)) pending.tx.nominal = parsed;
