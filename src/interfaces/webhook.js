@@ -402,6 +402,20 @@ async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
 }
 
 // ============================================================
+// Helper: Strip accidental wrapping quotes from AI conversational responses
+const stripSurroundingQuotes = (str) => {
+  if (typeof str !== 'string') return str;
+  let cleaned = str.trim();
+  while (cleaned.length > 2 && (
+    (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+    (cleaned.startsWith('“') && cleaned.endsWith('”')) ||
+    (cleaned.startsWith("'") && cleaned.endsWith("'"))
+  )) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+  return cleaned;
+};
+
 // OUTBOUND TELEGRAM SENDER
 // Routes through Cloudflare Worker proxy because HuggingFace
 // blocks ALL outbound connections to api.telegram.org.
@@ -409,15 +423,16 @@ async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
 // ============================================================
 async function sendTelegramOutbound(text, skipMemory = false) {
   try {
+    const cleanText = stripSurroundingQuotes(String(text));
     if (!skipMemory) {
-      await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => { });
+      await supabaseMemories.saveChatMemory('nexa', cleanText.substring(0, 4000)).catch(() => { });
     }
 
     if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
     const botToken = env.TELEGRAM_BOT_TOKEN.trim();
     const chatId = env.TELEGRAM_CHAT_ID.trim();
 
-    const result = await sendTelegramMessage(text, chatId, botToken);
+    const result = await sendTelegramMessage(cleanText, chatId, botToken);
     console.log('[TELEGRAM-OUTBOUND] Sent via relay:', JSON.stringify(result).substring(0, 200));
   } catch (e) {
     console.error('[TELEGRAM-OUTBOUND] Error:', e.message);
@@ -456,10 +471,11 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     // respondToTelegram — Capture reply for webhook response (zero outbound)
     // ============================================================
     const respondToTelegram = async (text, skipMemory = false) => {
+      const cleanText = stripSurroundingQuotes(String(text));
       if (!skipMemory) {
-        await supabaseMemories.saveChatMemory('nexa', String(text).substring(0, 4000)).catch(() => { });
+        await supabaseMemories.saveChatMemory('nexa', cleanText.substring(0, 4000)).catch(() => { });
       }
-      webhookReply = String(text).substring(0, 4000);
+      webhookReply = cleanText.substring(0, 4000);
     };
 
     const deliverWebhookReply = () => {
@@ -1762,11 +1778,12 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
                   const { executeWithFallback } = require('../core/Fallback_Engine');
                   const { NEXA_PERSONALITY } = require('../config/personality');
                   
-                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Dashboard:\n${calResult.message}\n\nTask: Write a 1-2 sentence friendly response IN INDONESIAN analyzing the schedule above. Act as a caring personal assistant. Provide a brief prep suggestion or encouragement based on how busy the schedule is. DO NOT repeat the events. Keep it concise, warm, and natural.`;
+                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Dashboard:\n${calResult.message}\n\nTask: Write a 1-2 sentence friendly response IN INDONESIAN analyzing the schedule above. Act as a caring personal assistant. Provide a brief prep suggestion or encouragement based on how busy the schedule is. DO NOT repeat the events. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
                   
                   const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
                   if (advice && !advice.includes('DUMB_MODE')) {
-                    await sendTelegramOutbound(advice);
+                    const cleanAdvice = stripSurroundingQuotes(advice);
+                    await sendTelegramOutbound(cleanAdvice);
                   }
                 } catch (err) {
                   console.error('[CALENDAR] Failed to generate conversational advice:', err.message);
