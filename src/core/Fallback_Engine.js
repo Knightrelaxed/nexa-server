@@ -23,11 +23,10 @@ const groqKeys = [
  * Execute AI Prompt with Multi-Tier Fallback (11 Layers)
  *
  * Tier 1-4 : Groq Llama 4 Scout 17B Key 1-4  (The Sprinters — fast & high TPM)
- * Tier 5-6 : Gemini 2.5 Flash Key 1-2     (The Deep Thinkers)
- * Tier 7   : Cerebras Gemma 4 31B         (The Backup Sprinter)
- * Tier 8-9 : Gemini 2.5 Flash Key 3-4    (The Infinite Context / Backup Thinkers)
- * Tier 10  : Mistral Pixtral 12B          (The Reliable Closer)
- * Tier 11  : OpenRouter Gemma 2 27B       (The Last Resort)
+ * Tier 5-8 : Gemini 2.5 Flash Key 1-4  (The Deep Thinkers & Infinite Quota)
+ * Tier 9   : Cerebras Gemma 4 31B       (The Backup Sprinter)
+ * Tier 10  : Mistral Pixtral 12B        (The Reliable Closer)
+ * Tier 11  : OpenRouter Gemma 2 27B     (The Last Resort)
  */
 const getErrDetails = (e) => {
   const status = e.status || e.response?.status || 'NET';
@@ -83,28 +82,28 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     } catch (e) { console.warn('[FALLBACK] Tier 6 (Gemini 2.5 Key 2) failed:', getErrDetails(e)); }
   }
 
-  // Tier 7: Cerebras Gemma 4 31B
-  if (env.CEREBRAS_API_KEY) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 7 (Cerebras Gemma 4 31B)...');
-      return await callCerebras(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 7 (Cerebras) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 8: Gemini 2.5 Flash (Key 3)
+  // Tier 7: Gemini 2.5 Flash (Key 3)
   if (geminiClients[2]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 8 (Gemini 2.5 Flash Key 3)...');
+      console.log('[FALLBACK] Switching to Tier 7 (Gemini 2.5 Flash Key 3)...');
       return await callGeminiWithRetry(geminiClients[2], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 8 (Gemini 2.5 Key 3) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 7 (Gemini 2.5 Key 3) failed:', getErrDetails(e)); }
   }
 
-  // Tier 9: Gemini 2.5 Flash (Key 4)
+  // Tier 8: Gemini 2.5 Flash (Key 4)
   if (geminiClients[3]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 9 (Gemini 2.5 Flash Key 4)...');
+      console.log('[FALLBACK] Switching to Tier 8 (Gemini 2.5 Flash Key 4)...');
       return await callGeminiWithRetry(geminiClients[3], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 9 (Gemini 2.5 Key 4) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 8 (Gemini 2.5 Key 4) failed:', getErrDetails(e)); }
+  }
+
+  // Tier 9: Cerebras Gemma 4 31B
+  if (env.CEREBRAS_API_KEY) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 9 (Cerebras Gemma 4 31B)...');
+      return await callCerebras(prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 9 (Cerebras) failed:', getErrDetails(e)); }
   }
 
   // Tier 10: Mistral API (Pixtral 12B)
