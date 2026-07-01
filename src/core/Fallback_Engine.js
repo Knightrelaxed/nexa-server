@@ -24,7 +24,7 @@ const groqKeys = [
  *
  * Tier 1-4 : Groq Llama 4 Scout 17B Key 1-4  (The Sprinters — fast & high TPM)
  * Tier 5-6 : Gemini 2.5 Flash Key 1-2     (The Deep Thinkers)
- * Tier 7   : Cerebras Llama 3.3 70B       (The Backup Sprinter)
+ * Tier 7   : Cerebras Gemma 4 31B         (The Backup Sprinter)
  * Tier 8-9 : Gemini 2.5 Flash Key 3-4    (The Infinite Context / Backup Thinkers)
  * Tier 10  : Mistral Pixtral 12B          (The Reliable Closer)
  * Tier 11  : OpenRouter Gemma 2 27B       (The Last Resort)
@@ -83,10 +83,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     } catch (e) { console.warn('[FALLBACK] Tier 6 (Gemini 2.5 Key 2) failed:', getErrDetails(e)); }
   }
 
-  // Tier 7: Cerebras Llama 3.3 70B
+  // Tier 7: Cerebras Gemma 4 31B
   if (env.CEREBRAS_API_KEY) {
     try {
-      console.log('[FALLBACK] Switching to Tier 7 (Cerebras Llama 3.3 70B)...');
+      console.log('[FALLBACK] Switching to Tier 7 (Cerebras Gemma 4 31B)...');
       return await callCerebras(prompt, systemInstruction, temperature, jsonMode);
     } catch (e) { console.warn('[FALLBACK] Tier 7 (Cerebras) failed:', getErrDetails(e)); }
   }
@@ -194,7 +194,7 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
 
 async function callCerebras(prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
   const requestBody = {
-    model: 'llama-3.3-70b',  // Updated: Cerebras renamed model from 'llama3.1-70b' to 'llama-3.3-70b'
+    model: 'gemma-4-31b',  // Updated: Cerebras deprecated llama-3.3-70b and upgraded to gemma-4-31b
     messages: [
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
