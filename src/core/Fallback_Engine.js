@@ -26,7 +26,7 @@ const groqKeys = [
  * Tier 5-8 : Gemini 2.5 Flash Key 1-4  (The Deep Thinkers & Infinite Quota)
  * Tier 9   : Cerebras Gemma 4 31B       (The Backup Sprinter)
  * Tier 10  : Mistral Pixtral 12B        (The Reliable Closer)
- * Tier 11  : OpenRouter Gemma 2 27B     (The Last Resort)
+ * Tier 11  : OpenRouter Multi-Model Free (The Indestructible Last Resort)
  */
 const getErrDetails = (e) => {
   const status = e.status || e.response?.status || 'NET';
@@ -251,33 +251,50 @@ async function callMistral(prompt, systemInstruction, temperature, jsonMode = tr
   }
 }
 
-async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
-  const requestBody = {
-    model: 'google/gemma-2-27b-it',
-    messages: [
-      { role: 'system', content: systemInstruction },
-      { role: 'user', content: prompt }
-    ],
-    temperature,
-    max_tokens: 1500
-  };
-  if (jsonMode) requestBody.response_format = { type: 'json_object' };
+async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode = true, retries = 2) {
+  const models = [
+    'google/gemma-4-31b-it:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'qwen/qwen3-next-80b-a3b-instruct:free',
+    'liquid/lfm-2.5-1.2b-instruct:free'
+  ];
 
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', requestBody, {
-        headers: { 'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
-        timeout: 15000
-      });
-      return response.data.choices[0].message.content;
-    } catch (e) {
-      if (e.response?.status === 503 && attempt < retries) {
-        await new Promise(r => setTimeout(r, attempt * 2000));
-        continue;
+  for (const model of models) {
+    const requestBody = {
+      model,
+      messages: [
+        { role: 'system', content: systemInstruction },
+        { role: 'user', content: prompt }
+      ],
+      temperature,
+      max_tokens: 1500
+    };
+    if (jsonMode) requestBody.response_format = { type: 'json_object' };
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', requestBody, {
+          headers: {
+            'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://nexa.ai',
+            'X-Title': 'NEXA Assistant'
+          },
+          timeout: 15000
+        });
+        return response.data.choices[0].message.content;
+      } catch (e) {
+        if (e.response?.status === 503 && attempt < retries) {
+          await new Promise(r => setTimeout(r, attempt * 2000));
+          continue;
+        }
+        console.warn(`[FALLBACK] OpenRouter model ${model} failed:`, getErrDetails(e));
+        break; // Stop retrying this specific model and jump to the next free model in the list
       }
-      throw e;
     }
   }
+  throw new Error('All OpenRouter fallback models exhausted.');
 }
 
 module.exports = { executeWithFallback };
