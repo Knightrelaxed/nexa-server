@@ -22,7 +22,7 @@ const groqKeys = [
 /**
  * Execute AI Prompt with Multi-Tier Fallback (11 Layers)
  *
- * Tier 1-4 : Groq Llama 3.3 70B Key 1-4  (The Sprinters — fast & cheap)
+ * Tier 1-4 : Groq Llama 4 Scout 17B Key 1-4  (The Sprinters — fast & high TPM)
  * Tier 5-6 : Gemini 2.5 Flash Key 1-2     (The Deep Thinkers)
  * Tier 7   : Cerebras Llama 3.3 70B       (The Backup Sprinter)
  * Tier 8-9 : Gemini 2.0 Flash Key 3-4    (The Infinite Context)
@@ -36,14 +36,14 @@ const getErrDetails = (e) => {
 };
 
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Groq Llama 3.3 70B (Key 1)
+  // Tier 1: Groq Llama 4 Scout 17B (Key 1)
   if (groqKeys[0]) {
     try {
       return await callGroq(groqKeys[0], prompt, systemInstruction, temperature, jsonMode);
     } catch (e) { console.warn('[FALLBACK] Tier 1 (Groq Key 1) failed:', getErrDetails(e)); }
   }
 
-  // Tier 2: Groq Llama 3.3 70B (Key 2)
+  // Tier 2: Groq Llama 4 Scout 17B (Key 2)
   if (groqKeys[1]) {
     try {
       console.log('[FALLBACK] Switching to Tier 2 (Groq Key 2)...');
@@ -51,7 +51,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     } catch (e) { console.warn('[FALLBACK] Tier 2 (Groq Key 2) failed:', getErrDetails(e)); }
   }
 
-  // Tier 3: Groq Llama 3.3 70B (Key 3)
+  // Tier 3: Groq Llama 4 Scout 17B (Key 3)
   if (groqKeys[2]) {
     try {
       console.log('[FALLBACK] Switching to Tier 3 (Groq Key 3)...');
@@ -59,7 +59,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     } catch (e) { console.warn('[FALLBACK] Tier 3 (Groq Key 3) failed:', getErrDetails(e)); }
   }
 
-  // Tier 4: Groq Llama 3.3 70B (Key 4)
+  // Tier 4: Groq Llama 4 Scout 17B (Key 4)
   if (groqKeys[3]) {
     try {
       console.log('[FALLBACK] Switching to Tier 4 (Groq Key 4)...');
@@ -165,7 +165,7 @@ async function callGeminiWithRetry(client, modelName, prompt, systemInstruction,
 
 async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
   const requestBody = {
-    model: 'llama-3.3-70b-versatile',
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     messages: [
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
