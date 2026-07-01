@@ -1736,6 +1736,15 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           // AI Router nests calendar data under 'CALENDAR' key — unwrap it for Agenda_Manager
           const calData = routingData.extracted_data.CALENDAR || routingData.extracted_data;
 
+          // Sanitize hallucinated summary for READ actions
+          if (calData.summary && typeof calData.summary === 'string' && ['READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(calData.action)) {
+            const sLower = calData.summary.trim().toLowerCase();
+            if (sLower.length > 25 || /adalah|tidak ada|jadwal|tugas|jatuh tempo|hari besok|hari ini|minggu ini|senin|selasa|rabu|kamis|jumat|sabtu|minggu|juli|agustus|januari|februari|maret|april|mei|juni|september|oktober|november|desember|202[0-9]/i.test(sLower)) {
+              console.warn(`[WEBHOOK] Hallucinated READ summary ignored: "${calData.summary}"`);
+              calData.summary = null;
+            }
+          }
+
           // If there's a pending calendar and the current CREATE has an end time + matching summary, merge!
           if (pendingCalendarContext && calData.action === 'CREATE' && calData.end && !calData.summary) {
             calData.summary = pendingCalendarContext.summary;

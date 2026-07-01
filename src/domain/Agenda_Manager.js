@@ -93,8 +93,17 @@ async function parseDurationMinutes(text) {
 }
 
 async function handleCalendarIntent(extractedData, rawUserText = '') {
-  const { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence, color_id } = extractedData;
+  let { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence, color_id } = extractedData;
   console.log(`[AGENDA] Executing Calendar Intent: ${action}`);
+
+  // Sanitize summary against AI hallucinations during READ actions (e.g. AI putting sentences or date descriptions in summary field)
+  if (summary && typeof summary === 'string' && ['READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(action)) {
+    const sLower = summary.trim().toLowerCase();
+    if (sLower.length > 25 || /adalah|tidak ada|jadwal|tugas|jatuh tempo|hari besok|hari ini|minggu ini|senin|selasa|rabu|kamis|jumat|sabtu|minggu|juli|agustus|januari|februari|maret|april|mei|juni|september|oktober|november|desember|202[0-9]/i.test(sLower)) {
+      console.warn(`[AGENDA] Hallucinated READ summary ignored: "${summary}"`);
+      summary = null;
+    }
+  }
 
   try {
     if (action === 'CREATE') {
@@ -268,6 +277,20 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         events = await googleWorkspace.getEventsByDateRange(start, endDate.toISOString());
         tasks = await googleTasks.getTasksByDateRange(start, endDate.toISOString());
         dateLabel = startDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        
+        const now = new Date();
+        const jakartaTodayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const jakartaStartStr = startDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const tmrw = new Date(now.getTime() + 86400000);
+        const jakartaTmrwStr = tmrw.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        
+        if (jakartaStartStr === jakartaTodayStr) {
+          dashboardTitle = 'DASHBOARD HARI INI';
+        } else if (jakartaStartStr === jakartaTmrwStr) {
+          dashboardTitle = 'DASHBOARD BESOK';
+        } else {
+          dashboardTitle = 'DASHBOARD AGENDA';
+        }
       } else {
         // Fallback to today if no date provided
         events = await googleWorkspace.getTodaysEvents();
