@@ -326,15 +326,15 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
             const sTime = new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
             const eTime = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
             // Check if it spans multiple days
-            const sDate = new Date(startRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' });
-            const eDate = new Date(endRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' });
+            const sDate = new Date(startRaw).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+            const eDate = new Date(endRaw).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
             if (sDate !== eDate) {
                timeLabel = `${sDate} ${sTime} - ${eDate} ${eTime}`;
             } else {
                timeLabel = `${sTime} - ${eTime}`;
             }
           } else {
-             const sDate = new Date(startRaw).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' });
+             const sDate = new Date(startRaw).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
              timeLabel = `${sDate} (Sepanjang hari)`;
           }
           
@@ -560,7 +560,9 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       const timeMin = `${todayStr}T00:00:00+07:00`;
       const timeMax = `${futureStr}T23:59:59+07:00`;
 
-      let msg = `📆 <b>7 HARI KE DEPAN</b>\n`;
+      const startLabel = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+      const endLabel = new Date(Date.now() + 7 * 86400000).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+      let msg = `🗓️ <b>DASHBOARD 7 HARI KE DEPAN</b>\n<i>Dari ${startLabel} sampai ${endLabel}</i>\n`;
 
       // Calendar events
       try {
@@ -569,7 +571,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
           msg += `\n📅 <b>JADWAL (${events.length} acara):</b>\n`;
           msg += events.map(e => {
             const startRaw = e.start?.dateTime || e.start?.date;
-            const dayLabel = new Date(startRaw).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' });
+            const dayLabel = new Date(startRaw).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
             const timeStr = e.start?.dateTime ? new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '';
             return `   ▸ ${dayLabel}${timeStr ? ' ' + timeStr : ''} — ${e.summary || '(Tanpa judul)'}`;
           }).join('\n');
@@ -590,7 +592,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
             byDate[d].push(t);
           }
           for (const [date, group] of Object.entries(byDate).sort()) {
-            const label = new Date(date + 'T00:00:00+07:00').toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+            const label = new Date(date + 'T00:00:00+07:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
             msg += `   📌 <b>${label}:</b> ${group.map(t => t.title).join(', ')}\n`;
           }
         } else {
