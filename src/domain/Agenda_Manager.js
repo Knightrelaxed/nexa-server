@@ -267,8 +267,8 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       if (start && end) {
         events = await googleWorkspace.getEventsByDateRange(start, end);
         tasks = await googleTasks.getTasksByDateRange(start, end);
-        const sDate = new Date(start).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-        const eDate = new Date(end).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        const sDate = new Date(start).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        const eDate = new Date(end).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
         dateLabel = sDate === eDate ? sDate : `Dari ${sDate} sampai ${eDate}`;
       } else if (start) {
         const startDate = new Date(start);
@@ -277,26 +277,33 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         events = await googleWorkspace.getEventsByDateRange(start, endDate.toISOString());
         tasks = await googleTasks.getTasksByDateRange(start, endDate.toISOString());
         dateLabel = startDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-        
-        const now = new Date();
-        const jakartaTodayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-        const jakartaStartStr = startDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-        const tmrw = new Date(now.getTime() + 86400000);
-        const jakartaTmrwStr = tmrw.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-        
-        if (jakartaStartStr === jakartaTodayStr) {
-          dashboardTitle = 'DASHBOARD HARI INI';
-        } else if (jakartaStartStr === jakartaTmrwStr) {
-          dashboardTitle = 'DASHBOARD BESOK';
-        } else {
-          dashboardTitle = 'DASHBOARD AGENDA';
-        }
       } else {
         // Fallback to today if no date provided
         events = await googleWorkspace.getTodaysEvents();
         tasks = await googleTasks.getTasksDueToday();
         dateLabel = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
         dashboardTitle = 'DASHBOARD HARI INI';
+      }
+
+      // Automatically refine dashboard title for single-day queries (today, tomorrow, lusa)
+      if (start && (!end || new Date(start).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }) === new Date(end).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }))) {
+        const now = new Date();
+        const jakartaTodayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const jakartaStartStr = new Date(start).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const tmrw = new Date(now.getTime() + 86400000);
+        const jakartaTmrwStr = tmrw.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const lusa = new Date(now.getTime() + 2 * 86400000);
+        const jakartaLusaStr = lusa.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        
+        if (jakartaStartStr === jakartaTodayStr) {
+          dashboardTitle = 'DASHBOARD HARI INI';
+        } else if (jakartaStartStr === jakartaTmrwStr) {
+          dashboardTitle = 'DASHBOARD BESOK';
+        } else if (jakartaStartStr === jakartaLusaStr) {
+          dashboardTitle = 'DASHBOARD LUSA';
+        } else {
+          dashboardTitle = 'DASHBOARD AGENDA';
+        }
       }
 
       // If a summary search keyword was provided, filter the events (not tasks, as summary applies to calendar)
