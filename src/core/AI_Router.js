@@ -201,7 +201,7 @@ function _selectUserProfileFacts(userProfile, userMessage) {
   const remaining = userProfile.slice(PROFILE_CORE_COUNT);
   if (remaining.length === 0) return core;
 
-  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana']);
+  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana', 'nexa', 'tuan', 'faqih', 'sistem', 'adalah', 'yaitu', 'merupakan', 'oleh', 'sebagai', 'harus', 'wajib', 'juga', 'lagi', 'saja', 'tadi', 'baru', 'banyak']);
   const msgStr = typeof userMessage === 'string' ? userMessage : String(userMessage || '');
   const words = msgStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
 
@@ -226,7 +226,7 @@ function _selectCoreIdentityFacts(coreIdentity, userMessage) {
   const remaining = coreIdentity.slice(IDENTITY_CORE_COUNT);
   if (remaining.length === 0) return core;
 
-  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana']);
+  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana', 'nexa', 'tuan', 'faqih', 'sistem', 'adalah', 'yaitu', 'merupakan', 'oleh', 'sebagai', 'harus', 'wajib', 'juga', 'lagi', 'saja', 'tadi', 'baru', 'banyak']);
   const msgStr = typeof userMessage === 'string' ? userMessage : String(userMessage || '');
   const words = msgStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
 
