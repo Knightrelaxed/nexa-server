@@ -1541,8 +1541,16 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       const aiRouter = require('../core/AI_Router');
       for (const fact of routingData.learned_user_facts) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
-          console.log('[ROUTER] Passive Learning - User Fact:', fact);
-          await aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE');
+          // Safety guard: if the "user fact" is actually about N.E.X.A, reroute to CORE_IDENTITY
+          const isAboutNexa = /\b(nexa|n\.e\.x\.a|kamu|anda|bot|ai|asisten)\b/i.test(fact) &&
+                               /\b(diciptakan|dibuat|diluncurkan|lahir|nama|kemampuan|versi|tujuan|identitas|dirimu)\b/i.test(fact);
+          if (isAboutNexa) {
+            console.log('[ROUTER] Passive Learning - Rerouted to Core Identity:', fact);
+            await aiRouter.deduplicateAndSaveFact(fact, 'CORE_IDENTITY');
+          } else {
+            console.log('[ROUTER] Passive Learning - User Fact:', fact);
+            await aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE');
+          }
         }
       }
       invalidatePersonalFactsCache();
@@ -2012,9 +2020,20 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           const action = routingData.extracted_data.action || (routingData.extracted_data.content ? 'APPEND' : 'READ');
           if (action === 'APPEND' && routingData.extracted_data.content) {
             const aiRouter = require('../core/AI_Router');
-            const saved = await aiRouter.deduplicateAndSaveFact(routingData.extracted_data.content, 'USER_PROFILE');
-            invalidatePersonalFactsCache();
-            domainReply = saved ? `✅ Fakta personal tersimpan ke database profil. Saya akan selalu mengingatnya, Tuan.` : `✅ Saya sudah mengingat hal tersebut sebelumnya, Tuan.`;
+            const content = routingData.extracted_data.content;
+            // Safety guard: if the content is a fact about N.E.X.A itself, store it in CORE_IDENTITY
+            const isAboutNexa = /\b(nexa|n\.e\.x\.a|kamu|anda|bot|ai|asisten)\b/i.test(content) &&
+                                 /\b(diciptakan|dibuat|diluncurkan|lahir|nama|kemampuan|versi|tujuan|identitas|dirimu|diriku sebagai)\b/i.test(content);
+            if (isAboutNexa) {
+              console.log('[ROUTER] USER_PROFILE redirected to CORE_IDENTITY for fact about N.E.X.A:', content);
+              const saved = await aiRouter.deduplicateAndSaveFact(content, 'CORE_IDENTITY');
+              invalidatePersonalFactsCache();
+              domainReply = saved ? `✅ Fakta tentang diri saya (N.E.X.A) telah tersimpan ke memori inti. Saya tidak akan melupakannya, Tuan.` : `✅ Hal tersebut sudah tersimpan di memori inti saya sebelumnya, Tuan.`;
+            } else {
+              const saved = await aiRouter.deduplicateAndSaveFact(content, 'USER_PROFILE');
+              invalidatePersonalFactsCache();
+              domainReply = saved ? `✅ Fakta personal tersimpan ke database profil. Saya akan selalu mengingatnya, Tuan.` : `✅ Saya sudah mengingat hal tersebut sebelumnya, Tuan.`;
+            }
           } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
             const success = await supabaseMemories.deleteFromUserProfile(routingData.extracted_data.search_keyword);
             invalidatePersonalFactsCache();
