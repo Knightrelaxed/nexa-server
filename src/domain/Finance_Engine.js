@@ -895,25 +895,43 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
  * Returns a reply message to send to the user, or null if no pending transactions.
  */
 /**
- * Given a reply snippet text (the first 100 chars of a confirmation message),
+ * Given a snippet text (from a Telegram reply_to_message) of a confirmation message,
  * try to find which compositeKey in pendingConfirmations best matches it.
- * Matches by nominal amount extracted from the snippet text.
- * Returns the matching compositeKey string, or null if no match / only 1 pending.
+ *
+ * Matching strategy:
+ *   1. PRIMARY: Extract Rp-prefixed amounts via regex (handles "Rp25.000", "Rp1.250.000")
+ *   2. SECONDARY: Fallback to any standalone large number (>= 1000) in the snippet
+ *
+ * Returns the matching compositeKey string, or null if no match / only 1 pending tx.
  */
 function _resolveTargetKeyFromSnippet(replySnippet) {
   if (!replySnippet || pendingConfirmations.size <= 1) return null;
 
-  // Extract all numbers from the snippet (handles "Rp25.000" → 25000, "Rp1.250.000" → 1250000)
-  const clean = replySnippet.replace(/[^0-9.,]/g, ' ');
   const candidates = [];
-  for (const part of clean.split(/\s+/)) {
-    const n = _parseFlexibleCurrency(part);
+
+  // Strategy 1 (PRIMARY): Extract Rp-prefixed amounts — most reliable
+  // Handles: Rp25.000, Rp1.250.000, Rp25,000, Rp1,250,000
+  const rpPattern = /[Rr][Pp]\.?\s*([0-9][0-9.,]+)/g;
+  let m;
+  while ((m = rpPattern.exec(replySnippet)) !== null) {
+    const n = _parseFlexibleCurrency(m[1]);
     if (!isNaN(n) && n > 0) candidates.push(n);
+  }
+
+  // Strategy 2 (FALLBACK): If no Rp prefix found, look for large standalone numbers
+  // e.g., the user quoted just the number in their message
+  if (candidates.length === 0) {
+    const clean = replySnippet.replace(/[^0-9.,]/g, ' ');
+    for (const part of clean.split(/\s+/)) {
+      if (part.length < 4) continue; // skip short fragments
+      const n = _parseFlexibleCurrency(part);
+      if (!isNaN(n) && n >= 1000) candidates.push(n);
+    }
   }
 
   if (candidates.length === 0) return null;
 
-  // Find a pending key whose nominal matches one of the extracted numbers
+  // Find a pending key whose nominal matches one of the extracted amounts
   for (const [key, pending] of pendingConfirmations.entries()) {
     const txNominal = typeof pending.tx.nominal === 'number'
       ? pending.tx.nominal

@@ -1284,7 +1284,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       // This prevents the "blind loop" where answering Tx A accidentally updates Tx B.
       let targetKey = null;
       const replySnippet = message.reply_to_message && message.reply_to_message.text
-        ? message.reply_to_message.text.substring(0, 200)
+        ? message.reply_to_message.text.substring(0, 500)
         : null;
       if (replySnippet) {
         targetKey = financeEngine.resolveTargetKeyFromSnippet(replySnippet);
@@ -1699,7 +1699,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           domainReply = result.message;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CONFIRM_TRANSACTION') {
           const replySnippetFin = message.reply_to_message && message.reply_to_message.text
-            ? message.reply_to_message.text.substring(0, 200)
+            ? message.reply_to_message.text.substring(0, 500)
             : null;
           const targetKeyFin = replySnippetFin ? financeEngine.resolveTargetKeyFromSnippet(replySnippetFin) : null;
           const confirmationReply = await financeEngine.confirmPendingTransactions(
@@ -1717,7 +1717,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'UPDATE_PENDING') {
           const replySnippetUpd = message.reply_to_message && message.reply_to_message.text
-            ? message.reply_to_message.text.substring(0, 200)
+            ? message.reply_to_message.text.substring(0, 500)
             : null;
           const targetKeyUpd = replySnippetUpd ? financeEngine.resolveTargetKeyFromSnippet(replySnippetUpd) : null;
           const updatedMsg = await financeEngine.updatePendingTransaction(
@@ -1735,7 +1735,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CANCEL_TRANSACTION') {
           const replySnippetCan = message.reply_to_message && message.reply_to_message.text
-            ? message.reply_to_message.text.substring(0, 200)
+            ? message.reply_to_message.text.substring(0, 500)
             : null;
           const targetKeyCan = replySnippetCan ? financeEngine.resolveTargetKeyFromSnippet(replySnippetCan) : null;
           const confirmationReply = await financeEngine.confirmPendingTransactions(false, null, null, null, null, targetKeyCan);
