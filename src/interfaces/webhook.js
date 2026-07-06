@@ -1277,13 +1277,34 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
     // ============================================================
     const pendingFinanceCtx = await financeEngine.getPendingConfirmationsContext();
     if (pendingFinanceCtx) {
-      // Extract the first pending tx for context to give the AI classifier
+      // ── TARGETED REPLY RESOLUTION ──────────────────────────────────────────
+      // When the user explicitly replies to one of N.E.X.A's confirmation messages,
+      // extract the original message text snippet and resolve which pending transaction
+      // the user is talking about (based on nominal amount in the original message).
+      // This prevents the "blind loop" where answering Tx A accidentally updates Tx B.
+      let targetKey = null;
+      const replySnippet = message.reply_to_message && message.reply_to_message.text
+        ? message.reply_to_message.text.substring(0, 200)
+        : null;
+      if (replySnippet) {
+        targetKey = financeEngine.resolveTargetKeyFromSnippet(replySnippet);
+        if (targetKey) {
+          console.log(`[FINANCE INTERCEPTOR] Reply targeted to pending tx key: ${targetKey}`);
+        }
+      }
+
+      // Build context for the AI classifier: use the targeted tx if resolved, otherwise first pending
       let pendingTxContext = {};
       try {
         const pendingRows = await supabaseMemories.getPendingTransactions();
         if (pendingRows && pendingRows.length > 0) {
-          const first = pendingRows[0].tx_data || {};
-          pendingTxContext = { nominal: first.nominal, destination: first.destination, type: first.type };
+          // If we resolved a target from the reply, find its row in Supabase for accurate context
+          let contextRow = null;
+          if (targetKey) {
+            contextRow = pendingRows.find(r => r.composite_key === targetKey);
+          }
+          const rowData = (contextRow || pendingRows[0]).tx_data || {};
+          pendingTxContext = { nominal: rowData.nominal, destination: rowData.destination, type: rowData.type };
         }
       } catch (_) {}
 
@@ -1293,12 +1314,12 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       console.log(`[FINANCE INTERCEPTOR] AI classified intent: "${intent}" for input: "${textInput}"`, parsedData.updates);
 
       if (intent === 'CONFIRM') {
-        const confirmReply = await financeEngine.confirmPendingTransactions(true);
+        const confirmReply = await financeEngine.confirmPendingTransactions(true, null, null, null, null, targetKey);
         await respondToTelegram(confirmReply || '✅ Transaksi telah dicatat.');
 
         return;
       } else if (intent === 'CANCEL') {
-        const cancelReply = await financeEngine.confirmPendingTransactions(false);
+        const cancelReply = await financeEngine.confirmPendingTransactions(false, null, null, null, null, targetKey);
         await respondToTelegram(cancelReply || '❌ Transaksi dibatalkan.');
 
         return;
@@ -1309,7 +1330,8 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           up.category || null,
           null, // nominal
           up.account || null,
-          up.payment_method || null
+          up.payment_method || null,
+          targetKey
         );
         if (updatedMsg) {
           await respondToTelegram(updatedMsg);
@@ -1329,6 +1351,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         return;
       }
     }
+
 
     // ============================================================
     // PENDING TASK CATEGORY INTERCEPTOR (AI-Powered)
@@ -1675,10 +1698,17 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           const result = await financeEngine.undoDeleteTransaction();
           domainReply = result.message;
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CONFIRM_TRANSACTION') {
+          const replySnippetFin = message.reply_to_message && message.reply_to_message.text
+            ? message.reply_to_message.text.substring(0, 200)
+            : null;
+          const targetKeyFin = replySnippetFin ? financeEngine.resolveTargetKeyFromSnippet(replySnippetFin) : null;
           const confirmationReply = await financeEngine.confirmPendingTransactions(
             true,
             routingData.extracted_data.description || null,
-            routingData.extracted_data.category || null
+            routingData.extracted_data.category || null,
+            null,
+            null,
+            targetKeyFin
           );
           if (confirmationReply) {
             domainReply = confirmationReply;
@@ -1686,12 +1716,17 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             domainReply = '✅ Tidak ada transaksi yang tertunda. Kemungkinan transaksi telah disimpan otomatis karena melewati batas waktu 5 menit. Jika ingin mengubahnya, silakan gunakan perintah Edit (contoh: "Ubah transaksi 50rb menjadi...").';
           }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'UPDATE_PENDING') {
+          const replySnippetUpd = message.reply_to_message && message.reply_to_message.text
+            ? message.reply_to_message.text.substring(0, 200)
+            : null;
+          const targetKeyUpd = replySnippetUpd ? financeEngine.resolveTargetKeyFromSnippet(replySnippetUpd) : null;
           const updatedMsg = await financeEngine.updatePendingTransaction(
             routingData.extracted_data.description || null,
             routingData.extracted_data.category || null,
             routingData.extracted_data.nominal || null,
             routingData.extracted_data.account || null,
-            routingData.extracted_data.payment_method || null
+            routingData.extracted_data.payment_method || null,
+            targetKeyUpd
           );
           if (updatedMsg) {
             domainReply = updatedMsg;
@@ -1699,7 +1734,11 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             domainReply = '❌ Tidak ada transaksi yang tertunda untuk diubah. Kemungkinan transaksi telah disimpan otomatis. Silakan gunakan perintah Edit dengan menyebut nominal (contoh: "Edit transaksi 50rb menjadi...").';
           }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'CANCEL_TRANSACTION') {
-          const confirmationReply = await financeEngine.confirmPendingTransactions(false);
+          const replySnippetCan = message.reply_to_message && message.reply_to_message.text
+            ? message.reply_to_message.text.substring(0, 200)
+            : null;
+          const targetKeyCan = replySnippetCan ? financeEngine.resolveTargetKeyFromSnippet(replySnippetCan) : null;
+          const confirmationReply = await financeEngine.confirmPendingTransactions(false, null, null, null, null, targetKeyCan);
           domainReply = confirmationReply || 'Tidak ada transaksi yang tertunda.';
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'EDIT') {
           const result = await financeEngine.editTransaction(

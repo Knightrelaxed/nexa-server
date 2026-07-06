@@ -894,14 +894,53 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
  * Resolves a pending transaction confirmation.
  * Returns a reply message to send to the user, or null if no pending transactions.
  */
-async function confirmPendingTransactions(isYes, customDescription = null, customCategory = null, customAccount = null, customPaymentMethod = null) {
+/**
+ * Given a reply snippet text (the first 100 chars of a confirmation message),
+ * try to find which compositeKey in pendingConfirmations best matches it.
+ * Matches by nominal amount extracted from the snippet text.
+ * Returns the matching compositeKey string, or null if no match / only 1 pending.
+ */
+function _resolveTargetKeyFromSnippet(replySnippet) {
+  if (!replySnippet || pendingConfirmations.size <= 1) return null;
+
+  // Extract all numbers from the snippet (handles "Rp25.000" → 25000, "Rp1.250.000" → 1250000)
+  const clean = replySnippet.replace(/[^0-9.,]/g, ' ');
+  const candidates = [];
+  for (const part of clean.split(/\s+/)) {
+    const n = _parseFlexibleCurrency(part);
+    if (!isNaN(n) && n > 0) candidates.push(n);
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Find a pending key whose nominal matches one of the extracted numbers
+  for (const [key, pending] of pendingConfirmations.entries()) {
+    const txNominal = typeof pending.tx.nominal === 'number'
+      ? pending.tx.nominal
+      : _parseFlexibleCurrency(String(pending.tx.nominal));
+    if (candidates.some(c => Math.abs(c - txNominal) < 1)) {
+      return key;
+    }
+  }
+  return null;
+}
+
+async function confirmPendingTransactions(isYes, customDescription = null, customCategory = null, customAccount = null, customPaymentMethod = null, targetKey = null) {
   if (pendingConfirmations.size === 0) return null;
+
+  // If multiple pending exist and a targetKey was resolved from user's Reply,
+  // only act on that specific transaction — leave others waiting.
+  const keysToProcess = targetKey && pendingConfirmations.has(targetKey)
+    ? [targetKey]
+    : [...pendingConfirmations.keys()];
 
   let processedCount = 0;
   let skippedCount = 0;
   let successMessages = [];
 
-  for (const [key, pending] of pendingConfirmations.entries()) {
+  for (const key of keysToProcess) {
+    const pending = pendingConfirmations.get(key);
+    if (!pending) continue;
     clearTimeout(pending.timeoutId);
     if (isYes) {
       try {
@@ -949,112 +988,137 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
     }
   }
 
+  // If other transactions are still pending after targeted action, remind user
+  const remainingCount = pendingConfirmations.size;
+  let suffix = '';
+  if (remainingCount > 0) {
+    suffix = `\n\n⏳ <b>${remainingCount} transaksi lain</b> masih menunggu konfirmasi. Silakan balas pesan konfirmasi masing-masing transaksi tersebut.`;
+  }
+
   if (isYes) {
-    if (successMessages.length > 0) return successMessages.join('\n\n');
-    return `✅ <b>Berhasil dicatat!</b> ${processedCount} transaksi telah dimasukkan ke dalam database keuangan Tuan.`;
+    const base = successMessages.length > 0
+      ? successMessages.join('\n\n')
+      : `✅ <b>Berhasil dicatat!</b> ${processedCount} transaksi telah dimasukkan ke dalam database keuangan Tuan.`;
+    return base + suffix;
   } else {
-    return `❌ <b>Dibatalkan.</b> ${skippedCount} transaksi diabaikan dan tidak dimasukkan ke dalam database.`;
+    return `❌ <b>Dibatalkan.</b> ${skippedCount} transaksi diabaikan dan tidak dimasukkan ke dalam database.` + suffix;
   }
 }
 
 /**
  * Updates a pending transaction with new details (description/category/nominal/account/paymentMethod).
  */
-async function updatePendingTransaction(newDescription = null, newCategory = null, newNominal = null, newAccount = null, newPaymentMethod = null) {
+async function updatePendingTransaction(newDescription = null, newCategory = null, newNominal = null, newAccount = null, newPaymentMethod = null, targetKey = null) {
   if (pendingConfirmations.size === 0) return null;
 
-  let msg = '';
-  for (const [key, pending] of pendingConfirmations.entries()) {
-    if (newDescription) {
-      pending.tx.description = newDescription;
-      
-      // If user gives a new description but NO explicit category, 
-      // let's re-run the AI categorizer so the preview reflects the correct category
-      if (!newCategory) {
-        const dest = pending.tx.destination && pending.tx.destination !== 'Unknown' ? pending.tx.destination : '';
-        const desc = pending.tx.description;
-        const combinedContext = [dest, desc].filter(Boolean).join(' - ') || 'Unknown';
-        
-        // Pass null as currentCategory so AI is forced to re-evaluate based on the new description
-        pending.tx.category = await _autoCategorizeMerchant(combinedContext, null);
-      }
-    }
-    
-    // ── VALIDASI KATEGORI ────────────────────────────────────────────────────────
-    if (newCategory) {
-      const categories = await supabaseFinance.getCategoriesList();
-      const normalizedInput = newCategory.toLowerCase().replace(/\s+/g, '');
-      const matched = categories.find(c => {
-        const normalizedName = c.name.toLowerCase().replace(/\s+/g, '');
-        return normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
-      });
-      
-      if (matched) {
-        pending.tx.category = matched.name;
-      } else {
-        // Fallback to AI categorizer if fuzzy match fails
-        pending.tx.category = await _autoCategorizeMerchant(newCategory, null);
-      }
-    }
-    if (newNominal) {
-      const parsed = _parseFlexibleCurrency(newNominal);
-      if (!isNaN(parsed)) pending.tx.nominal = parsed;
-    }
-
-    // ── VALIDASI AKUN ──────────────────────────────────────────────────────────
-    // Jika user menyebutkan nama akun, verifikasi dulu ke database.
-    // Jika tidak ditemukan, JANGAN update pending.tx.account dan balas dengan
-    // pesan konfirmasi yang menyebutkan daftar akun aktif.
-    if (newAccount) {
-      const accounts = await supabaseFinance.getAccountsList();
-      const normalizedInput = newAccount.toLowerCase().replace(/\s+/g, '');
-
-      // Cari akun yang paling cocok (fuzzy match sederhana berbasis includes)
-      const matched = accounts.find(a => {
-        const normalizedName = a.name.toLowerCase().replace(/\s+/g, '');
-        return normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
-      });
-
-      if (matched) {
-        // Akun ditemukan — gunakan nama resmi dari database
-        pending.tx.account = matched.name;
-      } else {
-        // Akun TIDAK ditemukan — jangan update, dan balas dengan konfirmasi
-        const accountList = accounts.map(a => `• ${a.name} (${a.type})`).join('\n');
-        const unknownAccountMsg =
-          `⚠️ <b>Akun "${newAccount}" tidak ditemukan</b> di daftar akun aktif Tuan.\n\n` +
-          `Berikut akun yang terdaftar:\n${accountList}\n\n` +
-          `❓ Silakan pilih salah satu dari daftar di atas, atau abaikan agar disimpan ke akun default dalam 5 menit.`;
-
-        // Reset timeout karena user sudah berinteraksi
-        clearTimeout(pending.timeoutId);
-        const newTimeoutId = setTimeout(async () => {
-          if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
-        }, 5 * 60 * 1000);
-        pending.timeoutId = newTimeoutId;
-
-        return unknownAccountMsg;
-      }
-    }
-
-    if (newPaymentMethod) pending.tx.payment_method = newPaymentMethod;
-
-    // Reset the 5-minute timeout because user interacted
-    clearTimeout(pending.timeoutId);
-
-    // Update Supabase
-    await supabase.savePendingTransaction(key, pending.tx, true);
-
-    const newTimeoutId = setTimeout(async () => {
-      if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
-    }, 5 * 60 * 1000);
-    pending.timeoutId = newTimeoutId;
-
-    msg = await _buildConfirmationMessage(pending.tx, 'DETAIL TRANSAKSI DIPERBARUI ✏️');
-    break; // only handle the first one
+  // Targeted resolution: if a specific key was resolved from the user's Reply,
+  // update only that transaction. Otherwise fall back to the first one (legacy).
+  let resolvedKey = null;
+  if (targetKey && pendingConfirmations.has(targetKey)) {
+    resolvedKey = targetKey;
+  } else {
+    resolvedKey = pendingConfirmations.keys().next().value;
   }
 
-  return msg;
+  const pending = pendingConfirmations.get(resolvedKey);
+  if (!pending) return null;
+
+  const key = resolvedKey;
+
+  if (newDescription) {
+    pending.tx.description = newDescription;
+    
+    // If user gives a new description but NO explicit category, 
+    // let's re-run the AI categorizer so the preview reflects the correct category
+    if (!newCategory) {
+      const dest = pending.tx.destination && pending.tx.destination !== 'Unknown' ? pending.tx.destination : '';
+      const desc = pending.tx.description;
+      const combinedContext = [dest, desc].filter(Boolean).join(' - ') || 'Unknown';
+      
+      // Pass null as currentCategory so AI is forced to re-evaluate based on the new description
+      pending.tx.category = await _autoCategorizeMerchant(combinedContext, null);
+    }
+  }
+  
+  // ── VALIDASI KATEGORI ────────────────────────────────────────────────────────
+  if (newCategory) {
+    const categories = await supabaseFinance.getCategoriesList();
+    const normalizedInput = newCategory.toLowerCase().replace(/\s+/g, '');
+    const matched = categories.find(c => {
+      const normalizedName = c.name.toLowerCase().replace(/\s+/g, '');
+      return normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
+    });
+    
+    if (matched) {
+      pending.tx.category = matched.name;
+    } else {
+      // Fallback to AI categorizer if fuzzy match fails
+      pending.tx.category = await _autoCategorizeMerchant(newCategory, null);
+    }
+  }
+  if (newNominal) {
+    const parsed = _parseFlexibleCurrency(newNominal);
+    if (!isNaN(parsed)) pending.tx.nominal = parsed;
+  }
+
+  // ── VALIDASI AKUN ──────────────────────────────────────────────────────────
+  // Jika user menyebutkan nama akun, verifikasi dulu ke database.
+  // Jika tidak ditemukan, JANGAN update pending.tx.account dan balas dengan
+  // pesan konfirmasi yang menyebutkan daftar akun aktif.
+  if (newAccount) {
+    const accounts = await supabaseFinance.getAccountsList();
+    const normalizedInput = newAccount.toLowerCase().replace(/\s+/g, '');
+
+    // Cari akun yang paling cocok (fuzzy match sederhana berbasis includes)
+    const matched = accounts.find(a => {
+      const normalizedName = a.name.toLowerCase().replace(/\s+/g, '');
+      return normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
+    });
+
+    if (matched) {
+      // Akun ditemukan — gunakan nama resmi dari database
+      pending.tx.account = matched.name;
+    } else {
+      // Akun TIDAK ditemukan — jangan update, dan balas dengan konfirmasi
+      const accountList = accounts.map(a => `• ${a.name} (${a.type})`).join('\n');
+      const unknownAccountMsg =
+        `⚠️ <b>Akun "${newAccount}" tidak ditemukan</b> di daftar akun aktif Tuan.\n\n` +
+        `Berikut akun yang terdaftar:\n${accountList}\n\n` +
+        `❓ Silakan pilih salah satu dari daftar di atas, atau abaikan agar disimpan ke akun default dalam 5 menit.`;
+
+      // Reset timeout karena user sudah berinteraksi
+      clearTimeout(pending.timeoutId);
+      const newTimeoutId = setTimeout(async () => {
+        if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
+      }, 5 * 60 * 1000);
+      pending.timeoutId = newTimeoutId;
+
+      return unknownAccountMsg;
+    }
+  }
+
+  if (newPaymentMethod) pending.tx.payment_method = newPaymentMethod;
+
+  // Reset the 5-minute timeout because user interacted
+  clearTimeout(pending.timeoutId);
+
+  // Update Supabase
+  await supabase.savePendingTransaction(key, pending.tx, true);
+
+  const newTimeoutId = setTimeout(async () => {
+    if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
+  }, 5 * 60 * 1000);
+  pending.timeoutId = newTimeoutId;
+
+  // Notify about remaining pending transactions
+  const remainingCount = pendingConfirmations.size - 1;
+  let footer = '';
+  if (remainingCount > 0) {
+    footer = `\n\n⏳ <b>${remainingCount} transaksi lain</b> masih menunggu konfirmasi. Silakan balas pesan konfirmasi masing-masing.`;
+  }
+
+  const msg = await _buildConfirmationMessage(pending.tx, 'DETAIL TRANSAKSI DIPERBARUI ✏️');
+  return msg + footer;
 }
 
 /**
@@ -1381,6 +1445,14 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
  */
 async function autoSaveFromWatchdog(compositeKey, tx) {
   return _autoSavePending(compositeKey, tx);
+}
+
+/**
+ * Public accessor: resolve which compositeKey best matches a Telegram reply snippet.
+ * Used by webhook.js to pass the targetKey to confirm/update functions.
+ */
+function resolveTargetKeyFromSnippet(replySnippet) {
+  return _resolveTargetKeyFromSnippet(replySnippet);
 }
 
 /**
@@ -1919,5 +1991,6 @@ module.exports = {
   // Exposed for Watchdog cron (cron.js)
   buildConfirmationMessage: _buildConfirmationMessage,
   autoSaveFromWatchdog,
-  getPendingConfirmationsContext
+  getPendingConfirmationsContext,
+  resolveTargetKeyFromSnippet
 };
