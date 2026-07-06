@@ -185,8 +185,8 @@ function _detectSentiment(text) {
  * or calendar-specific keywords.
  */
 function _preflightClassify(text) {
-  const t = text.toLowerCase();
-  const hasTime = _CAL_TIME_KWS.some(kw => t.includes(kw)) || /\d{1,2}:\d{2}/.test(text);
+  const t = (typeof text === 'string' ? text : String(text || '')).toLowerCase();
+  const hasTime = _CAL_TIME_KWS.some(kw => t.includes(kw)) || /\d{1,2}:\d{2}/.test(text || '');
   const hasCal  = _CAL_DOMAIN_KWS.some(kw => t.includes(kw));
   return { hasTime, hasCal };
 }
@@ -195,18 +195,20 @@ function _preflightClassify(text) {
  * Progressive userProfile fact injection with Dynamic Word Resonance (No rigid regex)
  */
 function _selectUserProfileFacts(userProfile, userMessage) {
-  if (!userProfile || userProfile.length === 0) return [];
+  if (!userProfile || !Array.isArray(userProfile) || userProfile.length === 0) return [];
 
   const core      = userProfile.slice(0, PROFILE_CORE_COUNT);
   const remaining = userProfile.slice(PROFILE_CORE_COUNT);
   if (remaining.length === 0) return core;
 
   const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana']);
-  const words = userMessage.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
+  const msgStr = typeof userMessage === 'string' ? userMessage : String(userMessage || '');
+  const words = msgStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
 
   if (words.length === 0) return core;
 
   const relevant = remaining.filter(fact => {
+    if (typeof fact !== 'string' || !fact) return false;
     const fLower = fact.toLowerCase();
     return words.some(w => fLower.includes(w));
   });
@@ -218,18 +220,20 @@ function _selectUserProfileFacts(userProfile, userMessage) {
  * Progressive coreIdentity fact injection with Dynamic Word Resonance
  */
 function _selectCoreIdentityFacts(coreIdentity, userMessage) {
-  if (!coreIdentity || coreIdentity.length === 0) return [];
+  if (!coreIdentity || !Array.isArray(coreIdentity) || coreIdentity.length === 0) return [];
 
   const core      = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
   const remaining = coreIdentity.slice(IDENTITY_CORE_COUNT);
   if (remaining.length === 0) return core;
 
   const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana']);
-  const words = userMessage.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
+  const msgStr = typeof userMessage === 'string' ? userMessage : String(userMessage || '');
+  const words = msgStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
 
   if (words.length === 0) return core;
 
   const relevant = remaining.filter(fact => {
+    if (typeof fact !== 'string' || !fact) return false;
     const fLower = fact.toLowerCase();
     return words.some(w => fLower.includes(w));
   });
