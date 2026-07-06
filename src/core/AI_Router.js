@@ -29,8 +29,27 @@ const _CAL_DOMAIN_KWS = [
 ];
 
 // ============================================================
-// HOLISTIC FACT INJECTION (Non-Rigid / No Regex)
+// PROGRESSIVE FACT INJECTION
 // ============================================================
+const FACT_KEYWORD_GROUPS = [
+  // Keuangan & transaksi
+  ['pengeluaran','beli','bayar','makan','jajan','harga','rb','ribu','qris','transfer','uang','tagihan','ongkos'],
+  // Waktu & jadwal (cross-domain: "kampus" bisa relevan ke FINANCE)
+  ['jadwal','jam','kuliah','kelas','meeting','rapat','besok','hari','agenda','kampus','ugm','skripsi'],
+  // Lokasi & aktivitas
+  ['kantor','toko','rumah','mall','warung','pergi','dari','ke','lokasi','tempat'],
+  // Preferensi & kebiasaan
+  ['preferensi','biasa','suka','kebiasaan','cara','gaya','selalu','favorit','rutin'],
+];
+const PROFILE_CORE_COUNT  = 50; // fakta tertua — selalu diinjeksi
+const PROFILE_KW_LIMIT    = 15; // max fakta tambahan dari dynamic word resonance
+
+const SYSTEM_KEYWORD_GROUPS = [
+  // Sistem, teknologi, dan arsitektur backend
+  ['sistem', 'arsitektur', 'server', 'database', 'supabase', 'api', 'prompt', 'memori', 'webhook', 'cron', 'error', 'bug', 'versi', 'update', 'teknologi', 'engine', 'vision', 'voice', 'suara', 'gambar', 'foto', 'kemampuan', 'bisa apa', 'fitur']
+];
+const IDENTITY_CORE_COUNT = 25;
+const IDENTITY_KW_LIMIT   = 10;
 
 // ============================================================
 // PERSONAL FACTS CACHE (Module-level — lives as long as server runs)
@@ -88,6 +107,7 @@ CRITICAL ROUTING RULES:
    - NEVER mix them. "Kamu diciptakan pada X" → learned_core_identities. "Aku suka kopi" → learned_user_facts.
 6. ISO DATES: 'start' & 'end' MUST be ISO 8601 +07:00 (e.g., "2026-05-07T19:00:00+07:00").
 7. LANGUAGE: Output JSON keys/values in English, EXCEPT "reply_message" MUST be in natural, elegant Indonesian based on NEXA_PERSONALITY. CRITICAL: If greeting, STRICTLY match the time of day provided in [WAKTU SERVER SAAT INI].
+8. PROACTIVE MEMORY INITIATIVE (NORMAL_CHAT): In NORMAL_CHAT, intelligently synthesize [FAKTA PERMANEN TENTANG TUAN FAQIH] with his current activity and [WAKTU SERVER SAAT INI]. When he mentions daily routines, study sessions, fatigue, or plans, naturally weave in his recorded habits and proactively offer ONE relevant executive assistance (e.g., focus timer, calendar reminder, expense logging, literature search) ONLY when it feels 100% natural, empathetic, and genuinely helpful. If it is merely casual banter or a brief greeting, remain warm and conversational without forcing features.
 
 SEMANTIC CATEGORY MAPPING (FINANCE):
 Focus on SUBSTANCE/OBJECT, not exact words. DO NOT use "Lainnya/Uncategorized" unless absolutely necessary.
@@ -107,7 +127,7 @@ OUTPUT JSON FORMAT:
 {
   "reasoning": "1-2 sentences of logical analysis binding context and intent.",
   "intent": "FINANCE|CALENDAR|TASK|EMAIL|DATABASE|WEB_SEARCH|DISCIPLINE|2ND_BRAIN|USER_PROFILE|CORE_IDENTITY|DIAGNOSE_SYSTEM|INCOMPLETE_INFO|NORMAL_CHAT",
-  "reply_message": "Natural, elegant Indonesian response (mandatory for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE). In NORMAL_CHAT, apply rule 7 (Proactive Memory Application): dynamically connect Tuan's current activity/situation with [FAKTA PERMANEN TENTANG TUAN FAQIH] and occasionally offer relevant executive assistance without sounding scripted or robotic.",
+  "reply_message": "Natural Indonesian response (mandatory for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE).",
   "learned_user_facts": ["New permanent facts ABOUT TUAN FAQIH (the human), or empty []"],
   "learned_core_identities": ["New permanent facts ABOUT N.E.X.A ITSELF (the AI), or empty []"],
   "extracted_data": {
@@ -187,30 +207,49 @@ function _preflightClassify(text) {
 }
 
 /**
- * Holistic userProfile fact injection (Non-Rigid / No Regex).
- * Combines oldest foundational facts with most recent learned habits
- * to give N.E.X.A full natural contextual awareness.
+ * Progressive userProfile fact injection with Dynamic Word Resonance (No rigid regex)
  */
 function _selectUserProfileFacts(userProfile, userMessage) {
   if (!userProfile || userProfile.length === 0) return [];
-  if (userProfile.length <= 40) return userProfile;
 
-  // Take 20 oldest (foundational habits/identity) + 20 newest (latest routines/preferences)
-  const core   = userProfile.slice(0, 20);
-  const recent = userProfile.slice(-20);
-  return Array.from(new Set([...core, ...recent]));
+  const core      = userProfile.slice(0, PROFILE_CORE_COUNT);
+  const remaining = userProfile.slice(PROFILE_CORE_COUNT);
+  if (remaining.length === 0) return core;
+
+  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana']);
+  const words = userMessage.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
+
+  if (words.length === 0) return core;
+
+  const relevant = remaining.filter(fact => {
+    const fLower = fact.toLowerCase();
+    return words.some(w => fLower.includes(w));
+  });
+
+  return [...core, ...relevant.slice(0, PROFILE_KW_LIMIT)];
 }
 
 /**
- * Holistic coreIdentity fact injection (Non-Rigid / No Regex).
+ * Progressive coreIdentity fact injection with Dynamic Word Resonance
  */
 function _selectCoreIdentityFacts(coreIdentity, userMessage) {
   if (!coreIdentity || coreIdentity.length === 0) return [];
-  if (coreIdentity.length <= 30) return coreIdentity;
 
-  const core   = coreIdentity.slice(0, 15);
-  const recent = coreIdentity.slice(-15);
-  return Array.from(new Set([...core, ...recent]));
+  const core      = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
+  const remaining = coreIdentity.slice(IDENTITY_CORE_COUNT);
+  if (remaining.length === 0) return core;
+
+  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana']);
+  const words = userMessage.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
+
+  if (words.length === 0) return core;
+
+  const relevant = remaining.filter(fact => {
+    const fLower = fact.toLowerCase();
+    return words.some(w => fLower.includes(w));
+  });
+
+  return [...core, ...relevant.slice(0, IDENTITY_KW_LIMIT)];
 }
 
 async function _fetchRecentFinanceSummary(limit) {
