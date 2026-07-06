@@ -29,27 +29,8 @@ const _CAL_DOMAIN_KWS = [
 ];
 
 // ============================================================
-// PROGRESSIVE FACT INJECTION
+// HOLISTIC FACT INJECTION (Non-Rigid / No Regex)
 // ============================================================
-const FACT_KEYWORD_GROUPS = [
-  // Keuangan & transaksi
-  ['pengeluaran','beli','bayar','makan','jajan','harga','rb','ribu','qris','transfer','uang','tagihan','ongkos'],
-  // Waktu & jadwal (cross-domain: "kampus" bisa relevan ke FINANCE)
-  ['jadwal','jam','kuliah','kelas','meeting','rapat','besok','hari','agenda','kampus','ugm','skripsi'],
-  // Lokasi & aktivitas
-  ['kantor','toko','rumah','mall','warung','pergi','dari','ke','lokasi','tempat'],
-  // Preferensi & kebiasaan
-  ['preferensi','biasa','suka','kebiasaan','cara','gaya','selalu','favorit','rutin'],
-];
-const PROFILE_CORE_COUNT  = 20; // fakta tertua — selalu diinjeksi
-const PROFILE_KW_LIMIT    =  8; // max fakta tambahan dari keyword matching
-
-const SYSTEM_KEYWORD_GROUPS = [
-  // Sistem, teknologi, dan arsitektur backend
-  ['sistem', 'arsitektur', 'server', 'database', 'supabase', 'api', 'prompt', 'memori', 'webhook', 'cron', 'error', 'bug', 'versi', 'update', 'teknologi', 'engine', 'vision', 'voice', 'suara', 'gambar', 'foto', 'kemampuan', 'bisa apa', 'fitur']
-];
-const IDENTITY_CORE_COUNT = 10;
-const IDENTITY_KW_LIMIT   = 5;
 
 // ============================================================
 // PERSONAL FACTS CACHE (Module-level — lives as long as server runs)
@@ -126,7 +107,7 @@ OUTPUT JSON FORMAT:
 {
   "reasoning": "1-2 sentences of logical analysis binding context and intent.",
   "intent": "FINANCE|CALENDAR|TASK|EMAIL|DATABASE|WEB_SEARCH|DISCIPLINE|2ND_BRAIN|USER_PROFILE|CORE_IDENTITY|DIAGNOSE_SYSTEM|INCOMPLETE_INFO|NORMAL_CHAT",
-  "reply_message": "Natural Indonesian response (mandatory for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE).",
+  "reply_message": "Natural, elegant Indonesian response (mandatory for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE). In NORMAL_CHAT, apply rule 7 (Proactive Memory Application): dynamically connect Tuan's current activity/situation with [FAKTA PERMANEN TENTANG TUAN FAQIH] and occasionally offer relevant executive assistance without sounding scripted or robotic.",
   "learned_user_facts": ["New permanent facts ABOUT TUAN FAQIH (the human), or empty []"],
   "learned_core_identities": ["New permanent facts ABOUT N.E.X.A ITSELF (the AI), or empty []"],
   "extracted_data": {
@@ -206,54 +187,30 @@ function _preflightClassify(text) {
 }
 
 /**
- * Progressive userProfile fact injection
+ * Holistic userProfile fact injection (Non-Rigid / No Regex).
+ * Combines oldest foundational facts with most recent learned habits
+ * to give N.E.X.A full natural contextual awareness.
  */
 function _selectUserProfileFacts(userProfile, userMessage) {
   if (!userProfile || userProfile.length === 0) return [];
+  if (userProfile.length <= 40) return userProfile;
 
-  // Oldest PROFILE_CORE_COUNT facts → always included (no filter)
-  const core      = userProfile.slice(0, PROFILE_CORE_COUNT);
-  const remaining = userProfile.slice(PROFILE_CORE_COUNT);
-  if (remaining.length === 0) return core;
-
-  const t = userMessage.toLowerCase();
-  const activeKws = FACT_KEYWORD_GROUPS
-    .filter(group => group.some(kw => t.includes(kw)))
-    .flat();
-
-  if (activeKws.length === 0) return core;
-
-  // fact is a plain string — use fact.toLowerCase(), NOT fact.content.toLowerCase()
-  const relevant = remaining.filter(fact =>
-    activeKws.some(kw => fact.toLowerCase().includes(kw))
-  );
-
-  return [...core, ...relevant.slice(0, PROFILE_KW_LIMIT)];
+  // Take 20 oldest (foundational habits/identity) + 20 newest (latest routines/preferences)
+  const core   = userProfile.slice(0, 20);
+  const recent = userProfile.slice(-20);
+  return Array.from(new Set([...core, ...recent]));
 }
 
 /**
- * Progressive coreIdentity fact injection
+ * Holistic coreIdentity fact injection (Non-Rigid / No Regex).
  */
 function _selectCoreIdentityFacts(coreIdentity, userMessage) {
   if (!coreIdentity || coreIdentity.length === 0) return [];
+  if (coreIdentity.length <= 30) return coreIdentity;
 
-  // Oldest IDENTITY_CORE_COUNT facts → always included (no filter)
-  const core      = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
-  const remaining = coreIdentity.slice(IDENTITY_CORE_COUNT);
-  if (remaining.length === 0) return core;
-
-  const t = userMessage.toLowerCase();
-  const activeKws = SYSTEM_KEYWORD_GROUPS
-    .filter(group => group.some(kw => t.includes(kw)))
-    .flat();
-
-  if (activeKws.length === 0) return core;
-
-  const relevant = remaining.filter(fact =>
-    activeKws.some(kw => fact.toLowerCase().includes(kw))
-  );
-
-  return [...core, ...relevant.slice(0, IDENTITY_KW_LIMIT)];
+  const core   = coreIdentity.slice(0, 15);
+  const recent = coreIdentity.slice(-15);
+  return Array.from(new Set([...core, ...recent]));
 }
 
 async function _fetchRecentFinanceSummary(limit) {
