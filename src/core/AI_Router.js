@@ -31,23 +31,8 @@ const _CAL_DOMAIN_KWS = [
 // ============================================================
 // PROGRESSIVE FACT INJECTION
 // ============================================================
-const FACT_KEYWORD_GROUPS = [
-  // Keuangan & transaksi
-  ['pengeluaran','beli','bayar','makan','jajan','harga','rb','ribu','qris','transfer','uang','tagihan','ongkos'],
-  // Waktu & jadwal (cross-domain: "kampus" bisa relevan ke FINANCE)
-  ['jadwal','jam','kuliah','kelas','meeting','rapat','besok','hari','agenda','kampus','ugm','skripsi'],
-  // Lokasi & aktivitas
-  ['kantor','toko','rumah','mall','warung','pergi','dari','ke','lokasi','tempat'],
-  // Preferensi & kebiasaan
-  ['preferensi','biasa','suka','kebiasaan','cara','gaya','selalu','favorit','rutin'],
-];
 const PROFILE_CORE_COUNT  = 50; // fakta tertua — selalu diinjeksi
 const PROFILE_KW_LIMIT    = 15; // max fakta tambahan dari dynamic word resonance
-
-const SYSTEM_KEYWORD_GROUPS = [
-  // Sistem, teknologi, dan arsitektur backend
-  ['sistem', 'arsitektur', 'server', 'database', 'supabase', 'api', 'prompt', 'memori', 'webhook', 'cron', 'error', 'bug', 'versi', 'update', 'teknologi', 'engine', 'vision', 'voice', 'suara', 'gambar', 'foto', 'kemampuan', 'bisa apa', 'fitur']
-];
 const IDENTITY_CORE_COUNT = 25;
 const IDENTITY_KW_LIMIT   = 10;
 
