@@ -90,6 +90,54 @@ function formatVaultMetadata(meta = {}) {
   return lines.join('\n');
 }
 
+/**
+ * Determines whether a learned fact is about N.E.X.A itself (the AI),
+ * rather than about Tuan Faqih (the user).
+ *
+ * Uses a multi-signal scoring approach — no single regex can cover natural
+ * language variation, so we collect evidence and decide by majority.
+ *
+ * @param {string} fact  - The fact string to classify.
+ * @returns {boolean}    - true  → store in CORE_IDENTITY (about N.E.X.A)
+ *                         false → store in USER_PROFILE  (about Tuan Faqih)
+ */
+function isFactAboutNexa(fact) {
+  const f = fact.toLowerCase().trim();
+  let score = 0; // positive = leaning CORE_IDENTITY
+
+  // ── STRONG USER signals (subtract) ──────────────────────────────────────
+  // Fact uses first-person pronouns that refer to the human
+  if (/\b(aku|saya|gue|gw)\b/.test(f)) score -= 2;
+  // Explicitly about Tuan / Faqih / user by name — but NOT when they appear
+  // only as the *beneficiary* (e.g. "dibuat untuk Tuan Faqih")
+  const hasTuanName = /\b(tuan|faqih|hidayatulloh)\b/.test(f);
+  const tuanIsSubject = /^(tuan|faqih)/.test(f) || /\b(tuan faqih|faqih)\s+(punya|memiliki|suka|biasa|kuliah|adalah)\b/.test(f);
+  if (hasTuanName && tuanIsSubject) score -= 2;
+  else if (hasTuanName) score -= 1; // beneficiary only → softer penalty
+  // Possessive: "ku" suffix strongly implies user's own attribute
+  if (/\w+ku\b/.test(f) && !/\b(namaku|diriku sebagai)\b/.test(f)) score -= 1;
+
+  // ── STRONG N.E.X.A signals (add) ────────────────────────────────────────
+  // Explicitly names the AI
+  if (/\b(nexa|n\.e\.x\.a)\b/.test(f)) score += 3;
+  // 2nd person pronoun as the SUBJECT of the sentence (typically refers to AI)
+  if (/^(kamu|anda|kau)\b/.test(f)) score += 2;
+  if (/\b(kamu|anda|kau)\s+(adalah|itu|merupakan|diciptakan|dibuat|diluncurkan|punya|memiliki|bernama|disebut|bisa|dapat|mampu)\b/.test(f)) score += 2;
+  // Creation / origin / identity
+  if (/\b(diciptakan|dibuat|diluncurkan|lahir|dirancang|diprogram|dibangun)\b/.test(f)) score += 1;
+  // Name / version / capability
+  if (/\b(namamu|nama kamu|nama asisten|versimu|versi kamu|kemampuanmu|kemampuan kamu|identitasmu)\b/.test(f)) score += 2;
+  // "kamu bisa/dapat/mampu" → capability statement about N.E.X.A
+  if (/\b(kamu|anda|kau)\s+(bisa|dapat|mampu)\b/.test(f)) score += 1;
+  // AI-domain subject terms — bot/asisten/ai at start or followed by verb
+  if (/^(bot|asisten|ai)\b/.test(f)) score += 2;
+  if (/\b(bot|asisten ai|model ai|sistem ai|ai asisten|kecerdasan buatan)\b/.test(f)) score += 1;
+  // "dirimu" or "diri kamu" unambiguously refers to N.E.X.A
+  if (/\b(dirimu|diri kamu|diri anda)\b/.test(f)) score += 2;
+
+  return score > 0;
+}
+
 function parseJsonObjectFromText(raw) {
   const text = String(raw || '').trim();
   if (!text) return null;
@@ -1541,10 +1589,8 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       const aiRouter = require('../core/AI_Router');
       for (const fact of routingData.learned_user_facts) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
-          // Safety guard: if the "user fact" is actually about N.E.X.A, reroute to CORE_IDENTITY
-          const isAboutNexa = /\b(nexa|n\.e\.x\.a|kamu|anda|bot|ai|asisten)\b/i.test(fact) &&
-                               /\b(diciptakan|dibuat|diluncurkan|lahir|nama|kemampuan|versi|tujuan|identitas|dirimu)\b/i.test(fact);
-          if (isAboutNexa) {
+          // Safety guard: use smart scorer instead of rigid regex
+          if (isFactAboutNexa(fact)) {
             console.log('[ROUTER] Passive Learning - Rerouted to Core Identity:', fact);
             await aiRouter.deduplicateAndSaveFact(fact, 'CORE_IDENTITY');
           } else {
@@ -2021,10 +2067,8 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           if (action === 'APPEND' && routingData.extracted_data.content) {
             const aiRouter = require('../core/AI_Router');
             const content = routingData.extracted_data.content;
-            // Safety guard: if the content is a fact about N.E.X.A itself, store it in CORE_IDENTITY
-            const isAboutNexa = /\b(nexa|n\.e\.x\.a|kamu|anda|bot|ai|asisten)\b/i.test(content) &&
-                                 /\b(diciptakan|dibuat|diluncurkan|lahir|nama|kemampuan|versi|tujuan|identitas|dirimu|diriku sebagai)\b/i.test(content);
-            if (isAboutNexa) {
+            // Safety guard: use smart scorer instead of rigid regex
+            if (isFactAboutNexa(content)) {
               console.log('[ROUTER] USER_PROFILE redirected to CORE_IDENTITY for fact about N.E.X.A:', content);
               const saved = await aiRouter.deduplicateAndSaveFact(content, 'CORE_IDENTITY');
               invalidatePersonalFactsCache();
