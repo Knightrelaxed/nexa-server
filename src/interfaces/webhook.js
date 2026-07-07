@@ -3,7 +3,7 @@ const router = express.Router();
 const https = require('https');
 const fs = require('fs');
 const { downloadProxyToFile, fetchProxyJSON } = require('../utils/telegram_proxy.js');
-const { buildProxyChain, sendTelegramMessage, formatForTelegramHtml } = require('../utils/telegram_network');
+const { buildProxyChain, sendTelegramMessage } = require('../utils/telegram_network');
 const path = require('path');
 const os = require('os');
 const env = require('../config/env');
@@ -533,7 +533,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         res.status(200).json({
           method: 'sendMessage',
           chat_id: message.chat.id,
-          text: formatForTelegramHtml(webhookReply),
+          text: webhookReply,
           parse_mode: 'HTML',
         });
       } else {

@@ -234,37 +234,8 @@ async function postToRelay(path, body, timeoutMs = 90_000) {
   }
 }
 
-function formatForTelegramHtml(text) {
-  if (!text) return '';
-  let str = String(text);
-  
-  // 1. Convert markdown code blocks ```lang\ncode``` to <pre><code>code</code></pre>
-  str = str.replace(/```(?:[a-zA-Z0-9_-]*)\r?\n?([\s\S]*?)```/g, (match, code) => {
-    const escapedCode = code
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    return `<pre><code>${escapedCode}</code></pre>`;
-  });
-
-  // 2. Convert inline markdown `code` to <code>code</code>
-  str = str.replace(/`([^`]+)`/g, (match, code) => {
-    const escapedCode = code
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    return `<code>${escapedCode}</code>`;
-  });
-
-  // 3. Escape any angle brackets outside valid Telegram formatting tags
-  str = str.replace(/<(?!(\/?(b|i|u|s|code|pre|blockquote|tg-spoiler)\b|a\s|a>))/gi, '&lt;');
-
-  return str;
-}
-
 async function sendTelegramMessage(text, chatId, botToken) {
-  const formattedText = formatForTelegramHtml(text);
-  const safeText = String(formattedText).substring(0, 4000);
+  const safeText = String(text).substring(0, 4000);
   const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}`;
   return fetchWithFailover(telegramUrl, { timeoutMs: 30_000, maxRetriesPerProxy: 3 });
 }
@@ -276,5 +247,4 @@ module.exports = {
   sendTelegramMessage,
   buildProxyChain,
   enqueueOutbound,
-  formatForTelegramHtml,
 };
