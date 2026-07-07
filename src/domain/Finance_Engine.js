@@ -120,7 +120,10 @@ async function recoverPendingTransactions() {
           }
 
           const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
-          tx.category = await _autoCategorizeMerchant(tx.destination, tx.category);
+          const _recDest = tx.destination && tx.destination !== 'Unknown' ? tx.destination : '';
+          const _recDesc = tx.description && tx.description !== '[Menunggu Detail User]' && tx.description !== '-' ? tx.description : '';
+          const _recContext = [_recDest, _recDesc].filter(Boolean).join(' - ') || 'Unknown';
+          tx.category = await _autoCategorizeMerchant(_recContext, tx.category);
           if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
           await processTransaction(tx, 'GMAIL_POLLING');
           // processTransaction already calls logTransactionKey, but we
@@ -1363,8 +1366,11 @@ async function _autoSavePending(compositeKey, tx) {
     }
 
     const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
-    // Use lightweight AI categorizer (category may already be set from requestTransactionConfirmation)
-    tx.category = await _autoCategorizeMerchant(tx.destination, tx.category);
+    // Use lightweight AI categorizer with combined destination+description for maximum context
+    const _saveDest = tx.destination && tx.destination !== 'Unknown' ? tx.destination : '';
+    const _saveDesc = tx.description && tx.description !== '[Menunggu Detail User]' && tx.description !== '-' ? tx.description : '';
+    const _saveContext = [_saveDest, _saveDesc].filter(Boolean).join(' - ') || 'Unknown';
+    tx.category = await _autoCategorizeMerchant(_saveContext, tx.category);
     if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
     try {
       // Use 'TELEGRAM_MANUAL' to bypass strict email duplicate checks for user-initiated saves
