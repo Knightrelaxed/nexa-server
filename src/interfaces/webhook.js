@@ -547,7 +547,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     // Inject the original message context if the user explicitly replies to a message.
     if (textInput && message.reply_to_message && message.reply_to_message.text) {
       const originalMsg = message.reply_to_message.text;
-      const snippet = originalMsg.length > 100 ? originalMsg.substring(0, 100) + '...' : originalMsg;
+      const snippet = originalMsg.length > 600 ? originalMsg.substring(0, 600) + '...' : originalMsg;
       textInput = `[Menanggapi pesan N.E.X.A: "${snippet}"]\n${textInput}`;
     }
 
@@ -1024,17 +1024,31 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       if (intent === 'FINANCE') {
         if (data.action === 'DELETE' || data.action === 'EDIT') {
           if (!data.search_keyword) {
-            // AI Router sometimes puts the target keyword in nominal, destination, or description
             if (data.nominal) data.search_keyword = String(data.nominal);
             else if (data.destination) data.search_keyword = data.destination;
             else if (data.description) data.search_keyword = data.description;
             else {
-              // if still nothing, try to use the raw text if it looks like a short reply
               if (lowerText.split(' ').length <= 6) data.search_keyword = originalText;
             }
           }
-          if (!data.search_keyword || String(data.search_keyword).trim() === '') {
-            return '❓ Transaksi mana yang ingin diubah/dihapus, Tuan? Sebutkan kata kunci unik, nominal, atau nomor transaksi.';
+          if (!data.search_keyword || /^(ini|itu|transaksi|kategori|kategoriny|kategorinya|perbaiki|ubah|sesuaikan|yang|saya|balas|\s)*$/i.test(String(data.search_keyword).trim())) {
+            // [REPLY-AWARE SNIPER FIX] Jika user membalas pesan transaksi, jangan blokir!
+            // Ekstrak nominal atau catatan dari teks pesan yang dibalas sebagai kata kunci pencarian.
+            const replyMatch = String(originalText).match(/\[Menanggapi pesan N\.E\.X\.A:\s*"(.*?)"\]/s);
+            if (replyMatch && replyMatch[1]) {
+              const snippet = replyMatch[1];
+              const nominalMatch = snippet.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+              const catatanMatch = snippet.match(/(?:Catatan|Tujuan|Merchant|Deskripsi):\s*([^\n\r,]+)/i);
+              if (catatanMatch && catatanMatch[1]) {
+                data.search_keyword = catatanMatch[1].trim();
+              } else if (nominalMatch && nominalMatch[1]) {
+                data.search_keyword = nominalMatch[1].replace(/[^0-9]/g, '');
+              } else {
+                data.search_keyword = 'latest';
+              }
+            } else {
+              return '❓ Transaksi mana yang ingin diubah/dihapus, Tuan? Sebutkan kata kunci unik, nominal, atau nomor transaksi.';
+            }
           }
         }
         // Only block if action explicitly requires a nominal AND none was provided
@@ -1741,8 +1755,21 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           const confirmationReply = await financeEngine.confirmPendingTransactions(false, null, null, null, null, targetKeyCan);
           domainReply = confirmationReply || 'Tidak ada transaksi yang tertunda.';
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'EDIT') {
+          let kw = routingData.extracted_data.search_keyword;
+          if ((!kw || /^(ini|itu|transaksi|kategori|kategoriny|kategorinya|perbaiki|ubah|sesuaikan|yang|saya|balas|\s)*$/i.test(String(kw).trim())) && message.reply_to_message && message.reply_to_message.text) {
+            const replyTxt = message.reply_to_message.text;
+            const catatanMatch = replyTxt.match(/(?:Catatan|Tujuan|Merchant|Deskripsi):\s*([^\n\r,]+)/i);
+            const nominalMatch = replyTxt.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+            if (catatanMatch && catatanMatch[1]) {
+              kw = catatanMatch[1].trim();
+            } else if (nominalMatch && nominalMatch[1]) {
+              kw = nominalMatch[1].replace(/[^0-9]/g, '');
+            } else {
+              kw = 'latest';
+            }
+          }
           const result = await financeEngine.editTransaction(
-            routingData.extracted_data.search_keyword,
+            kw,
             routingData.extracted_data.nominal,
             routingData.extracted_data.description || routingData.extracted_data.destination,
             routingData.extracted_data.category,

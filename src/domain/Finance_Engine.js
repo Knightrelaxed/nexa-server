@@ -859,10 +859,20 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
       patchData.description = newDescription;
     }
 
-    // Update category if provided
-    if (newCategory && newCategory !== 'Uncategorized') {
+    // Update category if provided, OR auto-categorize using AI if user asks to fix category without giving a name!
+    if (newCategory && newCategory !== 'Uncategorized' && newCategory !== 'Lainnya' && newCategory.toLowerCase() !== 'auto') {
       patchData.categoryName = newCategory;
       patchData.txType = tx.type; // Penting untuk resolveCategoryId agar tidak default ke EXPENSE
+    } else if (
+      (newCategory === 'Lainnya' || newCategory === 'auto' || (!newCategory || newCategory === 'Uncategorized')) &&
+      (tx.categories?.name === 'Lainnya' || (keyword && /kategori|perbaiki|sesuaikan|ubah/i.test(keyword)))
+    ) {
+      console.log(`[FINANCE] Auto-recategorizing transaction "${tx.description}" during edit...`);
+      const autoCat = await _autoCategorizeMerchant(tx.description || tx.account_name || keyword);
+      if (autoCat && autoCat !== 'Lainnya') {
+        patchData.categoryName = autoCat;
+        patchData.txType = tx.type;
+      }
     }
 
     // Update account if provided
