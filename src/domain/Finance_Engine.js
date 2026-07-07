@@ -44,23 +44,32 @@ Transaksi: "${merchantName}"
 Daftar kategori (pilih SATU saja, tulis PERSIS):
 ${validCatNames.map(c => `- ${c}`).join('\n')}
 
-PROSES KOGNITIF WAJIB (2 LANGKAH):
+ATURAN ANALISIS SECARA INTERNAL (JANGAN DITULIS DI TEKS BALASAN):
 1. IDENTIFIKASI OBJEK: Apa SUBSTANSI yang dibeli/dibayar? Jangan terkecoh oleh kata-kata permukaan!
 2. COCOKKAN: Pilih kategori yang paling dekat secara SEMANTIK dengan objek tersebut DARI DAFTAR DI ATAS.
 
-ATURAN DISAMBIGUASI KRITIS:
-- "iuran" / "patungan" / "urunan" / "kas" untuk acara/kegiatan → kategori sosial/hiburan/acara, BUKAN makanan!
-- "makrab" = "malam keakraban" = acara sosial kampus → kategori sosial/hiburan/acara, BUKAN makanan!
-- "rokok" / "sigaret" / "vape" / "liquid" / "cerutu" / "tembakau" → WAJIB pilih "Tembakau, Alkohol" atau "Alkohol, tembakau", JANGAN jawab "Rokok" karena tidak ada di daftar!
-- "bir" / "wine" / "alkohol" / "miras" → WAJIB pilih "Tembakau, Alkohol" atau "Alkohol, tembakau"
-- "grab" / "gojek" / "ojek" / "taxi" → kategori transportasi, BUKAN "Layanan"!
+ATURAN DISAMBIGUASI KRITIS (WAJIB COCOKKAN DENGAN DAFTAR KATEGORI DI ATAS):
+- "jajan" / "ngopi" / "es teh" / "boba" / "camilan" / "roti" / "kafe" / "latte" / "starbucks" / "mixue" → WAJIB pilih "Jajan / Ngopi / Kafe"
+- "nasi" / "makan berat" / "makan siang" / "makan malam" / "sate" / "soto" / "ayam" / "bakso" / "warteg" / "resto" / "padang" → WAJIB pilih "Makan Berat / Makan Luar"
+- "gofood" / "grabfood" / "shopeefood" / "pesan antar" / "delivery" → WAJIB pilih "Pesan Antar / Delivery" (atau "Makan Berat / Makan Luar")
+- "grab" / "gojek" / "ojek" / "taksi" / "goride" / "gocar" / "maxim" → WAJIB pilih "Ojek / Taksi Online" atau "Transportasi Umum"
+- "iuran" / "patungan" / "urunan" / "kas" / "makrab" untuk acara/kegiatan → WAJIB pilih "Sosial & Kado" atau "Olahraga & Event", BUKAN makanan!
+- "rokok" / "sigaret" / "vape" / "liquid" / "cerutu" / "tembakau" / "bir" / "wine" / "alkohol" / "miras" → WAJIB pilih "Alkohol, tembakau"
+- "beras" / "minyak" / "telur" / "sayur" / "supermarket" / "pasar" / "belanja dapur" → WAJIB pilih "Bahan Makanan / Groceries"
 
-CONTOH REFERENSI:
-"kopi latte" → "Kafe/Bar", "starbucks" → "Kafe/Bar", "GRAB FOOD" → "Restoran, makanan cepat saji", "GRAB TRANSPORT" → "Taksi", "nge gym" → "Olahraga aktif, kebugaran", "nasi Padang" → "Restoran, makanan cepat saji", "beli Ades" → "Makanan dan minuman", "Indomaret" → "Belanja", "Shopee" → "Belanja online", "rokok" → "Tembakau, Alkohol", "iuran makrab" → "Kegiatan Sosial".
+CONTOH REFERENSI AKURAT:
+"jajan es teh dua" / "kopi latte" / "starbucks" / "beli camilan" / "beli Ades" → "Jajan / Ngopi / Kafe"
+"beli nasi goreng dua" / "nasi Padang" / "makan siang di warung" / "bakso" → "Makan Berat / Makan Luar"
+"GRAB FOOD" / "GoFood" → "Pesan Antar / Delivery"
+"GRAB TRANSPORT" / "bayar ojol" / "taksi" → "Ojek / Taksi Online"
+"nge gym" / "futsal" → "Olahraga & Event"
+"rokok" / "vape" / "liquid" → "Alkohol, tembakau"
+"iuran makrab" / "patungan kado" → "Sosial & Kado"
+"listrik" / "token listrik" / "air PDAM" / "wifi kos" → "Listrik / Air" atau "Internet / WiFi Kos"
 
 ATURAN LAINNYA:
-1. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu. JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya), JANGAN PERNAH memilih "Lainnya"!
-2. HANYA balas nama kategori dari daftar. Tanpa penjelasan, tanpa tanda kutip, jangan pernah membuat kategori baru.`;
+1. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu. JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya seperti "jajan", "nasi", "es teh", "kopi"), JANGAN PERNAH memilih "Lainnya"!
+2. PENTING KRITIS: JANGAN tulis penjelasan, jangan tulis salam, jangan tulis proses berpikirmu! KELUARKAN HANYA 1 BARIS TEKS berisi nama kategori dari daftar di atas! Tanpa tanda kutip, jangan pernah membuat kategori baru.`;
     const aiResp = await callAI(prompt);
     let cat = aiResp.trim();
     // Strip quotes/whitespace if AI wraps the answer
@@ -77,6 +86,23 @@ ATURAN LAINNYA:
     if (fuzzy) {
       console.log(`[FINANCE] AI categorized (fuzzy) "${merchantName}" → "${fuzzy}"`);
       return fuzzy;
+    }
+    // Defensive extraction: Jika AI tetap menjawab dengan kalimat panjang/menjelaskan alasannya,
+    // cari apakah ada nama kategori sah di dalam jawaban AI!
+    const matchedCategories = validCatNames.filter(v => aiResp.toLowerCase().includes(v.toLowerCase()));
+    if (matchedCategories.length > 0) {
+      // Prioritaskan kategori yang muncul paling akhir di teks jawaban AI (biasanya di kesimpulan)
+      let bestMatch = matchedCategories[0];
+      let maxIdx = -1;
+      for (const v of matchedCategories) {
+        const idx = aiResp.toLowerCase().lastIndexOf(v.toLowerCase());
+        if (idx > maxIdx) {
+          maxIdx = idx;
+          bestMatch = v;
+        }
+      }
+      console.log(`[FINANCE] AI categorized (extracted from explanation text) "${merchantName}" → "${bestMatch}"`);
+      return bestMatch;
     }
     console.warn(`[FINANCE] AI returned invalid category "${cat}" for "${merchantName}". Falling back to Lainnya.`);
   } catch (e) {
@@ -1601,18 +1627,21 @@ function _parseAnalyticsPeriod(dateText = null) {
   return { startDate, endDate, prevStart, prevEnd, timeLabel };
 }
 
-// Category emoji map
+// Category emoji map (Sesuai 52 Kategori Supabase Tuan Faqih)
 const CATEGORY_EMOJI = {
-  'Makanan dan minuman': '🍽️', 'Bar, kafe': '☕', 'Restoran, makanan cepat saji': '🍔',
-  'Bahan makanan': '🛒', 'Transportasi': '🚗', 'Taksi': '🚕', 'Transportasi umum': '🚌',
-  'Bahan bakar': '⛽', 'Parkir': '🅿️', 'Belanja': '🛍️', 'Pakaian dan alas kaki': '👗',
-  'Elektronik, aksesoris': '📱', 'Kesehatan dan kecantikan': '💊', 'Apotek, obat-obatan': '💊',
-  'Perawatan kesehatan, dokter': '🏥', 'Pendidikan, pengembangan diri': '📚',
-  'Hiburan dan kehidupan': '🎉', 'Hobi': '🎮', 'Olahraga aktif, kebugaran': '💪',
-  'TV, streaming': '📺', 'Internet': '🌐', 'Telepon, ponsel': '📞',
-  'Investasi': '📈', 'Tabungan': '🏦', 'Amal, hadiah': '🎁',
-  'Liburan, perjalanan, hotel': '✈️', 'Layanan': '🔧', 'Sewa': '🏠',
-  'Lainnya': '🔖'
+  'Jajan / Ngopi / Kafe': '☕', 'Makan Berat / Makan Luar': '🍽️', 'Pesan Antar / Delivery': '🛵', 'Bahan Makanan / Groceries': '🛒',
+  'Pendapatan (umum)': '💰', 'Hadiah': '🎁', 'Beasiswa': '🎓', 'Pengembalian dana pajak': '💵', 'Cek, kupon': '🎟️',
+  'Obat & Vitamin': '💊', 'Pendapatan pengembalian hutang': '🤝', 'Iuran & hibah': '🤲', 'Kebutuhan Kampus / ATK': '📚',
+  'Pendapatan sewa': '🏠', 'Pendapatan bisnis penjualan': '📈', 'Bunga, dividen': '💎', 'Elektronik & Gadget': '📱',
+  'Gaji, faktur': '💼', 'Skincare & Kosmetik': '✨', 'Pakaian & Aksesoris': '👗', 'Potong Rambut / Barbershop': '✂️',
+  'Alat Mandi & Cukur': '🚿', 'Perlengkapan Kamar': '🛏️', 'Jasa Laundry': '🧺', 'Listrik / Air': '⚡',
+  'Sewa Kos / Kontrakan': '🏡', 'Tiket Jarak Jauh': '✈️', 'Ojek / Taksi Online': '🚗', 'Transportasi Umum': '🚌',
+  'Sewa Kendaraan': '🚘', 'Servis / Cuci Kendaraan': '🔧', 'Bensin & Parkir': '⛽', 'Alkohol, tembakau': '🚬',
+  'Sosial & Kado': '🎉', 'Kencan / Jalan-jalan': '🍿', 'Langganan Digital': '💻', 'Buku & Pendidikan': '📖',
+  'Hobi / Eksperimen': '🎨', 'Memberi Pinjaman / Piutang': '💸', 'Olahraga & Event': '⚽', 'Klinik & Dokter': '🏥',
+  'Internet / WiFi Kos': '🌐', 'Pulsa & Paket Data': '📶', 'Biaya Admin / Layanan': '🧾', 'Cicilan / Hutang': '💳',
+  'Asuransi / BPJS': '🛡️', 'Pajak & Denda': '📑', 'Investasi (Reksadana / Saham)': '📊', 'Tabungan / Dana Darurat': '🏦',
+  'Uang Hilang': '❓', 'Penyesuaian Saldo': '⚖️', 'Lainnya': '🔖'
 };
 function _catEmoji(name) { return CATEGORY_EMOJI[name] || '💳'; }
 
