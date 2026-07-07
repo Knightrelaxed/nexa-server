@@ -471,7 +471,7 @@ const stripSurroundingQuotes = (str) => {
 // ============================================================
 async function sendTelegramOutbound(text, skipMemory = false) {
   try {
-    const cleanText = stripSurroundingQuotes(String(text)).replace(/\b[Aa]nda\b/g, 'Tuan');
+    const cleanText = stripSurroundingQuotes(String(text));
     if (!skipMemory) {
       await supabaseMemories.saveChatMemory('nexa', cleanText.substring(0, 4000)).catch(() => { });
     }
@@ -519,7 +519,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     // respondToTelegram — Capture reply for webhook response (zero outbound)
     // ============================================================
     const respondToTelegram = async (text, skipMemory = false) => {
-      const cleanText = stripSurroundingQuotes(String(text)).replace(/\b[Aa]nda\b/g, 'Tuan');
+      const cleanText = stripSurroundingQuotes(String(text));
       if (!skipMemory) {
         await supabaseMemories.saveChatMemory('nexa', cleanText.substring(0, 4000)).catch(() => { });
       }

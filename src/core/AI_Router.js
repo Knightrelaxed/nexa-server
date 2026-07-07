@@ -499,9 +499,10 @@ Tentukan intent dan ekstrak data!
 
   try {
     const routingData = JSON.parse(cleanStr);
-    if (routingData && routingData.reply_message) {
-      routingData.reply_message = String(routingData.reply_message).replace(/\b[Aa]nda\b/g, 'Tuan');
-    }
+
+    // 5. Save new memory ONLY after successful parse (symmetric context)
+    // We only save the user's input here. The final reply (domainReply or reply_message)
+    // will be saved by the caller (e.g. webhook.js) to ensure we don't save duplicate "draft" messages.
 
     return routingData;
   } catch (err) {
@@ -535,7 +536,7 @@ async function callAI(prompt) {
     const firstVal = Object.values(parsed).find(v => typeof v === 'string');
     if (firstVal) text = firstVal;
   } catch (_) { /* Not JSON, already plain text — good */ }
-  return text.replace(/\b[Aa]nda\b/g, 'Tuan');
+  return text;
 }
 
 /**
