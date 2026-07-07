@@ -22,6 +22,62 @@ let isPollingFinance = false;
 
 // VALID_FINANCE_CATEGORIES statis telah dihapus. Daftar ditarik dinamis dari DB.
 
+// ============================================================
+// PAYMENT METHOD NORMALIZER — terpusat, fuzzy-aware
+// Hanya 4 metode valid: QRIS, Transfer bank, Kartu Kredit, Tunai
+// Mampu menangkap transcription error dari Whisper (e.g. "crispy" → QRIS)
+// ============================================================
+function _normalizePaymentMethod(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const s = raw.toLowerCase().trim();
+
+  // Daftar kata kunci fuzzy untuk tiap metode (semakin banyak alias, semakin tahan transcription error)
+  const PAYMENT_ALIASES = [
+    {
+      canonical: 'QRIS',
+      aliases: [
+        'qris', 'qr', 'kris', 'chris', 'gris', 'crispy', 'grisy', 'quris',
+        'qri', 'qriss', 'kriss', 'cris', 'criss', 'kriss', 'scan', 'qrcode',
+        'barcode', 'kode qr', 'q.r.i.s', 'q-r-i-s',
+      ]
+    },
+    {
+      canonical: 'Transfer bank',
+      aliases: [
+        'transfer', 'transfer bank', 'transfer antar bank', 'atm', 'bank transfer',
+        'trasnfer', 'tranfer', 'trnsfer', 'tf', 'trf', 'trf bank', 'kirim', 'remit',
+        'transfer bri', 'transfer bca', 'transfer mandiri', 'saldo', 'e-banking',
+        'internet banking', 'mobile banking', 'm-banking', 'mbbanking',
+      ]
+    },
+    {
+      canonical: 'Kartu Kredit',
+      aliases: [
+        'kartu kredit', 'kredit', 'credit card', 'credit', 'cc', 'k.kredit',
+        'kartucredit', 'kartu credit', 'gesek', 'swipe', 'cicil', 'cicilan',
+        'kartu visa', 'kartu mastercard', 'visa', 'mastercard',
+      ]
+    },
+    {
+      canonical: 'Tunai',
+      aliases: [
+        'tunai', 'cash', 'kontan', 'uang tunai', 'uang cash', 'uang fisik',
+        'bayar tunai', 'bayar cash', 'uang', 'cash money',
+      ]
+    },
+  ];
+
+  for (const { canonical, aliases } of PAYMENT_ALIASES) {
+    if (aliases.some(a => s === a || s.includes(a))) {
+      return canonical;
+    }
+  }
+
+  // Jika tidak cocok dengan alias manapun → return null (jangan simpan nilai acak)
+  console.log(`[FINANCE] Payment method "${raw}" tidak dikenali → disimpan sebagai null (tidak akan mengotori DB).`);
+  return null;
+}
+
 async function _autoCategorizeMerchant(merchantName, currentCategory) {
   // If user/AI Router already chose a valid specific category, keep it.
   // MUST also treat placeholder strings as "needs categorization".
@@ -276,11 +332,7 @@ async function processTransaction(data, source) {
     // ── METODE PEMBAYARAN ───────────────────────────────────────────────────
     // Ekstrak dari data AI Router secara case-insensitive. Jika invalid/kosong, default null.
     const pmRaw = typeof data.payment_method === 'string' ? data.payment_method.toLowerCase().trim() : '';
-    let paymentMethod = null;
-    if (pmRaw === 'qris') paymentMethod = 'QRIS';
-    else if (pmRaw === 'transfer bank') paymentMethod = 'Transfer bank';
-    else if (pmRaw === 'kartu kredit') paymentMethod = 'Kartu Kredit';
-    else if (pmRaw === 'tunai') paymentMethod = 'Tunai';
+    const paymentMethod = _normalizePaymentMethod(pmRaw);
 
     const txDateISO = transactionTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
     const txTimeHHMM = transactionTime.toLocaleTimeString('id-ID', {
@@ -1154,7 +1206,20 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
     }
   }
 
-  if (newPaymentMethod) pending.tx.payment_method = newPaymentMethod;
+  if (newPaymentMethod) {
+    const normalizedPM = _normalizePaymentMethod(newPaymentMethod);
+    if (normalizedPM) {
+      pending.tx.payment_method = normalizedPM;
+    } else {
+      // Metode tidak dikenali — beritahu user dan JANGAN simpan nilai acak
+      clearTimeout(pending.timeoutId);
+      const newTimeoutId = setTimeout(async () => {
+        if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
+      }, 5 * 60 * 1000);
+      pending.timeoutId = newTimeoutId;
+      return `⚠️ <b>Metode pembayaran "${newPaymentMethod}" tidak dikenali.</b>\n\nMetode yang tersedia hanya:\n• <b>QRIS</b> (scan QR)\n• <b>Transfer bank</b>\n• <b>Kartu Kredit</b>\n• <b>Tunai</b>\n\nSilakan balas dengan salah satu metode di atas, atau abaikan agar disimpan dalam 5 menit.`;
+    }
+  }
 
   // Reset the 5-minute timeout because user interacted
   clearTimeout(pending.timeoutId);
