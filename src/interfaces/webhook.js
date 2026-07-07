@@ -544,11 +544,17 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     let textInput = message.text;
     
     // [FEATURE] Reply-Awareness
-    // Inject the original message context if the user explicitly replies to a message.
+    // Inject replied message context with a semantic label so AI Router
+    // can distinguish reference context from an action command without
+    // needing verbose examples in the system prompt.
     if (textInput && message.reply_to_message && message.reply_to_message.text) {
       const originalMsg = message.reply_to_message.text;
       const snippet = originalMsg.length > 600 ? originalMsg.substring(0, 600) + '...' : originalMsg;
-      textInput = `[Menanggapi pesan N.E.X.A: "${snippet}"]\n${textInput}`;
+      // Pre-classify: does the user's OWN message contain an explicit action verb?
+      const ACTION_VERBS = /\b(hapus|ubah|edit|perbaiki|catat|konfirmasi|batalkan|ganti|update|delete|simpan|sesuaikan|koreksi|tambah|undo)\b/i;
+      const isAction = ACTION_VERBS.test(textInput);
+      const label = isAction ? 'KONTEKS_AKSI' : 'KONTEKS_REFERENSI';
+      textInput = `[${label} — Menanggapi pesan N.E.X.A: "${snippet}"]\n${textInput}`;
     }
 
     const captionText = message.caption || '';
@@ -1034,7 +1040,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           if (!data.search_keyword || /^(ini|itu|transaksi|kategori|kategoriny|kategorinya|perbaiki|ubah|sesuaikan|yang|saya|balas|\s)*$/i.test(String(data.search_keyword).trim())) {
             // [REPLY-AWARE SNIPER FIX] Jika user membalas pesan transaksi, jangan blokir!
             // Ekstrak nominal atau catatan dari teks pesan yang dibalas sebagai kata kunci pencarian.
-            const replyMatch = String(originalText).match(/\[Menanggapi pesan N\.E\.X\.A:\s*"(.*?)"\]/s);
+            const replyMatch = String(originalText).match(/\[(?:KONTEKS_AKSI|KONTEKS_REFERENSI)[^\]]*Menanggapi pesan N\.E\.X\.A:\s*"(.*?)"\]/s);
             if (replyMatch && replyMatch[1]) {
               const snippet = replyMatch[1];
               const nominalMatch = snippet.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
