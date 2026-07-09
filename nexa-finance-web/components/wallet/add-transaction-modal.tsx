@@ -36,18 +36,32 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
   const { categories } = useCategories()
   const { accounts, refetch: refetchAccounts } = useAccounts()
 
-  // Plain defaults — synced from initialData via useEffect below
-  const [type, setType] = useState<TxType>("expense")
-  const [amount, setAmount] = useState("")
-  const [description, setDescription] = useState("")
-  const [categoryId, setCategoryId] = useState("")
-  const [accountId, setAccountId] = useState("")
+  // ── Lazy Initializers ──────────────────────────────────────────────────
+  // Since this component is now fully remounted (via key prop) every time
+  // initialData changes or the modal is reopened, we can safely initialize
+  // state precisely once on mount. This avoids the "empty-then-filled"
+  // render cycle that breaks Radix UI Select's internal display syncing.
+  const [type, setType] = useState<TxType>(() => (initialData?.type as TxType) || "expense")
+  const [amount, setAmount] = useState(() => initialData?.amount?.toString() || "")
+  const [description, setDescription] = useState(() => initialData?.description || "")
+  const [categoryId, setCategoryId] = useState(() => initialData?.category_id || "")
+  const [accountId, setAccountId] = useState(() => initialData?.account_id || "")
   const [toAccountId, setToAccountId] = useState("")
-  const [paymentMethod, setPaymentMethod] = useState("none")
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
+  const [paymentMethod, setPaymentMethod] = useState(() => {
+    const pm = initialData?.payment_method?.trim()
+    return pm ? (PAYMENT_METHODS.find(m => m.toLowerCase() === pm.toLowerCase()) || pm) : "none"
+  })
+  const [date, setDate] = useState(() => initialData?.transaction_date || new Date().toISOString().slice(0, 10))
+  const [time, setTime] = useState(() => {
+    if (initialData?.transaction_time) {
+      // Fix dot format from OCR (e.g. "20.42" -> "20:42")
+      return String(initialData.transaction_time).slice(0, 5).replace('.', ':')
+    }
+    return new Date().toTimeString().slice(0, 5)
+  })
   const [loading, setLoading] = useState(false)
-  // ── Category filtering ────────────────────────────────────────────────
+
+  // ── Category & Account filtering ────────────────────────────────────────
   // Ensure edited category is always visible even if:
   // (a) categories are still loading (empty array), or
   // (b) category type differs from current type tab on first render
@@ -75,33 +89,24 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
     return acc
   }, {})
 
-  // ── Primary sync effect ────────────────────────────────────────────────
-  // Runs whenever the modal opens OR initialData changes.
-  // React 18 batches all the setState calls into a single re-render.
-  useEffect(() => {
-    if (!open) return
-    if (initialData) {
-      setType(initialData.type as TxType)
-      setAmount(initialData.amount?.toString() || "")
-      setDescription(initialData.description || "")
-      setCategoryId(initialData.category_id || "")
-      setAccountId(initialData.account_id || "")
-      setDate(initialData.transaction_date || new Date().toISOString().slice(0, 10))
-      setTime(initialData.transaction_time ? String(initialData.transaction_time).slice(0, 5) : new Date().toTimeString().slice(0, 5))
-      // Case-insensitive PM match so DB casing quirks don't break the Select
-      const rawPM = initialData.payment_method?.trim()
-      setPaymentMethod(rawPM ? (PAYMENT_METHODS.find(m => m.toLowerCase() === rawPM.toLowerCase()) || rawPM) : "none")
-    } else {
-      // New transaction: reset all fields
-      setType("expense")
-      setAmount("")
-      setDescription("")
-      setCategoryId("")
-      setDate(new Date().toISOString().slice(0, 10))
-      setTime(new Date().toTimeString().slice(0, 5))
-      setPaymentMethod("none")
-    }
-  }, [open, initialData])
+  // Ensure edited account is always visible even if accounts are loading
+  const displayAccounts = [...accounts]
+  if (initialData?.account_id && !displayAccounts.some(a => a.id === initialData.account_id)) {
+    const existingAcc = accounts.find(a => a.id === initialData.account_id)
+    displayAccounts.push(existingAcc || {
+      id: initialData.account_id,
+      name: initialData.account_name || "Akun",
+      type: "bank",
+      initial_balance: 0,
+      currency: "IDR",
+      color: "#3b82f6",
+      icon_key: "wallet",
+      is_archived: false,
+      exclude_from_stats: false,
+      created_at: new Date().toISOString(),
+      balance: 0
+    })
+  }
 
   // Auto-select first account for NEW transactions only
   useEffect(() => {
@@ -281,11 +286,11 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
                       <Select value={accountId} onValueChange={setAccountId}>
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Pilih akun">
-                            {accounts.find(a => a.id === accountId) && renderAccountOption(accounts.find(a => a.id === accountId)!, true)}
+                            {displayAccounts.find(a => a.id === accountId) && renderAccountOption(displayAccounts.find(a => a.id === accountId)!, true)}
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="z-[999]">
-                          {accounts.map((acc) => (
+                          {displayAccounts.map((acc) => (
                             <SelectItem key={acc.id} value={acc.id}>
                               {renderAccountOption(acc)}
                             </SelectItem>
@@ -379,14 +384,14 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
                     <Select value={accountId} onValueChange={setAccountId}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pilih akun">
-                        {accounts.find(a => a.id === accountId) && renderAccountOption(accounts.find(a => a.id === accountId)!, true)}
+                        {displayAccounts.find(a => a.id === accountId) && renderAccountOption(displayAccounts.find(a => a.id === accountId)!, true)}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent className="z-[999]">
-                      {accounts.length === 0 ? (
+                      {displayAccounts.length === 0 ? (
                         <div className="p-4 text-sm text-center text-slate-400">— Belum ada akun —</div>
                       ) : (
-                        accounts.map((acc) => (
+                        displayAccounts.map((acc) => (
                           <SelectItem key={acc.id} value={acc.id}>
                             {renderAccountOption(acc)}
                           </SelectItem>
