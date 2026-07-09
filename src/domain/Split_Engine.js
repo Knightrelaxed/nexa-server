@@ -532,12 +532,10 @@ async function resolveRemainderReply(chatId, userText) {
     const txt = userText.trim().toLowerCase();
     let normalizedPM = 'QRIS';
     if (txt.includes('qris')) normalizedPM = 'QRIS';
-    else if (txt.includes('transfer') || txt.includes('tf')) normalizedPM = 'Transfer';
+    else if (txt.includes('transfer') || txt.includes('tf')) normalizedPM = 'Transfer bank';
     else if (txt.includes('tunai') || txt.includes('cash')) normalizedPM = 'Tunai';
-    else if (txt.includes('kredit') || txt.includes('cc')) normalizedPM = 'Kredit';
-    else if (txt.includes('debit')) normalizedPM = 'Debit';
-    else if (txt.includes('emoney') || txt.includes('e-money') || txt.includes('gopay') || txt.includes('ovo') || txt.includes('dana') || txt.includes('spay') || txt.includes('shopeepay')) normalizedPM = 'E-Wallet';
-    else normalizedPM = userText.trim().substring(0, 20);
+    else if (txt.includes('kredit') || txt.includes('cc')) normalizedPM = 'Kartu Kredit';
+    else normalizedPM = null;
 
     pending.baseTx.paymentMethod = normalizedPM;
     const res = await executeSplit(pending.items, pending.baseTx, pending.existingTxId);
