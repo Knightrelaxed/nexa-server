@@ -36,39 +36,29 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
   const { categories } = useCategories()
   const { accounts, refetch: refetchAccounts } = useAccounts()
 
-  // ── Lazy initializers: read from initialData on FIRST MOUNT so values are
-  //    correct on the very first render (no flash of empty/placeholder state).
-  //    Because `if (!open) return null` causes unmount/remount each open, these
-  //    run fresh every time the modal opens.
-  const [type, setType] = useState<TxType>(() => (initialData?.type as TxType) || "expense")
-  const [amount, setAmount] = useState(() => initialData?.amount?.toString() || "")
-  const [description, setDescription] = useState(() => initialData?.description || "")
-  const [categoryId, setCategoryId] = useState(() => initialData?.category_id || "")
-  const [accountId, setAccountId] = useState(() => initialData?.account_id || "")
+  // Plain defaults — synced from initialData via useEffect below
+  const [type, setType] = useState<TxType>("expense")
+  const [amount, setAmount] = useState("")
+  const [description, setDescription] = useState("")
+  const [categoryId, setCategoryId] = useState("")
+  const [accountId, setAccountId] = useState("")
   const [toAccountId, setToAccountId] = useState("")
-  const [paymentMethod, setPaymentMethod] = useState(() => {
-    const pm = initialData?.payment_method?.trim()
-    if (!pm) return "none"
-    return PAYMENT_METHODS.find(m => m.toLowerCase() === pm.toLowerCase()) || pm
-  })
-  const [date, setDate] = useState(() => initialData?.transaction_date || new Date().toISOString().slice(0, 10))
-  const [time, setTime] = useState(() => {
-    const t = initialData?.transaction_time
-    return t ? String(t).slice(0, 5) : new Date().toTimeString().slice(0, 5)
-  })
+  const [paymentMethod, setPaymentMethod] = useState("none")
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
   const [loading, setLoading] = useState(false)
-
-  // Ensure initialData category is always visible in the Select list even if:
-  // (a) it belongs to a different type than the current filter, or
-  // (b) categories haven't loaded from the server yet.
+  // ── Category filtering ────────────────────────────────────────────────
+  // Ensure edited category is always visible even if:
+  // (a) categories are still loading (empty array), or
+  // (b) category type differs from current type tab on first render
   const filteredCategories = [...categories.filter(c => c.type === (type === "transfer" ? "expense" : type))]
-  if (initialData && initialData.category_id && !filteredCategories.some(c => c.id === initialData.category_id)) {
+  if (initialData?.category_id && !filteredCategories.some(c => c.id === initialData.category_id)) {
     const existingCat = categories.find(c => c.id === initialData.category_id)
     filteredCategories.push(existingCat || {
       id: initialData.category_id,
-      name: initialData.category_name || "Kategori Terpilih",
-      type: (initialData.type === "transfer" ? "expense" : initialData.type) || type,
-      group_name: "Terpilih",
+      name: initialData.category_name || "Kategori",
+      type: (initialData.type === "transfer" ? "expense" : initialData.type) || "expense",
+      group_name: initialData.category_group_name || "Terpilih",
       icon_key: initialData.category_icon_key || "wallet",
       icon_bg: initialData.category_icon_bg || "bg-slate-100",
       icon_color: initialData.category_icon_color || "text-slate-700",
@@ -85,11 +75,24 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
     return acc
   }, {})
 
-  // Sync if the *same* modal instance receives a different initialData (edge case).
-  // For new transactions (no initialData), auto-select first available account.
+  // ── Primary sync effect ────────────────────────────────────────────────
+  // Runs whenever the modal opens OR initialData changes.
+  // React 18 batches all the setState calls into a single re-render.
   useEffect(() => {
-    if (!initialData) {
-      // New transaction: reset form
+    if (!open) return
+    if (initialData) {
+      setType(initialData.type as TxType)
+      setAmount(initialData.amount?.toString() || "")
+      setDescription(initialData.description || "")
+      setCategoryId(initialData.category_id || "")
+      setAccountId(initialData.account_id || "")
+      setDate(initialData.transaction_date || new Date().toISOString().slice(0, 10))
+      setTime(initialData.transaction_time ? String(initialData.transaction_time).slice(0, 5) : new Date().toTimeString().slice(0, 5))
+      // Case-insensitive PM match so DB casing quirks don't break the Select
+      const rawPM = initialData.payment_method?.trim()
+      setPaymentMethod(rawPM ? (PAYMENT_METHODS.find(m => m.toLowerCase() === rawPM.toLowerCase()) || rawPM) : "none")
+    } else {
+      // New transaction: reset all fields
       setType("expense")
       setAmount("")
       setDescription("")
@@ -98,17 +101,18 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
       setTime(new Date().toTimeString().slice(0, 5))
       setPaymentMethod("none")
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialData])
+  }, [open, initialData])
 
   // Auto-select first account for NEW transactions only
   useEffect(() => {
     if (accounts.length > 0 && !accountId && !initialData) setAccountId(accounts[0].id)
   }, [accounts, accountId, initialData])
 
-  // Auto-select first category for NEW transactions only (when type changes)
+  // Auto-select first category for NEW transactions when type changes (not edit)
   useEffect(() => {
-    if (!initialData && filteredCategories.length > 0 && !categoryId) setCategoryId(filteredCategories[0].id)
+    if (!initialData && !categoryId && filteredCategories.length > 0) {
+      setCategoryId(filteredCategories[0].id)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, categories.length])
 

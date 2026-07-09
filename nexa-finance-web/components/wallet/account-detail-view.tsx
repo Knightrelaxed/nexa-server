@@ -620,7 +620,8 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
         </div>
       )}
 
-      <AddTransactionModal 
+      <AddTransactionModal
+        key={editTx?.id || 'new-tx'}
         open={editModalOpen} 
         onClose={() => {
           setEditModalOpen(false)

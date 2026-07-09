@@ -624,7 +624,8 @@ export function RecordsView() {
         </Card>
       </div>
 
-      <AddTransactionModal 
+      <AddTransactionModal
+        key={editTx?.id || 'new-tx'}
         open={editModalOpen} 
         onClose={() => {
           setEditModalOpen(false)
