@@ -489,24 +489,35 @@ async function resolveRemainderReply(chatId, userText) {
   const categories = await supabaseFinanceModule.getCategoriesList();
   const validCatNames = categories.map(c => c.name).join('\n');
 
-  // Kategorikan balasan user untuk sisa nominal
-  const prompt = `Kategorikan keterangan item belanja berikut ke salah satu kategori valid.
+  // Ekstrak label bersih dan kategorikan
+  const prompt = `Ekstrak nama barang/pengeluaran (singkat, max 3 kata) dan kategorikan ke salah satu kategori valid dari teks berikut.
 Keterangan user: "${userText}"
 Nominal: Rp${pending.remainder}
 
-Daftar Kategori:
+Daftar Kategori Valid:
 ${validCatNames}
 
-Output HANYA nama kategori yang paling tepat dari daftar di atas, tanpa tanda kutip atau penjelasan.`;
+Output HANYA dalam format persis seperti ini, tanpa tambahan apapun:
+NAMA_BARANG|NAMA_KATEGORI
 
+Contoh Output:
+Sunscreen|Skincare & Kosmetik`;
+
+  let aiLabel = userText.trim();
   let aiCat = 'Lainnya';
   try {
     const raw = await callAI(prompt, { maxTokens: 50 });
-    if (raw && raw.trim()) aiCat = raw.trim();
+    if (raw && raw.includes('|')) {
+      const parts = raw.split('|');
+      if (parts[0].trim()) aiLabel = parts[0].trim();
+      if (parts[1].trim()) aiCat = parts[1].trim();
+    } else {
+      aiCat = raw.trim(); // Fallback jika model menolak pakai format pipe
+    }
   } catch (_) {}
 
   const addedItem = {
-    label: userText.trim() || `Sisa split ${pending.storeName || 'Belanja'}`,
+    label: aiLabel || `Sisa split ${pending.storeName || 'Belanja'}`,
     nominal: pending.remainder,
     category: aiCat
   };
