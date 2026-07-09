@@ -49,22 +49,6 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
 
   const filteredCategories = categories.filter(c => c.type === (type === "transfer" ? "expense" : type))
 
-  // Inject archived category if we are editing and the category is missing from active list
-  if (initialData && initialData.category_id && !filteredCategories.find(c => c.id === initialData.category_id)) {
-    filteredCategories.push({
-      id: initialData.category_id,
-      name: initialData.category_name || "Kategori Arsip",
-      type: initialData.type === "transfer" ? "expense" : initialData.type,
-      group_name: "Diarsipkan",
-      icon_key: initialData.category_icon_key || "archive",
-      icon_bg: initialData.category_icon_bg || "bg-slate-100",
-      icon_color: initialData.category_icon_color || "text-slate-500",
-      is_archived: true,
-      user_id: userId || "",
-      created_at: new Date().toISOString()
-    })
-  }
-
   const groupedCategories = filteredCategories.reduce<Record<string, typeof categories>>((acc, cat) => {
     const group = cat.group_name || (type === "income" ? "Pendapatan" : "Lainnya")
     if (!acc[group]) acc[group] = []
@@ -82,9 +66,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         setAccountId(initialData.account_id)
         setDate(initialData.transaction_date)
         if (initialData.transaction_time) setTime(initialData.transaction_time)
-        const pm = initialData.payment_method;
-        const matchedPM = PAYMENT_METHODS.find(m => m.toLowerCase() === pm?.toLowerCase()) ?? 'none';
-        setPaymentMethod(matchedPM)
+        setPaymentMethod(initialData.payment_method ?? 'none')
       } else {
         // Reset to default on new
         setAmount("")
@@ -193,7 +175,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
     return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".")
   }
 
-  const selectedCategory = filteredCategories.find(c => c.id === categoryId)
+  const selectedCategory = categories.find(c => c.id === categoryId)
 
   function renderAccountOption(acc: typeof accounts[0], isTrigger = false) {
     const Icon = ICON_MAP[acc.icon_key] || ICON_MAP["wallet"]
