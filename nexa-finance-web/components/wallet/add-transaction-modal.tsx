@@ -36,26 +36,38 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
   const { categories } = useCategories()
   const { accounts, refetch: refetchAccounts } = useAccounts()
 
-  const [type, setType] = useState<TxType>("expense")
-  const [amount, setAmount] = useState("")
-  const [description, setDescription] = useState("")
-  const [categoryId, setCategoryId] = useState("")
-  const [accountId, setAccountId] = useState("")
+  // ── Lazy initializers: read from initialData on FIRST MOUNT so values are
+  //    correct on the very first render (no flash of empty/placeholder state).
+  //    Because `if (!open) return null` causes unmount/remount each open, these
+  //    run fresh every time the modal opens.
+  const [type, setType] = useState<TxType>(() => (initialData?.type as TxType) || "expense")
+  const [amount, setAmount] = useState(() => initialData?.amount?.toString() || "")
+  const [description, setDescription] = useState(() => initialData?.description || "")
+  const [categoryId, setCategoryId] = useState(() => initialData?.category_id || "")
+  const [accountId, setAccountId] = useState(() => initialData?.account_id || "")
   const [toAccountId, setToAccountId] = useState("")
-  const [paymentMethod, setPaymentMethod] = useState("none")
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
+  const [paymentMethod, setPaymentMethod] = useState(() => {
+    const pm = initialData?.payment_method?.trim()
+    if (!pm) return "none"
+    return PAYMENT_METHODS.find(m => m.toLowerCase() === pm.toLowerCase()) || pm
+  })
+  const [date, setDate] = useState(() => initialData?.transaction_date || new Date().toISOString().slice(0, 10))
+  const [time, setTime] = useState(() => {
+    const t = initialData?.transaction_time
+    return t ? String(t).slice(0, 5) : new Date().toTimeString().slice(0, 5)
+  })
   const [loading, setLoading] = useState(false)
 
+  // Ensure initialData category is always visible in the Select list even if:
+  // (a) it belongs to a different type than the current filter, or
+  // (b) categories haven't loaded from the server yet.
   const filteredCategories = [...categories.filter(c => c.type === (type === "transfer" ? "expense" : type))]
-
-  // Ensure initialData category is always present in filteredCategories when editing so Radix UI Select never drops it
   if (initialData && initialData.category_id && !filteredCategories.some(c => c.id === initialData.category_id)) {
     const existingCat = categories.find(c => c.id === initialData.category_id)
     filteredCategories.push(existingCat || {
       id: initialData.category_id,
       name: initialData.category_name || "Kategori Terpilih",
-      type: initialData.type === "transfer" ? "expense" : (initialData.type || type),
+      type: (initialData.type === "transfer" ? "expense" : initialData.type) || type,
       group_name: "Terpilih",
       icon_key: initialData.category_icon_key || "wallet",
       icon_bg: initialData.category_icon_bg || "bg-slate-100",
@@ -73,39 +85,30 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
     return acc
   }, {})
 
+  // Sync if the *same* modal instance receives a different initialData (edge case).
+  // For new transactions (no initialData), auto-select first available account.
   useEffect(() => {
-    if (open) {
-      if (initialData) {
-        setType(initialData.type)
-        setAmount(initialData.amount.toString())
-        setDescription(initialData.description || "")
-        setCategoryId(initialData.category_id)
-        setAccountId(initialData.account_id)
-        setDate(initialData.transaction_date)
-        if (initialData.transaction_time) setTime(initialData.transaction_time)
-        const rawPM = initialData.payment_method?.trim()
-        const matchedPM = rawPM
-          ? (PAYMENT_METHODS.find(m => m.toLowerCase() === rawPM.toLowerCase()) || rawPM)
-          : "none"
-        setPaymentMethod(matchedPM)
-      } else {
-        // Reset to default on new
-        setAmount("")
-        setDescription("")
-        setDate(new Date().toISOString().slice(0, 10))
-        setTime(new Date().toTimeString().slice(0, 5))
-        setPaymentMethod("none")
-      }
+    if (!initialData) {
+      // New transaction: reset form
+      setType("expense")
+      setAmount("")
+      setDescription("")
+      setCategoryId("")
+      setDate(new Date().toISOString().slice(0, 10))
+      setTime(new Date().toTimeString().slice(0, 5))
+      setPaymentMethod("none")
     }
-  }, [open, initialData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData])
 
+  // Auto-select first account for NEW transactions only
   useEffect(() => {
     if (accounts.length > 0 && !accountId && !initialData) setAccountId(accounts[0].id)
   }, [accounts, accountId, initialData])
 
+  // Auto-select first category for NEW transactions only (when type changes)
   useEffect(() => {
-    // Only auto-select first category for NEW transactions, not when editing
-    if (!initialData && filteredCategories.length > 0) setCategoryId(filteredCategories[0].id)
+    if (!initialData && filteredCategories.length > 0 && !categoryId) setCategoryId(filteredCategories[0].id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, categories.length])
 
