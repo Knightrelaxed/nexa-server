@@ -277,7 +277,7 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
     amount:           Math.abs(nominal),   // SELALU positif di DB
     type:             dbType,
     transaction_date: dateISO,             // YYYY-MM-DD
-    transaction_time: timeHHMM ? timeHHMM.replace('.', ':') : null,    // HH:MM atau null
+    transaction_time: timeHHMM ? timeHHMM.replace(/\./g, ':') : null,    // HH:MM atau null
     description:      description || null,
     payment_method:   paymentMethod || null, // QRIS | Transfer bank | Kartu Kredit | Tunai
   };
@@ -429,7 +429,7 @@ async function updateTransaction(uuid, patchData) {
   if (patchData.description !== undefined) payload.description = patchData.description;
   if (patchData.txType !== undefined) payload.type = patchData.txType.toUpperCase() === 'INCOME' ? 'income' : 'expense';
   if (patchData.dateISO !== undefined) payload.transaction_date = patchData.dateISO;
-  if (patchData.timeHHMM !== undefined) payload.transaction_time = patchData.timeHHMM;
+  if (patchData.timeHHMM !== undefined) payload.transaction_time = patchData.timeHHMM ? String(patchData.timeHHMM).replace(/\./g, ':') : null;
   if (patchData.paymentMethod !== undefined) payload.payment_method = patchData.paymentMethod;
   
   // Resolve relations if provided

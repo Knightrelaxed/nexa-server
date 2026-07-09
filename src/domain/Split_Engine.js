@@ -552,7 +552,8 @@ async function resolveRemainderReply(chatId, userText) {
     pending.baseTx.paymentMethod = normalizedPM;
     const res = await executeSplit(pending.items, pending.baseTx, pending.existingTxId);
     const totalDisplay = pending.totalNominal || pending.items.reduce((s, i) => s + i.nominal, 0);
-    return `✅ <b>Metode Pembayaran Ditambahkan (${normalizedPM}).</b>\n\n` + formatSplitMessage(pending.items, totalDisplay, pending.storeName, res.success);
+    const pmDisplay = normalizedPM || 'tidak dicatat';
+    return `✅ <b>Metode Pembayaran Ditambahkan (${pmDisplay}).</b>\n\n` + formatSplitMessage(pending.items, totalDisplay, pending.storeName, res.success);
   }
 
   const { callAI } = require('../core/AI_Router');
