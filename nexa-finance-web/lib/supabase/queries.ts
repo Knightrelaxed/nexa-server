@@ -219,6 +219,8 @@ export async function fetchTransactions(
     category_icon_color: row.categories?.icon_color ?? null,
     category_color_hex: row.categories?.color_hex ?? null,
     category_group: row.categories?.group_name ?? null,
+    split_group_id: row.split_group_id ?? null,
+    split_label: row.split_label ?? null,
   })) as TransactionWithDetails[];
 }
 
