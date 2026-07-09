@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { useCategories, useAccounts } from "@/hooks/use-finance-data"
 import { createTransaction, updateTransaction } from "@/lib/supabase/mutations"
 import { useAuth } from "@/components/providers/supabase-provider"
@@ -65,48 +65,56 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
   // Ensure edited category is always visible even if:
   // (a) categories are still loading (empty array), or
   // (b) category type differs from current type tab on first render
-  const filteredCategories = [...categories.filter(c => c.type === (type === "transfer" ? "expense" : type))]
-  if (initialData?.category_id && !filteredCategories.some(c => c.id === initialData.category_id)) {
-    const existingCat = categories.find(c => c.id === initialData.category_id)
-    filteredCategories.push(existingCat || {
-      id: initialData.category_id,
-      name: initialData.category_name || "Kategori",
-      type: (initialData.type === "transfer" ? "expense" : initialData.type) || "expense",
-      group_name: initialData.category_group_name || "Terpilih",
-      icon_key: initialData.category_icon_key || "wallet",
-      icon_bg: initialData.category_icon_bg || "bg-slate-100",
-      icon_color: initialData.category_icon_color || "text-slate-700",
-      is_archived: false,
-      user_id: userId || "",
-      created_at: new Date().toISOString()
-    })
-  }
+  const filteredCategories = useMemo(() => {
+    const filtered = [...categories.filter(c => c.type === (type === "transfer" ? "expense" : type))]
+    if (initialData?.category_id && !filtered.some(c => c.id === initialData.category_id)) {
+      const existingCat = categories.find(c => c.id === initialData.category_id)
+      filtered.push(existingCat || {
+        id: initialData.category_id,
+        name: initialData.category_name || "Kategori",
+        type: (initialData.type === "transfer" ? "expense" : initialData.type) || "expense",
+        group_name: initialData.category_group_name || "Terpilih",
+        icon_key: initialData.category_icon_key || "wallet",
+        icon_bg: initialData.category_icon_bg || "bg-slate-100",
+        icon_color: initialData.category_icon_color || "text-slate-700",
+        is_archived: false,
+        user_id: userId || "",
+        created_at: new Date().toISOString()
+      })
+    }
+    return filtered
+  }, [categories, type, initialData, userId])
 
-  const groupedCategories = filteredCategories.reduce<Record<string, typeof categories>>((acc, cat) => {
-    const group = cat.group_name || (type === "income" ? "Pendapatan" : "Lainnya")
-    if (!acc[group]) acc[group] = []
-    acc[group].push(cat)
-    return acc
-  }, {})
+  const groupedCategories = useMemo(() => {
+    return filteredCategories.reduce<Record<string, typeof categories>>((acc, cat) => {
+      const group = cat.group_name || (type === "income" ? "Pendapatan" : "Lainnya")
+      if (!acc[group]) acc[group] = []
+      acc[group].push(cat)
+      return acc
+    }, {})
+  }, [filteredCategories, type])
 
   // Ensure edited account is always visible even if accounts are loading
-  const displayAccounts = [...accounts]
-  if (initialData?.account_id && !displayAccounts.some(a => a.id === initialData.account_id)) {
-    const existingAcc = accounts.find(a => a.id === initialData.account_id)
-    displayAccounts.push(existingAcc || {
-      id: initialData.account_id,
-      name: initialData.account_name || "Akun",
-      type: "bank",
-      initial_balance: 0,
-      currency: "IDR",
-      color: "#3b82f6",
-      icon_key: "wallet",
-      is_archived: false,
-      exclude_from_stats: false,
-      created_at: new Date().toISOString(),
-      balance: 0
-    })
-  }
+  const displayAccounts = useMemo(() => {
+    const list = [...accounts]
+    if (initialData?.account_id && !list.some(a => a.id === initialData.account_id)) {
+      const existingAcc = accounts.find(a => a.id === initialData.account_id)
+      list.push(existingAcc || {
+        id: initialData.account_id,
+        name: initialData.account_name || "Akun",
+        type: "bank",
+        initial_balance: 0,
+        currency: "IDR",
+        color: "#3b82f6",
+        icon_key: "wallet",
+        is_archived: false,
+        exclude_from_stats: false,
+        created_at: new Date().toISOString(),
+        balance: 0
+      })
+    }
+    return list
+  }, [accounts, initialData])
 
   // Auto-select first account for NEW transactions only
   useEffect(() => {
