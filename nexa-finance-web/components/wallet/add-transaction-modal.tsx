@@ -47,7 +47,24 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
   const [loading, setLoading] = useState(false)
 
-  const filteredCategories = categories.filter(c => c.type === (type === "transfer" ? "expense" : type))
+  const filteredCategories = [...categories.filter(c => c.type === (type === "transfer" ? "expense" : type))]
+
+  // Ensure initialData category is always present in filteredCategories when editing so Radix UI Select never drops it
+  if (initialData && initialData.category_id && !filteredCategories.some(c => c.id === initialData.category_id)) {
+    const existingCat = categories.find(c => c.id === initialData.category_id)
+    filteredCategories.push(existingCat || {
+      id: initialData.category_id,
+      name: initialData.category_name || "Kategori Terpilih",
+      type: initialData.type === "transfer" ? "expense" : (initialData.type || type),
+      group_name: "Terpilih",
+      icon_key: initialData.category_icon_key || "wallet",
+      icon_bg: initialData.category_icon_bg || "bg-slate-100",
+      icon_color: initialData.category_icon_color || "text-slate-700",
+      is_archived: false,
+      user_id: userId || "",
+      created_at: new Date().toISOString()
+    })
+  }
 
   const groupedCategories = filteredCategories.reduce<Record<string, typeof categories>>((acc, cat) => {
     const group = cat.group_name || (type === "income" ? "Pendapatan" : "Lainnya")
@@ -66,7 +83,11 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         setAccountId(initialData.account_id)
         setDate(initialData.transaction_date)
         if (initialData.transaction_time) setTime(initialData.transaction_time)
-        setPaymentMethod(initialData.payment_method ?? 'none')
+        const rawPM = initialData.payment_method?.trim()
+        const matchedPM = rawPM
+          ? (PAYMENT_METHODS.find(m => m.toLowerCase() === rawPM.toLowerCase()) || rawPM)
+          : "none"
+        setPaymentMethod(matchedPM)
       } else {
         // Reset to default on new
         setAmount("")
@@ -472,6 +493,9 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
                     {PAYMENT_METHODS.map((m) => (
                       <SelectItem key={m} value={m}>{m}</SelectItem>
                     ))}
+                    {paymentMethod && paymentMethod !== "none" && !PAYMENT_METHODS.includes(paymentMethod) && (
+                      <SelectItem key={paymentMethod} value={paymentMethod}>{paymentMethod}</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
