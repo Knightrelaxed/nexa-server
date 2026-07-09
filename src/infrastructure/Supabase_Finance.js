@@ -277,7 +277,7 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
     amount:           Math.abs(nominal),   // SELALU positif di DB
     type:             dbType,
     transaction_date: dateISO,             // YYYY-MM-DD
-    transaction_time: timeHHMM || null,    // HH:MM atau null
+    transaction_time: timeHHMM ? timeHHMM.replace('.', ':') : null,    // HH:MM atau null
     description:      description || null,
     payment_method:   paymentMethod || null, // QRIS | Transfer bank | Kartu Kredit | Tunai
   };

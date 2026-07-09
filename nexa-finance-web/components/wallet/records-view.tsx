@@ -89,7 +89,17 @@ export function RecordsView() {
   const { loading, grouped, totalAmount, displayCount, refetch } = useTransactions(filters)
 
   const sortedGrouped = useMemo(() => {
-    return Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0]))
+    return Object.entries(grouped)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([date, items]) => {
+        // Sort items within a day: newest time first, normalize dot/colon in time
+        const sorted = [...items].sort((a, b) => {
+          const ta = (a.transaction_time ?? '').replace('.', ':')
+          const tb = (b.transaction_time ?? '').replace('.', ':')
+          return tb.localeCompare(ta)
+        })
+        return [date, sorted] as [string, typeof items]
+      })
   }, [grouped])
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
