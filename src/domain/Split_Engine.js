@@ -424,7 +424,7 @@ async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx
   const sumItems = splitItems.reduce((s, i) => s + (Number(i.nominal) || 0), 0);
   const remainder = (totalNominal && totalNominal > 0) ? (totalNominal - sumItems) : 0;
 
-  // Jika sisa signifikan (> 500 rupiah)
+  // 1. Cek Kekurangan Nominal
   if (remainder > 500) {
     const cid = String(chatId);
     cancelPendingRemainder(cid);
@@ -436,7 +436,7 @@ async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx
     // Set 5-min watchdog timeout
     const timeoutId = setTimeout(async () => {
       const pending = pendingSplitRemainders.get(cid);
-      if (pending) {
+      if (pending && pending.waitingFor === 'REMAINDER') {
         pendingSplitRemainders.delete(cid);
         const autoRemItem = {
           label: `Sisa split ${storeName || 'Belanja'}`,
@@ -449,6 +449,8 @@ async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx
           formatSplitMessage(finalItems, totalNominal, storeName, res.success);
         if (respondToTelegramFn) {
           try { await respondToTelegramFn(autoMsg); } catch (_) {}
+        } else {
+          try { await require('../interfaces/webhook').sendTelegramOutbound(autoMsg, true); } catch (_) {}
         }
       }
     }, 5 * 60 * 1000);
@@ -460,7 +462,9 @@ async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx
       storeName,
       remainder,
       existingTxId,
-      timeoutId
+      timeoutId,
+      waitingFor: 'REMAINDER',
+      respondToTelegramFn
     });
 
     return `❓ <b>Tuan, dari total ${totFmt} baru disebutkan ${sumFmt}.</b>\n\n` +
@@ -468,7 +472,47 @@ async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx
       `<i>(Tanpa balasan dalam 5 menit, N.E.X.A akan membuat baris item dengan kategori Lainnya: "Sisa split ${storeName || 'Belanja'}").</i>`;
   }
 
-  // Jika sisa <= 500 atau sudah pas
+  // 2. Cek Kekurangan Metode Pembayaran
+  if (!baseTx.paymentMethod) {
+    const cid = String(chatId);
+    cancelPendingRemainder(cid);
+    
+    const timeoutId = setTimeout(async () => {
+      const pending = pendingSplitRemainders.get(cid);
+      if (pending && pending.waitingFor === 'PAYMENT_METHOD') {
+        pendingSplitRemainders.delete(cid);
+        // Fallback default
+        pending.baseTx.paymentMethod = 'QRIS'; 
+        const res = await executeSplit(pending.items, pending.baseTx, pending.existingTxId);
+        const totalDisplay = pending.totalNominal || pending.items.reduce((s, i) => s + i.nominal, 0);
+        const autoMsg = `⏳ <i>Waktu habis (5 menit).</i>\nTransaksi split otomatis disimpan menggunakan metode <b>QRIS</b>.\n\n` +
+          formatSplitMessage(pending.items, totalDisplay, pending.storeName, res.success);
+        if (respondToTelegramFn) {
+          try { await respondToTelegramFn(autoMsg); } catch (_) {}
+        } else {
+          try { await require('../interfaces/webhook').sendTelegramOutbound(autoMsg, true); } catch (_) {}
+        }
+      }
+    }, 5 * 60 * 1000);
+
+    pendingSplitRemainders.set(cid, {
+      baseTx,
+      items: splitItems,
+      totalNominal,
+      storeName,
+      remainder: 0,
+      existingTxId,
+      timeoutId,
+      waitingFor: 'PAYMENT_METHOD',
+      respondToTelegramFn
+    });
+
+    const totalDisplay = totalNominal || sumItems;
+    return formatSplitMessage(splitItems, totalDisplay, storeName, null) + 
+      `\n\n❓ <b>Satu hal lagi Tuan.</b>\nMohon informasikan <b>metode pembayarannya (QRIS/Transfer/Tunai/Kredit)</b> untuk transaksi split ini. <i>(Atau abaikan jika ingin disimpan otomatis ke QRIS dalam 5 menit).</i>`;
+  }
+
+  // Jika sisa <= 500 dan payment method sudah ada
   const res = await executeSplit(splitItems, baseTx, existingTxId);
   const totalDisplay = totalNominal || sumItems;
   return formatSplitMessage(splitItems, totalDisplay, storeName, res.success);
@@ -483,6 +527,23 @@ async function resolveRemainderReply(chatId, userText) {
   if (!pending) return null;
 
   cancelPendingRemainder(cid);
+
+  if (pending.waitingFor === 'PAYMENT_METHOD') {
+    const txt = userText.trim().toLowerCase();
+    let normalizedPM = 'QRIS';
+    if (txt.includes('qris')) normalizedPM = 'QRIS';
+    else if (txt.includes('transfer') || txt.includes('tf')) normalizedPM = 'Transfer';
+    else if (txt.includes('tunai') || txt.includes('cash')) normalizedPM = 'Tunai';
+    else if (txt.includes('kredit') || txt.includes('cc')) normalizedPM = 'Kredit';
+    else if (txt.includes('debit')) normalizedPM = 'Debit';
+    else if (txt.includes('emoney') || txt.includes('e-money') || txt.includes('gopay') || txt.includes('ovo') || txt.includes('dana') || txt.includes('spay') || txt.includes('shopeepay')) normalizedPM = 'E-Wallet';
+    else normalizedPM = userText.trim().substring(0, 20);
+
+    pending.baseTx.paymentMethod = normalizedPM;
+    const res = await executeSplit(pending.items, pending.baseTx, pending.existingTxId);
+    const totalDisplay = pending.totalNominal || pending.items.reduce((s, i) => s + i.nominal, 0);
+    return `✅ <b>Metode Pembayaran Ditambahkan (${normalizedPM}).</b>\n\n` + formatSplitMessage(pending.items, totalDisplay, pending.storeName, res.success);
+  }
 
   const { callAI } = require('../core/AI_Router');
   const supabaseFinanceModule = require('../infrastructure/Supabase_Finance');
@@ -523,10 +584,10 @@ Sunscreen|Skincare & Kosmetik`;
   };
 
   const finalItems = [...pending.items, addedItem];
-  const res = await executeSplit(finalItems, pending.baseTx, pending.existingTxId);
-  const totalDisplay = pending.totalNominal || finalItems.reduce((s, i) => s + i.nominal, 0);
-
-  return formatSplitMessage(finalItems, totalDisplay, pending.storeName, res.success);
+  
+  // Lanjutkan cycle: panggil handleSplitWithRemainder lagi menggunakan finalItems.
+  // Ini otomatis mengecek apakah butuh paymentMethod atau bisa langsung disimpan.
+  return handleSplitWithRemainder(chatId, finalItems, pending.totalNominal, pending.baseTx, pending.storeName, pending.existingTxId, pending.respondToTelegramFn);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
