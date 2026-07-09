@@ -102,11 +102,16 @@ ${validCatNames.map(c => `- ${c}`).join('\n')}
 
 ATURAN ANALISIS SECARA INTERNAL (JANGAN DITULIS DI TEKS BALASAN):
 1. IDENTIFIKASI OBJEK: Apa SUBSTANSI yang dibeli/dibayar? Jangan terkecoh oleh kata-kata permukaan!
-2. COCOKKAN: Pilih kategori yang paling dekat secara SEMANTIK dengan objek tersebut DARI DAFTAR DI ATAS.
+2. COCOKKAN: Pilih kategori yang paling dekat secara SEMANTIK dengan objek tersebut.
 
-ATURAN DISAMBIGUASI KRITIS:
-- Jika nama merchant adalah layanan pihak ketiga penyedia pembayaran (contoh: "Gopay", "Ovo", "Dana", "Qris", "Midtrans", "Shopeepay"), ABAIKAN nama tersebut dan FOKUS pada deskripsi catatan yang diberikan oleh user.
-- JANGAN MENGARANG kategori. Wajib pilih salah satu PERSIS dari daftar di atas.
+ATURAN DISAMBIGUASI KRITIS (SUPER STRICT):
+1. KETEPATAN NAMA: Anda HANYA BOLEH menyalin salah satu nama kategori dari daftar di atas secara PERSIS (huruf besar/kecil, spasi, simbol). DILARANG KERAS mengarang kategori baru (contoh terlarang: "Makanan & Minuman", "Perawatan & Kecantikan" dll jika tidak ada di daftar).
+2. PENALARAN SEMANTIK: Jika benda/jasa yang dibeli tidak memiliki kategori eksak, cari padanan TERDEKAT dari daftar aktif.
+   - Contoh Makanan: Nasi ayam, sate, dll → "Makan Berat / Makan Luar". Kopi, boba, camilan → "Jajan / Ngopi / Kafe".
+   - Contoh Jasa: Bayar laundry/cuci baju → "Jasa Laundry".
+   - Contoh Transportasi: Grab/Gojek → "Ojek / Taksi Online" atau "Transportasi Umum".
+   - Contoh Belanja: Beli beras/minyak di minimarket → "Bahan Makanan / Groceries".
+3. Jika nama merchant adalah layanan pihak ketiga penyedia pembayaran (contoh: "Gopay", "Ovo", "Dana", "Qris", "Midtrans", "Shopeepay"), ABAIKAN nama tersebut dan FOKUS pada deskripsi catatan yang diberikan oleh user.
 
 ATURAN LAINNYA:
 1. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu. JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya seperti "jajan", "nasi", "es teh", "kopi"), JANGAN PERNAH memilih "Lainnya"!
