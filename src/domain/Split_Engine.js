@@ -421,6 +421,18 @@ function formatSplitMessage(items, total, storeName = '', successCount = null) {
  * Jika sisa <= 500 rupiah: langsung jalankan executeSplit.
  */
 async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx, storeName = '', existingTxId = null, respondToTelegramFn = null) {
+  // Normalize payment method to prevent check constraint violations
+  if (baseTx.paymentMethod) {
+    const txt = String(baseTx.paymentMethod).toLowerCase();
+    let normalizedPM = 'QRIS';
+    if (txt.includes('qris')) normalizedPM = 'QRIS';
+    else if (txt.includes('transfer') || txt.includes('tf')) normalizedPM = 'Transfer bank';
+    else if (txt.includes('tunai') || txt.includes('cash')) normalizedPM = 'Tunai';
+    else if (txt.includes('kredit') || txt.includes('cc')) normalizedPM = 'Kartu Kredit';
+    else normalizedPM = null;
+    baseTx.paymentMethod = normalizedPM;
+  }
+
   const sumItems = splitItems.reduce((s, i) => s + (Number(i.nominal) || 0), 0);
   const remainder = (totalNominal && totalNominal > 0) ? (totalNominal - sumItems) : 0;
 
