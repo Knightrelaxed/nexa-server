@@ -1038,17 +1038,31 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
             }
           }
           if (!data.search_keyword || /^(ini|itu|transaksi|kategori|kategoriny|kategorinya|perbaiki|ubah|sesuaikan|yang|saya|balas|\s)*$/i.test(String(data.search_keyword).trim())) {
-            // [REPLY-AWARE SNIPER FIX] Jika user membalas pesan transaksi, jangan blokir!
-            // Ekstrak nominal atau catatan dari teks pesan yang dibalas sebagai kata kunci pencarian.
-            const replyMatch = String(originalText).match(/\[(?:KONTEKS_AKSI|KONTEKS_REFERENSI)[^\]]*Menanggapi pesan N\.E\.X\.A:\s*"(.*?)"\]/s);
-            if (replyMatch && replyMatch[1]) {
-              const snippet = replyMatch[1];
-              const nominalMatch = snippet.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
-              const catatanMatch = snippet.match(/(?:Catatan|Tujuan|Merchant|Deskripsi):\s*([^\n\r,]+)/i);
-              if (catatanMatch && catatanMatch[1]) {
+            // [REPLY-AWARE SNIPER FIX v2] Jika user membalas pesan konfirmasi transaksi,
+            // ekstrak keyword dari teks pesan yang di-reply secara langsung (full text),
+            // bukan hanya dari snippet yang di-inject ke textInput (rentan terpotong).
+            const rawReplyText = message && message.reply_to_message && message.reply_to_message.text
+              ? message.reply_to_message.text
+              : null;
+
+            // Juga coba dari snippet yang sudah di-inject ke textInput (fallback)
+            const injectedSnippetMatch = String(originalText).match(/\[(?:KONTEKS_AKSI|KONTEKS_REFERENSI)[^\]]*Menanggapi pesan N\.E\.X\.A:\s*"([\s\S]{0,800})"\]/);
+            const snippetToSearch = rawReplyText || (injectedSnippetMatch && injectedSnippetMatch[1]) || '';
+
+            if (snippetToSearch) {
+              // Prioritas 1: Catatan/Deskripsi/Merchant (paling spesifik)
+              const catatanMatch = snippetToSearch.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+              // Prioritas 2: Format "Nominal (Rp): Rp5.000" → ekstrak angka
+              const nominalLabelMatch = snippetToSearch.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
+              // Prioritas 3: Rp-prefix di mana saja
+              const nominalRpMatch = snippetToSearch.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+
+              if (catatanMatch && catatanMatch[1] && catatanMatch[1].trim().length > 1) {
                 data.search_keyword = catatanMatch[1].trim();
-              } else if (nominalMatch && nominalMatch[1]) {
-                data.search_keyword = nominalMatch[1].replace(/[^0-9]/g, '');
+              } else if (nominalLabelMatch && nominalLabelMatch[1]) {
+                data.search_keyword = nominalLabelMatch[1].replace(/[^0-9]/g, '');
+              } else if (nominalRpMatch && nominalRpMatch[1]) {
+                data.search_keyword = nominalRpMatch[1].replace(/[^0-9]/g, '');
               } else {
                 data.search_keyword = 'latest';
               }
@@ -1762,16 +1776,28 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           domainReply = confirmationReply || 'Tidak ada transaksi yang tertunda.';
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'EDIT') {
           let kw = routingData.extracted_data.search_keyword;
-          if ((!kw || /^(ini|itu|transaksi|kategori|kategoriny|kategorinya|perbaiki|ubah|sesuaikan|yang|saya|balas|\s)*$/i.test(String(kw).trim())) && message.reply_to_message && message.reply_to_message.text) {
-            const replyTxt = message.reply_to_message.text;
-            const catatanMatch = replyTxt.match(/(?:Catatan|Tujuan|Merchant|Deskripsi):\s*([^\n\r,]+)/i);
-            const nominalMatch = replyTxt.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
-            if (catatanMatch && catatanMatch[1]) {
-              kw = catatanMatch[1].trim();
-            } else if (nominalMatch && nominalMatch[1]) {
-              kw = nominalMatch[1].replace(/[^0-9]/g, '');
-            } else {
-              kw = 'latest';
+          // [SNIPER FIX v2] Jika keyword kosong/vague, ekstrak langsung dari teks pesan
+          // yang di-reply (full text, bukan snippet yang bisa terpotong).
+          if (!kw || /^(ini|itu|transaksi|kategori|kategoriny|kategorinya|perbaiki|ubah|sesuaikan|yang|saya|balas|\s)*$/i.test(String(kw).trim())) {
+            const replyTxt = message.reply_to_message && message.reply_to_message.text
+              ? message.reply_to_message.text
+              : null;
+            if (replyTxt) {
+              // Prioritas 1: Field Deskripsi/Catatan (paling unik & spesifik)
+              const catatanMatch = replyTxt.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+              // Prioritas 2: Format khas pesan sinkronisasi "Nominal (Rp): Rp5.000"
+              const nominalLabelMatch = replyTxt.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
+              // Prioritas 3: Rp-prefix generik di mana saja
+              const nominalRpMatch = replyTxt.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+              if (catatanMatch && catatanMatch[1] && catatanMatch[1].trim().length > 1) {
+                kw = catatanMatch[1].trim();
+              } else if (nominalLabelMatch && nominalLabelMatch[1]) {
+                kw = nominalLabelMatch[1].replace(/[^0-9]/g, '');
+              } else if (nominalRpMatch && nominalRpMatch[1]) {
+                kw = nominalRpMatch[1].replace(/[^0-9]/g, '');
+              } else {
+                kw = 'latest';
+              }
             }
           }
           const result = await financeEngine.editTransaction(
@@ -2435,6 +2461,45 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         }
         break;
       }
+      // [FALLBACK HANDLER] intent 'EDIT' top-level adalah intent tidak valid yang kadang
+      // dikembalikan AI Router saat konteks percakapan terlalu jauh (reply ke pesan lama).
+      // Redirect transparansi ke FINANCE editTransaction agar NEXA tidak diam/bingung.
+      case 'EDIT': {
+        let editKw = routingData.extracted_data?.search_keyword || null;
+        // Selalu coba ekstrak dari reply_to_message jika keyword kosong/vague
+        if (!editKw || /^(ini|itu|transaksi|perbaiki|ubah|sesuaikan|\s)*$/i.test(String(editKw).trim())) {
+          const replyTxtEdit = message.reply_to_message && message.reply_to_message.text
+            ? message.reply_to_message.text
+            : null;
+          if (replyTxtEdit) {
+            const cMatch = replyTxtEdit.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+            const nLabelMatch = replyTxtEdit.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][\.\s]*([0-9][0-9.,]+)/i);
+            const nRpMatch = replyTxtEdit.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+            if (cMatch && cMatch[1] && cMatch[1].trim().length > 1) {
+              editKw = cMatch[1].trim();
+            } else if (nLabelMatch && nLabelMatch[1]) {
+              editKw = nLabelMatch[1].replace(/[^0-9]/g, '');
+            } else if (nRpMatch && nRpMatch[1]) {
+              editKw = nRpMatch[1].replace(/[^0-9]/g, '');
+            } else {
+              editKw = 'latest';
+            }
+          } else {
+            editKw = 'latest';
+          }
+        }
+        const editResult = await financeEngine.editTransaction(
+          editKw,
+          routingData.extracted_data?.nominal,
+          routingData.extracted_data?.description || routingData.extracted_data?.destination,
+          routingData.extracted_data?.category,
+          routingData.extracted_data?.account,
+          routingData.extracted_data?.payment_method
+        );
+        domainReply = editResult.message;
+        break;
+      }
+
       case 'DIAGNOSE_SYSTEM': {
         const logger = require('../utils/logger');
         const aiRouter = require('../core/AI_Router');
