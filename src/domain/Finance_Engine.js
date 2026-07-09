@@ -93,29 +93,29 @@ async function _autoCategorizeMerchant(merchantName, currentCategory) {
     const categories = await supabaseFinance.getCategoriesList();
     const validCatNames = categories.map(c => c.name);
 
-    const prompt = `Kamu adalah mesin kategorisasi transaksi keuangan. Analisa tujuan/catatan transaksi berikut dan pilih SATU kategori yang paling tepat dari daftar.
+    const prompt = `You are a financial transaction categorization engine. Analyze the following transaction purpose/note and select EXACTLY ONE most appropriate category from the list.
 
-Transaksi: "${merchantName}"
+Transaction: "${merchantName}"
 
-Daftar kategori (pilih SATU saja, tulis PERSIS):
+Category list (Choose ONLY ONE, copy EXACTLY):
 ${validCatNames.map(c => `- ${c}`).join('\n')}
 
-ATURAN ANALISIS SECARA INTERNAL (JANGAN DITULIS DI TEKS BALASAN):
-1. IDENTIFIKASI OBJEK: Apa SUBSTANSI yang dibeli/dibayar? Jangan terkecoh oleh kata-kata permukaan!
-2. COCOKKAN: Pilih kategori yang paling dekat secara SEMANTIK dengan objek tersebut.
+INTERNAL ANALYSIS RULES (DO NOT INCLUDE IN YOUR OUTPUT):
+1. IDENTIFY THE OBJECT: What is the ACTUAL SUBSTANCE being bought/paid for? Do not be fooled by superficial words!
+2. MATCH: Select the category from the list above that is closest SEMANTICALLY to that object.
 
-ATURAN DISAMBIGUASI KRITIS (SUPER STRICT):
-1. KETEPATAN NAMA: Anda HANYA BOLEH menyalin salah satu nama kategori dari daftar di atas secara PERSIS (huruf besar/kecil, spasi, simbol). DILARANG KERAS mengarang kategori baru (contoh terlarang: "Makanan & Minuman", "Perawatan & Kecantikan" dll jika tidak ada di daftar).
-2. PENALARAN SEMANTIK: Jika benda/jasa yang dibeli tidak memiliki kategori eksak, cari padanan TERDEKAT dari daftar aktif.
-   - Contoh Makanan: Nasi ayam, sate, dll → "Makan Berat / Makan Luar". Kopi, boba, camilan → "Jajan / Ngopi / Kafe".
-   - Contoh Jasa: Bayar laundry/cuci baju → "Jasa Laundry".
-   - Contoh Transportasi: Grab/Gojek → "Ojek / Taksi Online" atau "Transportasi Umum".
-   - Contoh Belanja: Beli beras/minyak di minimarket → "Bahan Makanan / Groceries".
-3. Jika nama merchant adalah layanan pihak ketiga penyedia pembayaran (contoh: "Gopay", "Ovo", "Dana", "Qris", "Midtrans", "Shopeepay"), ABAIKAN nama tersebut dan FOKUS pada deskripsi catatan yang diberikan oleh user.
+CRITICAL DISAMBIGUATION RULES (SUPER STRICT):
+1. EXACT NAME MATCHING: You MUST ONLY copy one category name from the list above EXACTLY (case-sensitive, spaces, symbols). IT IS STRICTLY FORBIDDEN to invent new categories (forbidden examples: "Makanan & Minuman", "Perawatan & Kecantikan", etc., if they are not in the list).
+2. SEMANTIC REASONING: If the purchased item/service lacks an exact category, find the CLOSEST match from the active list.
+   - Food examples: Nasi ayam, sate, etc. → "Makan Berat / Makan Luar". Kopi, boba, camilan → "Jajan / Ngopi / Kafe".
+   - Service examples: Paying for laundry/cuci baju → "Jasa Laundry".
+   - Transportation examples: Grab/Gojek → "Ojek / Taksi Online" or "Transportasi Umum".
+   - Shopping examples: Buying beras/minyak at a minimarket → "Bahan Makanan / Groceries".
+3. If the merchant name is a third-party payment provider (e.g., "Gopay", "Ovo", "Dana", "Qris", "Midtrans", "Shopeepay"), IGNORE that name and FOCUS purely on the description note provided by the user.
 
-ATURAN LAINNYA:
-1. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu. JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya seperti "jajan", "nasi", "es teh", "kopi"), JANGAN PERNAH memilih "Lainnya"!
-2. PENTING KRITIS: JANGAN tulis penjelasan, jangan tulis salam, jangan tulis proses berpikirmu! KELUARKAN HANYA 1 BARIS TEKS berisi nama kategori dari daftar di atas! Tanpa tanda kutip, jangan pernah membuat kategori baru.`;
+OTHER RULES:
+1. "Lainnya" category: ONLY use this if the description is entirely empty OR if the information is just an extremely ambiguous abbreviation/person's name. IF there is any hint of purpose (like "jajan", "nasi", "es teh", "kopi"), NEVER choose "Lainnya"!
+2. CRITICAL IMPORTANCE: DO NOT write any explanations, greetings, or your thought process! OUTPUT EXACTLY 1 LINE OF TEXT containing the category name from the list above! No quotes, never invent a new category.`;
     const aiResp = await callAI(prompt);
     let cat = aiResp.trim();
     // Strip quotes/whitespace if AI wraps the answer
