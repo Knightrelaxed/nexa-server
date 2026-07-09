@@ -317,7 +317,7 @@ async function executeSplit(items, baseTx, existingTxId = null) {
   let accountName = baseTx.account;
   if (!accountName || String(accountName).trim().toLowerCase() === 'null') {
     const supabaseFinance = require('../infrastructure/Supabase_Finance');
-    const accounts = await supabaseFinance._loadAccounts();
+    const accounts = await supabaseFinance.getAccountsList();
     if (accounts && accounts.length > 0) {
       accountName = accounts[0].name;
     } else {
