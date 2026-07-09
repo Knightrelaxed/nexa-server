@@ -182,6 +182,7 @@ export interface UseTransactionsReturn {
   grouped: GroupedTransactions;
   totalAmount: number;
   totalCount: number;
+  displayCount: number;
 }
 
 export function useTransactions(filters?: TransactionFilters): UseTransactionsReturn {
@@ -238,6 +239,23 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
     }, 0);
   }, [transactions, filters]);
 
+  // displayCount: split groups count as 1, not N
+  const displayCount = useMemo(() => {
+    const seenGroups = new Set<string>();
+    let count = 0;
+    for (const tx of transactions) {
+      if (tx.split_group_id) {
+        if (!seenGroups.has(tx.split_group_id)) {
+          seenGroups.add(tx.split_group_id);
+          count++;
+        }
+      } else {
+        count++;
+      }
+    }
+    return count;
+  }, [transactions]);
+
   return {
     transactions,
     loading,
@@ -246,6 +264,7 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
     grouped,
     totalAmount,
     totalCount: transactions.length,
+    displayCount,
   };
 }
 

@@ -535,14 +535,16 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                                   <Scissors className="h-4 w-4" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-[13px] font-bold text-foreground truncate">{firstTx.description || "Transaksi Split"}</p>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700">
-                                      ✂️ Split • {groupItems.length} item
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-[13px] font-bold text-foreground truncate">
+                                      {groupItems.map((i: any) => i.split_label || i.description).filter(Boolean).join(', ') || "Transaksi Split"}
+                                    </p>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700 shrink-0">
+                                      ✂️ {groupItems.length} item
                                     </span>
                                   </div>
                                   <p className="text-[11px] text-muted-foreground truncate">
-                                    {firstTx.account_name} • Klik untuk {isExpanded ? "tutup" : "lihat rincian"}
+                                    {firstTx.account_name}
                                   </p>
                                 </div>
                                 <div className="ml-auto flex items-center gap-2 shrink-0">

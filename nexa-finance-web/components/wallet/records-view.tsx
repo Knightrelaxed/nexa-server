@@ -86,7 +86,7 @@ export function RecordsView() {
   }
 
 
-  const { loading, grouped, totalAmount, totalCount, refetch } = useTransactions(filters)
+  const { loading, grouped, totalAmount, displayCount, refetch } = useTransactions(filters)
 
   const sortedGrouped = useMemo(() => {
     return Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0]))
@@ -268,7 +268,7 @@ export function RecordsView() {
           <div className="sticky top-16 sm:top-20 z-20 flex flex-col rounded-t-2xl bg-white shadow-sm ring-1 ring-slate-200/50 min-w-0">
             {/* Top Text */}
             <div className="px-4 pt-3 pb-1 bg-white rounded-t-2xl">
-              <span className="text-[13px] font-bold text-slate-700">Ditemukan {totalCount} catatan</span>
+              <span className="text-[13px] font-bold text-slate-700">Ditemukan {displayCount} catatan</span>
             </div>
             {/* Action Bar */}
             <div className={cn(
@@ -509,16 +509,16 @@ export function RecordsView() {
 
                                   {/* Title + Badge */}
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <p className="text-[13px] font-bold text-foreground truncate">
-                                        {firstTx.description || "Transaksi Split"}
+                                        {groupItems.map(i => i.split_label || i.description).filter(Boolean).join(', ') || "Transaksi Split"}
                                       </p>
-                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700">
-                                        ✂️ Split • {groupItems.length} item
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700 shrink-0">
+                                        ✂️ {groupItems.length} item
                                       </span>
                                     </div>
                                     <p className="text-[11px] text-muted-foreground truncate">
-                                      {firstTx.account_name} • Klik untuk {isExpanded ? "tutup" : "lihat rincian"}
+                                      {firstTx.account_name}
                                     </p>
                                   </div>
 
