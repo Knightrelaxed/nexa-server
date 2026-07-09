@@ -226,13 +226,21 @@ Output format TEPAT:
   }
 
   // Validasi dan sanitasi
-  return items
+  const validItems = items
     .filter(item => item && item.label && typeof item.nominal === 'number' && item.nominal > 0)
     .map(item => ({
       label: String(item.label).trim().substring(0, 100),
       nominal: Math.round(item.nominal),
       category: String(item.category || 'Lainnya').trim()
     }));
+
+  if (validItems.length < 2) {
+    console.warn('[SPLIT_ENGINE] Warning: AI returned < 2 valid items. Raw AI output:', rawOutput?.substring(0, 200));
+  } else {
+    console.log(`[SPLIT_ENGINE] Successfully parsed ${validItems.length} items from text.`);
+  }
+
+  return validItems;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -340,7 +348,7 @@ async function executeSplit(items, baseTx, existingTxId = null) {
   // Hapus transaksi induk jika split dari existing transaction
   if (existingTxId && successCount > 0) {
     try {
-      const { data, error } = require('../infrastructure/Supabase_Finance')
+      const { data, error } = await require('../infrastructure/Supabase_Finance')
         ._getClient()
         .from('transactions')
         .delete()

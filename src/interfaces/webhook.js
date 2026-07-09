@@ -1837,6 +1837,60 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       }
     }
 
+    // [SPLIT] TITIK 4: UNIVERSAL TEXT SPLIT INTERCEPTOR
+    // Dipindahkan ke atas sebelum clarification message agar split selalu dievaluasi duluan
+    // jika terdeteksi dari is_split (AI Router) atau isSplitIntent (RegEx).
+    if (routingData.intent === 'FINANCE' && !domainReply && routingData.extracted_data && (
+      routingData.extracted_data.is_split === true ||
+      require('../domain/Split_Engine').isSplitIntent(textInput)
+    )) {
+      const splitEngine = require('../domain/Split_Engine');
+      const ed = routingData.extracted_data;
+      const isAiSplit = ed.is_split === true && Array.isArray(ed.items) && ed.items.length >= 2;
+      try {
+        const nowJakarta = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const timeNow = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' });
+        const baseTx = {
+          type: ed.type || 'EXPENSE',
+          account: ed.account || null,
+          dateISO: ed.time ? ed.time.substring(0, 10) : nowJakarta,
+          timeHHMM: ed.time ? ed.time.substring(11, 16) : timeNow,
+          paymentMethod: ed.payment_method || null,
+        };
+        const storeName = ed.store_name || ed.destination || '';
+        let itemsToSplit = isAiSplit ? ed.items : null;
+
+        console.log(`[SPLIT] TITIK 4 Intercepted! isAiSplit: ${isAiSplit}`);
+        if (!itemsToSplit || itemsToSplit.length < 2) {
+          itemsToSplit = await splitEngine.parseSplitFromText(textInput, ed.total_nominal || ed.nominal || null, storeName);
+        }
+
+        if (itemsToSplit && itemsToSplit.length >= 2) {
+          let totalNom = ed.total_nominal || null;
+          if (!totalNom) {
+            const totMatch = textInput.match(/([0-9]+[.,]?[0-9]*)\s*(?:rb|ribu|k|000)\b/i);
+            if (totMatch) {
+              let rawNum = parseFloat(totMatch[1].replace(',', '.'));
+              totalNom = rawNum < 1000 ? rawNum * 1000 : rawNum;
+            } else {
+              totalNom = itemsToSplit.reduce((s, i) => s + (i.nominal || 0), 0);
+            }
+          }
+          const chatIdStr = String(message.chat.id);
+          const handleSplitResult = await splitEngine.handleSplitWithRemainder(chatIdStr, itemsToSplit, totalNom, baseTx, storeName, null, respondToTelegram);
+          
+          // BUG 6 FIX: Jika handleSplitResult mereturn pesan pertanyaan remainder, kita set ke domainReply.
+          // Jika handleSplitResult mereturn konfirmasi, kita set ke domainReply.
+          domainReply = handleSplitResult;
+          console.log(`[SPLIT] Universal text split processed for ${itemsToSplit.length} items (source: ${isAiSplit ? 'AI_Router' : 'TextParser'}).`);
+        } else {
+          console.log(`[SPLIT] Gagal mengekstrak >=2 items dari text. Fallback ke routing normal.`);
+        }
+      } catch (splitErr) {
+        console.error('[SPLIT] Error saat universal text split:', splitErr.message);
+      }
+    }
+
     if (!domainReply) {
       const clarificationMessage = getClarificationMessage(routingData, textInput);
       if (clarificationMessage) {
@@ -1996,50 +2050,6 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           domainReply = await financeEngine.getSavingRateReport(routingData.extracted_data.date_text || null);
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'BALANCE_TREND') {
           domainReply = await financeEngine.getDailyBalanceTrendReport(routingData.extracted_data.date_text || null);
-        } else if (routingData.extracted_data && (
-          routingData.extracted_data.is_split === true ||
-          require('../domain/Split_Engine').isSplitIntent(textInput)
-        )) {
-          // [SPLIT] TITIK 4: UNIVERSAL TEXT SPLIT INTERCEPTOR (Sebelum RECORD_MULTIPLE & RECORD)
-          const splitEngine = require('../domain/Split_Engine');
-          const ed = routingData.extracted_data;
-          const isAiSplit = ed.is_split === true && Array.isArray(ed.items) && ed.items.length >= 2;
-          try {
-            const nowJakarta = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-            const timeNow = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' });
-            const baseTx = {
-              type: ed.type || 'EXPENSE',
-              account: ed.account || null,
-              dateISO: ed.time ? ed.time.substring(0, 10) : nowJakarta,
-              timeHHMM: ed.time ? ed.time.substring(11, 16) : timeNow,
-              paymentMethod: ed.payment_method || null,
-            };
-            const storeName = ed.store_name || ed.destination || '';
-            let itemsToSplit = isAiSplit ? ed.items : null;
-
-            if (!itemsToSplit || itemsToSplit.length < 2) {
-              itemsToSplit = await splitEngine.parseSplitFromText(textInput, ed.total_nominal || ed.nominal || null, storeName);
-            }
-
-            if (itemsToSplit && itemsToSplit.length >= 2) {
-              let totalNom = ed.total_nominal || null;
-              if (!totalNom) {
-                const totMatch = textInput.match(/([0-9]+[.,]?[0-9]*)\s*(?:rb|ribu|k|000)\b/i);
-                if (totMatch) {
-                  let rawNum = parseFloat(totMatch[1].replace(',', '.'));
-                  totalNom = rawNum < 1000 ? rawNum * 1000 : rawNum;
-                } else {
-                  totalNom = itemsToSplit.reduce((s, i) => s + (i.nominal || 0), 0);
-                }
-              }
-              const chatIdStr = String(message.chat.id);
-              domainReply = await splitEngine.handleSplitWithRemainder(chatIdStr, itemsToSplit, totalNom, baseTx, storeName, null, respondToTelegram);
-              console.log(`[SPLIT] Universal text split processed for ${itemsToSplit.length} items (source: ${isAiSplit ? 'AI_Router' : 'TextParser'}).`);
-              break;
-            }
-          } catch (splitErr) {
-            console.error('[SPLIT] Error saat universal text split:', splitErr.message);
-          }
         } else if (routingData.extracted_data && routingData.extracted_data.action === 'RECORD_MULTIPLE' && Array.isArray(routingData.extracted_data.transactions)) {
           let replies = [];
           for (const tx of routingData.extracted_data.transactions) {
