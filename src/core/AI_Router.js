@@ -121,7 +121,13 @@ OUTPUT JSON FORMAT:
   "learned_user_facts": ["New permanent facts ABOUT TUAN FAQIH (the human), or empty []"],
   "learned_core_identities": ["New permanent facts ABOUT N.E.X.A ITSELF (the AI), or empty []"],
   "extracted_data": {
-    // FINANCE: { action: "RECORD|RECORD_MULTIPLE|READ_LATEST|READ_ANALYTICS|EDIT|DELETE|UNDO_DELETE|IMPORT_FROM_EMAIL|CONFIRM_TRANSACTION|UPDATE_PENDING|CANCEL_TRANSACTION|CATEGORY_BREAKDOWN|PERIOD_COMPARISON|TOP_EXPENSES|ACCOUNT_BALANCES|DAILY_TREND|SMART_SUMMARY|MONTHLY_SUMMARY|SAVING_RATE|BALANCE_TREND", nominal: number, type: "INCOME|EXPENSE", destination: string, category: string, description: string, time: "ISO+07:00", account: string, payment_method: string, search_keyword: string, date_text: string, limit: number, transactions: [] }
+    // FINANCE: { action: "RECORD|RECORD_MULTIPLE|READ_LATEST|READ_ANALYTICS|EDIT|DELETE|UNDO_DELETE|IMPORT_FROM_EMAIL|CONFIRM_TRANSACTION|UPDATE_PENDING|CANCEL_TRANSACTION|CATEGORY_BREAKDOWN|PERIOD_COMPARISON|TOP_EXPENSES|ACCOUNT_BALANCES|DAILY_TREND|SMART_SUMMARY|MONTHLY_SUMMARY|SAVING_RATE|BALANCE_TREND", nominal: number, type: "INCOME|EXPENSE", destination: string, category: string, description: string, time: "ISO+07:00", account: string, payment_method: string, search_keyword: string, date_text: string, limit: number, transactions: [],
+    //   is_split: boolean (true jika pengeluaran mengandung BEBERAPA item dengan kategori berbeda),
+    //   store_name: string (nama toko/merchant jika disebutkan, e.g. "Indomaret", "Alfamart"),
+    //   items: [{label: string, nominal: number, category: string}] (array rincian item split, WAJIB diisi jika is_split=true)
+    //   SPLIT DETECTION RULES: Set is_split=true jika user menyebut beberapa item dengan kategori berbeda dalam satu perintah.
+    //   Contoh split: "belanja indomaret 50rb: beras 20rb, sabun 15rb, es krim 15rb" → is_split=true, items=[{beras,20000,Bahan Makanan},{sabun,15000,Perawatan},{es krim,15000,Jajan}]
+    //   Contoh BUKAN split: "beli nasi goreng 15rb" → is_split=false (satu kategori, RECORD biasa)
     //   - EDIT/DELETE last tx: set search_keyword="LATEST" (Triggers: "hapus yang tadi", "ubah yang barusan").
     // CALENDAR: { action: "CREATE|DELETE|UPDATE|READ|READ_TODAY|READ_TOMORROW|READ_UPCOMING", summary, start: "ISO+07:00", end: "ISO+07:00", description, eventId, location, reminder_minutes: [], recurrence: "RRULE...", color_id }
     //   - Triggers: "jadwal hari ini" -> READ_TODAY, "jadwal besok" -> READ_TOMORROW, "jadwal minggu ini" -> READ_UPCOMING, "jadwal tgl X" -> READ (with start/end date of tgl X).

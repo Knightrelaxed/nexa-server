@@ -1303,6 +1303,56 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
     }
 
     // ============================================================
+    // [SPLIT] TITIK 1: FOTO STRUK SAAT PENDING FINANCE
+    // Jika user mengirim foto SAAT ada pending confirmation aktif,
+    // intersep sebagai struk belanja untuk split — jangan kirim ke Vault.
+    // ============================================================
+    const pendingCountForSplit = financeEngine.getPendingConfirmationsCount
+      ? financeEngine.getPendingConfirmationsCount()
+      : 0;
+    if (message.photo && message.photo.length > 0 && pendingCountForSplit > 0) {
+      try {
+        const splitEngine = require('../domain/Split_Engine');
+        const largestPhoto = message.photo[message.photo.length - 1];
+
+        // Cari pending tx untuk dapat data induk (nominal, akun, tanggal)
+        const pendingCtxForSplit = await financeEngine.getPendingConfirmationsContext();
+        const firstPendingKey = pendingCtxForSplit ? Object.keys(pendingCtxForSplit)[0] : null;
+        const firstPendingTx = firstPendingKey ? pendingCtxForSplit[firstPendingKey] : null;
+        const totalNominalForSplit = firstPendingTx ? (firstPendingTx.nominal || null) : null;
+
+        console.log(`[SPLIT] Foto struk diterima saat ada ${pendingCountForSplit} pending tx. Memproses sebagai struk split...`);
+        const splitItems = await splitEngine.parseSplitFromImage(largestPhoto.file_id, totalNominalForSplit);
+
+        if (splitItems && splitItems.length >= 2) {
+          // Eksekusi split: hapus pending, insert N baris
+          const baseTx = {
+            type: firstPendingTx?.type || 'EXPENSE',
+            account: firstPendingTx?.account || null,
+            dateISO: firstPendingTx?.dateISO || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }),
+            timeHHMM: firstPendingTx?.timeHHMM || null,
+            paymentMethod: firstPendingTx?.paymentMethod || null,
+          };
+          // Batalkan pending confirmation lama
+          await financeEngine.confirmPendingTransactions(false, null, null, null, null, firstPendingKey);
+          // Insert split rows
+          const splitResult = await splitEngine.executeSplit(splitItems, baseTx, null);
+          const storeName = firstPendingTx?.destination || 'Belanja';
+          const totalNom = splitItems.reduce((s, i) => s + i.nominal, 0);
+          const splitMsg = splitEngine.formatSplitMessage(splitItems, totalNom, storeName, splitResult.success);
+          await respondToTelegram(splitMsg);
+          return;
+        } else {
+          console.log('[SPLIT] Struk tidak terdeteksi atau kurang dari 2 item. Lanjut ke Vision normal.');
+          // Fall through ke IMAGE/VISION block normal
+        }
+      } catch (e) {
+        console.error('[SPLIT] Error saat parse struk:', e.message);
+        // Fall through ke IMAGE/VISION block normal
+      }
+    }
+
+    // ============================================================
     // PENDING FINANCE REPLY INTERCEPTOR (AI-Powered)
     // Catches user replies aimed at a hanging Auto-Sync transaction
     // confirmation — BEFORE the AI Router gets a chance to
@@ -1374,12 +1424,57 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         }
         // If updatePendingTransaction returned null (already auto-saved), fall through to normal routing
       } else {
+        // [SPLIT] TITIK 2: TEKS/VOICE RINCIAN SPLIT SAAT PENDING
+        // Sebelum menganggap ini AMBIGUOUS, cek dulu apakah user
+        // sedang memberikan rincian split multi-item.
+        const splitEngine = require('../domain/Split_Engine');
+        const rawInputForSplit = textInput || '';
+        if (splitEngine.isSplitIntent(rawInputForSplit)) {
+          try {
+            // Ambil data pending yang menjadi target (nominal, akun, dll.)
+            let targetPendingTx = null;
+            try {
+              const pendingRows = await supabaseMemories.getPendingTransactions();
+              if (pendingRows && pendingRows.length > 0) {
+                const contextRow = targetKey ? pendingRows.find(r => r.composite_key === targetKey) : null;
+                targetPendingTx = (contextRow || pendingRows[0]).tx_data || null;
+              }
+            } catch (_) {}
+
+            const totalNomForSplit = targetPendingTx?.nominal || null;
+            const storeForSplit = targetPendingTx?.destination || '';
+            console.log(`[SPLIT] Teks split terdeteksi saat pending. Total: ${totalNomForSplit}. Parsing...`);
+
+            const splitItems = await splitEngine.parseSplitFromText(rawInputForSplit, totalNomForSplit, storeForSplit);
+            if (splitItems && splitItems.length >= 2) {
+              const baseTx = {
+                type: targetPendingTx?.type || 'EXPENSE',
+                account: targetPendingTx?.account || null,
+                dateISO: targetPendingTx?.dateISO || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }),
+                timeHHMM: targetPendingTx?.timeHHMM || null,
+                paymentMethod: targetPendingTx?.paymentMethod || null,
+              };
+              // Batalkan pending confirmation lama
+              await financeEngine.confirmPendingTransactions(false, null, null, null, null, targetKey);
+              // Insert split rows
+              const splitResult = await splitEngine.executeSplit(splitItems, baseTx, null);
+              const totalNom = splitItems.reduce((s, i) => s + i.nominal, 0);
+              const splitMsg = splitEngine.formatSplitMessage(splitItems, totalNom, storeForSplit, splitResult.success);
+              await respondToTelegram(splitMsg);
+              return;
+            }
+          } catch (splitErr) {
+            console.error('[SPLIT] Error saat parse teks split:', splitErr.message);
+          }
+        }
+
         // AMBIGUOUS — ask for clarification without touching the pending transaction
         await respondToTelegram(
           `❓ Masih ada transaksi yang menunggu konfirmasi Tuan. Balas:\n` +
           `• <b>ya / masukkan / catat</b> → simpan transaksi\n` +
           `• <b>batal</b> → batalkan transaksi\n` +
-          `• <b>Kalimat deskripsi</b> → ubah catatan transaksi`
+          `• <b>Kalimat deskripsi</b> → ubah catatan transaksi\n` +
+          `• <b>Foto struk / rincian item</b> → pecah ke beberapa kategori (split)`
         );
 
         return;
@@ -1800,6 +1895,50 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
               }
             }
           }
+
+          // [SPLIT] TITIK 3: PERINTAH SPLIT PADA TRANSAKSI EXISTING (via reply)
+          // Deteksi: user me-reply pesan konfirmasi + menyebut rincian split.
+          const splitEngine = require('../domain/Split_Engine');
+          const isSplitCmd = /\bsplit\b|\bpecah\b|\brincian\b/i.test(textInput) || splitEngine.isSplitIntent(textInput);
+          if (isSplitCmd && message.reply_to_message) {
+            try {
+              // Cari transaksi existing di Supabase berdasarkan keyword dari reply
+              const existingRows = await require('../infrastructure/Supabase_Finance').readTransactions({ limit: 50 });
+              const Finance_Engine_module = require('../domain/Finance_Engine');
+              const matchIndex = Finance_Engine_module._findBestTransactionMatch
+                ? Finance_Engine_module._findBestTransactionMatch(existingRows, kw)
+                : -1;
+
+              if (matchIndex !== -1) {
+                const targetTx = existingRows[matchIndex];
+                const replyTxtForSplit = message.reply_to_message.text || '';
+                // Parse nominal dari reply snippet untuk estimasi total
+                const nomMatch = replyTxtForSplit.match(/[Rr][Pp][.\s]*([0-9][0-9.,]+)/);
+                const totalNomForSplit = nomMatch ? Number(nomMatch[1].replace(/[^0-9]/g, '')) : Math.abs(targetTx.amount || 0);
+
+                console.log(`[SPLIT] Split on existing tx: ${targetTx.id}, total: ${totalNomForSplit}`);
+                const splitItems = await splitEngine.parseSplitFromText(textInput, totalNomForSplit, targetTx.description || '');
+
+                if (splitItems && splitItems.length >= 2) {
+                  const baseTx = {
+                    type: targetTx.type || 'expense',
+                    account: targetTx.accounts?.name || null,
+                    dateISO: targetTx.transaction_date,
+                    timeHHMM: targetTx.transaction_time ? targetTx.transaction_time.slice(0, 5) : null,
+                    paymentMethod: targetTx.payment_method || null,
+                  };
+                  const splitResult = await splitEngine.executeSplit(splitItems, baseTx, targetTx.id);
+                  const totalNom = splitItems.reduce((s, i) => s + i.nominal, 0);
+                  domainReply = splitEngine.formatSplitMessage(splitItems, totalNom, targetTx.description || '', splitResult.success);
+                  break; // Skip editTransaction biasa
+                }
+              }
+            } catch (splitErr) {
+              console.error('[SPLIT] Error split existing tx:', splitErr.message);
+              // Fall through ke edit biasa
+            }
+          }
+
           const result = await financeEngine.editTransaction(
             kw,
             routingData.extracted_data.nominal,
@@ -1853,6 +1992,34 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           }
           domainReply = replies.join('\n\n---\n\n');
         } else if (routingData.extracted_data && (routingData.extracted_data.nominal || routingData.extracted_data.action === 'RECORD')) {
+          // [SPLIT] TITIK 4: INPUT MANUAL CAMPURAN (is_split dari AI Router)
+          // Jika AI Router sudah mendeteksi is_split=true dan mengisi items[],
+          // langsung insert semua items sebagai transaksi terpisah tanpa pending.
+          if (routingData.extracted_data.is_split === true && Array.isArray(routingData.extracted_data.items) && routingData.extracted_data.items.length >= 2) {
+            try {
+              const splitEngine = require('../domain/Split_Engine');
+              const ed = routingData.extracted_data;
+              const nowJakarta = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+              const timeNow = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' });
+              const baseTx = {
+                type: ed.type || 'EXPENSE',
+                account: ed.account || null,
+                dateISO: ed.time ? ed.time.substring(0, 10) : nowJakarta,
+                timeHHMM: ed.time ? ed.time.substring(11, 16) : timeNow,
+                paymentMethod: ed.payment_method || null,
+              };
+              const splitResult = await splitEngine.executeSplit(ed.items, baseTx, null);
+              const totalNom = ed.total_nominal || ed.items.reduce((s, i) => s + (i.nominal || 0), 0);
+              const storeName = ed.store_name || ed.destination || '';
+              domainReply = splitEngine.formatSplitMessage(ed.items, totalNom, storeName, splitResult.success);
+              console.log(`[SPLIT] Manual split: ${splitResult.success} dari ${ed.items.length} item berhasil disimpan.`);
+              break;
+            } catch (splitErr) {
+              console.error('[SPLIT] Error saat manual split:', splitErr.message);
+              // Fall through ke RECORD biasa
+            }
+          }
+
           const txData = {
             nominal: routingData.extracted_data.nominal,
             type: routingData.extracted_data.type || 'EXPENSE',
@@ -1865,8 +2032,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           };
           const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
           if (confirmMsg) {
-            domainReply = confirmMsg; // Send via webhook response method (proven to work on HF)
-            // Mark as sent in Supabase after the webhook response is delivered
+            domainReply = confirmMsg;
             const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
             const cKey = `${txData.nominal}_${cleanMerch}`;
             supabaseMemories.markPendingTransactionSent(cKey).catch(() => { });

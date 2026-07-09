@@ -243,7 +243,7 @@ async function resolveCategoryId(categoryName, txType) {
  *
  * @returns {Promise<{status: 'SUCCESS'|'SKIPPED'|'ERROR', id?: string, reason?: string}>}
  */
-async function writeTransaction({ txType, nominal, categoryName, accountName, description, dateISO, timeHHMM, paymentMethod }) {
+async function writeTransaction({ txType, nominal, categoryName, accountName, description, dateISO, timeHHMM, paymentMethod, splitGroupId = null, splitLabel = null }) {
   if (!supabaseFinance) {
     return { status: 'SKIPPED', reason: 'Supabase Finance tidak dikonfigurasi' };
   }
@@ -270,18 +270,24 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
 
   const dbType = txType.toUpperCase() === 'INCOME' ? 'income' : 'expense';
 
+  // Build row data — split_group_id dan split_label hanya diisi jika ini adalah split item
+  const rowData = {
+    account_id:       accountId,
+    category_id:      categoryId,
+    amount:           Math.abs(nominal),   // SELALU positif di DB
+    type:             dbType,
+    transaction_date: dateISO,             // YYYY-MM-DD
+    transaction_time: timeHHMM || null,    // HH:MM atau null
+    description:      description || null,
+    payment_method:   paymentMethod || null, // QRIS | Transfer bank | Kartu Kredit | Tunai
+  };
+  // Tambahkan kolom split hanya jika nilainya disediakan (backward-compatible)
+  if (splitGroupId) rowData.split_group_id = splitGroupId;
+  if (splitLabel)   rowData.split_label   = splitLabel;
+
   const { data, error } = await supabaseFinance
     .from('transactions')
-    .insert({
-      account_id:       accountId,
-      category_id:      categoryId,
-      amount:           Math.abs(nominal),   // SELALU positif di DB
-      type:             dbType,
-      transaction_date: dateISO,             // YYYY-MM-DD
-      transaction_time: timeHHMM || null,    // HH:MM atau null
-      description:      description || null,
-      payment_method:   paymentMethod || null, // QRIS | Transfer bank | Kartu Kredit | Tunai
-    })
+    .insert(rowData)
     .select('id')
     .single();
 
@@ -799,4 +805,7 @@ module.exports = {
   getBudgetGroups,
   getBudgets,
   getExpenseSumByCategories,
+  // Helper untuk Split_Engine: akses langsung ke Supabase client
+  _getClient: () => supabaseFinance,
 };
+

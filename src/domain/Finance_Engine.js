@@ -2120,5 +2120,8 @@ module.exports = {
   buildConfirmationMessage: _buildConfirmationMessage,
   autoSaveFromWatchdog,
   getPendingConfirmationsContext,
-  resolveTargetKeyFromSnippet
+  resolveTargetKeyFromSnippet,
+  // Exposed for Split_Engine & webhook.js split feature
+  getPendingConfirmationsCount: () => pendingConfirmations.size,
+  _findBestTransactionMatch,
 };
