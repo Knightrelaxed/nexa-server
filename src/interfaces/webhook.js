@@ -1076,6 +1076,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
         const isSplitReplyOrIntent = /\bsplit\b|\bpecah\b|\brincian\b/i.test(originalText) ||
           splitEngine.isSplitIntent(originalText) ||
           (data.items && Array.isArray(data.items) && data.items.length > 0) ||
+          (data.transactions && Array.isArray(data.transactions) && data.transactions.length > 0) ||
           data.is_split === true ||
           (message && message.reply_to_message);
         if (
@@ -1088,7 +1089,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           data.action !== 'CANCEL_TRANSACTION' &&
           data.action !== 'EDIT' &&
           data.action !== 'UPDATE_PENDING' &&
-          (data.action === 'RECORD' || data.action === 'RECORD_MULTIPLE') &&
+          data.action === 'RECORD' &&
           (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0)
         ) {
           return '❓ Nominal transaksi belum valid. Mohon sebutkan angka positifnya, Tuan.';
