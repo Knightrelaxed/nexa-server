@@ -26,7 +26,9 @@ const positives = [
   'untuk es krim 5rb dan nasi 10rb dan sabun 9rb',
   'es krim 5rb nasi 10rb sabun 9rb',
   'beras 100rb sabun 30rb',
-  'beli eskrim 5000 dan nasi 10000 serta sabun 9000'
+  'beli eskrim 5000 dan nasi 10000 serta sabun 9000',
+  'catat nexa, beli eskrim 7300 dan sabun muka 18900 serta roti 8200 pakai Bank Mandiri',
+  'catat ini: belanja mall 150rb: makan siang 100rb dan ngopi 30rb'
 ];
 
 const negatives = [
@@ -144,8 +146,23 @@ Semoga membantu! [info tambahan bracket]`;
   console.log('  [+] Dirty AI output parsed successfully: 2 items extracted');
   console.log('  ✅ TEST 5 PASSED\n');
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TEST 6: Skenario C Audit — 150rb mall vs 100rb makan + 30rb ngopi = 20rb sisa
+  // ─────────────────────────────────────────────────────────────────────────────
+  console.log('[TEST 6] Skenario C Audit — Deteksi Akurat Sisa Nominal Rp20.000:');
+  const scenarioCItems = [
+    { label: 'makan siang', nominal: 100000, category: 'Makanan & Minuman' },
+    { label: 'ngopi', nominal: 30000, category: 'Jajan / Ngopi / Kafe' }
+  ];
+  const scenarioCMsg = await splitEngine.handleSplitWithRemainder('test_chat_c', scenarioCItems, 150000, {}, 'mall', null, null);
+  assert.ok(scenarioCMsg.includes('Rp20.000'), 'Harus mendeteksi sisa Rp20.000');
+  assert.ok(scenarioCMsg.includes('Masih ada sisa'), 'Harus menanyakan sisa nominal');
+  splitEngine.cancelPendingRemainder('test_chat_c');
+  console.log('  [+] Skenario C menghasilkan pertanyaan sisa akurat: Rp20.000');
+  console.log('  ✅ TEST 6 PASSED\n');
+
   console.log('=====================================================');
-  console.log('   🎉 SEMUA 5 TEST SUITE SPLIT ENGINE BERHASIL LULUS! 🎉');
+  console.log('   🎉 SEMUA 6 TEST SUITE SPLIT ENGINE BERHASIL LULUS! 🎉');
   console.log('=====================================================');
 }
 
