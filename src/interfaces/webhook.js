@@ -1348,12 +1348,13 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
 
         if (splitItems && splitItems.length >= 2) {
           // Eksekusi split: hapus pending, insert N baris
+          const dDate = firstPendingTx?.time ? new Date(firstPendingTx.time) : new Date();
           const baseTx = {
             type: firstPendingTx?.type || 'EXPENSE',
             account: firstPendingTx?.account || null,
-            dateISO: firstPendingTx?.dateISO || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }),
-            timeHHMM: firstPendingTx?.timeHHMM || null,
-            paymentMethod: firstPendingTx?.paymentMethod || null,
+            dateISO: firstPendingTx?.dateISO || dDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }),
+            timeHHMM: firstPendingTx?.timeHHMM || (firstPendingTx?.time ? dDate.toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }) : null),
+            paymentMethod: firstPendingTx?.paymentMethod || firstPendingTx?.payment_method || null,
           };
           // Batalkan pending confirmation lama
           await financeEngine.confirmPendingTransactions(false, null, null, null, null, firstPendingKey);
@@ -1467,12 +1468,13 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
 
             const splitItems = await splitEngine.parseSplitFromText(rawInputForSplit, totalNomForSplit, storeForSplit);
             if (splitItems && splitItems.length >= 2) {
+              const dDate = targetPendingTx?.time ? new Date(targetPendingTx.time) : new Date();
               const baseTx = {
                 type: targetPendingTx?.type || 'EXPENSE',
                 account: targetPendingTx?.account || null,
-                dateISO: targetPendingTx?.dateISO || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }),
-                timeHHMM: targetPendingTx?.timeHHMM || null,
-                paymentMethod: targetPendingTx?.paymentMethod || null,
+                dateISO: targetPendingTx?.dateISO || dDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }),
+                timeHHMM: targetPendingTx?.timeHHMM || (targetPendingTx?.time ? dDate.toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }) : null),
+                paymentMethod: targetPendingTx?.paymentMethod || targetPendingTx?.payment_method || null,
               };
               // Batalkan pending confirmation lama
               await financeEngine.confirmPendingTransactions(false, null, null, null, null, targetKey);
