@@ -1782,6 +1782,56 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       domainReply = clarificationMessage;
     } else switch (routingData.intent) {
       case 'FINANCE':
+        // [SPLIT] TITIK 3 (UNIVERSAL): PERINTAH SPLIT PADA TRANSAKSI EXISTING (via reply)
+        // Berfungsi baik saat AI Router mengklasifikasikan intent sebagai EDIT maupun RECORD
+        const splitEngine = require('../domain/Split_Engine');
+        const isSplitCmd = /\bsplit\b|\bpecah\b|\brincian\b/i.test(textInput) || splitEngine.isSplitIntent(textInput);
+        if (isSplitCmd && message.reply_to_message) {
+          try {
+            const replyTxt = message.reply_to_message.text || '';
+            let kw = 'latest';
+            const catatanMatch = replyTxt.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+            const nominalLabelMatch = replyTxt.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
+            const nominalRpMatch = replyTxt.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+            if (catatanMatch && catatanMatch[1] && catatanMatch[1].trim().length > 1) {
+              kw = catatanMatch[1].trim();
+            } else if (nominalLabelMatch && nominalLabelMatch[1]) {
+              kw = nominalLabelMatch[1].replace(/[^0-9]/g, '');
+            } else if (nominalRpMatch && nominalRpMatch[1]) {
+              kw = nominalRpMatch[1].replace(/[^0-9]/g, '');
+            }
+
+            const existingRows = await require('../infrastructure/Supabase_Finance').readTransactions({ limit: 50 });
+            const Finance_Engine_module = require('../domain/Finance_Engine');
+            const matchIndex = Finance_Engine_module._findBestTransactionMatch
+              ? Finance_Engine_module._findBestTransactionMatch(existingRows, kw)
+              : -1;
+
+            if (matchIndex !== -1) {
+              const targetTx = existingRows[matchIndex];
+              const nomMatch = replyTxt.match(/[Rr][Pp][.\s]*([0-9][0-9.,]+)/);
+              const totalNomForSplit = nomMatch ? Number(nomMatch[1].replace(/[^0-9]/g, '')) : Math.abs(targetTx.amount || 0);
+
+              console.log(`[SPLIT] Universal split on existing tx: ${targetTx.id}, total: ${totalNomForSplit}`);
+              const splitItems = await splitEngine.parseSplitFromText(textInput, totalNomForSplit, targetTx.description || '');
+
+              if (splitItems && splitItems.length >= 2) {
+                const baseTx = {
+                  type: targetTx.type || 'expense',
+                  account: targetTx.accounts?.name || null,
+                  dateISO: targetTx.transaction_date,
+                  timeHHMM: targetTx.transaction_time ? targetTx.transaction_time.slice(0, 5) : null,
+                  paymentMethod: targetTx.payment_method || null,
+                };
+                domainReply = await splitEngine.handleSplitWithRemainder(chatId, splitItems, totalNomForSplit, baseTx, targetTx.description || '', targetTx.id, respondToTelegram);
+                break; // Berhasil di-split & replace transaksi existing
+              }
+            }
+          } catch (splitErr) {
+            console.error('[SPLIT] Error universal split existing tx:', splitErr.message);
+          }
+        }
+
         if (routingData.extracted_data && routingData.extracted_data.action === 'IMPORT_FROM_EMAIL') {
           const gmailClient = require('../infrastructure/Gmail_Client');
           const candidateEmails = pendingEmailContext?.lastBatch?.length
@@ -1903,47 +1953,6 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
               } else {
                 kw = 'latest';
               }
-            }
-          }
-
-          // [SPLIT] TITIK 3: PERINTAH SPLIT PADA TRANSAKSI EXISTING (via reply)
-          // Deteksi: user me-reply pesan konfirmasi + menyebut rincian split.
-          const splitEngine = require('../domain/Split_Engine');
-          const isSplitCmd = /\bsplit\b|\bpecah\b|\brincian\b/i.test(textInput) || splitEngine.isSplitIntent(textInput);
-          if (isSplitCmd && message.reply_to_message) {
-            try {
-              // Cari transaksi existing di Supabase berdasarkan keyword dari reply
-              const existingRows = await require('../infrastructure/Supabase_Finance').readTransactions({ limit: 50 });
-              const Finance_Engine_module = require('../domain/Finance_Engine');
-              const matchIndex = Finance_Engine_module._findBestTransactionMatch
-                ? Finance_Engine_module._findBestTransactionMatch(existingRows, kw)
-                : -1;
-
-              if (matchIndex !== -1) {
-                const targetTx = existingRows[matchIndex];
-                const replyTxtForSplit = message.reply_to_message.text || '';
-                // Parse nominal dari reply snippet untuk estimasi total
-                const nomMatch = replyTxtForSplit.match(/[Rr][Pp][.\s]*([0-9][0-9.,]+)/);
-                const totalNomForSplit = nomMatch ? Number(nomMatch[1].replace(/[^0-9]/g, '')) : Math.abs(targetTx.amount || 0);
-
-                console.log(`[SPLIT] Split on existing tx: ${targetTx.id}, total: ${totalNomForSplit}`);
-                const splitItems = await splitEngine.parseSplitFromText(textInput, totalNomForSplit, targetTx.description || '');
-
-                if (splitItems && splitItems.length >= 2) {
-                  const baseTx = {
-                    type: targetTx.type || 'expense',
-                    account: targetTx.accounts?.name || null,
-                    dateISO: targetTx.transaction_date,
-                    timeHHMM: targetTx.transaction_time ? targetTx.transaction_time.slice(0, 5) : null,
-                    paymentMethod: targetTx.payment_method || null,
-                  };
-                  domainReply = await splitEngine.handleSplitWithRemainder(chatId, splitItems, totalNomForSplit, baseTx, targetTx.description || '', targetTx.id, respondToTelegram);
-                  break; // Skip editTransaction biasa
-                }
-              }
-            } catch (splitErr) {
-              console.error('[SPLIT] Error split existing tx:', splitErr.message);
-              // Fall through ke edit biasa
             }
           }
 
