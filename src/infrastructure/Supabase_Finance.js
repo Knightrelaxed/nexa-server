@@ -285,11 +285,30 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
   if (splitGroupId) rowData.split_group_id = splitGroupId;
   if (splitLabel)   rowData.split_label   = splitLabel;
 
-  const { data, error } = await supabaseFinance
+  let { data, error } = await supabaseFinance
     .from('transactions')
     .insert(rowData)
     .select('id')
     .single();
+
+  // [SELF-HEALING BACKWARD COMPATIBILITY]
+  // Jika database Supabase user belum dimigrasi (belum ada kolom split_group_id / split_label),
+  // otomatis hapus field tersebut dari rowData dan simpan ulang dengan label split di description.
+  if (error && (error.message.includes('split_group_id') || error.message.includes('split_label'))) {
+    console.warn('[SUPABASE_FINANCE] Kolom split_group_id belum ada di Supabase. Menggunakan fallback backward-compatible...');
+    delete rowData.split_group_id;
+    delete rowData.split_label;
+    if (splitLabel && !String(rowData.description || '').includes(`[Split:`)) {
+      rowData.description = `[Split: ${splitLabel}] ${rowData.description || ''}`.trim();
+    }
+    const fallbackRes = await supabaseFinance
+      .from('transactions')
+      .insert(rowData)
+      .select('id')
+      .single();
+    data = fallbackRes.data;
+    error = fallbackRes.error;
+  }
 
   if (error) {
     console.error('[SUPABASE_FINANCE] writeTransaction INSERT error:', error.message);
