@@ -1072,7 +1072,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           }
         }
         // Only block if action explicitly requires a nominal AND none was provided
+        const splitEngine = require('../domain/Split_Engine');
         const isSplitReplyOrIntent = /\bsplit\b|\bpecah\b|\brincian\b/i.test(originalText) ||
+          splitEngine.isSplitIntent(originalText) ||
           (data.items && Array.isArray(data.items) && data.items.length > 0) ||
           data.is_split === true ||
           (message && message.reply_to_message);
