@@ -499,13 +499,16 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                               <div className="hidden md:block flex-1 min-w-0">
                                 <span className="text-[12px] text-muted-foreground truncate block">{t.description}</span>
                               </div>
-                              <div className="ml-auto text-right shrink-0">
-                                <p className={cn("text-[13px] font-bold tabular-nums", isExpense ? "text-[#ef4444]" : "text-[#10b981]")}>
-                                  {isExpense ? "-" : "+"}Rp {t.amount.toLocaleString("id-ID")},00
-                                </p>
-                                <p className="text-[11px] text-muted-foreground flex items-center justify-end gap-0.5 mt-0.5">
-                                  {t.transaction_time ? t.transaction_time.slice(0,5) : "12:00"} <span className="text-amber-400">⧖</span>
-                                </p>
+                              <div className="ml-auto flex items-center gap-2 shrink-0">
+                                <div className="text-right">
+                                  <p className={cn("text-[13px] font-bold tabular-nums", isExpense ? "text-[#ef4444]" : "text-[#10b981]")}>
+                                    {isExpense ? "-" : "+"}Rp {t.amount.toLocaleString("id-ID")},00
+                                  </p>
+                                  <p className="text-[11px] text-muted-foreground flex items-center justify-end gap-0.5 mt-0.5">
+                                    {t.transaction_time ? t.transaction_time.slice(0,5) : "12:00"} <span className="text-amber-400">⧖</span>
+                                  </p>
+                                </div>
+                                <div className="w-5" />
                               </div>
                             </div>
                           )
@@ -535,18 +538,24 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                                   <Scissors className="h-4 w-4" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <p className="text-[13px] font-bold text-foreground truncate">
-                                      {groupItems.map((i: any) => i.split_label || i.description).filter(Boolean).join(', ') || "Transaksi Split"}
-                                    </p>
+                                  <p className="text-[13px] font-bold text-foreground truncate">
+                                    {(() => {
+                                      const names = groupItems.map((i: any) => i.split_label || i.description).filter(Boolean)
+                                      return names.length > 2 
+                                        ? `${names.slice(0, 2).join(', ')} ... (+${names.length - 2} item)`
+                                        : names.join(', ') || "Transaksi Split"
+                                    })()}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-0.5">
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700 shrink-0">
                                       ✂️ {groupItems.length} item
                                     </span>
+                                    <p className="text-[11px] text-muted-foreground truncate">
+                                      {firstTx.account_name}
+                                    </p>
                                   </div>
-                                  <p className="text-[11px] text-muted-foreground truncate">
-                                    {firstTx.account_name}
-                                  </p>
                                 </div>
+
                                 <div className="ml-auto flex items-center gap-2 shrink-0">
                                   <div className="text-right">
                                     <p className={cn("text-[13px] font-bold tabular-nums", isExpense ? "text-[#ef4444]" : "text-[#10b981]")}>
@@ -556,7 +565,7 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                                       {firstTx.transaction_time ? firstTx.transaction_time.slice(0,5) : "12:00"}
                                     </p>
                                   </div>
-                                  <div className="p-1 text-muted-foreground">
+                                  <div className="w-5 flex justify-end text-muted-foreground">
                                     <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded ? "rotate-180" : "")} />
                                   </div>
                                 </div>
@@ -578,8 +587,11 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                                           <p className="text-[12px] font-semibold text-foreground truncate">{sub.split_label || sub.description}</p>
                                           <p className="text-[11px] text-muted-foreground truncate">{sub.category_name}</p>
                                         </div>
-                                        <div className="text-right shrink-0">
-                                          <p className="text-[12px] font-semibold tabular-nums text-[#ef4444]">-Rp {sub.amount.toLocaleString("id-ID")},00</p>
+                                        <div className="ml-auto flex items-center gap-2 shrink-0">
+                                          <div className="text-right">
+                                            <p className="text-[12px] font-semibold tabular-nums text-[#ef4444]">-Rp {sub.amount.toLocaleString("id-ID")},00</p>
+                                          </div>
+                                          <div className="w-5" />
                                         </div>
                                       </div>
                                     )
