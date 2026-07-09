@@ -42,7 +42,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
   const [categoryId, setCategoryId] = useState("")
   const [accountId, setAccountId] = useState("")
   const [toAccountId, setToAccountId] = useState("")
-  const [paymentMethod, setPaymentMethod] = useState("")
+  const [paymentMethod, setPaymentMethod] = useState("none")
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
   const [loading, setLoading] = useState(false)
@@ -66,14 +66,14 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         setAccountId(initialData.account_id)
         setDate(initialData.transaction_date)
         if (initialData.transaction_time) setTime(initialData.transaction_time)
-        setPaymentMethod(initialData.payment_method ?? '')
+        setPaymentMethod(initialData.payment_method ?? 'none')
       } else {
         // Reset to default on new
         setAmount("")
         setDescription("")
         setDate(new Date().toISOString().slice(0, 10))
         setTime(new Date().toTimeString().slice(0, 5))
-        setPaymentMethod("")
+        setPaymentMethod("none")
       }
     }
   }, [open, initialData])
@@ -108,7 +108,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         transaction_date: date,
         transaction_time: time,
         description: description || undefined,
-        payment_method: type === "transfer" ? null : (paymentMethod || null) as import('@/lib/supabase/types').PaymentMethod | null,
+        payment_method: type === "transfer" ? null : (paymentMethod === "none" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod)),
       }
 
       if (initialData && initialData.id) {
@@ -126,7 +126,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
       setDescription("")
       setDate(new Date().toISOString().slice(0, 10))
       setTime(new Date().toTimeString().slice(0, 5))
-      setPaymentMethod("")
+      setPaymentMethod("none")
     } catch (err) {
       toast.error("Gagal menyimpan catatan")
       console.error(err)
@@ -153,7 +153,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         transaction_date: date,
         transaction_time: time,
         description: description || undefined,
-        payment_method: type === "transfer" ? null : (paymentMethod || null) as import('@/lib/supabase/types').PaymentMethod | null,
+        payment_method: type === "transfer" ? null : (paymentMethod === "none" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod)),
       })
       toast.success("Catatan tersimpan! Siap menambah lagi.")
       await refetchAccounts()
@@ -468,7 +468,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
                     <SelectValue placeholder="Tidak ada / Kosong" />
                   </SelectTrigger>
                   <SelectContent className="z-[999]">
-                    <SelectItem value=""><span className="text-muted-foreground italic">Tidak ada</span></SelectItem>
+                    <SelectItem value="none"><span className="text-muted-foreground italic">Tidak ada</span></SelectItem>
                     {PAYMENT_METHODS.map((m) => (
                       <SelectItem key={m} value={m}>{m}</SelectItem>
                     ))}

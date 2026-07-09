@@ -104,24 +104,9 @@ ATURAN ANALISIS SECARA INTERNAL (JANGAN DITULIS DI TEKS BALASAN):
 1. IDENTIFIKASI OBJEK: Apa SUBSTANSI yang dibeli/dibayar? Jangan terkecoh oleh kata-kata permukaan!
 2. COCOKKAN: Pilih kategori yang paling dekat secara SEMANTIK dengan objek tersebut DARI DAFTAR DI ATAS.
 
-ATURAN DISAMBIGUASI KRITIS (WAJIB COCOKKAN DENGAN DAFTAR KATEGORI DI ATAS):
-- "jajan" / "ngopi" / "es teh" / "boba" / "camilan" / "roti" / "kafe" / "latte" / "starbucks" / "mixue" → WAJIB pilih "Jajan / Ngopi / Kafe"
-- "nasi" / "makan berat" / "makan siang" / "makan malam" / "sate" / "soto" / "ayam" / "bakso" / "warteg" / "resto" / "padang" → WAJIB pilih "Makan Berat / Makan Luar"
-- "gofood" / "grabfood" / "shopeefood" / "pesan antar" / "delivery" → WAJIB pilih "Pesan Antar / Delivery" (atau "Makan Berat / Makan Luar")
-- "grab" / "gojek" / "ojek" / "taksi" / "goride" / "gocar" / "maxim" → WAJIB pilih "Ojek / Taksi Online" atau "Transportasi Umum"
-- "iuran" / "patungan" / "urunan" / "kas" / "makrab" untuk acara/kegiatan → WAJIB pilih "Sosial & Kado" atau "Olahraga & Event", BUKAN makanan!
-- "rokok" / "sigaret" / "vape" / "liquid" / "cerutu" / "tembakau" / "bir" / "wine" / "alkohol" / "miras" → WAJIB pilih "Alkohol, tembakau"
-- "beras" / "minyak" / "telur" / "sayur" / "supermarket" / "pasar" / "belanja dapur" → WAJIB pilih "Bahan Makanan / Groceries"
-
-CONTOH REFERENSI AKURAT:
-"jajan es teh dua" / "kopi latte" / "starbucks" / "beli camilan" / "beli Ades" → "Jajan / Ngopi / Kafe"
-"beli nasi goreng dua" / "nasi Padang" / "makan siang di warung" / "bakso" → "Makan Berat / Makan Luar"
-"GRAB FOOD" / "GoFood" → "Pesan Antar / Delivery"
-"GRAB TRANSPORT" / "bayar ojol" / "taksi" → "Ojek / Taksi Online"
-"nge gym" / "futsal" → "Olahraga & Event"
-"rokok" / "vape" / "liquid" → "Alkohol, tembakau"
-"iuran makrab" / "patungan kado" → "Sosial & Kado"
-"listrik" / "token listrik" / "air PDAM" / "wifi kos" → "Listrik / Air" atau "Internet / WiFi Kos"
+ATURAN DISAMBIGUASI KRITIS:
+- Jika nama merchant adalah layanan pihak ketiga penyedia pembayaran (contoh: "Gopay", "Ovo", "Dana", "Qris", "Midtrans", "Shopeepay"), ABAIKAN nama tersebut dan FOKUS pada deskripsi catatan yang diberikan oleh user.
+- JANGAN MENGARANG kategori. Wajib pilih salah satu PERSIS dari daftar di atas.
 
 ATURAN LAINNYA:
 1. KHUSUS kategori "Lainnya": HANYA gunakan JIKA deskripsinya kosong/tidak ada ATAU informasinya hanyalah singkatan/nama orang yang sangat ambigu. JIKA ada catatan atau deskripsi tujuan (sekecil apapun petunjuknya seperti "jajan", "nasi", "es teh", "kopi"), JANGAN PERNAH memilih "Lainnya"!
