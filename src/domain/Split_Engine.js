@@ -481,11 +481,11 @@ async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx
       const pending = pendingSplitRemainders.get(cid);
       if (pending && pending.waitingFor === 'PAYMENT_METHOD') {
         pendingSplitRemainders.delete(cid);
-        // Fallback default
-        pending.baseTx.paymentMethod = 'QRIS'; 
+        // Fallback default (kosongkan / null jika diabaikan)
+        pending.baseTx.paymentMethod = null; 
         const res = await executeSplit(pending.items, pending.baseTx, pending.existingTxId);
         const totalDisplay = pending.totalNominal || pending.items.reduce((s, i) => s + i.nominal, 0);
-        const autoMsg = `⏳ <i>Waktu habis (5 menit).</i>\nTransaksi split otomatis disimpan menggunakan metode <b>QRIS</b>.\n\n` +
+        const autoMsg = `⏳ <i>Waktu habis (5 menit).</i>\nTransaksi split otomatis disimpan.\n\n` +
           formatSplitMessage(pending.items, totalDisplay, pending.storeName, res.success);
         if (respondToTelegramFn) {
           try { await respondToTelegramFn(autoMsg); } catch (_) {}
@@ -509,7 +509,7 @@ async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx
 
     const totalDisplay = totalNominal || sumItems;
     return formatSplitMessage(splitItems, totalDisplay, storeName, null) + 
-      `\n\n❓ <b>Satu hal lagi Tuan.</b>\nMohon informasikan <b>metode pembayarannya (QRIS/Transfer/Tunai/Kredit)</b> untuk transaksi split ini. <i>(Atau abaikan jika ingin disimpan otomatis ke QRIS dalam 5 menit).</i>`;
+      `\n\n❓ <b>Satu hal lagi Tuan.</b>\nMohon informasikan <b>metode pembayarannya (QRIS/Transfer/Tunai/Kredit)</b> untuk transaksi split ini. <i>(Atau abaikan jika ingin disimpan otomatis dalam 5 menit).</i>`;
   }
 
   // Jika sisa <= 500 dan payment method sudah ada
