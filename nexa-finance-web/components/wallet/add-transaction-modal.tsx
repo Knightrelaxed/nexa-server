@@ -29,6 +29,7 @@ interface AddTransactionModalProps {
 type TxType = "expense" | "income" | "transfer"
 
 const PAYMENT_METHODS = ["QRIS", "Transfer bank", "Kartu Kredit", "Tunai"]
+const PAYMENT_METHODS_WITH_EMPTY = ["", ...PAYMENT_METHODS]
 
 export function AddTransactionModal({ open, onClose, onSuccess, initialData }: AddTransactionModalProps) {
   const { userId } = useAuth()
@@ -41,7 +42,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
   const [categoryId, setCategoryId] = useState("")
   const [accountId, setAccountId] = useState("")
   const [toAccountId, setToAccountId] = useState("")
-  const [paymentMethod, setPaymentMethod] = useState("QRIS")
+  const [paymentMethod, setPaymentMethod] = useState("")
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5))
   const [loading, setLoading] = useState(false)
@@ -65,14 +66,14 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         setAccountId(initialData.account_id)
         setDate(initialData.transaction_date)
         if (initialData.transaction_time) setTime(initialData.transaction_time)
-        setPaymentMethod(initialData.payment_method ?? 'QRIS')
+        setPaymentMethod(initialData.payment_method ?? '')
       } else {
         // Reset to default on new
         setAmount("")
         setDescription("")
         setDate(new Date().toISOString().slice(0, 10))
         setTime(new Date().toTimeString().slice(0, 5))
-        setPaymentMethod("QRIS")
+        setPaymentMethod("")
       }
     }
   }, [open, initialData])
@@ -107,7 +108,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         transaction_date: date,
         transaction_time: time,
         description: description || undefined,
-        payment_method: type === "transfer" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod),
+        payment_method: type === "transfer" ? null : (paymentMethod || null) as import('@/lib/supabase/types').PaymentMethod | null,
       }
 
       if (initialData && initialData.id) {
@@ -125,7 +126,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
       setDescription("")
       setDate(new Date().toISOString().slice(0, 10))
       setTime(new Date().toTimeString().slice(0, 5))
-      setPaymentMethod("QRIS")
+      setPaymentMethod("")
     } catch (err) {
       toast.error("Gagal menyimpan catatan")
       console.error(err)
@@ -152,7 +153,7 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         transaction_date: date,
         transaction_time: time,
         description: description || undefined,
-        payment_method: type === "transfer" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod),
+        payment_method: type === "transfer" ? null : (paymentMethod || null) as import('@/lib/supabase/types').PaymentMethod | null,
       })
       toast.success("Catatan tersimpan! Siap menambah lagi.")
       await refetchAccounts()
@@ -464,9 +465,10 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">Metode Pembayaran</label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <SelectValue placeholder="Tidak ada / Kosong" />
                   </SelectTrigger>
                   <SelectContent className="z-[999]">
+                    <SelectItem value=""><span className="text-muted-foreground italic">Tidak ada</span></SelectItem>
                     {PAYMENT_METHODS.map((m) => (
                       <SelectItem key={m} value={m}>{m}</SelectItem>
                     ))}
