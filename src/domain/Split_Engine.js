@@ -314,16 +314,28 @@ async function executeSplit(items, baseTx, existingTxId = null) {
   let successCount = 0;
   let failedCount = 0;
 
-  console.log(`[SPLIT_ENGINE] Executing split: ${items.length} items, group=${splitGroupId}`);
+  let accountName = baseTx.account;
+  if (!accountName || String(accountName).trim().toLowerCase() === 'null') {
+    const supabaseFinance = require('../infrastructure/Supabase_Finance');
+    const accounts = await supabaseFinance._loadAccounts();
+    if (accounts && accounts.length > 0) {
+      accountName = accounts[0].name;
+    } else {
+      accountName = 'Tunai';
+    }
+  }
+
+  console.log(`[SPLIT_ENGINE] Executing split: ${items.length} items, group=${splitGroupId}, fallbackAccount=${accountName}`);
 
   // Insert setiap item sebagai baris transaksi terpisah
   for (const item of items) {
     try {
+      const supabaseFinance = require('../infrastructure/Supabase_Finance');
       const result = await supabaseFinance.writeTransaction({
         txType: baseTx.type || 'EXPENSE',
         nominal: item.nominal,
         categoryName: item.category,
-        accountName: baseTx.account,
+        accountName: accountName,
         description: item.label,
         dateISO: baseTx.dateISO,
         timeHHMM: baseTx.timeHHMM || null,
