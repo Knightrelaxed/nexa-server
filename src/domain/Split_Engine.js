@@ -64,22 +64,110 @@ function isSplitIntent(text) {
   // Hard-pass: keyword eksplisit split
   if (/\bsplit\b|\bpecah\b|\brincian\b/.test(s)) return true;
 
-  // Pola: minimal 2 pasangan [item + nominal] dipisahkan koma / "dan" / "sama" / "&"
-  // Regex: kata alfanumerik (item) diikuti angka/satuan (nominal) lalu pemisah
-  const pairPattern = /\b[a-z\s]{2,30}\b\s+\d[\d.,]*\s*(?:ribu|rb|k|jt|juta|000)?\s*(?:[,&]|\bdan\b|\bsama\b|\bserta\b|\bdan\b)/gi;
-  const matches = (s.match(pairPattern) || []);
-  if (matches.length >= 2) return true;
+  // Pola 1: minimal 2 pasangan [item + nominal] dipisahkan koma / "dan" / "sama" / "&" / spasi
+  // Contoh: "untuk es krim 5rb dan nasi 10rb dan sabun 9rb", "beras 100rb sabun 30rb"
+  const pairPattern = /\b[a-z]{2,30}\b\s+\d+(?:[.,]\d+)?\s*(?:ribu|rb|k|jt|juta|000)?/gi;
+  const pairMatches = s.match(pairPattern) || [];
+  if (pairMatches.length >= 2) return true;
 
-  // Pola: "untuk X Nrb, Y Nrb, Z Nrb" (daftar koma dengan nominal)
-  const commaList = s.match(/\d[\d.,]*\s*(?:ribu|rb|k|jt|juta)/gi) || [];
-  if (commaList.length >= 2 && /[,&]|\bdan\b|\bsama\b/.test(s)) return true;
+  // Pola 2: nominal dahulu baru item (e.g. "20rb beras sama 15rb sabun")
+  const revPairPattern = /\d+(?:[.,]\d+)?\s*(?:ribu|rb|k|jt|juta|000)\s+[a-z]{2,30}\b/gi;
+  const revMatches = s.match(revPairPattern) || [];
+  if (revMatches.length >= 2) return true;
+
+  // Pola 3: daftar koma / dan yang mengandung minimal 2 nominal
+  const commaList = s.match(/\d+(?:[.,]\d+)?\s*(?:ribu|rb|k|jt|juta|000)/gi) || [];
+  if (commaList.length >= 2 && (/[,&+]|\bdan\b|\bsama\b|\bserta\b/.test(s) || pairMatches.length >= 2)) return true;
 
   return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// STATE & MECHANISM FOR SPLIT REMAINDER (SISA NOMINAL)
+// ─────────────────────────────────────────────────────────────────────────────
+const pendingSplitRemainders = new Map(); // chatId -> { baseTx, items, totalNominal, storeName, remainder, timeoutId }
+
+/**
+ * Cek apakah ada pending split remainder untuk chatId tertentu.
+ */
+function hasPendingRemainder(chatId) {
+  return pendingSplitRemainders.has(String(chatId));
+}
+
+/**
+ * Batalkan pending split remainder jika ada.
+ */
+function cancelPendingRemainder(chatId) {
+  const cid = String(chatId);
+  const existing = pendingSplitRemainders.get(cid);
+  if (existing && existing.timeoutId) clearTimeout(existing.timeoutId);
+  pendingSplitRemainders.delete(cid);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PARSER TEKS / VOICE → SPLIT ITEMS (via AI)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ekstrak JSON array secara presisi menggunakan balanced bracket matching,
+ * tahan terhadap teks sebelum/sesudah maupun markdown fences.
+ */
+function _extractJsonArray(rawText) {
+  if (!rawText) return null;
+  let s = String(rawText);
+
+  s = s.replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, '$1');
+
+  const startIdx = s.indexOf('[');
+  if (startIdx === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+  let endIdx = -1;
+
+  for (let i = startIdx; i < s.length; i++) {
+    const ch = s[i];
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (ch === '[') depth++;
+      else if (ch === ']') {
+        depth--;
+        if (depth === 0) {
+          endIdx = i;
+          break;
+        }
+      }
+    }
+  }
+
+  if (endIdx === -1) return null;
+  const candidate = s.substring(startIdx, endIdx + 1);
+
+  try {
+    const parsed = JSON.parse(candidate);
+    if (Array.isArray(parsed)) return parsed;
+  } catch (e) {
+    try {
+      const cleaned = candidate.replace(/,\s*([\]}])/g, '$1');
+      const parsed2 = JSON.parse(cleaned);
+      if (Array.isArray(parsed2)) return parsed2;
+    } catch (_) {}
+  }
+
+  return null;
+}
 
 /**
  * Parse teks/voice natural menjadi array item split dengan kategori.
@@ -107,13 +195,12 @@ User menyebutkan rincian pembelian berikut:
 "${text}"
 
 Tugasmu:
-1. Identifikasi SETIAP item/kelompok pengeluaran beserta nominalnya.
+1. Identifikasi SETIAP item/kelompok pengeluaran beserta nominalnya yang SECARA NYATA disebutkan oleh user.
 2. Kategorikan setiap item ke kategori yang PALING TEPAT dari daftar berikut:
 ${validCatNames}
 
 ATURAN PENTING:
-- Jika ada sisa nominal yang tidak disebutkan user (total item < totalNominal), BUAT item tambahan "Sisa belanja" dengan kategori "Lainnya" senilai selisihnya.
-- Jika total item > totalNominal, PROPORSIKAN (scale down) semua nominal agar total = totalNominal.
+- JANGAN menambahkan item "Sisa belanja" atau item fiktif jika total item yang disebutkan kurang dari totalNominal. Cukup kembalikan item yang benar-benar disebutkan user.
 - Jika totalNominal tidak diketahui, gunakan total dari item-item yang disebutkan.
 - Output HANYA JSON array, tanpa markdown, tanpa penjelasan.
 
@@ -131,27 +218,21 @@ Output format TEPAT:
     return [];
   }
 
-  // Parse JSON dari output AI
-  try {
-    // Coba ekstrak JSON array dari output AI (mungkin ada teks sebelum/sesudah)
-    const jsonMatch = rawOutput.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error('No JSON array found');
-    const items = JSON.parse(jsonMatch[0]);
-
-    // Validasi dan sanitasi
-    const cleaned = items
-      .filter(item => item && item.label && typeof item.nominal === 'number' && item.nominal > 0)
-      .map(item => ({
-        label: String(item.label).trim().substring(0, 100),
-        nominal: Math.round(item.nominal),
-        category: String(item.category || 'Lainnya').trim()
-      }));
-
-    return cleaned;
-  } catch (e) {
-    console.error('[SPLIT_ENGINE] JSON parse failed:', e.message, '| Raw:', rawOutput?.substring(0, 200));
+  // Parse JSON dari output AI dengan bulletproof bracket matching
+  const items = _extractJsonArray(rawOutput);
+  if (!items) {
+    console.error('[SPLIT_ENGINE] JSON parse failed | Raw:', rawOutput?.substring(0, 200));
     return [];
   }
+
+  // Validasi dan sanitasi
+  return items
+    .filter(item => item && item.label && typeof item.nominal === 'number' && item.nominal > 0)
+    .map(item => ({
+      label: String(item.label).trim().substring(0, 100),
+      nominal: Math.round(item.nominal),
+      category: String(item.category || 'Lainnya').trim()
+    }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,15 +265,12 @@ Jika bukan struk belanja, output: []`;
   try {
     const rawVision = await visionEngine.processTelegramImage(fileId, visionPrompt);
 
-    // Coba parse JSON dari output Vision
-    const jsonMatch = rawVision.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      console.warn('[SPLIT_ENGINE] Vision output bukan JSON array. Fallback ke teks.');
-      // Fallback: gunakan parseSplitFromText dengan teks vision sebagai input
+    const items = _extractJsonArray(rawVision);
+    if (!items) {
+      console.warn('[SPLIT_ENGINE] Vision output bukan JSON array murni. Fallback ke teks.');
       return await parseSplitFromText(rawVision, totalNominal, 'Struk Belanja');
     }
 
-    const items = JSON.parse(jsonMatch[0]);
     return items
       .filter(item => item && item.label && typeof item.nominal === 'number' && item.nominal > 0)
       .map(item => ({
@@ -312,6 +390,115 @@ function formatSplitMessage(items, total, storeName = '', successCount = null) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PROMPTING & TIMEOUT FOR SPLIT REMAINDER (KEKURANGAN NOMINAL)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Handle split items ketika ada potensi kekurangan nominal (remainder).
+ * Jika sisa > 500 rupiah:
+ * - Tanya dulu ke user: "Tuan, masih ada sisa RpX yang belum disebutkan. Untuk apa?"
+ * - Set watchdog timeout 5 menit -> otomatis simpan item "Sisa split [toko]"
+ * Jika sisa <= 500 rupiah: langsung jalankan executeSplit.
+ */
+async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx, storeName = '', existingTxId = null, respondToTelegramFn = null) {
+  const sumItems = splitItems.reduce((s, i) => s + (Number(i.nominal) || 0), 0);
+  const remainder = (totalNominal && totalNominal > 0) ? (totalNominal - sumItems) : 0;
+
+  // Jika sisa signifikan (> 500 rupiah)
+  if (remainder > 500) {
+    const cid = String(chatId);
+    cancelPendingRemainder(cid);
+
+    const remFmt = `Rp${Math.round(remainder).toLocaleString('id-ID')}`;
+    const totFmt = `Rp${Math.round(totalNominal).toLocaleString('id-ID')}`;
+    const sumFmt = `Rp${Math.round(sumItems).toLocaleString('id-ID')}`;
+
+    // Set 5-min watchdog timeout
+    const timeoutId = setTimeout(async () => {
+      const pending = pendingSplitRemainders.get(cid);
+      if (pending) {
+        pendingSplitRemainders.delete(cid);
+        const autoRemItem = {
+          label: `Sisa split ${storeName || 'Belanja'}`,
+          nominal: remainder,
+          category: 'Lainnya'
+        };
+        const finalItems = [...splitItems, autoRemItem];
+        const res = await executeSplit(finalItems, baseTx, existingTxId);
+        const autoMsg = `⏳ <i>Waktu habis (5 menit).</i>\nSisa <b>${remFmt}</b> disimpan otomatis sebagai 'Sisa split ${storeName || 'Belanja'}' (Lainnya).\n\n` +
+          formatSplitMessage(finalItems, totalNominal, storeName, res.success);
+        if (respondToTelegramFn) {
+          try { await respondToTelegramFn(autoMsg); } catch (_) {}
+        }
+      }
+    }, 5 * 60 * 1000);
+
+    pendingSplitRemainders.set(cid, {
+      baseTx,
+      items: splitItems,
+      totalNominal,
+      storeName,
+      remainder,
+      existingTxId,
+      timeoutId
+    });
+
+    return `❓ <b>Tuan, dari total ${totFmt} baru disebutkan ${sumFmt}.</b>\n\n` +
+      `Masih ada sisa <b>${remFmt}</b> yang belum disebutkan. Untuk apa?\n` +
+      `<i>(Tanpa balasan dalam 5 menit, N.E.X.A akan membuat baris item dengan kategori Lainnya: "Sisa split ${storeName || 'Belanja'}").</i>`;
+  }
+
+  // Jika sisa <= 500 atau sudah pas
+  const res = await executeSplit(splitItems, baseTx, existingTxId);
+  const totalDisplay = totalNominal || sumItems;
+  return formatSplitMessage(splitItems, totalDisplay, storeName, res.success);
+}
+
+/**
+ * Intersep balasan user untuk pertanyaan kekurangan nominal split.
+ */
+async function resolveRemainderReply(chatId, userText) {
+  const cid = String(chatId);
+  const pending = pendingSplitRemainders.get(cid);
+  if (!pending) return null;
+
+  cancelPendingRemainder(cid);
+
+  const { callAI } = require('../core/AI_Router');
+  const supabaseFinanceModule = require('../infrastructure/Supabase_Finance');
+  const categories = await supabaseFinanceModule.getCategoriesList();
+  const validCatNames = categories.map(c => c.name).join('\n');
+
+  // Kategorikan balasan user untuk sisa nominal
+  const prompt = `Kategorikan keterangan item belanja berikut ke salah satu kategori valid.
+Keterangan user: "${userText}"
+Nominal: Rp${pending.remainder}
+
+Daftar Kategori:
+${validCatNames}
+
+Output HANYA nama kategori yang paling tepat dari daftar di atas, tanpa tanda kutip atau penjelasan.`;
+
+  let aiCat = 'Lainnya';
+  try {
+    const raw = await callAI(prompt, { maxTokens: 50 });
+    if (raw && raw.trim()) aiCat = raw.trim();
+  } catch (_) {}
+
+  const addedItem = {
+    label: userText.trim() || `Sisa split ${pending.storeName || 'Belanja'}`,
+    nominal: pending.remainder,
+    category: aiCat
+  };
+
+  const finalItems = [...pending.items, addedItem];
+  const res = await executeSplit(finalItems, pending.baseTx, pending.existingTxId);
+  const totalDisplay = pending.totalNominal || finalItems.reduce((s, i) => s + i.nominal, 0);
+
+  return formatSplitMessage(finalItems, totalDisplay, pending.storeName, res.success);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EXPORTS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -321,4 +508,10 @@ module.exports = {
   parseSplitFromImage,
   executeSplit,
   formatSplitMessage,
+  hasPendingRemainder,
+  cancelPendingRemainder,
+  handleSplitWithRemainder,
+  resolveRemainderReply,
+  _extractJsonArray,
 };
+

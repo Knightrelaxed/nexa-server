@@ -1303,6 +1303,20 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
     }
 
     // ============================================================
+    // [SPLIT] INTERCEPTOR: JAWABAN KEKURANGAN NOMINAL SPLIT
+    // ============================================================
+    const splitEngine = require('../domain/Split_Engine');
+    const chatIdStr = String(message.chat.id);
+    if (splitEngine.hasPendingRemainder(chatIdStr) && textInput) {
+      console.log(`[SPLIT] Menerima balasan keterangan untuk sisa nominal split dari chat ${chatIdStr}: "${textInput}"`);
+      const remReplyMsg = await splitEngine.resolveRemainderReply(chatIdStr, textInput);
+      if (remReplyMsg) {
+        await respondToTelegram(remReplyMsg);
+        return;
+      }
+    }
+
+    // ============================================================
     // [SPLIT] TITIK 1: FOTO STRUK SAAT PENDING FINANCE
     // Jika user mengirim foto SAAT ada pending confirmation aktif,
     // intersep sebagai struk belanja untuk split — jangan kirim ke Vault.
@@ -1335,11 +1349,9 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           };
           // Batalkan pending confirmation lama
           await financeEngine.confirmPendingTransactions(false, null, null, null, null, firstPendingKey);
-          // Insert split rows
-          const splitResult = await splitEngine.executeSplit(splitItems, baseTx, null);
+          // Eksekusi split atau tanyakan jika ada kekurangan nominal (remainder)
           const storeName = firstPendingTx?.destination || 'Belanja';
-          const totalNom = splitItems.reduce((s, i) => s + i.nominal, 0);
-          const splitMsg = splitEngine.formatSplitMessage(splitItems, totalNom, storeName, splitResult.success);
+          const splitMsg = await splitEngine.handleSplitWithRemainder(chatIdStr, splitItems, totalNominalForSplit, baseTx, storeName, null, respondToTelegram);
           await respondToTelegram(splitMsg);
           return;
         } else {
@@ -1456,10 +1468,8 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
               };
               // Batalkan pending confirmation lama
               await financeEngine.confirmPendingTransactions(false, null, null, null, null, targetKey);
-              // Insert split rows
-              const splitResult = await splitEngine.executeSplit(splitItems, baseTx, null);
-              const totalNom = splitItems.reduce((s, i) => s + i.nominal, 0);
-              const splitMsg = splitEngine.formatSplitMessage(splitItems, totalNom, storeForSplit, splitResult.success);
+              // Eksekusi split atau tanyakan jika ada kekurangan nominal (remainder)
+              const splitMsg = await splitEngine.handleSplitWithRemainder(chatIdStr, splitItems, totalNomForSplit, baseTx, storeForSplit, null, respondToTelegram);
               await respondToTelegram(splitMsg);
               return;
             }
@@ -1927,9 +1937,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
                     timeHHMM: targetTx.transaction_time ? targetTx.transaction_time.slice(0, 5) : null,
                     paymentMethod: targetTx.payment_method || null,
                   };
-                  const splitResult = await splitEngine.executeSplit(splitItems, baseTx, targetTx.id);
-                  const totalNom = splitItems.reduce((s, i) => s + i.nominal, 0);
-                  domainReply = splitEngine.formatSplitMessage(splitItems, totalNom, targetTx.description || '', splitResult.success);
+                  domainReply = await splitEngine.handleSplitWithRemainder(chatId, splitItems, totalNomForSplit, baseTx, targetTx.description || '', targetTx.id, respondToTelegram);
                   break; // Skip editTransaction biasa
                 }
               }
@@ -2008,11 +2016,11 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
                 timeHHMM: ed.time ? ed.time.substring(11, 16) : timeNow,
                 paymentMethod: ed.payment_method || null,
               };
-              const splitResult = await splitEngine.executeSplit(ed.items, baseTx, null);
               const totalNom = ed.total_nominal || ed.items.reduce((s, i) => s + (i.nominal || 0), 0);
               const storeName = ed.store_name || ed.destination || '';
-              domainReply = splitEngine.formatSplitMessage(ed.items, totalNom, storeName, splitResult.success);
-              console.log(`[SPLIT] Manual split: ${splitResult.success} dari ${ed.items.length} item berhasil disimpan.`);
+              const chatIdStr = String(message.chat.id);
+              domainReply = await splitEngine.handleSplitWithRemainder(chatIdStr, ed.items, totalNom, baseTx, storeName, null, respondToTelegram);
+              console.log(`[SPLIT] Manual split processed for ${ed.items.length} items.`);
               break;
             } catch (splitErr) {
               console.error('[SPLIT] Error saat manual split:', splitErr.message);

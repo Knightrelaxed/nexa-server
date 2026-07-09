@@ -23,6 +23,10 @@ const positives = [
   'beras 20rb, sabun 15rb, jajan 15rb',
   'pecah transaksi: makan 15000, jajan 10000',
   'rincian belanja indomaret: susu 8rb, telur 20rb, snack 5rb',
+  'untuk es krim 5rb dan nasi 10rb dan sabun 9rb',
+  'es krim 5rb nasi 10rb sabun 9rb',
+  'beras 100rb sabun 30rb',
+  'beli eskrim 5000 dan nasi 10000 serta sabun 9000'
 ];
 
 const negatives = [
@@ -86,7 +90,68 @@ for (const ec of edgeCases) {
 }
 console.log('  ✅ TEST 3 PASSED\n');
 
-console.log('=====================================================');
-console.log('   🎉 SEMUA TEST SPLIT ENGINE BERHASIL LULUS! 🎉');
-console.log('=====================================================');
-process.exit(0);
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST 4: handleSplitWithRemainder — Konfirmasi Kekurangan Nominal
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('[TEST 4] handleSplitWithRemainder — Konfirmasi sisa nominal:');
+
+async function runTest4() {
+  const partialItems = [
+    { label: 'beras', nominal: 100000, category: 'Bahan Makanan / Groceries' },
+    { label: 'sabun', nominal: 30000, category: 'Perawatan & Kecantikan' }
+  ];
+  const testChatId = '999888777';
+
+  const promptReply = await splitEngine.handleSplitWithRemainder(
+    testChatId,
+    partialItems,
+    150000,
+    { type: 'EXPENSE', account: 'Livin', dateISO: '2026-07-09' },
+    'Indomaret'
+  );
+
+  console.log('  Output pertanyaan sisa nominal:');
+  console.log(promptReply.split('\n').map(l => '  ' + l).join('\n'));
+
+  assert.ok(promptReply.includes('Rp150.000') && promptReply.includes('Rp130.000'), 'Harus menyebutkan total dan yang sudah disebutkan');
+  assert.ok(promptReply.includes('Rp20.000'), 'Harus menyebutkan sisa Rp20.000');
+  assert.strictEqual(splitEngine.hasPendingRemainder(testChatId), true, 'Pending remainder harus tercatat aktif di state');
+
+  // Bersihkan state setelah test
+  splitEngine.cancelPendingRemainder(testChatId);
+  assert.strictEqual(splitEngine.hasPendingRemainder(testChatId), false, 'Pending remainder harus dibersihkan setelah dicancel');
+  console.log('  ✅ TEST 4 PASSED\n');
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TEST 5: _extractJsonArray — Ekstraksi JSON Tahan Banting dari Output AI
+  // ─────────────────────────────────────────────────────────────────────────────
+  console.log('[TEST 5] _extractJsonArray — Ekstraksi JSON tahan banting:');
+
+  const dirtyAIOutput = `Tuan Faqih,
+
+Berikut adalah rincian pengeluaran Anda:
+
+[
+  {"label": "Cafe Gula Aren", "nominal": 7300, "category": "Jajan / Ngopi / Kafe"},
+  {"label": "KSES ISI2 Aceh", "nominal": 8200, "category": "Perawatan & Kecantikan"}
+]
+Semoga membantu! [info tambahan bracket]`;
+
+  const extracted = splitEngine._extractJsonArray(dirtyAIOutput);
+  assert.ok(Array.isArray(extracted) && extracted.length === 2, 'Harus berhasil parse 2 item dari dirty AI output');
+  assert.strictEqual(extracted[0].label, 'Cafe Gula Aren');
+  assert.strictEqual(extracted[1].label, 'KSES ISI2 Aceh');
+  console.log('  [+] Dirty AI output parsed successfully: 2 items extracted');
+  console.log('  ✅ TEST 5 PASSED\n');
+
+  console.log('=====================================================');
+  console.log('   🎉 SEMUA 5 TEST SUITE SPLIT ENGINE BERHASIL LULUS! 🎉');
+  console.log('=====================================================');
+}
+
+runTest4().then(() => {
+  process.exit(0);
+}).catch(err => {
+  console.error('Test 4 Failed:', err);
+  process.exit(1);
+});

@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect } from "react"
 import {
   Search, ChevronLeft, ChevronRight, Filter, ChevronDown,
   Settings2, Plus, X, SlidersHorizontal, RotateCcw,
-  ListChecks, Pencil, Trash2, Copy, FileOutput
+  ListChecks, Pencil, Trash2, Copy, FileOutput, Scissors
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -51,6 +51,16 @@ export function RecordsView() {
   const [filtersState, setFiltersState] = useState<any>({})
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [period, setPeriod] = useState<PeriodValue>(defaultPeriod)
+  const [expandedSplitGroups, setExpandedSplitGroups] = useState<Set<string>>(new Set())
+
+  const toggleSplitGroup = (groupId: string) => {
+    setExpandedSplitGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(groupId)) next.delete(groupId)
+      else next.add(groupId)
+      return next
+    })
+  }
 
   const filters = useMemo(() => {
     const startDate = new Date(period.start.getTime() - period.start.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -373,65 +383,217 @@ export function RecordsView() {
                       </div>
 
                       {/* Rows */}
-                      {items.map((t) => {
-                        const isExpense = t.type === "expense"
-                        const Icon = ICON_MAP[t.category_icon_key || "more-horizontal"] ?? Search
+                      {(() => {
+                        const displayRows: Array<
+                          | { kind: 'single'; tx: any }
+                          | { kind: 'split_group'; groupId: string; items: any[]; totalAmount: number; firstTx: any }
+                        > = []
+                        const processedGroupIds = new Set<string>()
 
-                        return (
-                          <div 
-                            key={t.id} 
-                            onClick={() => { setViewTx(t); setViewModalOpen(true); }}
-                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors group border-b border-border/20 last:border-0 cursor-pointer"
-                          >
-                            {/* Checkbox */}
-                            <div onClick={(e) => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={selectedIds.has(t.id)}
-                                onChange={() => toggleSelect(t.id)}
-                                className="rounded border-gray-300 w-4 h-4 accent-[#10b981] shrink-0"
-                              />
-                            </div>
+                        for (const t of items) {
+                          if (t.split_group_id) {
+                            if (!processedGroupIds.has(t.split_group_id)) {
+                              processedGroupIds.add(t.split_group_id)
+                              const groupItems = items.filter(x => x.split_group_id === t.split_group_id)
+                              const totalAmount = groupItems.reduce((acc, curr) => acc + curr.amount, 0)
+                              displayRows.push({
+                                kind: 'split_group',
+                                groupId: t.split_group_id,
+                                items: groupItems,
+                                totalAmount,
+                                firstTx: t
+                              })
+                            }
+                          } else {
+                            displayRows.push({ kind: 'single', tx: t })
+                          }
+                        }
 
-                            {/* Icon */}
-                            <div className={cn(
-                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-                              t.category_icon_bg || (isExpense ? "bg-red-50" : "bg-green-50"),
-                              t.category_icon_color || (isExpense ? "text-red-500" : "text-[#10b981]")
-                            )}>
-                              <Icon className="h-4 w-4" />
-                            </div>
+                        return displayRows.map((row) => {
+                          if (row.kind === 'single') {
+                            const t = row.tx
+                            const isExpense = t.type === "expense"
+                            const Icon = ICON_MAP[t.category_icon_key || "more-horizontal"] ?? Search
 
-                            {/* Category + User */}
-                            <div className="flex-1 sm:flex-none sm:w-[130px] min-w-0">
-                              <p className="text-[13px] font-semibold truncate">{t.category_name}</p>
-                              <p className="text-[11px] text-muted-foreground truncate">{t.account_name}</p>
-                            </div>
+                            return (
+                              <div 
+                                key={t.id} 
+                                onClick={() => { setViewTx(t); setViewModalOpen(true); }}
+                                className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors group border-b border-border/20 last:border-0 cursor-pointer"
+                              >
+                                {/* Checkbox */}
+                                <div onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedIds.has(t.id)}
+                                    onChange={() => toggleSelect(t.id)}
+                                    className="rounded border-gray-300 w-4 h-4 accent-[#10b981] shrink-0"
+                                  />
+                                </div>
 
-                            {/* Account */}
-                            <div className="hidden sm:flex items-center gap-1.5 w-[140px] shrink-0 min-w-0">
-                              <span className="w-2 h-2 rounded-full bg-[#22d3ee] shrink-0" />
-                              <span className="text-[12px] text-muted-foreground truncate">{t.account_name}</span>
-                            </div>
+                                {/* Icon */}
+                                <div className={cn(
+                                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+                                  t.category_icon_bg || (isExpense ? "bg-red-50" : "bg-green-50"),
+                                  t.category_icon_color || (isExpense ? "text-red-500" : "text-[#10b981]")
+                                )}>
+                                  <Icon className="h-4 w-4" />
+                                </div>
 
-                            {/* Description + Payment Method */}
-                            <div className="hidden md:flex flex-col flex-1 min-w-0 gap-0.5">
-                              <span className="text-[12px] text-muted-foreground truncate">{t.description}</span>
-                              <PaymentBadge method={t.payment_method as PaymentMethod} />
-                            </div>
+                                {/* Category + User */}
+                                <div className="flex-1 sm:flex-none sm:w-[130px] min-w-0">
+                                  <p className="text-[13px] font-semibold truncate">{t.category_name}</p>
+                                  <p className="text-[11px] text-muted-foreground truncate">{t.account_name}</p>
+                                </div>
 
-                            {/* Amount + Time */}
-                            <div className="ml-auto text-right shrink-0">
-                              <p className={cn("text-[13px] font-bold tabular-nums", isExpense ? "text-[#ef4444]" : "text-[#10b981]")}>
-                                {isExpense ? "-" : "+"}Rp {t.amount.toLocaleString("id-ID")},00
-                              </p>
-                              <p className="text-[11px] text-muted-foreground flex items-center justify-end gap-0.5 mt-0.5">
-                                {t.transaction_time ? t.transaction_time.slice(0,5) : "12:00"} <span className="text-amber-400">⧖</span>
-                              </p>
-                            </div>
-                          </div>
-                        )
-                      })}
+                                {/* Account */}
+                                <div className="hidden sm:flex items-center gap-1.5 w-[140px] shrink-0 min-w-0">
+                                  <span className="w-2 h-2 rounded-full bg-[#22d3ee] shrink-0" />
+                                  <span className="text-[12px] text-muted-foreground truncate">{t.account_name}</span>
+                                </div>
+
+                                {/* Description + Payment Method */}
+                                <div className="hidden md:flex flex-col flex-1 min-w-0 gap-0.5">
+                                  <span className="text-[12px] text-muted-foreground truncate">{t.description}</span>
+                                  <PaymentBadge method={t.payment_method as PaymentMethod} />
+                                </div>
+
+                                {/* Amount + Time */}
+                                <div className="ml-auto text-right shrink-0">
+                                  <p className={cn("text-[13px] font-bold tabular-nums", isExpense ? "text-[#ef4444]" : "text-[#10b981]")}>
+                                    {isExpense ? "-" : "+"}Rp {t.amount.toLocaleString("id-ID")},00
+                                  </p>
+                                  <p className="text-[11px] text-muted-foreground flex items-center justify-end gap-0.5 mt-0.5">
+                                    {t.transaction_time ? t.transaction_time.slice(0,5) : "12:00"} <span className="text-amber-400">⧖</span>
+                                  </p>
+                                </div>
+                              </div>
+                            )
+                          } else {
+                            // Split group parent + expandable sub-items
+                            const { groupId, items: groupItems, totalAmount, firstTx } = row
+                            const isExpanded = expandedSplitGroups.has(groupId)
+                            const isExpense = firstTx.type === "expense"
+                            const allSelected = groupItems.every(i => selectedIds.has(i.id))
+
+                            return (
+                              <div key={groupId} className="border-b border-border/20 last:border-0">
+                                {/* Parent Row */}
+                                <div
+                                  onClick={() => toggleSplitGroup(groupId)}
+                                  className="flex items-center gap-3 px-4 py-3 bg-indigo-50/30 hover:bg-indigo-50/60 transition-colors cursor-pointer select-none"
+                                >
+                                  {/* Checkbox for entire group */}
+                                  <div onClick={(e) => {
+                                    e.stopPropagation()
+                                    const newSet = new Set(selectedIds)
+                                    if (allSelected) {
+                                      groupItems.forEach(i => newSet.delete(i.id))
+                                    } else {
+                                      groupItems.forEach(i => newSet.add(i.id))
+                                    }
+                                    setSelectedIds(newSet)
+                                  }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={allSelected}
+                                      onChange={() => {}}
+                                      className="rounded border-gray-300 w-4 h-4 accent-[#10b981] shrink-0"
+                                    />
+                                  </div>
+
+                                  {/* Icon */}
+                                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                                    <Scissors className="h-4 w-4" />
+                                  </div>
+
+                                  {/* Title + Badge */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-[13px] font-bold text-foreground truncate">
+                                        {firstTx.description || "Transaksi Split"}
+                                      </p>
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700">
+                                        ✂️ Split • {groupItems.length} item
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground truncate">
+                                      {firstTx.account_name} • Klik untuk {isExpanded ? "tutup" : "lihat rincian"}
+                                    </p>
+                                  </div>
+
+                                  {/* Total Amount + Chevron */}
+                                  <div className="ml-auto flex items-center gap-2 shrink-0">
+                                    <div className="text-right">
+                                      <p className={cn("text-[13px] font-bold tabular-nums", isExpense ? "text-[#ef4444]" : "text-[#10b981]")}>
+                                        {isExpense ? "-" : "+"}Rp {totalAmount.toLocaleString("id-ID")},00
+                                      </p>
+                                      <p className="text-[11px] text-muted-foreground">
+                                        {firstTx.transaction_time ? firstTx.transaction_time.slice(0,5) : "12:00"}
+                                      </p>
+                                    </div>
+                                    <div className="p-1 text-muted-foreground">
+                                      <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded ? "rotate-180" : "")} />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Expanded Sub-items */}
+                                {isExpanded && (
+                                  <div className="bg-slate-50/80 divide-y divide-border/15 border-t border-indigo-100/60">
+                                    {groupItems.map((sub) => {
+                                      const SubIcon = ICON_MAP[sub.category_icon_key || "more-horizontal"] ?? Search
+                                      return (
+                                        <div
+                                          key={sub.id}
+                                          onClick={() => { setViewTx(sub); setViewModalOpen(true); }}
+                                          className="flex items-center gap-3 pl-11 pr-4 py-2 hover:bg-muted/30 transition-colors cursor-pointer"
+                                        >
+                                          {/* Checkbox */}
+                                          <div onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                              type="checkbox"
+                                              checked={selectedIds.has(sub.id)}
+                                              onChange={() => toggleSelect(sub.id)}
+                                              className="rounded border-gray-300 w-3.5 h-3.5 accent-[#10b981] shrink-0"
+                                            />
+                                          </div>
+
+                                          {/* Sub Icon */}
+                                          <div className={cn(
+                                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+                                            sub.category_icon_bg || "bg-red-50",
+                                            sub.category_icon_color || "text-red-500"
+                                          )}>
+                                            <SubIcon className="h-3.5 w-3.5" />
+                                          </div>
+
+                                          {/* Sub Label & Category */}
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-[12px] font-semibold text-foreground truncate">
+                                              {sub.split_label || sub.description}
+                                            </p>
+                                            <p className="text-[11px] text-muted-foreground truncate">
+                                              {sub.category_name}
+                                            </p>
+                                          </div>
+
+                                          {/* Sub Amount */}
+                                          <div className="text-right shrink-0">
+                                            <p className="text-[12px] font-semibold tabular-nums text-[#ef4444]">
+                                              -Rp {sub.amount.toLocaleString("id-ID")},00
+                                            </p>
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          }
+                        })
+                      })()}
                     </div>
                   )
                 })}

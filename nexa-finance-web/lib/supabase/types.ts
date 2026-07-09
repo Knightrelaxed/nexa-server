@@ -45,6 +45,8 @@ export interface DbTransaction {
   transaction_time: string | null;
   description: string | null;
   payment_method: PaymentMethod | null;
+  split_group_id?: string | null;
+  split_label?: string | null;
   created_at: string;
 }
 
