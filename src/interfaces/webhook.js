@@ -1072,7 +1072,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
           }
         }
         // Only block if action explicitly requires a nominal AND none was provided
+        const isSplitReplyOrIntent = /\bsplit\b|\bpecah\b|\brincian\b/i.test(originalText) ||
+          (data.items && Array.isArray(data.items) && data.items.length > 0) ||
+          data.is_split === true ||
+          (message && message.reply_to_message);
         if (
+          !isSplitReplyOrIntent &&
           data.action !== 'IMPORT_FROM_EMAIL' &&
           data.action !== 'READ_LATEST' &&
           data.action !== 'READ_ANALYTICS' &&
@@ -1777,60 +1782,64 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
 
     // Execute Domain Logic based on Intent
     let domainReply = null;
-    const clarificationMessage = getClarificationMessage(routingData, textInput);
-    if (clarificationMessage) {
-      domainReply = clarificationMessage;
-    } else switch (routingData.intent) {
-      case 'FINANCE':
-        // [SPLIT] TITIK 3 (UNIVERSAL): PERINTAH SPLIT PADA TRANSAKSI EXISTING (via reply)
-        // Berfungsi baik saat AI Router mengklasifikasikan intent sebagai EDIT maupun RECORD
-        const splitEngine = require('../domain/Split_Engine');
-        const isSplitCmd = /\bsplit\b|\bpecah\b|\brincian\b/i.test(textInput) || splitEngine.isSplitIntent(textInput);
-        if (isSplitCmd && message.reply_to_message) {
-          try {
-            const replyTxt = message.reply_to_message.text || '';
-            let kw = 'latest';
-            const catatanMatch = replyTxt.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
-            const nominalLabelMatch = replyTxt.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
-            const nominalRpMatch = replyTxt.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
-            if (catatanMatch && catatanMatch[1] && catatanMatch[1].trim().length > 1) {
-              kw = catatanMatch[1].trim();
-            } else if (nominalLabelMatch && nominalLabelMatch[1]) {
-              kw = nominalLabelMatch[1].replace(/[^0-9]/g, '');
-            } else if (nominalRpMatch && nominalRpMatch[1]) {
-              kw = nominalRpMatch[1].replace(/[^0-9]/g, '');
-            }
 
-            const existingRows = await require('../infrastructure/Supabase_Finance').readTransactions({ limit: 50 });
-            const Finance_Engine_module = require('../domain/Finance_Engine');
-            const matchIndex = Finance_Engine_module._findBestTransactionMatch
-              ? Finance_Engine_module._findBestTransactionMatch(existingRows, kw)
-              : -1;
-
-            if (matchIndex !== -1) {
-              const targetTx = existingRows[matchIndex];
-              const nomMatch = replyTxt.match(/[Rr][Pp][.\s]*([0-9][0-9.,]+)/);
-              const totalNomForSplit = nomMatch ? Number(nomMatch[1].replace(/[^0-9]/g, '')) : Math.abs(targetTx.amount || 0);
-
-              console.log(`[SPLIT] Universal split on existing tx: ${targetTx.id}, total: ${totalNomForSplit}`);
-              const splitItems = await splitEngine.parseSplitFromText(textInput, totalNomForSplit, targetTx.description || '');
-
-              if (splitItems && splitItems.length >= 2) {
-                const baseTx = {
-                  type: targetTx.type || 'expense',
-                  account: targetTx.accounts?.name || null,
-                  dateISO: targetTx.transaction_date,
-                  timeHHMM: targetTx.transaction_time ? targetTx.transaction_time.slice(0, 5) : null,
-                  paymentMethod: targetTx.payment_method || null,
-                };
-                domainReply = await splitEngine.handleSplitWithRemainder(chatId, splitItems, totalNomForSplit, baseTx, targetTx.description || '', targetTx.id, respondToTelegram);
-                break; // Berhasil di-split & replace transaksi existing
-              }
-            }
-          } catch (splitErr) {
-            console.error('[SPLIT] Error universal split existing tx:', splitErr.message);
+    // [SPLIT] TITIK 3 (UNIVERSAL PRIORITY): PERINTAH SPLIT PADA TRANSAKSI EXISTING (via reply)
+    // Dijalankan sebelum clarification message agar reply split tidak pernah diblokir
+    if (routingData.intent === 'FINANCE' && message.reply_to_message) {
+      const splitEngine = require('../domain/Split_Engine');
+      const isSplitCmd = /\bsplit\b|\bpecah\b|\brincian\b/i.test(textInput) || splitEngine.isSplitIntent(textInput);
+      if (isSplitCmd) {
+        try {
+          const replyTxt = message.reply_to_message.text || '';
+          let kw = 'latest';
+          const catatanMatch = replyTxt.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+          const nominalLabelMatch = replyTxt.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
+          const nominalRpMatch = replyTxt.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+          if (catatanMatch && catatanMatch[1] && catatanMatch[1].trim().length > 1) {
+            kw = catatanMatch[1].trim();
+          } else if (nominalLabelMatch && nominalLabelMatch[1]) {
+            kw = nominalLabelMatch[1].replace(/[^0-9]/g, '');
+          } else if (nominalRpMatch && nominalRpMatch[1]) {
+            kw = nominalRpMatch[1].replace(/[^0-9]/g, '');
           }
+
+          const existingRows = await require('../infrastructure/Supabase_Finance').readTransactions({ limit: 50 });
+          const Finance_Engine_module = require('../domain/Finance_Engine');
+          const matchIndex = Finance_Engine_module._findBestTransactionMatch
+            ? Finance_Engine_module._findBestTransactionMatch(existingRows, kw)
+            : -1;
+
+          if (matchIndex !== -1) {
+            const targetTx = existingRows[matchIndex];
+            const nomMatch = replyTxt.match(/[Rr][Pp][.\s]*([0-9][0-9.,]+)/);
+            const totalNomForSplit = nomMatch ? Number(nomMatch[1].replace(/[^0-9]/g, '')) : Math.abs(targetTx.amount || 0);
+
+            console.log(`[SPLIT] Universal priority split on existing tx: ${targetTx.id}, total: ${totalNomForSplit}`);
+            const splitItems = await splitEngine.parseSplitFromText(textInput, totalNomForSplit, targetTx.description || '');
+
+            if (splitItems && splitItems.length >= 2) {
+              const baseTx = {
+                type: targetTx.type || 'expense',
+                account: targetTx.accounts?.name || null,
+                dateISO: targetTx.transaction_date,
+                timeHHMM: targetTx.transaction_time ? targetTx.transaction_time.slice(0, 5) : null,
+                paymentMethod: targetTx.payment_method || null,
+              };
+              domainReply = await splitEngine.handleSplitWithRemainder(chatId, splitItems, totalNomForSplit, baseTx, targetTx.description || '', targetTx.id, respondToTelegram);
+            }
+          }
+        } catch (splitErr) {
+          console.error('[SPLIT] Error universal priority split existing tx:', splitErr.message);
         }
+      }
+    }
+
+    if (!domainReply) {
+      const clarificationMessage = getClarificationMessage(routingData, textInput);
+      if (clarificationMessage) {
+        domainReply = clarificationMessage;
+      } else switch (routingData.intent) {
+        case 'FINANCE':
 
         if (routingData.extracted_data && routingData.extracted_data.action === 'IMPORT_FROM_EMAIL') {
           const gmailClient = require('../infrastructure/Gmail_Client');
@@ -2695,6 +2704,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         }
         break;
       }
+    }
     }
 
     // Send reply via Webhook Response Method (ZERO outbound needed)
