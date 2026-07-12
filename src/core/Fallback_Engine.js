@@ -36,27 +36,27 @@ const getErrDetails = (e) => {
 };
 
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Groq Qwen 3.6 27B (Key 1)
+  // Tier 1: Groq Llama 3.1 8B Instant (Key 1)
   if (groqKeys[0]) {
     try {
-      return await callGroq(groqKeys[0], prompt, systemInstruction, temperature, jsonMode, 3, 'qwen/qwen3.6-27b');
-    } catch (e) { console.warn('[FALLBACK] Tier 1 (Groq Qwen 3.6 Key 1) failed:', getErrDetails(e)); }
+      return await callGroq(groqKeys[0], prompt, systemInstruction, temperature, jsonMode, 3, 'llama-3.1-8b-instant');
+    } catch (e) { console.warn('[FALLBACK] Tier 1 (Groq Llama 3.1 Key 1) failed:', getErrDetails(e)); }
   }
 
-  // Tier 2: Groq Qwen 3.6 27B (Key 2)
+  // Tier 2: Groq Llama 3.1 8B Instant (Key 2)
   if (groqKeys[1]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 2 (Groq Qwen 3.6 Key 2)...');
-      return await callGroq(groqKeys[1], prompt, systemInstruction, temperature, jsonMode, 3, 'qwen/qwen3.6-27b');
-    } catch (e) { console.warn('[FALLBACK] Tier 2 (Groq Qwen 3.6 Key 2) failed:', getErrDetails(e)); }
+      console.log('[FALLBACK] Switching to Tier 2 (Groq Llama 3.1 Key 2)...');
+      return await callGroq(groqKeys[1], prompt, systemInstruction, temperature, jsonMode, 3, 'llama-3.1-8b-instant');
+    } catch (e) { console.warn('[FALLBACK] Tier 2 (Groq Llama 3.1 Key 2) failed:', getErrDetails(e)); }
   }
 
-  // Tier 3: Groq Qwen 3.6 27B (Key 3)
+  // Tier 3: Groq Llama 3.1 8B Instant (Key 3)
   if (groqKeys[2]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 3 (Groq Qwen 3.6 Key 3)...');
-      return await callGroq(groqKeys[2], prompt, systemInstruction, temperature, jsonMode, 3, 'qwen/qwen3.6-27b');
-    } catch (e) { console.warn('[FALLBACK] Tier 3 (Groq Qwen 3.6 Key 3) failed:', getErrDetails(e)); }
+      console.log('[FALLBACK] Switching to Tier 3 (Groq Llama 3.1 Key 3)...');
+      return await callGroq(groqKeys[2], prompt, systemInstruction, temperature, jsonMode, 3, 'llama-3.1-8b-instant');
+    } catch (e) { console.warn('[FALLBACK] Tier 3 (Groq Llama 3.1 Key 3) failed:', getErrDetails(e)); }
   }
 
   // Tier 4: Groq Qwen 3.6 27B (Key 4)
@@ -163,7 +163,7 @@ async function callGeminiWithRetry(client, modelName, prompt, systemInstruction,
   }
 }
 
-async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 3, modelName = 'qwen/qwen3.6-27b') {
+async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 3, modelName = 'llama-3.1-8b-instant') {
   const requestBody = {
     model: modelName,
     messages: [
@@ -171,7 +171,7 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
       { role: 'user', content: prompt }
     ],
     temperature,
-    max_tokens: 1200
+    max_tokens: 500
   };
   if (modelName.includes('qwen')) {
     requestBody.reasoning_format = 'hidden';
