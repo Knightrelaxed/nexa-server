@@ -12,7 +12,7 @@ const CONTEXTUAL_REF_WORDS = [
   'yang tadi', 'sebelumnya', 'lanjut', 'ubah itu', 'yang barusan',
   'tadi bilang', 'hapus yang', 'yang itu', 'edit itu', 'hapus itu',
 ];
-const HISTORY_CHAR_CAP = 8000; // ~2.000 token safety net (pesan N.E.X.A max 4.000 char)
+const HISTORY_CHAR_CAP = 5000; // ~1.200 token safety net
 
 // ============================================================
 // PRE-FLIGHT CLASSIFIER — keyword banks untuk calendar gating
