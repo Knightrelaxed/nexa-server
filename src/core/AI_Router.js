@@ -6,13 +6,13 @@ const { NEXA_PERSONALITY } = require('../config/personality');
 
 // ============================================================
 // ADAPTIVE HISTORY — dynamic fetch limit based on context
-// Normal: 6 exchanges (12 msg) | Context-ref detected: 10 exchanges (20 msg)
+// Normal: 6 exchanges (12 msg) | Context-ref detected: 8 exchanges (16 msg)
 // ============================================================
 const CONTEXTUAL_REF_WORDS = [
   'yang tadi', 'sebelumnya', 'lanjut', 'ubah itu', 'yang barusan',
   'tadi bilang', 'hapus yang', 'yang itu', 'edit itu', 'hapus itu',
 ];
-const HISTORY_CHAR_CAP = 10000; // ~2.500 token safety net (pesan N.E.X.A max 4.000 char)
+const HISTORY_CHAR_CAP = 8000; // ~2.000 token safety net (pesan N.E.X.A max 4.000 char)
 
 // ============================================================
 // PRE-FLIGHT CLASSIFIER — keyword banks untuk calendar gating
@@ -287,7 +287,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const personalFacts = await loadPersonalFactsWithCache();
 
   // 2. Contextual Retrieval — dynamic limit (Step 3: Adaptive History)
-  const _fetchLimit = _hasContextRef ? 20 : 12;
+  const _fetchLimit = _hasContextRef ? 16 : 12;
   const _rawMemories = await supabaseMemories.getRecentMemories(_fetchLimit);
 
   // Character safety net — trim oldest messages if total exceeds HISTORY_CHAR_CAP.
