@@ -22,7 +22,6 @@ async function testModelLogic(modelName, apiKey) {
         { role: 'user', content: promptLogic }
       ],
       temperature: 0.1,
-      reasoning_format: 'hidden',
       response_format: { type: 'json_object' }
     }, {
       headers: {
@@ -49,8 +48,11 @@ async function runLogicBenchmark() {
   }
   
   console.log("=== MEMULAI BENCHMARK LOGIKA KEUANGAN N.E.X.A ===");
-  // Test Model Baru (Qwen 3.6 27B)
-  await testModelLogic("qwen/qwen3.6-27b", apiKey);
+  // Test Model Lama
+  await testModelLogic("llama-3.3-70b-versatile", apiKey);
+  
+  // Test Model Baru (MoE 16 Experts)
+  await testModelLogic("meta-llama/llama-4-scout-17b-16e-instruct", apiKey);
   
   console.log(`\n======================================================`);
   console.log("=== SELESAI ===");
