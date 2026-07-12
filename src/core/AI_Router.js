@@ -31,7 +31,7 @@ const _CAL_DOMAIN_KWS = [
 // ============================================================
 // PROGRESSIVE FACT INJECTION
 // ============================================================
-const PROFILE_CORE_COUNT  = 20; // fakta tertua — selalu diinjeksi
+const PROFILE_CORE_COUNT  = 10; // 10 fakta profil tetap — selalu diinjeksi
 const PROFILE_KW_LIMIT    = 15; // max fakta tambahan dari dynamic word resonance
 const IDENTITY_CORE_COUNT = 10; // 10 identitas pokok — selalu diinjeksi
 const IDENTITY_KW_LIMIT   = 15; // max kamus log/teknis tambahan dari penyaringan
