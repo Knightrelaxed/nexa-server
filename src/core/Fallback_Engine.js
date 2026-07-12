@@ -171,7 +171,7 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
       { role: 'user', content: prompt }
     ],
     temperature,
-    max_tokens: 1000
+    max_tokens: 600
   };
   if (modelName.includes('qwen')) requestBody.reasoning_format = 'hidden';
   if (jsonMode) requestBody.response_format = { type: 'json_object' };
