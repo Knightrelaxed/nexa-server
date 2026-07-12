@@ -6,14 +6,14 @@ async function testGroqKey(keyName, apiKey) {
     console.log(`[SKIP] ${keyName}: Key not found in .env`);
     return;
   }
-  console.log(`\n=== Testing ${keyName} (llama-3.3-70b-versatile) ===`);
+  console.log(`\n=== Testing ${keyName} (qwen/qwen3.6-27b) ===`);
   try {
     const startTime = Date.now();
     const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-      model: 'llama-3.3-70b-versatile',
+      model: 'qwen/qwen3.6-27b',
       messages: [
         { role: 'system', content: 'You are a concise assistant.' },
-        { role: 'user', content: 'Jawab dengan singkat: Apakah sistem model llama-3.3-70b-versatile berjalan normal saat ini?' }
+        { role: 'user', content: 'Jawab dengan singkat: Apakah sistem model qwen/qwen3.6-27b berjalan normal saat ini?' }
       ],
       temperature: 0.1,
       max_tokens: 100

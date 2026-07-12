@@ -323,7 +323,7 @@ N.E.X.A mengirim `file_path` + `gemini_key` (dipilih acak dari pool) ke Vercel R
 **Tier 1–4 — Gemini 2.5 Flash (4 Kunci, Premium Quality):**
 Gambar diunduh sebagai Base64 via `downloadTelegramImageAsBase64()` dengan dua jalur proxy: *Vercel Relay B64 mode* (Worker encode biner ke JSON) dan *AllOrigins* sebagai backup. Gambar di-embed sebagai `inlineData` ke Gemini API.
 
-**Tier 5–8 — Groq Llama 4 Scout 17B (4 Kunci, Balanced):**
+**Tier 5–8 — Groq Qwen 3.6 27B (4 Kunci, Balanced):**
 Gambar yang sama (sudah diunduh) dikirim ke Groq Vision via format `image_url` dengan prefix `data:{mimeType};base64,...`.
 
 **Tier 9–10 — Gemini 2.0 Flash (2 Kunci, Generous Quota):**
