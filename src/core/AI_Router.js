@@ -12,7 +12,7 @@ const CONTEXTUAL_REF_WORDS = [
   'yang tadi', 'sebelumnya', 'lanjut', 'ubah itu', 'yang barusan',
   'tadi bilang', 'hapus yang', 'yang itu', 'edit itu', 'hapus itu',
 ];
-const HISTORY_CHAR_CAP = 4500; // ~1.100 token safety net agar sesuai batas 8k TPM Groq Qwen
+const HISTORY_CHAR_CAP = 10000; // ~2.500 token safety net (pesan N.E.X.A max 4.000 char)
 
 // ============================================================
 // PRE-FLIGHT CLASSIFIER — keyword banks untuk calendar gating
@@ -31,10 +31,10 @@ const _CAL_DOMAIN_KWS = [
 // ============================================================
 // PROGRESSIVE FACT INJECTION
 // ============================================================
-const PROFILE_CORE_COUNT  = 8; // fakta tertua — selalu diinjeksi
-const PROFILE_KW_LIMIT    = 6; // max fakta tambahan dari dynamic word resonance
-const IDENTITY_CORE_COUNT = 3; // 3 identitas pokok terpenting — selalu diinjeksi
-const IDENTITY_KW_LIMIT   = 4; // max identitas teknis tambahan dari penyaringan kata kunci
+const PROFILE_CORE_COUNT  = 20; // fakta tertua — selalu diinjeksi
+const PROFILE_KW_LIMIT    = 15; // max fakta tambahan dari dynamic word resonance
+const IDENTITY_CORE_COUNT = 10; // 10 identitas pokok — selalu diinjeksi
+const IDENTITY_KW_LIMIT   = 15; // max kamus log/teknis tambahan dari penyaringan
 
 // ============================================================
 // PERSONAL FACTS CACHE (Module-level — lives as long as server runs)
@@ -287,7 +287,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const personalFacts = await loadPersonalFactsWithCache();
 
   // 2. Contextual Retrieval — dynamic limit (Step 3: Adaptive History)
-  const _fetchLimit = _hasContextRef ? 10 : 6;
+  const _fetchLimit = _hasContextRef ? 20 : 12;
   const _rawMemories = await supabaseMemories.getRecentMemories(_fetchLimit);
 
   // Character safety net — trim oldest messages if total exceeds HISTORY_CHAR_CAP.
