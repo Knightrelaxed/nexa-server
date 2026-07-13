@@ -38,7 +38,33 @@ function initCronJobs() {
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
-  // 2. Scholarship / Competition Radar (Every Sunday 08:00 WIB)
+  // [PHASE 6] 1.7. Evening Reflective Diary (20:00 WIB)
+  // Mengirim Evening Briefing ringkas + pertanyaan reflektif malam hari
+  cron.schedule('0 20 * * *', async () => {
+    console.log('[CRON] Executing Evening Reflective Briefing...');
+    try {
+      if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+        const { sendEveningBriefing } = require('./webhook');
+        await sendEveningBriefing();
+      } else {
+        console.warn('[CRON] Telegram bot not configured. Evening briefing not sent.');
+      }
+    } catch (e) {
+      console.error('[CRON] Evening briefing failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
+  // [PHASE 6] 1.8. Weekly Cognitive Identity Inference (Minggu 21:00 WIB)
+  cron.schedule('0 21 * * 0', async () => {
+    console.log('[CRON] Executing Weekly Cognitive Identity Inference...');
+    try {
+      const inferenceEngine = require('../domain/Inference_Engine');
+      await inferenceEngine.runWeeklyIdentityInference();
+    } catch (e) {
+      console.error('[CRON] Weekly Identity Inference failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   cron.schedule('0 8 * * 0', async () => {
     console.log('[CRON] Executing Scholarship Radar (Placeholder)...');
     // Future expansion: RSS/Scraping for opportunities
@@ -330,7 +356,58 @@ function initCronJobs() {
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // ================================================================
-  // NEXT-GEN CONTEXTUAL AWARENESS: Memory Consolidation
+  // [PHASE 6] COGNITIVE IDENTITY ENGINE — Weekly Identity Inference
+  // ================================================================
+
+  // [P6] Weekly Identity Inference (Every Sunday 21:00 WIB)
+  // Menjalankan Mesin Inferensi Kognitif:
+  //   1. Baca 7 hari observasi (behavior log + chat memories)
+  //   2. AI mensintesis hipotesis 7 Layer Identitas
+  //   3. Filter berdasarkan Confidence Score
+  //   4. Kirim proposal ke Telegram jika confidence > 85%
+  //   5. Stage jika confidence 60-85% (konsolidasi minggu depan)
+  // NOTE: Dijalankan 1 jam SETELAH Weekly Behavior Review (20:00) agar tidak
+  //       tumpang tindih dan behavior summary sudah terkirim lebih dulu.
+  cron.schedule('0 21 * * 0', async () => {
+    console.log('[CRON-INFERENCE] Executing Weekly Identity Inference (Phase 6)...');
+    try {
+      const inferenceEngine = require('../domain/Inference_Engine');
+      const result = await inferenceEngine.runWeeklyIdentityInference();
+
+      const { sendTelegramOutbound } = require('./webhook');
+
+      if (result.success && result.saved > 0) {
+        // Kirim ringkasan proses inferensi ke Telegram
+        const summaryMsg = [
+          `🧠 <b>Weekly Identity Inference Selesai</b>`,
+          `<i>(Siklus Pemahaman Mingguan N.E.X.A)</i>`,
+          '',
+          `📊 Hipotesis yang dianalisis : <b>${result.totalHypotheses}</b>`,
+          `✅ Proposal baru tersimpan   : <b>${result.saved}</b>`,
+          `📨 Dikirim untuk review      : <b>${result.pendingSent}</b>`,
+          `📂 Di-stage (bukti kurang)   : <b>${result.staged}</b>`,
+          `⚡ Diabaikan (duplikat/lemah): <b>${result.skipped}</b>`,
+          '',
+          result.pendingSent > 0
+            ? `💡 Silakan review proposal identitas di atas, Tuan.`
+            : `📝 Semua hipotesis minggu ini di-stage untuk observasi lanjutan.`
+        ].join('\n');
+
+        await sendTelegramOutbound(summaryMsg, true); // skipMemory=true karena ini sistem
+        console.log('[CRON-INFERENCE] Identity Inference summary sent to Telegram.');
+
+      } else if (result.success && result.saved === 0) {
+        console.log('[CRON-INFERENCE] No new identity proposals this week. Model is stable.');
+      } else {
+        console.error('[CRON-INFERENCE] Inference failed:', result.error);
+      }
+
+    } catch (e) {
+      console.error('[CRON-INFERENCE] Weekly Identity Inference failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
+
   // ================================================================
 
   // 11. Daily Memory Consolidation (23:59 WIB)

@@ -75,6 +75,148 @@ function invalidatePersonalFactsCache() {
   console.log('[ROUTER] Personal facts cache invalidated. Will re-fetch on next message.');
 }
 
+// ============================================================
+// [PHASE 6] IDENTITY MODEL CACHE
+// Cache untuk 7-Layer Identity Model yang sudah terkonfirmasi.
+// TTL lebih pendek (15 menit) agar update dari Approve tombol
+// Telegram langsung terasa di percakapan berikutnya.
+// ============================================================
+let _identityModelCache = null;
+let _identityModelCacheTime = 0;
+const IDENTITY_CACHE_TTL_MS = 15 * 60 * 1000; // 15 menit
+
+/**
+ * Load Identity Model (7 Layer) dengan caching.
+ * Return-nya: Map dari layer ke array trait objects.
+ * Contoh: { HABITS: [{trait_key, trait_value}, ...], PREFERENCES: [...], ... }
+ */
+async function loadIdentityModelWithCache() {
+  const now = Date.now();
+  if (_identityModelCache !== null && (now - _identityModelCacheTime) < IDENTITY_CACHE_TTL_MS) {
+    return _identityModelCache;
+  }
+
+  try {
+    const traits = await supabaseMemories.getIdentityModel(); // Ambil semua layer
+    // Kelompokkan per layer untuk akses cepat
+    const grouped = {};
+    for (const trait of (traits || [])) {
+      if (!grouped[trait.layer]) grouped[trait.layer] = [];
+      grouped[trait.layer].push(trait);
+    }
+    _identityModelCache = grouped;
+    _identityModelCacheTime = now;
+    const total = (traits || []).length;
+    if (total > 0) {
+      console.log(`[ROUTER] Identity Model cache refreshed. ${total} traits across ${Object.keys(grouped).length} layers.`);
+    }
+  } catch (err) {
+    console.warn('[ROUTER] Failed to load Identity Model (table may not exist yet):', err.message);
+    _identityModelCache = {}; // Cache kosong agar tidak retry terus-menerus
+    _identityModelCacheTime = now;
+  }
+
+  return _identityModelCache;
+}
+
+/**
+ * Invalidate Identity Model cache.
+ * Dipanggil dari webhook.js setelah Tuan Faqih menekan APPROVE
+ * agar AI langsung menggunakan identitas yang baru dikonfirmasi.
+ */
+function invalidateIdentityModelCache() {
+  _identityModelCache = null;
+  _identityModelCacheTime = 0;
+  console.log('[ROUTER] Identity Model cache invalidated. Will re-fetch on next message.');
+}
+
+// ============================================================
+// [PHASE 6] TARGETED IDENTITY LAYER INJECTOR
+// Memilih HANYA layer yang relevan berdasarkan konteks percakapan.
+// Prinsip: hemat token, tajam, tidak boros.
+//
+// Mapping Intent → Layer yang diinjeksi:
+//   CALENDAR/TASK        → HABITS (ritme waktu kerja) + WEAKNESSES (sering lupa)
+//   FINANCE              → WEAKNESSES (kebiasaan finansial) + VALUES
+//   NORMAL_CHAT          → PREFERENCES (gaya komunikasi) + MOTIVATIONS
+//   EMAIL/WEB_SEARCH     → DECISION_STYLE (gaya riset) + PREFERENCES
+//   STRATEGIC/DISCIPLINE → VALUES + DECISION_STYLE + MOTIVATIONS
+//   Default (semua)      → PREFERENCES saja (aman, tidak invasif)
+// ============================================================
+
+/**
+ * Deteksi konteks topik dari teks pesan (heuristic, zero-token).
+ * Return: kategori konteks ('SCHEDULING', 'FINANCE', 'CASUAL', 'RESEARCH', 'STRATEGIC', 'DEFAULT')
+ */
+function _detectTopicContext(text) {
+  if (!text) return 'DEFAULT';
+  const t = String(text).toLowerCase();
+
+  // SCHEDULING: Topik waktu, jadwal, tugas
+  if (/\b(jadwal|kalender|deadline|tugas|besok|hari ini|meeting|kelas|matkul|reminder|alarm|bangun)\b/.test(t)) {
+    return 'SCHEDULING';
+  }
+  // FINANCE: Topik keuangan
+  if (/\b(beli|bayar|transfer|saldo|dompet|keuangan|uang|pengeluaran|tabungan|budget|qris|tagihan)\b/.test(t)) {
+    return 'FINANCE';
+  }
+  // RESEARCH: Pencarian, riset, baca
+  if (/\b(cari|cek|googling|research|artikel|baca|informasi|berita|email|inbox)\b/.test(t)) {
+    return 'RESEARCH';
+  }
+  // STRATEGIC: Keputusan, rencana besar, pilihan penting
+  if (/\b(rencana|strategi|pilihan|memilih|keputusan|planning|prioritas|tujuan|target|goals|skripsi|karir)\b/.test(t)) {
+    return 'STRATEGIC';
+  }
+  // CASUAL: Obrolan santai
+  if (/\b(halo|hai|apa kabar|gimana|bagaimana|cerita|curhat|lagi ngapain)\b/.test(t)) {
+    return 'CASUAL';
+  }
+  return 'DEFAULT';
+}
+
+/**
+ * Pilih layer identitas yang relevan dan format menjadi string prompt.
+ * @param {object} identityModel - Map layer → [{trait_key, trait_value}]
+ * @param {string} topicContext - Hasil dari _detectTopicContext()
+ * @returns {string} - String siap diinjeksi ke prompt, atau '' jika kosong
+ */
+function _buildIdentityContextBlock(identityModel, topicContext) {
+  if (!identityModel || Object.keys(identityModel).length === 0) return '';
+
+  // Mapping konteks → layer yang akan diinjeksi
+  const CONTEXT_TO_LAYERS = {
+    SCHEDULING : ['HABITS', 'WEAKNESSES', 'PREFERENCES'],
+    FINANCE    : ['WEAKNESSES', 'VALUES', 'HABITS'],
+    RESEARCH   : ['DECISION_STYLE', 'PREFERENCES'],
+    STRATEGIC  : ['VALUES', 'DECISION_STYLE', 'MOTIVATIONS'],
+    CASUAL     : ['PREFERENCES', 'MOTIVATIONS'],
+    DEFAULT    : ['PREFERENCES'],
+  };
+
+  const targetLayers = CONTEXT_TO_LAYERS[topicContext] || CONTEXT_TO_LAYERS['DEFAULT'];
+  const lines = [];
+
+  for (const layer of targetLayers) {
+    const traits = identityModel[layer];
+    if (!traits || traits.length === 0) continue;
+
+    const emoji = {
+      FACTS: '📌', PREFERENCES: '💬', HABITS: '🔁',
+      VALUES: '⚖️', DECISION_STYLE: '🧠', WEAKNESSES: '⚡', MOTIVATIONS: '🚀'
+    }[layer] || '•';
+
+    const traitLines = traits.map(t => `  - ${t.trait_key}: ${t.trait_value}`).join('\n');
+    lines.push(`${emoji} ${layer}:\n${traitLines}`);
+  }
+
+  if (lines.length === 0) return '';
+
+  return `\n[COGNITIVE IDENTITY MODEL — PEMAHAMAN MENDALAM TUAN FAQIH (Phase 6)]\n` +
+         `Gunakan pemahaman ini untuk merespons dengan sangat kontekstual dan personal:\n` +
+         lines.join('\n\n') + '\n';
+}
+
 const ROUTER_SYSTEM_PROMPT = `
 ${NEXA_PERSONALITY}
 
@@ -287,6 +429,14 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // 1. Load personal facts (from cache — zero overhead after first call)
   const personalFacts = await loadPersonalFactsWithCache();
 
+  // [PHASE 6] 1.5. Load Identity Model (from cache — zero overhead after first call)
+  // Berjalan paralel dengan langkah berikutnya untuk efisiensi maksimal
+  const [_, identityModel] = await Promise.allSettled([
+    Promise.resolve(), // placeholder
+    loadIdentityModelWithCache()
+  ]);
+  const _identityModel = identityModel.status === 'fulfilled' ? (identityModel.value || {}) : {};
+
   // 2. Contextual Retrieval — dynamic limit (Step 3: Adaptive History)
   const _fetchLimit = _hasContextRef ? 20 : 12;
   const _rawMemories = await supabaseMemories.getRecentMemories(_fetchLimit);
@@ -323,6 +473,16 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   if (personalFacts.coreIdentity && personalFacts.coreIdentity.length > 0) {
     const _selectedIdentity = _selectCoreIdentityFacts(personalFacts.coreIdentity, textInput);
     factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${_selectedIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+  }
+
+  // [PHASE 6] 3.5. Build Targeted Identity Layer Injection
+  // Deteksi konteks topik dari pesan user dan pilih layer identitas yang paling relevan.
+  // Prinsip: injeksi selektif — hanya layer yang dibutuhkan, bukan semua 7 layer sekaligus.
+  const _topicContext = _detectTopicContext(textInput);
+  const _identityContextBlock = _buildIdentityContextBlock(_identityModel, _topicContext);
+  if (_identityContextBlock) {
+    factsContext += _identityContextBlock;
+    console.log(`[ROUTER] [Phase 6] Identity injection: context=${_topicContext}, layers=${Object.keys(_identityModel).filter(l => _identityContextBlock.includes(l)).join(',')}`);
   }
 
   // 3.5. Inject Current Jakarta Time — manually built to be runtime-safe on any Node/Bun version
@@ -771,8 +931,21 @@ Rules:
   return await executeWithFallback(prompt, "Jawab dengan bahasa Indonesia santai namun teknis.", 0.3, false);
 }
 
-module.exports = { routeUserMessage, invalidatePersonalFactsCache,
-  deduplicateAndSaveFact, callAI, classifyPendingTransactionIntent, classifyYesNo, analyzeSystemLogs,
+module.exports = {
+  routeUserMessage,
+  // ── Cache Management ─────────────────────────────────────────
+  invalidatePersonalFactsCache,
+  invalidateIdentityModelCache,      // [PHASE 6] Dipanggil dari webhook.js setelah Approve
+  // ── AI Utilities ─────────────────────────────────────────────
+  deduplicateAndSaveFact,
+  callAI,
+  classifyPendingTransactionIntent,
+  classifyYesNo,
+  analyzeSystemLogs,
+  // ── Selectors (untuk testing / external use) ─────────────────
   selectUserProfileFacts: _selectUserProfileFacts,
-  selectCoreIdentityFacts: _selectCoreIdentityFacts
+  selectCoreIdentityFacts: _selectCoreIdentityFacts,
+  // [PHASE 6] Identity helpers (untuk testing)
+  detectTopicContext: _detectTopicContext,
+  buildIdentityContextBlock: _buildIdentityContextBlock,
 };

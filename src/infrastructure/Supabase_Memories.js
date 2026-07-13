@@ -14,7 +14,9 @@ const SUPABASE_TABLES = [
   'nexa_2nd_brain',
   'nexa_vault_items',
   'nexa_pending_transactions',
-  'nexa_behavior_log'          // [PHASE 6 — Pilar 8.2]
+  'nexa_behavior_log',         // [PHASE 6 — Pilar 8.2]
+  'nexa_identity_model',       // [PHASE 6 — Cognitive Identity Layer]
+  'nexa_identity_proposals'    // [PHASE 6 — Git-Style Proposal Staging]
 ];
 
 function resolveAllowedTableName(tableName) {
@@ -558,33 +560,330 @@ async function markPendingTransactionSent(compositeKey) {
   if (error) console.error('[SUPABASE] Error marking pending transaction as sent:', error.message);
 }
 
+// ============================================================
+// PHASE 6 — COGNITIVE IDENTITY ENGINE: Identity Model CRUD
+// ============================================================
+
+/**
+ * Mengambil seluruh identitas yang sudah terkonfirmasi dari nexa_identity_model.
+ * Dapat difilter per layer, atau ambil semua.
+ * @param {string|null} layer - Opsional. Jika diisi, hanya ambil layer tersebut.
+ * @returns {Promise<Array>} Array of identity trait objects.
+ */
+async function getIdentityModel(layer = null) {
+  if (!supabase) return [];
+  let query = supabase
+    .from('nexa_identity_model')
+    .select('*')
+    .order('layer', { ascending: true })
+    .order('updated_at', { ascending: false });
+
+  if (layer) {
+    query = query.eq('layer', layer.toUpperCase());
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('[IDENTITY] Error fetching identity model:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Menyimpan atau memperbarui satu trait di nexa_identity_model.
+ * Menggunakan UPSERT agar trait_key yang sama per layer tidak duplikat.
+ * Dipanggil HANYA saat Tuan Faqih menekan tombol APPROVE pada proposal.
+ * @param {object} trait - { layer, trait_key, trait_value, confidence, inferred_from_summary }
+ */
+async function upsertIdentityTrait(trait) {
+  if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
+  if (!trait.layer || !trait.trait_key || !trait.trait_value) {
+    return { success: false, error: 'Field layer, trait_key, dan trait_value wajib diisi.' };
+  }
+
+  const payload = {
+    layer: String(trait.layer).toUpperCase(),
+    trait_key: String(trait.trait_key).toLowerCase().trim(),
+    trait_value: String(trait.trait_value).trim(),
+    confidence: parseFloat(trait.confidence) || 0.90,
+    inferred_from_summary: trait.inferred_from_summary ? String(trait.inferred_from_summary) : null,
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from('nexa_identity_model')
+    .upsert([payload], { onConflict: 'layer,trait_key' })
+    .select();
+
+  if (error) {
+    console.error('[IDENTITY] Error upserting identity trait:', error.message);
+    return { success: false, error: error.message };
+  }
+  return { success: true, row: data?.[0] || null };
+}
+
+/**
+ * Menghapus satu trait dari nexa_identity_model berdasarkan layer dan trait_key.
+ * @param {string} layer
+ * @param {string} traitKey
+ */
+async function deleteIdentityTrait(layer, traitKey) {
+  if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
+
+  const { error } = await supabase
+    .from('nexa_identity_model')
+    .delete()
+    .eq('layer', String(layer).toUpperCase())
+    .eq('trait_key', String(traitKey).toLowerCase().trim());
+
+  if (error) {
+    console.error('[IDENTITY] Error deleting identity trait:', error.message);
+    return { success: false, error: error.message };
+  }
+  return { success: true };
+}
+
+// ============================================================
+// PHASE 6 — COGNITIVE IDENTITY ENGINE: Identity Proposals CRUD
+// ============================================================
+
+/**
+ * Menyimpan satu proposal hipotesis baru dari Inference Engine ke staging.
+ * Status awal: 'STAGED' jika confidence 60-85%, 'PENDING' jika >85%.
+ * @param {object} proposal - { layer, trait_key, proposed_value, old_value, confidence, reasoning }
+ * @returns {Promise<{success: boolean, row: object|null, error?: string}>}
+ */
+async function saveIdentityProposal(proposal) {
+  if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
+  if (!proposal.layer || !proposal.trait_key || !proposal.proposed_value || !proposal.reasoning) {
+    return { success: false, error: 'Field layer, trait_key, proposed_value, dan reasoning wajib diisi.' };
+  }
+
+  const confidence = parseFloat(proposal.confidence) || 0.0;
+  // Tentukan status awal berdasarkan confidence threshold
+  const status = confidence > 0.85 ? 'PENDING' : 'STAGED';
+
+  const payload = {
+    layer: String(proposal.layer).toUpperCase(),
+    trait_key: String(proposal.trait_key).toLowerCase().trim(),
+    proposed_value: String(proposal.proposed_value).trim(),
+    old_value: proposal.old_value ? String(proposal.old_value).trim() : null,
+    confidence,
+    reasoning: String(proposal.reasoning).trim(),
+    status,
+    created_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from('nexa_identity_proposals')
+    .insert([payload])
+    .select();
+
+  if (error) {
+    console.error('[IDENTITY] Error saving identity proposal:', error.message);
+    return { success: false, error: error.message };
+  }
+  return { success: true, row: data?.[0] || null, status };
+}
+
+/**
+ * Mengambil semua proposal yang sedang berstatus PENDING (sudah dikirim ke Telegram).
+ * @returns {Promise<Array>}
+ */
+async function getPendingIdentityProposals() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('nexa_identity_proposals')
+    .select('*')
+    .eq('status', 'PENDING')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[IDENTITY] Error fetching pending proposals:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Mengambil semua proposal yang sedang berstatus STAGED (confidence 60-85%).
+ * Digunakan Inference Engine untuk mengkonsolidasi proposal lama saat ada bukti tambahan.
+ * @returns {Promise<Array>}
+ */
+async function getStagedIdentityProposals() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('nexa_identity_proposals')
+    .select('*')
+    .eq('status', 'STAGED')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[IDENTITY] Error fetching staged proposals:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Menyimpan Telegram message_id ke proposal agar bisa diedit setelah tombol ditekan.
+ * @param {number} proposalId
+ * @param {number} telegramMessageId
+ */
+async function setProposalTelegramMessageId(proposalId, telegramMessageId) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('nexa_identity_proposals')
+    .update({ telegram_message_id: telegramMessageId })
+    .eq('id', proposalId);
+
+  if (error) console.error('[IDENTITY] Error setting telegram_message_id:', error.message);
+}
+
+/**
+ * Menyetujui proposal: Ubah status jadi APPROVED dan otomatis commit ke nexa_identity_model.
+ * Ini adalah fungsi inti yang dipanggil saat Tuan Faqih menekan tombol APPROVE.
+ * @param {number} proposalId - ID baris di nexa_identity_proposals
+ * @returns {Promise<{success: boolean, identityRow: object|null, error?: string}>}
+ */
+async function approveIdentityProposal(proposalId) {
+  if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
+
+  // 1. Ambil data proposal
+  const { data: proposalData, error: fetchError } = await supabase
+    .from('nexa_identity_proposals')
+    .select('*')
+    .eq('id', proposalId)
+    .single();
+
+  if (fetchError || !proposalData) {
+    return { success: false, error: fetchError?.message || 'Proposal tidak ditemukan.' };
+  }
+
+  // 2. Update status proposal jadi APPROVED
+  const { error: updateError } = await supabase
+    .from('nexa_identity_proposals')
+    .update({ status: 'APPROVED' })
+    .eq('id', proposalId);
+
+  if (updateError) {
+    console.error('[IDENTITY] Error updating proposal status to APPROVED:', updateError.message);
+    return { success: false, error: updateError.message };
+  }
+
+  // 3. Commit ke nexa_identity_model menggunakan upsertIdentityTrait
+  const result = await upsertIdentityTrait({
+    layer: proposalData.layer,
+    trait_key: proposalData.trait_key,
+    trait_value: proposalData.proposed_value,
+    confidence: proposalData.confidence,
+    inferred_from_summary: proposalData.reasoning
+  });
+
+  if (!result.success) {
+    console.error('[IDENTITY] Error committing proposal to identity model:', result.error);
+    return { success: false, error: result.error };
+  }
+
+  console.log(`[IDENTITY] ✅ Proposal #${proposalId} APPROVED & COMMITTED: ${proposalData.layer}.${proposalData.trait_key} = "${proposalData.proposed_value}"`);
+  return { success: true, identityRow: result.row };
+}
+
+/**
+ * Menolak proposal: Ubah status jadi REJECTED dan simpan alasan dari Tuan Faqih.
+ * Dipanggil saat Tuan Faqih menekan tombol REJECT, atau membalas alasan penolakan.
+ * @param {number} proposalId - ID baris di nexa_identity_proposals
+ * @param {string|null} rejectionReason - Alasan penolakan dari user (opsional)
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function rejectIdentityProposal(proposalId, rejectionReason = null) {
+  if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
+
+  const patch = { status: 'REJECTED' };
+  if (rejectionReason) patch.rejection_reason = String(rejectionReason).trim();
+
+  const { error } = await supabase
+    .from('nexa_identity_proposals')
+    .update(patch)
+    .eq('id', proposalId);
+
+  if (error) {
+    console.error('[IDENTITY] Error rejecting proposal:', error.message);
+    return { success: false, error: error.message };
+  }
+
+  console.log(`[IDENTITY] ❌ Proposal #${proposalId} REJECTED. Alasan: ${rejectionReason || '(tidak diisi)'}`);
+  return { success: true };
+}
+
+/**
+ * Mengambil satu proposal berdasarkan ID-nya.
+ * Digunakan webhook.js untuk mencocokkan callback_query dengan proposal yang ada.
+ * @param {number} proposalId
+ * @returns {Promise<object|null>}
+ */
+async function getIdentityProposalById(proposalId) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('nexa_identity_proposals')
+    .select('*')
+    .eq('id', proposalId)
+    .single();
+
+  if (error) {
+    console.error('[IDENTITY] Error fetching proposal by ID:', error.message);
+    return null;
+  }
+  return data || null;
+}
+
 module.exports = {
   supabase,
+  // ── Chat & Memory ──────────────────────────────────────────
   saveChatMemory,
   getRecentMemories,
+  getTodayMemories,
+  // ── Finance & Dedup ────────────────────────────────────────
   isDuplicateTransaction,
   logTransactionKey,
+  // ── 2nd Brain Vault ────────────────────────────────────────
   saveIdeaToVault,
   deleteIdeaFromVault,
   editIdeaInVault,
+  // ── Legacy Profile & Identity ──────────────────────────────
   saveUserProfile,
   deleteFromUserProfile,
   saveCoreIdentity,
   deleteFromCoreIdentity,
   getPersonalFacts,
+  // ── Generic Database Operations ────────────────────────────
   getDatabaseOverview,
   readDatabaseTable,
   insertDatabaseRow,
   updateDatabaseRows,
   deleteDatabaseRows,
   deleteAllDatabaseRows,
+  // ── Vault Items ────────────────────────────────────────────
   saveVaultItem,
   updateVaultItemById,
+  // ── Pending Transactions ───────────────────────────────────
   savePendingTransaction,
   getPendingTransactions,
   deletePendingTransaction,
   markPendingTransactionSent,
-  getTodayMemories
+  // ── [PHASE 6] Cognitive Identity Model ────────────────────
+  getIdentityModel,
+  upsertIdentityTrait,
+  deleteIdentityTrait,
+  // ── [PHASE 6] Identity Proposals (Git-Style Commit) ───────
+  saveIdentityProposal,
+  getPendingIdentityProposals,
+  getStagedIdentityProposals,
+  setProposalTelegramMessageId,
+  approveIdentityProposal,
+  rejectIdentityProposal,
+  getIdentityProposalById
 };
 
 /**

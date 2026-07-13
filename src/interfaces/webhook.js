@@ -497,7 +497,96 @@ async function sendTelegramOutbound(text, skipMemory = false) {
 // https://core.telegram.org/bots/api#making-requests-when-getting-updates
 // Outbound relay (Vercel) is only for cron/tasker/timeout callbacks.
 // ============================================================
-router.post('/telegram', security.telegramWebhookSecret, security.telegramIdentityLock, (req, res) => {
+// ============================================================
+// [PHASE 6] CALLBACK QUERY HANDLER — Tombol Inline Keyboard Telegram
+// Menangani klik tombol APPROVE / REJECT pada proposal identitas
+// ============================================================
+router.post('/telegram', security.telegramWebhookSecret, security.telegramIdentityLock, async (req, res) => {
+  const callbackQuery = req.body?.callback_query;
+
+  // ── Handle klik tombol Inline Keyboard ──────────────────────
+  if (callbackQuery) {
+    // Acknowledge Telegram agar tidak timeout (HTTP 200 dulu)
+    res.status(200).send('OK');
+
+    const cbData = callbackQuery.data || '';
+    const cbChatId = callbackQuery.message?.chat?.id || env.TELEGRAM_CHAT_ID;
+    const cbMessageId = callbackQuery.message?.message_id;
+    const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
+
+    // Helper lokal untuk edit pesan Telegram yang ada tombolnya
+    const editTelegramMessage = async (newText) => {
+      try {
+        await sendTelegramMessage(newText, cbChatId, botToken, {
+          method: 'editMessageText',
+          message_id: cbMessageId,
+          parse_mode: 'HTML',
+        });
+      } catch (_) {
+        // Jika edit gagal (pesan sudah dihapus, dll), kirim pesan baru
+        await sendTelegramOutbound(newText, true);
+      }
+    };
+
+    // ── IDENTITY PROPOSAL: APPROVE ───────────────────────────
+    if (cbData.startsWith('IDENTITY_APPROVE:')) {
+      const proposalId = parseInt(cbData.split(':')[1], 10);
+      console.log(`[IDENTITY] User clicked APPROVE for proposal #${proposalId}`);
+
+      const result = await supabaseMemories.approveIdentityProposal(proposalId).catch(e => ({
+        success: false, error: e.message
+      }));
+
+      if (result.success) {
+        const row = result.identityRow;
+        const traitDisplay = row ? `<b>${row.layer}</b> → ${row.trait_value}` : `Proposal #${proposalId}`;
+        await editTelegramMessage(
+          `✅ <b>Committed to Identity Model.</b>\n\nTerima kasih, Tuan. Saya telah menyimpan:\n${traitDisplay}\n\nPemahaman saya tentang Anda telah diperbarui dan akan langsung berlaku pada percakapan berikutnya.`
+        );
+        // [PHASE 6] Invalidate KEDUA cache agar AI_Router langsung pakai data terbaru:
+        // - personalFactsCache: data profil lama (legacy)
+        // - identityModelCache: 7-Layer Identity Model baru (Phase 6)
+        if (typeof aiRouter.invalidatePersonalFactsCache === 'function') {
+          aiRouter.invalidatePersonalFactsCache();
+        }
+        if (typeof aiRouter.invalidateIdentityModelCache === 'function') {
+          aiRouter.invalidateIdentityModelCache();
+        }
+      } else {
+        await editTelegramMessage(
+          `❌ <b>Gagal menyimpan perubahan.</b>\n\nMaaf Tuan, terjadi kesalahan teknis: <code>${result.error}</code>`
+        );
+      }
+      return;
+    }
+
+    // ── IDENTITY PROPOSAL: REJECT ────────────────────────────
+    if (cbData.startsWith('IDENTITY_REJECT:')) {
+      const proposalId = parseInt(cbData.split(':')[1], 10);
+      console.log(`[IDENTITY] User clicked REJECT for proposal #${proposalId}`);
+
+      // Tandai sebagai REJECTED di database (tanpa reason dulu, user akan diberi kesempatan balas)
+      await supabaseMemories.rejectIdentityProposal(proposalId, null).catch(() => {});
+
+      await editTelegramMessage(
+        `❌ <b>Proposal Dibatalkan.</b>\n\nBaik Tuan, saya tidak akan menambahkan profil tersebut ke Identity Model.\n\n🤔 Boleh saya tahu di bagian mana kesimpulan saya kurang tepat?\n(Misalnya: "karena minggu lalu hanya kebetulan ada tugas mendadak")\n\nAtau balas <b>"Tidak apa-apa"</b> jika tidak ingin menjelaskan — saya akan lebih berhati-hati di observasi berikutnya.`
+      );
+      // Simpan konteks bahwa kita sedang menunggu alasan penolakan untuk proposal ini
+      // (akan ditangkap oleh conversationContext di handler pesan teks di bawah)
+      conversationContext = {
+        intent: 'AWAITING_IDENTITY_REJECTION_REASON',
+        extractedData: { proposalId },
+        askedAt: Date.now()
+      };
+      return;
+    }
+
+    // Callback query lain yang tidak dikenal — abaikan saja
+    console.log(`[WEBHOOK] Unknown callback_query data: ${cbData}`);
+    return;
+  }
+
+  // ── Handler pesan teks / media biasa ────────────────────────
   const message = req.body?.message || req.body?.edited_message;
 
   if (!message) {
@@ -571,6 +660,117 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     await supabaseMemories.saveChatMemory('user', rawInputStr).catch(() => {});
 
     try {
+    // ============================================================
+    // [PHASE 6] AWAITING IDENTITY REJECTION REASON
+    // Jika user membalas setelah klik REJECT pada proposal identitas
+    // ============================================================
+    if (conversationContext?.intent === 'AWAITING_IDENTITY_REJECTION_REASON' && textInput) {
+      const ageMs = Date.now() - (conversationContext.askedAt || 0);
+      const looksLikeCheckin = /^\d/.test(textInput.trim()) || /\b(tidur|energi|fokus|skor)\b/i.test(textInput);
+      
+      // Beri window 10 menit untuk membalas alasan, dan pastikan bukan pesan check-in
+      if (ageMs <= 10 * 60 * 1000 && !looksLikeCheckin) {
+        const proposalId = conversationContext.extractedData?.proposalId;
+        const userReason = String(textInput).trim();
+        const isSkip = /tidak apa.apa|skip|tidak perlu|ga perlu|nggak perlu/i.test(userReason);
+
+        if (proposalId && !isSkip) {
+          // Simpan alasan penolakan ke database
+          await supabaseMemories.rejectIdentityProposal(proposalId, userReason).catch(() => {});
+          console.log(`[IDENTITY] Rejection reason recorded for proposal #${proposalId}: "${userReason}"`);
+          await respondToTelegram(
+            `🧠 Terima kasih atas koreksinya, Tuan. Saya mencatat bahwa: _"${userReason}"_\n\nSaya akan memperhitungkan konteks ini agar tidak mengulang kesimpulan yang sama di masa mendatang. Pemahaman saya tentang Anda terus berkembang.`
+          );
+        } else {
+          await respondToTelegram(
+            `Baik, Tuan. Tidak masalah — saya akan lebih berhati-hati dalam menarik kesimpulan ke depannya. 🙏`
+          );
+        }
+        conversationContext = null;
+        deliverWebhookReply();
+        return;
+      } else {
+        // Context expired, reset
+        conversationContext = null;
+      }
+    }
+
+    // ============================================================
+    // [PHASE 6] MORNING CHECK-IN PARSER (AI-Calibrated Narrative)
+    // Memproses balasan angka maupun cerita/alasan kondisi pagi.
+    // Prasyarat: harus ada riwayat MORNING_BRIEFING_SENT hari ini
+    // ============================================================
+    if (textInput) {
+      const intelligenceBrief = require('../domain/Intelligence_Brief');
+
+      // 1. Cek dulu apakah hari ini sudah ada Morning Briefing yang dikirim (dalam 4 jam terakhir)
+      let morningBriefingSentToday = false;
+      try {
+        const { supabase } = supabaseMemories;
+        if (supabase) {
+          const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+          const { data: briefLogs } = await supabase
+            .from('nexa_behavior_log')
+            .select('id')
+            .eq('event_type', 'MORNING_BRIEFING_SENT')
+            .gte('created_at', fourHoursAgo)
+            .limit(1);
+          morningBriefingSentToday = !!(briefLogs && briefLogs.length > 0);
+        }
+      } catch (_) { /* Non-blocking */ }
+
+      if (morningBriefingSentToday && !/^detail$/i.test(textInput.trim())) {
+        // Pre-check heuristic: Pesan harus berupa angka atau mengandung keyword pagi
+        const hasCheckinKeyword = /\b(tidur|energi|fokus|skor|semalam|bangun|kondisi)\b/i.test(textInput) || /^\d/.test(textInput.trim());
+        
+        let checkInData = null;
+        if (hasCheckinKeyword) {
+          checkInData = await intelligenceBrief.parseMorningCheckInWithAI(textInput);
+        }
+
+        if (checkInData) {
+          console.log(`[INTELLIGENCE] Morning Check-In calibrated: sleep=${checkInData.sleep}, energy=${checkInData.energy}, focus="${checkInData.focus}" | notes=${checkInData.calibration_notes}`);
+
+          // Simpan ke behavior log lengkap dengan cerita & alasan kalibrasi
+          await intelligenceBrief.saveCheckInData(
+            checkInData.sleep,
+            checkInData.energy,
+            checkInData.focus,
+            checkInData.raw_story,
+            checkInData.calibration_notes
+          );
+
+          // Generate respons 2 Bubble dari N.E.X.A
+          const checkInReplies = await intelligenceBrief.generateCheckInResponse(
+            checkInData.sleep,
+            checkInData.energy,
+            checkInData.focus,
+            checkInData.reply_bubbles
+          );
+
+          if (typeof checkInReplies === 'object' && checkInReplies.bubble1) {
+            await respondToTelegram(checkInReplies.bubble1);
+            if (checkInReplies.bubble2) {
+              await sendTelegramOutbound(checkInReplies.bubble2);
+            }
+          } else {
+            await respondToTelegram(String(checkInReplies));
+          }
+          deliverWebhookReply();
+          return;
+        }
+      }
+
+      // ── Deteksi request "Detail" setelah Morning Briefing ───
+      if (/^detail$/i.test(textInput.trim()) && morningBriefingSentToday) {
+        console.log('[INTELLIGENCE] User requested Morning Briefing DETAIL mode.');
+        const detailBriefing = await intelligenceBrief.generateMorningBriefingDetail();
+        await respondToTelegram(detailBriefing);
+        deliverWebhookReply();
+        return;
+      }
+    }
+
     // ============================================================
     // VAULT CONFIRMATION LOOP (KONFIRM / EKSTRAK ULANG / EDIT)
     // ============================================================
@@ -2875,3 +3075,93 @@ router.post('/gmail', async (req, res) => {
 
 module.exports = router;
 module.exports.sendTelegramOutbound = sendTelegramOutbound;
+
+// ============================================================
+// [PHASE 6] sendIdentityProposalToTelegram
+// Mengirim proposal perubahan identitas ke Telegram dengan
+// tombol Inline Keyboard [ ✅ APPROVE & COMMIT ] [ ❌ REJECT ]
+// Dipanggil oleh Inference_Engine.js setiap Minggu malam.
+// ============================================================
+module.exports.sendIdentityProposalToTelegram = async function(proposal) {
+  try {
+    const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
+    const chatId = env.TELEGRAM_CHAT_ID?.trim();
+    if (!botToken || !chatId) {
+      console.error('[IDENTITY] Cannot send proposal: Telegram credentials missing.');
+      return null;
+    }
+
+    // Susun teks pesan proposal
+    const layerEmoji = {
+      FACTS: '📌', PREFERENCES: '💬', HABITS: '🔁',
+      VALUES: '⚖️', DECISION_STYLE: '🧠', WEAKNESSES: '⚡', MOTIVATIONS: '🚀'
+    };
+    const emoji = layerEmoji[proposal.layer] || '💡';
+    const confidencePct = Math.round((parseFloat(proposal.confidence) || 0) * 100);
+    const isUpdate = !!proposal.old_value;
+
+    const messageText = [
+      `💡 <b>PROPOSAL ${isUpdate ? 'REVISI' : 'BARU'} IDENTITAS N.E.X.A</b>`,
+      `Observasi Minggu Ini (Confidence: <b>${confidencePct}%</b>):`,
+      `<i>"${proposal.reasoning}"</i>`,
+      '',
+      `${emoji} <b>${proposal.layer}</b>: <code>${proposal.trait_key}</code>`,
+      isUpdate ? `└ Nilai lama: <s>${proposal.old_value}</s>` : '',
+      `└ Nilai baru: <b>${proposal.proposed_value}</b>`,
+      '',
+      'Apakah Anda menyetujui pembaruan model pemahaman ini?'
+    ].filter(Boolean).join('\n');
+
+    // Kirim dengan Inline Keyboard via Cloudflare Worker relay
+    const telegramPayload = {
+      chat_id: chatId,
+      text: messageText,
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '✅ APPROVE & COMMIT', callback_data: `IDENTITY_APPROVE:${proposal.id}` },
+          { text: '❌ REJECT', callback_data: `IDENTITY_REJECT:${proposal.id}` }
+        ]]
+      }
+    };
+
+    // Gunakan sendTelegramMessage dari utils/telegram_network
+    const result = await sendTelegramMessage(messageText, chatId, botToken, telegramPayload);
+    console.log(`[IDENTITY] Proposal #${proposal.id} sent to Telegram.`);
+
+    // Simpan telegram_message_id ke database untuk keperluan edit nanti
+    if (result?.result?.message_id) {
+      await supabaseMemories.setProposalTelegramMessageId(proposal.id, result.result.message_id).catch(() => {});
+    }
+
+    // Update status proposal menjadi PENDING (sudah dikirim ke Telegram)
+    const { supabase } = supabaseMemories;
+    if (supabase) {
+      await supabase.from('nexa_identity_proposals')
+        .update({ status: 'PENDING' })
+        .eq('id', proposal.id)
+        .catch(() => {});
+    }
+
+    return result;
+  } catch (err) {
+    console.error('[IDENTITY] Failed to send proposal to Telegram:', err.message);
+    return null;
+  }
+};
+
+// ============================================================
+// [PHASE 6] sendEveningBriefing
+// Mengirim Evening Reflective Diary via outbound Telegram.
+// Dipanggil dari cron.js setiap malam.
+// ============================================================
+module.exports.sendEveningBriefing = async function() {
+  try {
+    const intelligenceBrief = require('../domain/Intelligence_Brief');
+    const briefText = await intelligenceBrief.generateEveningBriefing();
+    await sendTelegramOutbound(briefText);
+    console.log('[INTELLIGENCE] Evening Briefing sent successfully.');
+  } catch (err) {
+    console.error('[INTELLIGENCE] Failed to send Evening Briefing:', err.message);
+  }
+};

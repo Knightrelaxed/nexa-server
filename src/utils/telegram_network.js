@@ -89,6 +89,8 @@ async function fetchWithFailover(targetUrl, options = {}) {
     maxRetriesPerProxy = 2,
     responseType = 'json',
     extraHeaders = {},
+    method = 'GET',
+    body = null,
   } = options;
 
   const proxies = buildProxyChain(targetUrl);
@@ -100,8 +102,8 @@ async function fetchWithFailover(targetUrl, options = {}) {
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
         try {
-          const response = await fetch(proxy.url, {
-            method: 'GET',
+          const fetchOptions = {
+            method,
             signal: controller.signal,
             headers: {
               Connection: 'close',
@@ -110,7 +112,16 @@ async function fetchWithFailover(targetUrl, options = {}) {
               ...proxy.headers,
               ...extraHeaders,
             },
-          });
+          };
+
+          if (body) {
+            fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+            if (!fetchOptions.headers['Content-Type']) {
+              fetchOptions.headers['Content-Type'] = 'application/json';
+            }
+          }
+
+          const response = await fetch(proxy.url, fetchOptions);
 
           clearTimeout(timer);
 
@@ -243,8 +254,25 @@ function formatTelegramHtml(text) {
   return str;
 }
 
-async function sendTelegramMessage(text, chatId, botToken) {
+async function sendTelegramMessage(text, chatId, botToken, payload = null) {
   const safeText = formatTelegramHtml(String(text).substring(0, 4000));
+  
+  if (payload) {
+    const telegramUrl = `https://api.telegram.org/bot${botToken}/${payload.method || 'sendMessage'}`;
+    const body = {
+      chat_id: chatId,
+      text: safeText,
+      parse_mode: 'HTML',
+      ...payload
+    };
+    return fetchWithFailover(telegramUrl, {
+      method: 'POST',
+      body,
+      timeoutMs: 30_000,
+      maxRetriesPerProxy: 3
+    });
+  }
+
   const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}`;
   return fetchWithFailover(telegramUrl, { timeoutMs: 30_000, maxRetriesPerProxy: 3 });
 }
