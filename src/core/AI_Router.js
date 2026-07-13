@@ -31,10 +31,10 @@ const _CAL_DOMAIN_KWS = [
 // ============================================================
 // PROGRESSIVE FACT INJECTION
 // ============================================================
-const PROFILE_CORE_COUNT  = 15; // fakta tertua — selalu diinjeksi (diturunkan dari 20 → 15 untuk menjaga budget token)
-const PROFILE_KW_LIMIT    = 8;  // max fakta tambahan dari dynamic word resonance (diturunkan dari 15 → 8)
-const IDENTITY_CORE_COUNT = 10; // 10 identitas pokok — selalu diinjeksi
-const IDENTITY_KW_LIMIT   = 5;  // max kamus log/teknis tambahan dari penyaringan (diturunkan dari 15 → 5)
+const PROFILE_CORE_COUNT  = 10; // fakta tertua — selalu diinjeksi (cukup 10 karena info dasar sudah di personality.js)
+const PROFILE_KW_LIMIT    = 10; // max fakta tambahan dari dynamic word resonance (penting untuk membangun kedekatan)
+const IDENTITY_CORE_COUNT = 10; // 10 identitas pokok — selalu diinjeksi (wajib)
+const IDENTITY_KW_LIMIT   = 5;  // max kamus log/teknis tambahan dari penyaringan (karena teks identitas cukup panjang)
 
 // ============================================================
 // TOKEN BUDGET GUARD — Proteksi agar prompt tidak melebihi batas Groq
