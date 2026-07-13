@@ -193,4 +193,10 @@ Mekanisme    : Tier 0 Relay Edge -> Local Audio Download -> HF Turbo & Native Au
 [Tier 10] Groq Cloud   — Whisper Large v3 (Key 2)
 [Tier 11] Groq Cloud   — Whisper Large v3 (Key 3)
 [Tier 12] Groq Cloud   — Whisper Large v3 (Key 4)
-================================================================================', '2026-07-13 04:11:08+00');
+================================================================================', '2026-07-13 04:11:08+00'),
+(131, '================================================================================
+4. KOGNISI IDENTITAS BERLANJUT (COGNITIVE IDENTITY ENGINE - PHASE 6)
+================================================================================
+Fungsi Utama : Sintesis otomatis 7 layer identitas dari pola perilaku & obrolan
+Mekanisme    : Inference_Engine.js mengevaluasi nexa_behavior_log dan nexa_chat_memories setiap Minggu pukul 21:00 WIB. Menggunakan LLM (Temperature 0.2) untuk merumuskan hipotesis identitas pada 7 Layer (FACTS, PREFERENCES, HABITS, VALUES, DECISION_STYLE, WEAKNESSES, MOTIVATIONS). Proposal identitas dengan confidence > 85% akan dikirim ke Telegram via webhook.js (Inline Keyboard) untuk persetujuan (APPROVE/REJECT) oleh pengguna secara eksplisit.
+Sistem Check-In : Modul Intelligence_Brief.js memiliki parser cerdas dengan regex 80+ kosakata harian & keluhan (mager, pusing, karena, dsb) untuk memilah respons metrik biologis cepat (fast-path) dengan evaluasi kontekstual via LLM. AI kemudian menyimpan data tersebut ke log perilaku dengan narasi reflektif yang otomatis dikalibrasi.', '2026-07-13 10:00:00+00');

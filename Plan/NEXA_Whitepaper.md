@@ -892,6 +892,14 @@ Sistem memori N.E.X.A bersifat *multimodal*. Ketika Tuan Faqih mengirimkan gamba
 Sistem ini memakai trik API lawas (*Google Drive API v2*) karena fitur mutasi OCR (`ocr: true`, `convert: true`) sudah dihapus Google pada versi v3.
 Jika kuota *Service Account* Hugging Face (yang sering dibatasi Google) habis (`"Service Accounts do not have storage quota"`), sebuah *try-catch* *handler* khusus segera menangkap *error* tersebut dan **melakukan fallback paksa** menggunakan kredensial OAuth2 User Tuan Faqih (via `getOAuthDriveClients()`). Hasil ekstrak teks OCR ini kemudian di-simpan utuh ke tabel `nexa_vault_items` agar bisa dicari secara semantik kapanpun.
 
+### 6.5 *Cognitive Identity Engine* (Phase 6)
+
+Sistem N.E.X.A kini dilengkapi dengan **Cognitive Identity Engine**, sebuah arsitektur yang mampu menyintesis dan mengembangkan pemahamannya tentang Tuan Faqih secara mandiri (evolusi identitas).
+
+1. **Inference Engine (`Inference_Engine.js`)**: Berjalan setiap Minggu pukul 21:00 WIB. AI mensintesis seluruh riwayat percakapan seminggu terakhir (`nexa_chat_memories`) beserta *behavior log* (`nexa_behavior_log`), dan mengevaluasinya pada **7 Dimensi Identitas**: *FACTS, PREFERENCES, HABITS, VALUES, DECISION_STYLE, WEAKNESSES, MOTIVATIONS*.
+2. **Identity Proposals (Persetujuan Telegram)**: Setiap hipotesis tentang diri Tuan Faqih akan dicatat sebagai proposal (STAGED). Proposal dengan tingkat keyakinan tinggi (>85%) akan masuk ke status PENDING dan dikirim via Webhook Telegram menggunakan *Inline Keyboard*. Tuan Faqih memiliki kuasa mutlak untuk **APPROVE** atau **REJECT**. Jika ditolak, N.E.X.A akan menanyakan alasan penolakan dan mempelajarinya agar tidak mengulangi simpulan yang sama.
+3. **AI-Calibrated Morning Check-In (`Intelligence_Brief.js`)**: Metrik biologis (tidur, energi, fokus) pada pagi hari tidak lagi diproses secara kaku. N.E.X.A dibekali *regex parser* ekstensif dengan **80+ kosakata narasi informal & keluhan** (contoh: *mager, capek, karena, soalnya, pusing, kepikiran*). Jika kata-kata ini terdeteksi, AI Parser secara otomatis mengevaluasi narasi tersebut, memvalidasi skor aslinya, dan menyimpan analisis mendalam ke dalam *behavior log*.
+
 ---
 
 ## BAB 7: THE PULSE ENGINE (RUTINITAS CRON PROAKTIF)
