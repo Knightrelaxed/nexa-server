@@ -161,7 +161,7 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
 async function callCerebras(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
   if (!apiKey) throw new Error('No Cerebras API key provided');
   const requestBody = {
-    model: 'gpt-oss-120b',  // Upgraded to flagship 120B parameter model for perfect JSON generation
+    model: 'gemma-4-31b',  // Restored: Gemma 4 31B for natural human warmth and empathy
     messages: [
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
@@ -169,7 +169,7 @@ async function callCerebras(apiKey, prompt, systemInstruction, temperature, json
     temperature,
     max_tokens: 2500
   };
-  if (jsonMode) requestBody.response_format = { type: 'json_object' };
+  // Note: Avoid response_format={type:'json_object'} on gemma-4-31b as Cerebras grammar parser truncates nested arrays
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
