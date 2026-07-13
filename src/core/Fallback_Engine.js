@@ -175,7 +175,9 @@ async function callCerebras(apiKey, prompt, systemInstruction, temperature, json
     try {
       const response = await axios.post('https://api.cerebras.ai/v1/chat/completions', requestBody, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 8000
+        // Cerebras WSE-3 seharusnya ultrafast (<2s). Jika >5s = server sedang overload/down.
+        // Diturunkan dari 8000ms → 5000ms untuk mempersingkat waktu tunggu saat server tidak responsif.
+        timeout: 5000
       });
       return response.data.choices[0].message.content;
     } catch (e) {

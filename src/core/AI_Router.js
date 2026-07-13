@@ -327,6 +327,11 @@ OUTPUT JSON FORMAT:
     //   - DELETE Triggers: "hapus aturan identitasmu tentang X"
     //   CRITICAL: If a message states a fact about N.E.X.A (uses "kamu"/"Nex"/"N.E.X.A" as the subject), it MUST be intent CORE_IDENTITY, NOT USER_PROFILE.
     // WEB_SEARCH: { query, type: "search|news" }
+    //   - Triggers: "cari informasi tentang X", "googling X", "coba cari X", "berita terbaru X", "apa itu X", "baca tentang X", "info X", "terbaru dari X"
+    //   - CRITICAL QUERY RULE: 'query' MUST be extracted STRICTLY from the user's own words. DO NOT add context words like "dari lampiran", "dari sistem", "analisis konten" unless the user explicitly mentioned them.
+    //   - type: "news" jika user menyebut "berita"/"terbaru"/"hari ini". "search" untuk pertanyaan umum/riset.
+    //   - EXAMPLE CORRECT: User says "coba baca tentang apa yang terbaru" → query="berita terbaru", type="news"
+    //   - EXAMPLE WRONG: query="analisis konten terbaru dari lampiran" (DO NOT add words not spoken by user)
     // DIAGNOSE_SYSTEM: { action: "READ_LOGS", search_keyword: string }
     //   - Triggers: "cek log", "apa yang kamu lakukan tadi", "kenapa error", "baca log sistem"
   },
