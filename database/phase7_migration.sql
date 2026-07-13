@@ -78,3 +78,62 @@ WHERE table_schema = 'public'
   AND table_name IN ('nexa_identity_model', 'nexa_identity_proposals')
   AND column_name IN ('last_reinforced_at', 'decay_lambda', 'approval_tier', 'soft_approve_after')
 ORDER BY table_name, column_name;
+
+-- ============================================================
+-- MILESTONE 2: Stated-vs-Revealed Reconciler + Decision Journal
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABEL 3: nexa_pending_intentions
+-- Menyimpan intensi / niat yang diucapkan oleh Tuan Faqih dalam
+-- percakapan sehari-hari (misalnya: "aku mau mulai olahraga tiap hari").
+-- Setelah deadline_at terlewati, N.E.X.A mengirim gentle friction
+-- ke Telegram untuk menanyakan perkembangan niat tersebut.
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "public"."nexa_pending_intentions" (
+  "id"          BIGSERIAL PRIMARY KEY,
+  "intention"   TEXT NOT NULL,                    -- Niat yang dideteksi (teks bersih)
+  "source_text" TEXT,                             -- Teks asli pesan Tuan Faqih
+  "status"      TEXT NOT NULL DEFAULT 'ACTIVE',   -- ACTIVE | FULFILLED | EXPIRED | CANCELLED
+  "deadline_at" TIMESTAMPTZ NOT NULL,             -- Kapan N.E.X.A tanya ulang (14 hari default)
+  "created_at"  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index untuk cron pass: cari intensi ACTIVE yang sudah melewati deadline
+CREATE INDEX IF NOT EXISTS "idx_pending_intentions_deadline"
+  ON "public"."nexa_pending_intentions" ("deadline_at" ASC)
+  WHERE "status" = 'ACTIVE';
+
+-- ────────────────────────────────────────────────────────────
+-- TABEL 4: nexa_decision_journal
+-- Merekam keputusan penting yang terdeteksi dari percakapan.
+-- Setelah outcome_check_at tiba, N.E.X.A proaktif menanyakan
+-- hasil keputusan tersebut untuk membangun feedback loop kualitas
+-- keputusan Tuan Faqih dari waktu ke waktu.
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "public"."nexa_decision_journal" (
+  "id"                BIGSERIAL PRIMARY KEY,
+  "decision"          TEXT NOT NULL,                -- Ringkasan keputusan
+  "context"           TEXT,                         -- Konteks situasi saat keputusan dibuat
+  "emotional_state"   TEXT DEFAULT 'NEUTRAL',       -- STRESSED | NEUTRAL | CASUAL | EXCITED
+  "decision_time"     TIMESTAMPTZ NOT NULL,         -- Waktu keputusan dibuat
+  "intent_trigger"    TEXT,                         -- Intent yang memicu (FINANCE, DISCIPLINE, dll.)
+  "outcome_check_at"  TIMESTAMPTZ NOT NULL,         -- Kapan N.E.X.A menanyakan hasilnya (30 hari)
+  "outcome_result"    TEXT DEFAULT NULL,            -- Diisi setelah user menjawab outcome
+  "outcome_received_at" TIMESTAMPTZ DEFAULT NULL,   -- Kapan outcome diisi
+  "created_at"        TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index untuk cron pass: cari keputusan yang belum ada outcome dan sudah waktunya ditanyakan
+CREATE INDEX IF NOT EXISTS "idx_decision_journal_outcome_check"
+  ON "public"."nexa_decision_journal" ("outcome_check_at" ASC)
+  WHERE "outcome_result" IS NULL;
+
+-- ────────────────────────────────────────────────────────────
+-- VERIFIKASI M2: Cek tabel berhasil dibuat
+-- ────────────────────────────────────────────────────────────
+SELECT table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name IN ('nexa_pending_intentions', 'nexa_decision_journal')
+ORDER BY table_name, ordinal_position;

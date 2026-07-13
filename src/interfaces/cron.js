@@ -79,11 +79,15 @@ function initCronJobs() {
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
-  // [PHASE 7 — M1] Tier 2 Soft-Approve Pass (setiap hari 08:15 WIB)
-  // Memeriksa proposal Tier 2 yang sudah >48 jam tanpa respons user.
-  // Jika ditemukan, proposal tersebut auto-approved dan dikunci ke identity_model.
+  // [PHASE 7 — M1+M2] Morning Pass (setiap hari 08:15 WIB)
+  // Menjalankan tiga operasi kognitif secara berurutan setiap pagi:
+  //   1. Tier 2 Soft-Approve: auto-approve proposal identitas yang sudah >48 jam tanpa respons
+  //   2. Intention Check: kirim gentle friction untuk niat yang belum terwujud (14 hari)
+  //   3. Outcome Check: tanyakan hasil keputusan penting (30 hari setelah keputusan dibuat)
   cron.schedule('15 8 * * *', async () => {
-    console.log('[CRON] Executing Tier 2 Soft-Approve Pass...');
+    console.log('[CRON] Executing Morning Cognitive Pass (Tier2 + Intention + Outcome)...');
+
+    // 1. Tier 2 Soft-Approve Pass
     try {
       const inferenceEngine = require('../domain/Inference_Engine');
       const stats = await inferenceEngine.runTier2SoftApprovePass();
@@ -93,6 +97,29 @@ function initCronJobs() {
     } catch (e) {
       console.error('[CRON] Tier 2 Soft-Approve Pass failed:', e.message);
     }
+
+    // 2. Intention Check Pass (Stated-vs-Revealed)
+    try {
+      const intentionEngine = require('../domain/Intention_Engine');
+      const iStats = await intentionEngine.runIntentionCheckPass();
+      if (iStats.sent > 0) {
+        console.log(`[CRON] Intention Pass done: sent=${iStats.sent} errors=${iStats.errors}`);
+      }
+    } catch (e) {
+      console.error('[CRON] Intention Check Pass failed:', e.message);
+    }
+
+    // 3. Outcome Check Pass (Decision Journal)
+    try {
+      const intentionEngine = require('../domain/Intention_Engine');
+      const oStats = await intentionEngine.runOutcomeCheckPass();
+      if (oStats.sent > 0) {
+        console.log(`[CRON] Outcome Pass done: sent=${oStats.sent} errors=${oStats.errors}`);
+      }
+    } catch (e) {
+      console.error('[CRON] Outcome Check Pass failed:', e.message);
+    }
+
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   cron.schedule('0 8 * * 0', async () => {
