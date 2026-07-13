@@ -20,13 +20,14 @@ const groqKeys = [
 ];
 
 /**
- * Execute AI Prompt with Multi-Tier Fallback (11 Layers)
+ * Execute AI Prompt with Multi-Tier Fallback (12 Layers)
  *
- * Tier 1-4 : Groq Llama 4 Scout 17B Key 1-4  (The Sprinters — fast & high TPM)
- * Tier 5-8 : Gemini 2.5 Flash Key 1-4  (The Deep Thinkers & Infinite Quota)
- * Tier 9   : Cerebras Gemma 4 31B       (The Backup Sprinter)
- * Tier 10  : Mistral Pixtral 12B        (The Reliable Closer)
- * Tier 11  : OpenRouter Multi-Model Free (The Indestructible Last Resort)
+ * Tier 1-4 : Groq Llama 3.3 70B Versatile Key 1-4 (The Sprinters)
+ * Tier 5-8 : Gemini 2.5 Flash Key 1-4           (The Deep Thinkers)
+ * Tier 9   : Cerebras Gemma 4 31B                 (The Backup Sprinter)
+ * Tier 10  : Hugging Face Gemma 4 31B IT          (The Free Safety Net)
+ * Tier 11  : Mistral Pixtral 12B                  (The Reliable Closer)
+ * Tier 12  : OpenRouter Multi-Model Free          (The Indestructible Last Resort)
  */
 const getErrDetails = (e) => {
   const status = e.status || e.response?.status || 'NET';
@@ -106,29 +107,37 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     } catch (e) { console.warn('[FALLBACK] Tier 9 (Cerebras) failed:', getErrDetails(e)); }
   }
 
-  // Tier 10: Mistral API (Pixtral 12B)
-  if (env.MISTRAL_API_KEY) {
+  // Tier 10: Hugging Face Router (Gemma 4 31B IT)
+  if (env.HF_INFERENCE_TOKEN) {
     try {
-      console.log('[FALLBACK] Switching to Tier 10 (Mistral Pixtral 12B)...');
-      return await callMistral(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 10 (Mistral) failed:', getErrDetails(e)); }
+      console.log('[FALLBACK] Switching to Tier 10 (Hugging Face Gemma 4 31B)...');
+      return await callHuggingFaceInference(prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 10 (Hugging Face) failed:', getErrDetails(e)); }
   }
 
-  // Tier 11: OpenRouter (Gemma 2 27B)
+  // Tier 11: Mistral API (Pixtral 12B)
+  if (env.MISTRAL_API_KEY) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 11 (Mistral Pixtral 12B)...');
+      return await callMistral(prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 11 (Mistral) failed:', getErrDetails(e)); }
+  }
+
+  // Tier 12: OpenRouter (Gemma 2 27B)
   if (env.OPENROUTER_API_KEY) {
     try {
-      console.log('[FALLBACK] Switching to Tier 11 (OpenRouter)...');
+      console.log('[FALLBACK] Switching to Tier 12 (OpenRouter)...');
       return await callOpenRouter(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 11 (OpenRouter) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 12 (OpenRouter) failed:', getErrDetails(e)); }
   }
 
   // Fallback Final
-  console.error('[FALLBACK] ⚠️ All 11 AI layers exhausted. Entering Dumb Mode.');
+  console.error('[FALLBACK] ⚠️ All 12 AI layers exhausted. Entering Dumb Mode.');
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,
     god_mode_trigger: false,
-    reply_message: '⚠️ Sistem Otak N.E.X.A (AI Router) mengalami Down Total di semua 11 peladen dunia. Mohon tunggu beberapa saat.'
+    reply_message: '⚠️ Sistem Otak N.E.X.A (AI Router) mengalami Down Total di semua 12 peladen dunia. Mohon tunggu beberapa saat.'
   });
 }
 
@@ -215,6 +224,38 @@ async function callCerebras(prompt, systemInstruction, temperature, jsonMode = t
       if (e.response?.status === 404 || e.response?.status === 429) throw e;
       if (e.response?.status === 503 && attempt < retries) {
         await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+async function callHuggingFaceInference(prompt, systemInstruction, temperature, jsonMode = true, retries = 2) {
+  const token = env.HF_INFERENCE_TOKEN;
+  if (!token) throw new Error('No HF_INFERENCE_TOKEN configured');
+
+  const requestBody = {
+    model: 'google/gemma-4-31B-it',
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: prompt }
+    ],
+    temperature,
+    max_tokens: 1500
+  };
+  if (jsonMode) requestBody.response_format = { type: 'json_object' };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post('https://router.huggingface.co/v1/chat/completions', requestBody, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        timeout: 15000
+      });
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      if (attempt < retries && e.response?.status !== 400 && e.response?.status !== 404) {
+        await new Promise(r => setTimeout(r, attempt * 1500));
         continue;
       }
       throw e;
