@@ -57,6 +57,35 @@ const VALID_LAYERS = new Set([
 // Jika data seminggu terlalu sedikit (<10 events), tidak perlu menjalankan inferensi
 const MIN_EVENTS_THRESHOLD = 10;
 
+// ── [PHASE 7 — M1] Memory Decay Constants ─────────────────────
+// Konstanta λ (lambda) per Layer menggunakan model peluruhan Ebbinghaus:
+//   confidence(t) = initial_confidence × e^(−λ × days_since_reinforcement)
+// Semakin tinggi λ, semakin cepat trait dianggap kadaluarsa.
+const DECAY_LAMBDA_BY_LAYER = {
+  'FACTS':          0.005,  // Fakta objektif (tempat lahir, dll) — sangat stabil
+  'PREFERENCES':    0.015,  // Preferensi berubah perlahan
+  'HABITS':         0.040,  // Kebiasaan paling volatile
+  'VALUES':         0.008,  // Nilai fundamental — sangat stabil
+  'DECISION_STYLE': 0.020,  // Gaya keputusan berubah moderat
+  'WEAKNESSES':     0.035,  // Hambatan bisa diatasi seiring waktu
+  'MOTIVATIONS':    0.025,  // Motivasi naik-turun cukup cepat
+};
+
+// Threshold confidence di bawah mana N.E.X.A mengirim soft check-in
+const CONFIDENCE_DECAY_THRESHOLD = 0.60;
+
+// ── [PHASE 7 — M1] Tiered Approval Thresholds ─────────────────
+// Tier 1: Auto-Approve tanpa interaksi user
+//   - Trait SUDAH ADA di model + confidence baru naik ≤5% + diperkuat ≥5 observasi
+// Tier 2: Soft-Approve (auto-approve setelah 48 jam jika tidak ada respons)
+//   - Trait sudah ada + confidence bergeser 5–20%
+// Tier 3: Hard-Approve (wajib klik tombol secara eksplisit)
+//   - Trait BARU, kontradiksi dengan model lama, atau update pada WEAKNESSES/VALUES
+const TIER1_MAX_CONFIDENCE_SHIFT = 0.05;  // ≤5% pergeseran
+const TIER2_MAX_CONFIDENCE_SHIFT = 0.20;  // ≤20% pergeseran
+const TIER2_SOFT_APPROVE_HOURS   = 48;    // Jam sebelum Tier 2 auto-approved
+const TIER1_MIN_OBSERVATIONS     = 5;     // Minimal observasi untuk Tier 1
+
 // ============================================================
 // TAHAP 1: DATA COLLECTION — Kumpulkan observasi 7 hari terakhir
 // ============================================================
@@ -124,6 +153,26 @@ async function _getCurrentIdentityModel() {
 
   if (error) {
     console.warn('[INFERENCE] Failed to fetch identity model:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * [PHASE 7 — M1] Ambil snapshot Identity Model LENGKAP termasuk kolom decay.
+ * Digunakan oleh runDailyDecayPass dan _classifyApprovalTier.
+ * @returns {Promise<Array>}
+ */
+async function _getCurrentIdentityModelFull() {
+  const sb = _getSupabase();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from('nexa_identity_model')
+    .select('id, layer, trait_key, trait_value, confidence, last_reinforced_at, decay_lambda')
+    .order('layer', { ascending: true });
+
+  if (error) {
+    console.warn('[INFERENCE] Failed to fetch full identity model:', error.message);
     return [];
   }
   return data || [];
@@ -483,6 +532,72 @@ function _isDuplicate(hypothesis, currentIdentity) {
 }
 
 // ============================================================
+// [PHASE 7 — M1] TIER CLASSIFIER — Tentukan tingkat persetujuan proposal
+// ============================================================
+
+/**
+ * Mengklasifikasikan proposal ke dalam 3 Tier persetujuan berdasarkan:
+ * 1. Apakah trait SUDAH ADA di model identitas saat ini
+ * 2. Seberapa besar pergeseran confidence
+ * 3. Apakah layer termasuk yang sensitif (WEAKNESSES / VALUES)
+ * 4. Apakah ini proposal kontradiksi (revisi trait lama)
+ *
+ * Tier 1 — Auto-Approve (tidak perlu interaksi user):
+ *   - Trait sudah ada + confidence naik ≤5% + bukan layer sensitif
+ * Tier 2 — Soft-Approve (auto-approve setelah 48 jam):
+ *   - Trait sudah ada + confidence bergeser 5–20%
+ * Tier 3 — Hard-Approve (wajib klik tombol eksplisit):
+ *   - Trait BARU, kontradiksi, atau update pada layer WEAKNESSES/VALUES
+ *
+ * @param {object} hypothesis - Hipotesis yang sudah divalidasi
+ * @param {Array} currentIdentityFull - Snapshot identity model dengan kolom decay
+ * @returns {{tier: number, existingTrait: object|null, confidenceShift: number}}
+ */
+function _classifyApprovalTier(hypothesis, currentIdentityFull) {
+  const layer = String(hypothesis.layer).toUpperCase();
+  const key   = String(hypothesis.trait_key).toLowerCase().trim();
+  const newConf = parseFloat(hypothesis.confidence) || 0;
+
+  // Layer yang selalu memerlukan Hard-Approve karena sangat sensitif
+  const SENSITIVE_LAYERS = new Set(['WEAKNESSES', 'VALUES']);
+
+  // Cari trait yang sudah ada di model
+  const existingTrait = currentIdentityFull.find(
+    t => t.layer === layer && t.trait_key === key
+  );
+
+  // Trait BARU → selalu Tier 3
+  if (!existingTrait) {
+    return { tier: 3, existingTrait: null, confidenceShift: newConf };
+  }
+
+  // Kontradiksi (revisi) → selalu Tier 3
+  if (hypothesis.is_contradiction) {
+    return { tier: 3, existingTrait, confidenceShift: newConf };
+  }
+
+  // Layer sensitif → selalu Tier 3
+  if (SENSITIVE_LAYERS.has(layer)) {
+    return { tier: 3, existingTrait, confidenceShift: Math.abs(newConf - existingTrait.confidence) };
+  }
+
+  const confidenceShift = Math.abs(newConf - parseFloat(existingTrait.confidence) || 0);
+
+  // Pergeseran sangat kecil (≤5%) → Tier 1 Auto-Approve
+  if (confidenceShift <= TIER1_MAX_CONFIDENCE_SHIFT) {
+    return { tier: 1, existingTrait, confidenceShift };
+  }
+
+  // Pergeseran moderat (5–20%) → Tier 2 Soft-Approve
+  if (confidenceShift <= TIER2_MAX_CONFIDENCE_SHIFT) {
+    return { tier: 2, existingTrait, confidenceShift };
+  }
+
+  // Pergeseran besar (>20%) → Tier 3 Hard-Approve
+  return { tier: 3, existingTrait, confidenceShift };
+}
+
+// ============================================================
 // TAHAP 5: PERSISTENCE — Simpan proposal ke database
 // ============================================================
 
@@ -491,20 +606,52 @@ function _isDuplicate(hypothesis, currentIdentity) {
  * Jika proposal serupa sudah ada di STAGED (dari minggu lalu),
  * update confidence-nya alih-alih membuat record baru.
  *
+ * Terintegrasi dengan sistem Tiered Approval (Phase 7 M1):
+ * - Tier 1: Langsung auto-approve ke identity_model tanpa ke proposals
+ * - Tier 2: Simpan ke proposals dengan soft_approve_after (48 jam)
+ * - Tier 3: Simpan ke proposals dengan status PENDING (mekanisme lama)
+ *
  * @param {object} hypothesis - Hipotesis yang sudah divalidasi
  * @param {Array} stagedProposals - Proposal STAGED yang ada saat ini
- * @returns {Promise<{success: boolean, proposalId: number|null, status: string}>}
+ * @param {Array} currentIdentityFull - Full identity model dengan kolom decay
+ * @returns {Promise<{success: boolean, proposalId: number|null, status: string, tier: number}>}
  */
-async function _persistProposal(hypothesis, stagedProposals) {
+async function _persistProposal(hypothesis, stagedProposals, currentIdentityFull = []) {
   const sb = _getSupabase();
-  if (!sb) return { success: false, proposalId: null, status: 'NO_DB' };
+  if (!sb) return { success: false, proposalId: null, status: 'NO_DB', tier: 3 };
 
   const layer = String(hypothesis.layer).toUpperCase();
   const traitKey = String(hypothesis.trait_key).toLowerCase().trim();
   const newConfidence = parseFloat(hypothesis.confidence) || 0;
-  const status = newConfidence > 0.85 ? 'PENDING' : 'STAGED';
 
-  // Cek apakah sudah ada proposal STAGED untuk trait yang sama
+  // ── [PHASE 7 — M1] Klasifikasikan tier persetujuan ────────────
+  const { tier, existingTrait, confidenceShift } = _classifyApprovalTier(hypothesis, currentIdentityFull);
+  console.log(`[INFERENCE] [${layer}] ${traitKey} → Tier ${tier} | shift=${(confidenceShift * 100).toFixed(1)}%`);
+
+  // ── TIER 1: AUTO-APPROVE — Langsung commit ke identity_model ──
+  if (tier === 1 && existingTrait) {
+    const { error } = await sb
+      .from('nexa_identity_model')
+      .update({
+        trait_value:        String(hypothesis.proposed_value).trim(),
+        confidence:         parseFloat(newConfidence.toFixed(2)),
+        inferred_from_summary: String(hypothesis.reasoning).trim(),
+        last_reinforced_at: new Date().toISOString(),
+        updated_at:         new Date().toISOString()
+      })
+      .eq('layer', layer)
+      .eq('trait_key', traitKey);
+
+    if (error) {
+      console.warn(`[INFERENCE] Tier 1 auto-approve failed for [${layer}] ${traitKey}:`, error.message);
+      return { success: false, proposalId: null, status: 'ERROR', tier: 1 };
+    }
+
+    console.log(`[INFERENCE] ⚡ TIER 1 AUTO-APPROVED: [${layer}] ${traitKey} = "${hypothesis.proposed_value}"`);
+    return { success: true, proposalId: null, status: 'AUTO_APPROVED', tier: 1 };
+  }
+
+  // ── Cek apakah sudah ada proposal STAGED untuk trait yang sama ─
   const existingStaged = stagedProposals.find(
     p => p.layer === layer && p.trait_key === traitKey
   );
@@ -512,18 +659,24 @@ async function _persistProposal(hypothesis, stagedProposals) {
   if (existingStaged) {
     // Update confidence (rata-rata dengan bukti baru) dan reasoning
     const mergedConfidence = Math.min(
-      ((existingStaged.confidence + newConfidence) / 2) + 0.05, // Boost sedikit karena ada bukti tambahan
+      ((existingStaged.confidence + newConfidence) / 2) + 0.05,
       1.0
     );
+    const mergedTier = Math.max(existingStaged.approval_tier || 3, tier);
     const newStatus = mergedConfidence > 0.85 ? 'PENDING' : 'STAGED';
+    const softApproveAfter = mergedTier === 2
+      ? new Date(Date.now() + TIER2_SOFT_APPROVE_HOURS * 60 * 60 * 1000).toISOString()
+      : null;
 
     const { data, error } = await sb
       .from('nexa_identity_proposals')
       .update({
-        confidence: parseFloat(mergedConfidence.toFixed(2)),
-        reasoning: `[Diperbarui minggu ini] ${hypothesis.reasoning}`,
-        proposed_value: hypothesis.proposed_value, // Update value ke yang terbaru
-        status: newStatus
+        confidence:         parseFloat(mergedConfidence.toFixed(2)),
+        reasoning:          `[Diperbarui minggu ini] ${hypothesis.reasoning}`,
+        proposed_value:     hypothesis.proposed_value,
+        status:             newStatus,
+        approval_tier:      mergedTier,
+        soft_approve_after: softApproveAfter
       })
       .eq('id', existingStaged.id)
       .select()
@@ -531,23 +684,30 @@ async function _persistProposal(hypothesis, stagedProposals) {
 
     if (error) {
       console.warn(`[INFERENCE] Failed to update staged proposal #${existingStaged.id}:`, error.message);
-      return { success: false, proposalId: null, status: 'ERROR' };
+      return { success: false, proposalId: null, status: 'ERROR', tier };
     }
 
-    console.log(`[INFERENCE] Updated STAGED proposal #${existingStaged.id} → confidence ${Math.round(mergedConfidence * 100)}% → ${newStatus}`);
-    return { success: true, proposalId: existingStaged.id, status: newStatus };
+    console.log(`[INFERENCE] Updated STAGED proposal #${existingStaged.id} → ${Math.round(mergedConfidence * 100)}% → ${newStatus} (Tier ${mergedTier})`);
+    return { success: true, proposalId: existingStaged.id, status: newStatus, tier: mergedTier };
   }
 
-  // Buat proposal baru
+  // ── Buat proposal BARU ─────────────────────────────────────────
+  const status = newConfidence > 0.85 ? 'PENDING' : 'STAGED';
+  const softApproveAfter = tier === 2 && status === 'PENDING'
+    ? new Date(Date.now() + TIER2_SOFT_APPROVE_HOURS * 60 * 60 * 1000).toISOString()
+    : null;
+
   const payload = {
     layer,
-    trait_key: traitKey,
-    proposed_value: String(hypothesis.proposed_value).trim(),
-    old_value: hypothesis.old_value ? String(hypothesis.old_value).trim() : null,
-    confidence: parseFloat(newConfidence.toFixed(2)),
-    reasoning: String(hypothesis.reasoning).trim(),
+    trait_key:          traitKey,
+    proposed_value:     String(hypothesis.proposed_value).trim(),
+    old_value:          hypothesis.old_value ? String(hypothesis.old_value).trim() : null,
+    confidence:         parseFloat(newConfidence.toFixed(2)),
+    reasoning:          String(hypothesis.reasoning).trim(),
     status,
-    created_at: new Date().toISOString()
+    approval_tier:      tier,
+    soft_approve_after: softApproveAfter,
+    created_at:         new Date().toISOString()
   };
 
   const { data, error } = await sb
@@ -558,11 +718,11 @@ async function _persistProposal(hypothesis, stagedProposals) {
 
   if (error) {
     console.warn('[INFERENCE] Failed to insert new proposal:', error.message);
-    return { success: false, proposalId: null, status: 'ERROR' };
+    return { success: false, proposalId: null, status: 'ERROR', tier };
   }
 
-  console.log(`[INFERENCE] ✅ New proposal #${data.id} saved: [${layer}] ${traitKey} → "${hypothesis.proposed_value}" (${Math.round(newConfidence * 100)}% → ${status})`);
-  return { success: true, proposalId: data.id, status };
+  console.log(`[INFERENCE] ✅ New proposal #${data.id} saved: [${layer}] ${traitKey} → "${hypothesis.proposed_value}" (${Math.round(newConfidence * 100)}% → ${status}, Tier ${tier})`);
+  return { success: true, proposalId: data.id, status, tier };
 }
 
 // ============================================================
@@ -701,6 +861,9 @@ async function runWeeklyIdentityInference() {
     console.log('[INFERENCE] Step 4: Validating, filtering & persisting proposals...');
     const pendingToSend = [];
 
+    // [PHASE 7 — M1] Ambil full identity model untuk Tier Classifier
+    const currentIdentityFull = await _getCurrentIdentityModelFull();
+
     for (const hypothesis of hypotheses) {
       // Validasi struktur
       const validation = _validateHypothesis(hypothesis);
@@ -717,8 +880,8 @@ async function runWeeklyIdentityInference() {
         continue;
       }
 
-      // Simpan ke database
-      const persistResult = await _persistProposal(hypothesis, stagedProposals);
+      // Simpan ke database (dengan Tiered Approval classifier)
+      const persistResult = await _persistProposal(hypothesis, stagedProposals, currentIdentityFull);
 
       if (!persistResult.success) {
         result.skipped++;
@@ -727,8 +890,15 @@ async function runWeeklyIdentityInference() {
 
       result.saved++;
 
-      if (persistResult.status === 'PENDING') {
-        pendingToSend.push({ proposalId: persistResult.proposalId });
+      // Tier 1 auto-approved: tidak perlu dikirim ke Telegram
+      if (persistResult.status === 'AUTO_APPROVED') {
+        console.log(`[INFERENCE] ⚡ Tier 1 auto-approved — no Telegram notification.`);
+        continue;
+      }
+
+      // Tier 2 & 3 dengan status PENDING: kirim ke Telegram
+      if (persistResult.status === 'PENDING' && persistResult.proposalId) {
+        pendingToSend.push({ proposalId: persistResult.proposalId, tier: persistResult.tier });
         result.pendingSent++;
       } else {
         result.staged++;
@@ -763,14 +933,230 @@ async function runWeeklyIdentityInference() {
 }
 
 // ============================================================
+// [PHASE 7 — M1] DAILY DECAY PASS
+// ============================================================
+
+/**
+ * Jalankan peluruhan memori harian menggunakan fungsi Ebbinghaus:
+ *   confidence(t) = initial × e^(−λ × days_since_reinforcement)
+ *
+ * Dipanggil oleh cron.js setiap malam pukul 23:30 WIB.
+ * Jika confidence turun di bawah CONFIDENCE_DECAY_THRESHOLD (0.60),
+ * kirim soft check-in ke Telegram untuk mengkonfirmasi ulang trait.
+ *
+ * @returns {Promise<{processed: number, decayed: number, checkins: number, errors: number}>}
+ */
+async function runDailyDecayPass() {
+  console.log('[DECAY] ── Starting Daily Memory Decay Pass...');
+  const sb = _getSupabase();
+  if (!sb) {
+    console.warn('[DECAY] Supabase not configured. Skipping decay pass.');
+    return { processed: 0, decayed: 0, checkins: 0, errors: 0 };
+  }
+
+  const stats = { processed: 0, decayed: 0, checkins: 0, errors: 0 };
+  const now = Date.now();
+  const checkinsToSend = [];
+
+  try {
+    const traits = await _getCurrentIdentityModelFull();
+    if (!traits || traits.length === 0) {
+      console.log('[DECAY] No traits in identity model. Skipping.');
+      return stats;
+    }
+
+    for (const trait of traits) {
+      stats.processed++;
+      try {
+        // Hitung hari sejak terakhir diperkuat
+        const lastReinforced = trait.last_reinforced_at
+          ? new Date(trait.last_reinforced_at).getTime()
+          : new Date(0).getTime();
+        const daysSince = Math.max(0, (now - lastReinforced) / (1000 * 60 * 60 * 24));
+
+        // Gunakan λ dari kolom database, fallback ke konstanta default per layer
+        const lambda = parseFloat(trait.decay_lambda)
+          || DECAY_LAMBDA_BY_LAYER[trait.layer]
+          || 0.020;
+
+        const currentConf = parseFloat(trait.confidence) || 0;
+
+        // Hitung confidence baru menggunakan Ebbinghaus decay
+        const decayedConf = parseFloat(
+          (currentConf * Math.exp(-lambda * daysSince)).toFixed(4)
+        );
+
+        // Hanya update jika ada penurunan yang signifikan (>0.001 poin)
+        if (currentConf - decayedConf < 0.001) continue;
+
+        // Update confidence di database
+        const { error: updateError } = await sb
+          .from('nexa_identity_model')
+          .update({ confidence: parseFloat(decayedConf.toFixed(2)) })
+          .eq('layer', trait.layer)
+          .eq('trait_key', trait.trait_key);
+
+        if (updateError) {
+          console.warn(`[DECAY] Failed to decay [${trait.layer}] ${trait.trait_key}:`, updateError.message);
+          stats.errors++;
+          continue;
+        }
+
+        stats.decayed++;
+        console.log(`[DECAY] [${trait.layer}] ${trait.trait_key}: ${(currentConf * 100).toFixed(1)}% → ${(decayedConf * 100).toFixed(1)}% (λ=${lambda}, Δ${daysSince.toFixed(1)} hari)`);
+
+        // Jika confidence jatuh di bawah threshold → antrekan soft check-in
+        if (decayedConf < CONFIDENCE_DECAY_THRESHOLD && currentConf >= CONFIDENCE_DECAY_THRESHOLD) {
+          checkinsToSend.push({
+            layer: trait.layer,
+            trait_key: trait.trait_key,
+            trait_value: trait.trait_value,
+            confidence: decayedConf
+          });
+        }
+      } catch (traitErr) {
+        console.warn(`[DECAY] Error processing trait [${trait.layer}] ${trait.trait_key}:`, traitErr.message);
+        stats.errors++;
+      }
+    }
+
+    // Kirim soft check-in ke Telegram jika ada trait yang decay melewati threshold
+    if (checkinsToSend.length > 0) {
+      let webhookModule;
+      try { webhookModule = require('../interfaces/webhook'); } catch (_) {}
+
+      for (const item of checkinsToSend) {
+        try {
+          const msg = [
+            `🔄 <b>Soft Check-In Memori N.E.X.A</b>`,
+            ``,
+            `Saya belum mengamati pola berikut dalam waktu yang cukup lama, sehingga tingkat keyakinan saya menurun:`,
+            ``,
+            `<b>${item.layer}</b> → <code>${item.trait_key}</code>`,
+            `<i>"${item.trait_value}"</i>`,
+            `Keyakinan sekarang: <b>${(item.confidence * 100).toFixed(0)}%</b>`,
+            ``,
+            `Apakah profil ini masih relevan dan akurat tentang Anda, Tuan?`
+          ].join('\n');
+
+          if (webhookModule?.sendTelegramOutbound) {
+            await webhookModule.sendTelegramOutbound(msg, true);
+            stats.checkins++;
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        } catch (sendErr) {
+          console.warn('[DECAY] Failed to send soft check-in:', sendErr.message);
+        }
+      }
+    }
+
+    console.log(`[DECAY] ── Decay Pass Complete: processed=${stats.processed} decayed=${stats.decayed} checkins=${stats.checkins} errors=${stats.errors}`);
+    return stats;
+
+  } catch (err) {
+    console.error('[DECAY] ❌ Critical error in Daily Decay Pass:', err.message);
+    return { ...stats, errors: stats.errors + 1 };
+  }
+}
+
+// ============================================================
+// [PHASE 7 — M1] TIER 2 SOFT-APPROVE PASS
+// ============================================================
+
+/**
+ * Cek proposal Tier 2 yang sudah melewati batas waktu soft_approve_after.
+ * Jika sudah lebih dari 48 jam tanpa respons user, auto-approve proposal tersebut.
+ *
+ * Dipanggil oleh cron.js setiap pagi pukul 08:15 WIB.
+ *
+ * @returns {Promise<{checked: number, autoApproved: number, errors: number}>}
+ */
+async function runTier2SoftApprovePass() {
+  console.log('[TIER2] ── Starting Tier 2 Soft-Approve Pass...');
+  const sb = _getSupabase();
+  if (!sb) return { checked: 0, autoApproved: 0, errors: 0 };
+
+  const stats = { checked: 0, autoApproved: 0, errors: 0 };
+  const nowIso = new Date().toISOString();
+
+  try {
+    // Ambil semua proposal Tier 2 yang sudah melewati batas waktu soft_approve
+    const { data: expiredProposals, error: fetchError } = await sb
+      .from('nexa_identity_proposals')
+      .select('*')
+      .eq('status', 'PENDING')
+      .eq('approval_tier', 2)
+      .lte('soft_approve_after', nowIso);
+
+    if (fetchError) {
+      console.warn('[TIER2] Failed to fetch expired Tier 2 proposals:', fetchError.message);
+      return stats;
+    }
+
+    if (!expiredProposals || expiredProposals.length === 0) {
+      console.log('[TIER2] No expired Tier 2 proposals. Pass complete.');
+      return stats;
+    }
+
+    // Lazy require Supabase_Memories untuk fungsi approveIdentityProposal
+    const supabaseMemories = require('../infrastructure/Supabase_Memories');
+    let webhookModule;
+    try { webhookModule = require('../interfaces/webhook'); } catch (_) {}
+
+    for (const proposal of expiredProposals) {
+      stats.checked++;
+      try {
+        console.log(`[TIER2] Auto-approving proposal #${proposal.id}: [${proposal.layer}] ${proposal.trait_key}`);
+
+        const result = await supabaseMemories.approveIdentityProposal(proposal.id);
+
+        if (result.success) {
+          stats.autoApproved++;
+          console.log(`[TIER2] ✅ Auto-approved proposal #${proposal.id}`);
+
+          // Kirim notifikasi ringkas ke Telegram
+          if (webhookModule?.sendTelegramOutbound) {
+            const notif = [
+              `⚡ <b>Tier 2 Auto-Approved</b>`,
+              `Tidak ada respons dalam 48 jam — proposal berikut telah otomatis dikunci:`,
+              `<b>${proposal.layer}</b> → <code>${proposal.trait_key}</code>`,
+              `<i>"${proposal.proposed_value}"</i>`
+            ].join('\n');
+            await webhookModule.sendTelegramOutbound(notif, true).catch(() => {});
+          }
+
+          await new Promise(r => setTimeout(r, 800));
+        } else {
+          console.warn(`[TIER2] Auto-approve failed for #${proposal.id}:`, result.error);
+          stats.errors++;
+        }
+      } catch (approveErr) {
+        console.warn(`[TIER2] Error auto-approving proposal #${proposal.id}:`, approveErr.message);
+        stats.errors++;
+      }
+    }
+
+    console.log(`[TIER2] ── Pass Complete: checked=${stats.checked} autoApproved=${stats.autoApproved} errors=${stats.errors}`);
+    return stats;
+
+  } catch (err) {
+    console.error('[TIER2] ❌ Critical error in Tier 2 Soft-Approve Pass:', err.message);
+    return { ...stats, errors: stats.errors + 1 };
+  }
+}
+
+// ============================================================
 // EXPORTS
 // ============================================================
 module.exports = {
   runWeeklyIdentityInference,
+  runDailyDecayPass,
+  runTier2SoftApprovePass,
 
   // Expose internal helpers untuk unit testing
   _synthesizeBehaviorSummary,
   _synthesizeChatSummary,
   _validateHypothesis,
   _isDuplicate,
+  _classifyApprovalTier,
 };

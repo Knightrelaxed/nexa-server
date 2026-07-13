@@ -608,6 +608,7 @@ async function upsertIdentityTrait(trait) {
     trait_value: String(trait.trait_value).trim(),
     confidence: parseFloat(trait.confidence) || 0.90,
     inferred_from_summary: trait.inferred_from_summary ? String(trait.inferred_from_summary) : null,
+    last_reinforced_at: trait.last_reinforced_at || new Date().toISOString(), // [PHASE 7 M1] Reset decay clock
     updated_at: new Date().toISOString()
   };
 
@@ -778,7 +779,8 @@ async function approveIdentityProposal(proposalId) {
     trait_key: proposalData.trait_key,
     trait_value: proposalData.proposed_value,
     confidence: proposalData.confidence,
-    inferred_from_summary: proposalData.reasoning
+    inferred_from_summary: proposalData.reasoning,
+    last_reinforced_at: new Date().toISOString()  // [PHASE 7 M1] Reset decay clock saat approve
   });
 
   if (!result.success) {

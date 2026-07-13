@@ -65,6 +65,36 @@ function initCronJobs() {
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
+  // [PHASE 7 — M1] Daily Memory Decay Pass (setiap hari 23:30 WIB)
+  // Menjalankan fungsi Ebbinghaus decay pada semua trait di nexa_identity_model.
+  // Trait yang confidence-nya turun di bawah 60% akan memicu soft check-in ke Telegram.
+  cron.schedule('30 23 * * *', async () => {
+    console.log('[CRON] Executing Daily Memory Decay Pass...');
+    try {
+      const inferenceEngine = require('../domain/Inference_Engine');
+      const stats = await inferenceEngine.runDailyDecayPass();
+      console.log(`[CRON] Decay Pass done: processed=${stats.processed} decayed=${stats.decayed} checkins=${stats.checkins} errors=${stats.errors}`);
+    } catch (e) {
+      console.error('[CRON] Daily Memory Decay Pass failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
+  // [PHASE 7 — M1] Tier 2 Soft-Approve Pass (setiap hari 08:15 WIB)
+  // Memeriksa proposal Tier 2 yang sudah >48 jam tanpa respons user.
+  // Jika ditemukan, proposal tersebut auto-approved dan dikunci ke identity_model.
+  cron.schedule('15 8 * * *', async () => {
+    console.log('[CRON] Executing Tier 2 Soft-Approve Pass...');
+    try {
+      const inferenceEngine = require('../domain/Inference_Engine');
+      const stats = await inferenceEngine.runTier2SoftApprovePass();
+      if (stats.autoApproved > 0) {
+        console.log(`[CRON] Tier 2 Pass done: autoApproved=${stats.autoApproved} errors=${stats.errors}`);
+      }
+    } catch (e) {
+      console.error('[CRON] Tier 2 Soft-Approve Pass failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   cron.schedule('0 8 * * 0', async () => {
     console.log('[CRON] Executing Scholarship Radar (Placeholder)...');
     // Future expansion: RSS/Scraping for opportunities
