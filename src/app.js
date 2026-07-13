@@ -40,7 +40,7 @@ app.use(express.json({ limit: '1mb' }));
 // ROOT ENDPOINT — Basic identity check
 // ============================================================
 app.get('/', (req, res) => {
-  res.status(200).json({ status: 'N.E.X.A Cloud Core Online', version: '2.0.0' });
+  res.status(200).json({ status: 'N.E.X.A Cloud Core Online', version: '2.7.0' });
 });
 
 // ============================================================
@@ -56,7 +56,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ALIVE',
     service: 'N.E.X.A Cloud Core',
-    version: '2.0.0',
+    version: '2.7.0',
     uptime_seconds: uptimeSeconds,
     uptime_human: `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m`,
     timestamp_jakarta: timestampJakarta,

@@ -6,7 +6,7 @@ async function runTest() {
   console.log("=== MEMULAI TESTING DIAGNOSE_SYSTEM ===");
   
   // 1. Simulasikan sistem sedang berjalan (Skenario Error Token Gmail)
-  console.log("[SERVER] N.E.X.A Engine v2.0 started on port 3000");
+  console.log("[SERVER] N.E.X.A Engine v2.7 started on port 3000");
   console.log("[CRON] Starting finance email polling (3-minute interval)...");
   console.log("[GMAIL] Attempting to fetch latest emails from inbox.");
   console.error("[GMAIL] Error fetching emails: invalid_grant (Token has been expired or revoked).");
