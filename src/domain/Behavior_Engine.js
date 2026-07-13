@@ -152,6 +152,32 @@ async function logMood(mood, sourceText = '') {
 }
 
 /**
+ * Log a PASSIVE_LEARNING event whenever N.E.X.A learns a fact about the user.
+ * @param {string} fact - The extracted user fact
+ * @param {string} type - 'USER_PROFILE' or 'CORE_IDENTITY'
+ */
+async function logPassiveLearning(fact, type = 'USER_PROFILE') {
+  await logBehaviorEvent('PASSIVE_LEARNING', {
+    fact: String(fact).substring(0, 200),
+    type
+  });
+}
+
+/**
+ * Log a USER_INTERACTION event to track daily activity and intent patterns.
+ * @param {string} intent - The identified intent
+ * @param {string} [sourceText] - First 80 chars of user message
+ * @param {string} [mood] - Detected mood
+ */
+async function logUserInteraction(intent, sourceText = '', mood = 'NEUTRAL') {
+  await logBehaviorEvent('USER_INTERACTION', {
+    intent: String(intent || 'NORMAL_CHAT'),
+    preview: String(sourceText).substring(0, 80),
+    mood: String(mood || 'NEUTRAL')
+  });
+}
+
+/**
  * Fetch a summary of behavior events for the past 7 days.
  * Returns grouped counts by event_type and statistics about routines.
  * Used by the Weekly Strategic Review cron.
@@ -283,6 +309,8 @@ module.exports = {
   logWakeUp,
   logFinanceRecord,
   logMood,
+  logPassiveLearning,
+  logUserInteraction,
   getWeeklySummary,
   formatWeeklySummary
 };

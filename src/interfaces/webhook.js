@@ -1960,6 +1960,10 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       askedAt: Date.now()
     };
 
+    // [PHASE 6] Log perilaku interaksi user & fakta ke nexa_behavior_log
+    const behaviorEngine = require('../domain/Behavior_Engine');
+    behaviorEngine.logUserInteraction(routingData.intent, textInput, 'NEUTRAL').catch(() => {});
+
     // Passive Background Learning (Auto-Extraction)
     if (routingData.learned_user_facts && Array.isArray(routingData.learned_user_facts) && routingData.learned_user_facts.length > 0) {
       const aiRouter = require('../core/AI_Router');
@@ -1972,6 +1976,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           } else {
             console.log('[ROUTER] Passive Learning - User Fact:', fact);
             await aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE');
+            behaviorEngine.logPassiveLearning(fact, 'USER_PROFILE').catch(() => {});
           }
         }
       }
