@@ -2690,56 +2690,91 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         }
         break;
 
-      case 'USER_PROFILE':
+      case 'USER_PROFILE': {
+        const _formatMemoryReply = (aiReply, fallbackText, badgeText) => {
+          const base = (aiReply && typeof aiReply === 'string' && aiReply.trim().length > 3)
+            ? aiReply.trim()
+            : fallbackText;
+          return `${base}\n\n${badgeText}`;
+        };
+
         if (routingData.extracted_data) {
           const action = routingData.extracted_data.action || (routingData.extracted_data.content ? 'APPEND' : 'READ');
           if (action === 'APPEND' && routingData.extracted_data.content) {
             const aiRouter = require('../core/AI_Router');
             const content = routingData.extracted_data.content;
-            // Safety guard: use smart scorer instead of rigid regex
             if (isFactAboutNexa(content)) {
               console.log('[ROUTER] USER_PROFILE redirected to CORE_IDENTITY for fact about N.E.X.A:', content);
               const saved = await aiRouter.deduplicateAndSaveFact(content, 'CORE_IDENTITY');
               invalidatePersonalFactsCache();
-              domainReply = saved ? `✅ Fakta tentang diri saya (N.E.X.A) telah tersimpan ke memori inti. Saya tidak akan melupakannya, Tuan.` : `✅ Hal tersebut sudah tersimpan di memori inti saya sebelumnya, Tuan.`;
+              domainReply = _formatMemoryReply(
+                routingData.reply_message,
+                saved ? `Baik Tuan Faqih, fakta mengenai diri saya (N.E.X.A) telah saya pelajari dan saya tanamkan ke memori inti.` : `Tentu Tuan Faqih, hal mengenai diri saya tersebut memang sudah tersimpan di dalam memori inti saya.`,
+                saved ? `✅ <i>Tersimpan di Memori Inti N.E.X.A</i>` : `ℹ️ <i>Sudah Tercatat di Memori Inti</i>`
+              );
             } else {
               const saved = await aiRouter.deduplicateAndSaveFact(content, 'USER_PROFILE');
               invalidatePersonalFactsCache();
-              domainReply = saved ? `✅ Fakta personal tersimpan ke database profil. Saya akan selalu mengingatnya, Tuan.` : `✅ Saya sudah mengingat hal tersebut sebelumnya, Tuan.`;
+              domainReply = _formatMemoryReply(
+                routingData.reply_message,
+                saved ? `Siap Tuan Faqih, informasi tersebut sudah saya catat dan simpan ke dalam profil personal Anda.` : `Tentu Tuan Faqih, fakta tersebut memang sudah ada di dalam catatan profil Anda sebelumnya.`,
+                saved ? `✅ <i>Tersimpan di Memori Personal</i>` : `ℹ️ <i>Sudah Tercatat di Memori Personal</i>`
+              );
             }
           } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
             const success = await supabaseMemories.deleteFromUserProfile(routingData.extracted_data.search_keyword);
             invalidatePersonalFactsCache();
-            domainReply = success ? `🗑️ Fakta personal berhasil dihapus dari memori permanen.` : `❌ Gagal menemukan fakta tersebut di profil Anda.`;
+            domainReply = _formatMemoryReply(
+              routingData.reply_message,
+              success ? `Baik Tuan Faqih, catatan personal terkait hal tersebut telah saya hapus dari database profil Anda.` : `Maaf Tuan Faqih, saya tidak menemukan catatan terkait hal tersebut di memori profil Anda.`,
+              success ? `🗑️ <i>Dihapus dari Memori Personal</i>` : `❌ <i>Fakta Tidak Ditemukan</i>`
+            );
           } else if (action === 'READ') {
-             const keyword = routingData.extracted_data.search_keyword || textInput;
-             const facts = await supabaseMemories.getPersonalFacts();
-             if (facts.userProfile && facts.userProfile.length > 0) {
-                const aiRouter = require('../core/AI_Router');
-                const relevantFacts = aiRouter.selectUserProfileFacts(facts.userProfile, textInput);
-                const list = relevantFacts.map(f => `- ${f}`).join('\n');
-                const prompt = `FILTERED PERMANENT FACTS ABOUT TUAN FAQIH:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user's question using ONLY the relevant facts above. Summarize them into a warm, natural narrative from an assistant's perspective. Do NOT use bullet points. CRITICAL RULE: ALWAYS address and refer to the user as "Tuan" or "Tuan Faqih". NEVER address or refer to the user as "Bapak", "Mas", or "Anda". MUST answer in fluent, elegant Indonesian.`;
-                domainReply = await aiRouter.callAI(prompt);
-             } else {
-                domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen tentang Tuan Faqih.`;
-             }
+            const keyword = routingData.extracted_data.search_keyword || textInput;
+            const facts = await supabaseMemories.getPersonalFacts();
+            if (facts.userProfile && facts.userProfile.length > 0) {
+              const aiRouter = require('../core/AI_Router');
+              const relevantFacts = aiRouter.selectUserProfileFacts(facts.userProfile, textInput);
+              const list = relevantFacts.map(f => `- ${f}`).join('\n');
+              const prompt = `FILTERED PERMANENT FACTS ABOUT TUAN FAQIH:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user's question using ONLY the relevant facts above. Summarize them into a warm, natural narrative from an assistant's perspective. Do NOT use bullet points. CRITICAL RULE: ALWAYS address and refer to the user as "Tuan" or "Tuan Faqih". NEVER address or refer to the user as "Bapak", "Mas", or "Anda". MUST answer in fluent, elegant Indonesian.`;
+              domainReply = await aiRouter.callAI(prompt);
+            } else {
+              domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen tentang Tuan Faqih.`;
+            }
           }
         }
         break;
+      }
 
-      case 'CORE_IDENTITY':
+      case 'CORE_IDENTITY': {
+        const _formatMemoryReply = (aiReply, fallbackText, badgeText) => {
+          const base = (aiReply && typeof aiReply === 'string' && aiReply.trim().length > 3)
+            ? aiReply.trim()
+            : fallbackText;
+          return `${base}\n\n${badgeText}`;
+        };
+
         if (routingData.extracted_data) {
           const action = routingData.extracted_data.action || (routingData.extracted_data.content ? 'APPEND' : 'READ');
           if (action === 'APPEND' && routingData.extracted_data.content) {
             const aiRouter = require('../core/AI_Router');
             const saved = await aiRouter.deduplicateAndSaveFact(routingData.extracted_data.content, 'CORE_IDENTITY');
             invalidatePersonalFactsCache();
-            domainReply = saved ? `✅ Aturan identitas inti N.E.X.A telah diperbarui.` : `✅ Pedoman tersebut sudah ada di memori saya, Tuan.`;
+            domainReply = _formatMemoryReply(
+              routingData.reply_message,
+              saved ? `Dimengerti Tuan Faqih, aturan identitas dan pedoman perilaku utama N.E.X.A telah saya perbarui.` : `Tentu Tuan Faqih, pedoman tersebut sudah ada di memori identitas inti saya.`,
+              saved ? `✅ <i>Tersimpan di Memori Inti N.E.X.A</i>` : `ℹ️ <i>Sudah Tercatat di Memori Inti</i>`
+            );
           } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
             const success = await supabaseMemories.deleteFromCoreIdentity(routingData.extracted_data.search_keyword);
             invalidatePersonalFactsCache();
-            domainReply = success ? `🗑️ Aturan identitas inti berhasil dihapus.` : `❌ Gagal menemukan aturan tersebut di sistem.`;
+            domainReply = _formatMemoryReply(
+              routingData.reply_message,
+              success ? `Baik Tuan Faqih, aturan identitas terkait telah saya hapus dari memori inti.` : `Maaf Tuan Faqih, aturan tersebut tidak ditemukan di sistem memori inti.`,
+              success ? `🗑️ <i>Dihapus dari Memori Inti N.E.X.A</i>` : `❌ <i>Aturan Tidak Ditemukan</i>`
+            );
           } else if (action === 'READ') {
+
              const keyword = routingData.extracted_data.search_keyword || textInput;
              const facts = await supabaseMemories.getPersonalFacts();
              if (facts.coreIdentity && facts.coreIdentity.length > 0) {
@@ -2754,6 +2789,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           }
         }
         break;
+      }
 
 
 
