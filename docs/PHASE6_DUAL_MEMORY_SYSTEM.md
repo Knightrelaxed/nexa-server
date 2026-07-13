@@ -4,7 +4,44 @@ Dokumen ini adalah **referensi arsitektur teknis dan spesifikasi rekayasa (*engi
 
 ---
 
-## 1. Skema Database & Relasi Tabel (DDL Lengkap)
+## 1. Filosofi & Bagan Aliran Arsitektur Memori Ganda (*Dual-Memory Flowchart*)
+
+N.E.X.A memisahkan ingatan menjadi dua jalur pemrosesan agar memiliki **respon instan saat percakapan** namun tetap **stabil dan tidak impulsif dalam memahami kepribadian mendalam user**.
+
+```mermaid
+graph TD
+    User([Tuan Faqih]) -->|Berbicara / Curhat| Router[AI Router & Webhook]
+    
+    subgraph Jalur Cepat: Real-Time Passive Learning
+        Router -->|Ekstraksi Fakta Instan| PF[(nexa_personal_facts)]
+        PF -->|Langsung Diinjeksi ke Chat Berikutnya| Router
+    end
+    
+    subgraph Jalur Reflektif: 7-Layer Cognitive Identity
+        Router -->|Log Aktivitas & Emosi| BL[(nexa_behavior_log)]
+        Router -->|Riwayat Percakapan| CM[(nexa_chat_memories)]
+        
+        BL --> Cron[Weekly Cognitive Inference\nMinggu 21:00 WIB]
+        CM --> Cron
+        OldModel[(nexa_identity_model)] -->|Perbandingan Evolusi| Cron
+        
+        Cron -->|Sintesis 7-Layer| Staging[(nexa_identity_proposals)]
+        Staging -->|Kirim Telegram Bot| TG[Telegram Proposal Bot\nApprove / Reject]
+        TG -->|User Klik Approve| OldModel
+    end
+```
+
+### A. Jalur Cepat — *Real-Time Passive Learning* (`nexa_personal_facts`)
+* **Waktu Pemrosesan:** Instan (Detik itu juga saat pesan diproses).
+* **Tujuan:** Menyerap fakta konkret tentang user atau sistem agar obrolan berikutnya langsung kontekstual.
+
+### B. Jalur Reflektif — *7-Layer Cognitive Identity Model* (`nexa_identity_model`)
+* **Waktu Pemrosesan:** Mingguan (Setiap Minggu pukul 21:00 WIB) atau atas persetujuan eksplisit.
+* **Tujuan:** Membangun profil psikologis eksekutif 7 lapisan yang mendalam dan berjangka panjang tanpa terpengaruh emosi impulsif sesaat.
+
+---
+
+## 2. Skema Database & Relasi Tabel (DDL Lengkap)
 
 Sistem memori N.E.X.A dibangun di atas **5 tabel utama** pada PostgreSQL Supabase.
 
