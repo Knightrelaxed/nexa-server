@@ -20,7 +20,8 @@ module.exports = {
   GROQ_API_KEY_4: process.env.GROQ_API_KEY_4,
   CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
   MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
-  HF_TOKEN: process.env.HF_TOKEN,
+  HF_TOKEN: process.env.HF_TOKEN, // For repo write/sync
+  HF_INFERENCE_TOKEN: process.env.HF_INFERENCE_TOKEN || process.env.HF_TOKEN, // For AI Inference Providers
   WEATHER_API_KEY: process.env.WEATHER_API_KEY,
   NEWS_API_KEY: process.env.NEWS_API_KEY,
   NEXA_GODMODE_SECRET: process.env.NEXA_GODMODE_SECRET,
