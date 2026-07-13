@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Extension Assistant for Intelligence)*
+*(Neural Extension Assistant for Intelligence — v2.7 "Cognitive Resonance & Anticipatory Intelligence")*
 
 ---
 
@@ -899,6 +899,48 @@ Sistem N.E.X.A kini dilengkapi dengan **Cognitive Identity Engine**, sebuah arsi
 1. **Inference Engine (`Inference_Engine.js`)**: Berjalan setiap Minggu pukul 21:00 WIB. AI mensintesis seluruh riwayat percakapan seminggu terakhir (`nexa_chat_memories`) beserta *behavior log* (`nexa_behavior_log`), dan mengevaluasinya pada **7 Dimensi Identitas**: *FACTS, PREFERENCES, HABITS, VALUES, DECISION_STYLE, WEAKNESSES, MOTIVATIONS*.
 2. **Identity Proposals (Persetujuan Telegram)**: Setiap hipotesis tentang diri Tuan Faqih akan dicatat sebagai proposal (STAGED). Proposal dengan tingkat keyakinan tinggi (>85%) akan masuk ke status PENDING dan dikirim via Webhook Telegram menggunakan *Inline Keyboard*. Tuan Faqih memiliki kuasa mutlak untuk **APPROVE** atau **REJECT**. Jika ditolak, N.E.X.A akan menanyakan alasan penolakan dan mempelajarinya agar tidak mengulangi simpulan yang sama.
 3. **AI-Calibrated Morning Check-In (`Intelligence_Brief.js`)**: Metrik biologis (tidur, energi, fokus) pada pagi hari tidak lagi diproses secara kaku. N.E.X.A dibekali *regex parser* ekstensif dengan **80+ kosakata narasi informal & keluhan** (contoh: *mager, capek, karena, soalnya, pusing, kepikiran*). Jika kata-kata ini terdeteksi, AI Parser secara otomatis mengevaluasi narasi tersebut, memvalidasi skor aslinya, dan menyimpan analisis mendalam ke dalam *behavior log*.
+
+### 6.6 *Cognitive Resonance & Anticipatory Intelligence* (N.E.X.A v2.7)
+
+Puncak kematangan kognisi N.E.X.A dicapai melalui evolusi arsitektural **v2.7 ("Cognitive Resonance & Anticipatory Intelligence")**. Pada versi ini, sistem memori dan penalaran N.E.X.A beralih dari penyimpanan statis menuju **model kognisi organik dan intervensi proaktif**.
+
+```mermaid
+flowchart TD
+    A[User Event / Message] --> B[AI Router & NLP Classifier]
+    B --> C[Ebbinghaus Memory Decay Engine]
+    C -->|R = e^(-\lambda t)| D[Tiered Approval Pipeline]
+    D -->|Tier 1: Auto-Commit| E[(Supabase Fact Store)]
+    D -->|Tier 2/3: Review| F[Telegram Inline Keyboard]
+    
+    B --> G[Anticipatory Engine]
+    G -->|36h Emotional Time-Series| H[Causal Knowledge Graph]
+    H -->|Overthinking / Late Night| I[Proactive Intervention Alert]
+    
+    E --> J[Conversational Memory UX]
+    J --> K[Natural Executive Narrative + Status Badge]
+```
+
+#### 1. *Ebbinghaus Memory Decay Engine & 365-Day Cap*
+Memori manusia tidak bersifat permanen statis; ingatan yang tidak diperkuat akan meluruh. N.E.X.A mengadopsi kurva peluruhan biologis Hermann Ebbinghaus dengan rumusan matematis:
+\[R = e^{-\lambda t}\]
+Di mana \(R\) adalah kekuatan retensi memori, \(\lambda\) adalah laju peluruhan spesifik per lapisan identitas (`HABITS` memiliki \(\lambda\) yang lebih kecil dibanding preferensi kasual), dan \(t\) adalah waktu terlewat dalam hari. Untuk mencegah kesalahan kalkulasi ekstrem (*extreme underflow*) pada data lampau atau migrasi lama, sistem menerapkan pengaman batas maksimum 365 hari (`Math.min(daysSince, 365)`).
+
+#### 2. *Tiered Approval Pipeline* (Persetujuan Berjenjang Tier 1, 2, 3)
+Agar N.E.X.A dapat belajar secara mandiri tanpa membebani Tuan Faqih dengan notifikasi berlebih, inferensi identitas dikelompokkan ke dalam tiga jalur:
+- **Tier 1 (*Auto-Approve*):** Penguatan kebiasaan positif atau pengulangan fakta yang sudah sejalan langsung dikomit ke database utama.
+- **Tier 2 (*Soft Approval 48h*):** Hipotesis pola perilaku baru yang dievaluasi dalam masa penantian 48 jam sebelum dikonsolidasikan.
+- **Tier 3 (*Manual Review*):** Perubahan fundamental pada prinsip hidup atau preferensi strategis wajib mendapatkan persetujuan eksplisit melalui tombol interaktif Telegram.
+
+#### 3. *Intention & Decision Journaling Anti-Spam* (`Intention_Engine.js`)
+Sistem melacak keselarasan antara niat yang diucapkan (*Stated Intention*) dengan tindakan nyata (*Revealed Action*). Untuk menjaga kenyamanan eksekutif, modul ini dilengkapi filter anti-spam berbasis *null-check pointer* (`.is('outcome_received_at', null)`), memastikan penagihan evaluasi keputusan hanya dikirimkan tepat **satu kali** saat jatuh tempo.
+
+#### 4. *36-Hour Emotional Time-Series & Causal Knowledge Graph*
+- **Jendela Emosi 36 Jam:** Menganalisis fluktuasi suasana hati melintasi siklus hari kerja malam menuju pagi esoknya, mengenali varians tinggi (*High Variance*) maupun tren penurunan energi untuk menyusun narasi evolusi kepribadian mingguan.
+- **Grafik Sebab-Akibat (*Causal Knowledge Graph*):** Menghubungkan simpul-simpul kejadian empiris (contoh: *hubungan antara tidur larut malam dengan impulsivitas pengeluaran esok harinya*) di dalam database.
+
+#### 5. *Anticipatory Interventions & Conversational Memory UX*
+- **Intervensi Proaktif:** N.E.X.A bertindak sebagai pelindung kognitif yang memutus *Overthinking Spiral* saat mendeteksi sesi konsultasi berlarut-larut tanpa keputusan, serta mengaktifkan peringatan *Late Night Decision Guard* saat mendeteksi transaksi finansial berisiko di tengah malam.
+- **Conversational Memory UX:** Menghapus balasan konfirmasi robotik. Setiap operasi penyimpanan atau penghapusan fakta kini dijawab dengan narasi hangat natural dari AI Router yang dikombinasikan dengan *status badge* transparan (`✅ Tersimpan di Memori Personal` atau `🗑️ Dihapus dari Memori Personal`).
 
 ---
 
