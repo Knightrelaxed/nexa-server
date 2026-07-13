@@ -161,7 +161,7 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
 async function callCerebras(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
   if (!apiKey) throw new Error('No Cerebras API key provided');
   const requestBody = {
-    model: 'gemma-4-31b',  // Updated: Cerebras deprecated llama-3.3-70b and upgraded to gemma-4-31b
+    model: 'gpt-oss-120b',  // Upgraded to flagship 120B parameter model for perfect JSON generation
     messages: [
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
