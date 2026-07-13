@@ -42,124 +42,61 @@ const getErrDetails = (e) => {
   return `[${status}] ${e.message} ${data ? '| ' + data : ''}`.substring(0, 500);
 };
 
+function validateResponseJson(str, jsonMode) {
+  if (!jsonMode) return str;
+  if (!str || typeof str !== 'string') throw new Error('Empty response string');
+  let cleanStr = str.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const firstBrace = cleanStr.indexOf('{');
+  const lastBrace = cleanStr.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    cleanStr = cleanStr.substring(firstBrace, lastBrace + 1);
+  }
+  JSON.parse(cleanStr);
+  return str;
+}
+
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Cerebras Gemma 4 31B (Key 1 - A)
-  if (cerebrasKeys[0]) {
-    try {
-      return await callCerebras(cerebrasKeys[0], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 1 (Cerebras Key 1) failed:', getErrDetails(e)); }
-  }
+  const tiers = [
+    // Tier 1-4: Cerebras Gemma 4 31B (ABCD order)
+    ...cerebrasKeys.map((key, i) => ({
+      name: `Tier ${i + 1} (Cerebras Key ${i + 1})`,
+      fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
+    })),
+    // Tier 5-8: Groq Llama 3.3 70B Versatile
+    ...groqKeys.map((key, i) => ({
+      name: `Tier ${i + 5} (Groq Key ${i + 1})`,
+      fn: () => callGroq(key, prompt, systemInstruction, temperature, jsonMode)
+    })),
+    // Tier 9-12: Gemini 2.5 Flash
+    ...geminiClients.map((client, i) => ({
+      name: `Tier ${i + 9} (Gemini 2.5 Key ${i + 1})`,
+      fn: () => callGeminiWithRetry(client, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode)
+    })),
+    // Tier 13: Hugging Face Gemma 4 31B
+    ...(env.HF_INFERENCE_TOKEN ? [{
+      name: 'Tier 13 (Hugging Face Gemma 4 31B)',
+      fn: () => callHuggingFaceInference(prompt, systemInstruction, temperature, jsonMode)
+    }] : []),
+    // Tier 14: Mistral Pixtral 12B
+    ...(env.MISTRAL_API_KEY ? [{
+      name: 'Tier 14 (Mistral Pixtral 12B)',
+      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode)
+    }] : []),
+    // Tier 15: OpenRouter
+    ...(env.OPENROUTER_API_KEY ? [{
+      name: 'Tier 15 (OpenRouter)',
+      fn: () => callOpenRouter(prompt, systemInstruction, temperature, jsonMode)
+    }] : [])
+  ];
 
-  // Tier 2: Cerebras Gemma 4 31B (Key 2 - B)
-  if (cerebrasKeys[1]) {
+  for (const tier of tiers) {
     try {
-      console.log('[FALLBACK] Switching to Tier 2 (Cerebras Key 2)...');
-      return await callCerebras(cerebrasKeys[1], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 2 (Cerebras Key 2) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 3: Cerebras Gemma 4 31B (Key 3 - C)
-  if (cerebrasKeys[2]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 3 (Cerebras Key 3)...');
-      return await callCerebras(cerebrasKeys[2], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 3 (Cerebras Key 3) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 4: Cerebras Gemma 4 31B (Key 4 - D)
-  if (cerebrasKeys[3]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 4 (Cerebras Key 4)...');
-      return await callCerebras(cerebrasKeys[3], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 4 (Cerebras Key 4) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 5: Groq Llama 3.3 70B Versatile (Key 1)
-  if (groqKeys[0]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 5 (Groq Key 1)...');
-      return await callGroq(groqKeys[0], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 5 (Groq Key 1) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 6: Groq Llama 3.3 70B Versatile (Key 2)
-  if (groqKeys[1]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 6 (Groq Key 2)...');
-      return await callGroq(groqKeys[1], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 6 (Groq Key 2) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 7: Groq Llama 3.3 70B Versatile (Key 3)
-  if (groqKeys[2]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 7 (Groq Key 3)...');
-      return await callGroq(groqKeys[2], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 7 (Groq Key 3) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 8: Groq Llama 3.3 70B Versatile (Key 4)
-  if (groqKeys[3]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 8 (Groq Key 4)...');
-      return await callGroq(groqKeys[3], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 8 (Groq Key 4) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 9: Gemini 2.5 Flash (Key 1)
-  if (geminiClients[0]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 9 (Gemini 2.5 Flash Key 1)...');
-      return await callGeminiWithRetry(geminiClients[0], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 9 (Gemini 2.5 Key 1) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 10: Gemini 2.5 Flash (Key 2)
-  if (geminiClients[1]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 10 (Gemini 2.5 Flash Key 2)...');
-      return await callGeminiWithRetry(geminiClients[1], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 10 (Gemini 2.5 Key 2) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 11: Gemini 2.5 Flash (Key 3)
-  if (geminiClients[2]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 11 (Gemini 2.5 Flash Key 3)...');
-      return await callGeminiWithRetry(geminiClients[2], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 11 (Gemini 2.5 Key 3) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 12: Gemini 2.5 Flash (Key 4)
-  if (geminiClients[3]) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 12 (Gemini 2.5 Flash Key 4)...');
-      return await callGeminiWithRetry(geminiClients[3], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 12 (Gemini 2.5 Key 4) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 13: Hugging Face Router (Gemma 4 31B IT)
-  if (env.HF_INFERENCE_TOKEN) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 13 (Hugging Face Gemma 4 31B)...');
-      return await callHuggingFaceInference(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 13 (Hugging Face) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 14: Mistral API (Pixtral 12B)
-  if (env.MISTRAL_API_KEY) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 14 (Mistral Pixtral 12B)...');
-      return await callMistral(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 14 (Mistral) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 15: OpenRouter (Gemma 2 27B)
-  if (env.OPENROUTER_API_KEY) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 15 (OpenRouter)...');
-      return await callOpenRouter(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 15 (OpenRouter) failed:', getErrDetails(e)); }
+      console.log(`[FALLBACK] Trying ${tier.name}...`);
+      const rawRes = await tier.fn();
+      return validateResponseJson(rawRes, jsonMode);
+    } catch (e) {
+      console.warn(`[FALLBACK] ${tier.name} failed:`, getErrDetails(e));
+    }
   }
 
   // Fallback Final
@@ -230,8 +167,7 @@ async function callCerebras(apiKey, prompt, systemInstruction, temperature, json
       { role: 'user', content: prompt }
     ],
     temperature,
-    top_p: 0.85,
-    max_tokens: 1500
+    max_tokens: 2500
   };
   if (jsonMode) requestBody.response_format = { type: 'json_object' };
 
