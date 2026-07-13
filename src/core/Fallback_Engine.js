@@ -176,7 +176,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 // API WRAPPERS WITH 503 SMART RETRY
 // ----------------------------------------------------
 
-async function callGeminiWithRetry(client, modelName, prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
+async function callGeminiWithRetry(client, modelName, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
   const generationConfig = { temperature };
   if (jsonMode) generationConfig.responseMimeType = 'application/json';
   
@@ -191,18 +191,12 @@ async function callGeminiWithRetry(client, modelName, prompt, systemInstruction,
       const response = await model.generateContent(prompt);
       return response.response.text();
     } catch (e) {
-      if (e.message.includes('503') && attempt < retries) {
-        const delay = attempt * 2000;
-        console.warn(`[FALLBACK] Gemini 503 attempt ${attempt}/${retries}, retry in ${delay}ms...`);
-        await new Promise(r => setTimeout(r, delay));
-        continue;
-      }
-      throw e;
+      if (attempt === retries) throw e;
     }
   }
 }
 
-async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
+async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
   const requestBody = {
     model: 'llama-3.3-70b-versatile',
     messages: [
@@ -218,20 +212,16 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
     try {
       const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', requestBody, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 15000
+        timeout: 8000
       });
       return response.data.choices[0].message.content;
     } catch (e) {
-      if (e.response?.status === 503 && attempt < retries) {
-        await new Promise(r => setTimeout(r, attempt * 2000));
-        continue;
-      }
-      throw e;
+      if (attempt === retries) throw e;
     }
   }
 }
 
-async function callCerebras(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 2) {
+async function callCerebras(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
   if (!apiKey) throw new Error('No Cerebras API key provided');
   const requestBody = {
     model: 'gemma-4-31b',  // Updated: Cerebras deprecated llama-3.3-70b and upgraded to gemma-4-31b
@@ -248,17 +238,11 @@ async function callCerebras(apiKey, prompt, systemInstruction, temperature, json
     try {
       const response = await axios.post('https://api.cerebras.ai/v1/chat/completions', requestBody, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 15000
+        timeout: 8000
       });
       return response.data.choices[0].message.content;
     } catch (e) {
-      // Fail fast on 404 (wrong model/endpoint) or 429 (rate limit) — no point retrying
-      if (e.response?.status === 404 || e.response?.status === 429) throw e;
-      if (e.response?.status === 503 && attempt < retries) {
-        await new Promise(r => setTimeout(r, attempt * 2000));
-        continue;
-      }
-      throw e;
+      if (attempt === retries) throw e;
     }
   }
 }
