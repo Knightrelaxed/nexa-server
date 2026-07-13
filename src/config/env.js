@@ -18,11 +18,10 @@ module.exports = {
   GROQ_API_KEY_2: process.env.GROQ_API_KEY_2,
   GROQ_API_KEY_3: process.env.GROQ_API_KEY_3,
   GROQ_API_KEY_4: process.env.GROQ_API_KEY_4,
-  CEREBRAS_API_KEY_1: process.env.CEREBRAS_API_KEY_1 || process.env.CEREBRAS_API_KEY,
+  CEREBRAS_API_KEY_1: process.env.CEREBRAS_API_KEY_1,
   CEREBRAS_API_KEY_2: process.env.CEREBRAS_API_KEY_2,
   CEREBRAS_API_KEY_3: process.env.CEREBRAS_API_KEY_3,
   CEREBRAS_API_KEY_4: process.env.CEREBRAS_API_KEY_4,
-  CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
   MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
   HF_TOKEN: process.env.HF_TOKEN, // Khusus untuk repo write/sync GitHub Actions
   HF_INFERENCE_TOKEN: process.env.HF_INFERENCE_TOKEN, // Khusus untuk AI Inference Providers
