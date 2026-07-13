@@ -36,11 +36,19 @@ const getErrDetails = (e) => {
 };
 
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Groq Llama 3.3 70B Versatile (Key 1)
+  // Tier 1 (TEMPORARY TEST): Hugging Face Gemma 4 31B IT
+  if (env.HF_INFERENCE_TOKEN) {
+    try {
+      console.log('[FALLBACK] TEST MODE: Trying Tier 1 Hugging Face Gemma 4 31B IT...');
+      return await callHuggingFaceInference(prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] TEST Tier 1 (HF Gemma 4) failed:', getErrDetails(e)); }
+  }
+
+  // Tier 2: Groq Llama 3.3 70B Versatile (Key 1)
   if (groqKeys[0]) {
     try {
       return await callGroq(groqKeys[0], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 1 (Groq Key 1) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 2 (Groq Key 1) failed:', getErrDetails(e)); }
   }
 
   // Tier 2: Groq Llama 3.3 70B Versatile (Key 2)
