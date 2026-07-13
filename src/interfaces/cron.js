@@ -61,17 +61,42 @@ function initCronJobs() {
     console.log('[CRON] ── Weekly Cognitive Sunday Pass starting...');
 
     // STEP 1: Weekly Identity Inference [PHASE 6]
+    // [BUG FIX #1] Blok Phase 6 lama yang duplikat sudah dihapus. Hanya satu cron
+    // '0 21 * * 0' yang boleh berjalan — orchestrator ini.
     try {
       const inferenceEngine = require('../domain/Inference_Engine');
+      const { sendTelegramOutbound } = require('./webhook');
+
       const result = await inferenceEngine.runWeeklyIdentityInference();
       console.log(`[CRON] Weekly Inference done: saved=${result.saved} pendingSent=${result.pendingSent} staged=${result.staged}`);
+
+      // Kirim ringkasan hasil inferensi ke Telegram (dipindahkan dari cron Phase 6)
+      if (result.success && result.saved > 0) {
+        const summaryMsg = [
+          `🧠 <b>Weekly Identity Inference Selesai</b>`,
+          `<i>(Siklus Pemahaman Mingguan N.E.X.A)</i>`,
+          '',
+          `📊 Hipotesis yang dianalisis : <b>${result.totalHypotheses}</b>`,
+          `✅ Proposal baru tersimpan   : <b>${result.saved}</b>`,
+          `📨 Dikirim untuk review      : <b>${result.pendingSent}</b>`,
+          `📂 Di-stage (bukti kurang)   : <b>${result.staged}</b>`,
+          `⚡ Diabaikan (duplikat/lemah): <b>${result.skipped}</b>`,
+          '',
+          result.pendingSent > 0
+            ? `💡 Silakan review proposal identitas di atas, Tuan.`
+            : `📝 Semua hipotesis minggu ini di-stage untuk observasi lanjutan.`
+        ].join('\n');
+        await sendTelegramOutbound(summaryMsg, true);
+        console.log('[CRON] Inference summary sent to Telegram.');
+      } else if (result.success && result.saved === 0) {
+        console.log('[CRON] No new identity proposals this week. Model is stable.');
+      }
 
       // STEP 2: [PHASE 7 — M3] Personality Evolution Narrative
       // Delay 5 detik agar notifikasi proposal tidak bertabrakan
       await new Promise(r => setTimeout(r, 5000));
       try {
         const narrative = await inferenceEngine.getPersonalityEvolutionNarrative(30);
-        const { sendTelegramOutbound } = require('./webhook');
         await sendTelegramOutbound(narrative, true);
         console.log('[CRON] Personality Evolution Narrative sent to Telegram.');
       } catch (narrativeErr) {
@@ -90,7 +115,7 @@ function initCronJobs() {
       }
 
     } catch (e) {
-      console.error('[CRON] Weekly Identity Inference failed:', e.message);
+      console.error('[CRON] Weekly Cognitive Sunday Pass failed:', e.message);
     }
 
     console.log('[CRON] ── Weekly Cognitive Sunday Pass complete.');
@@ -458,57 +483,9 @@ function initCronJobs() {
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
-  // ================================================================
-  // [PHASE 6] COGNITIVE IDENTITY ENGINE — Weekly Identity Inference
-  // ================================================================
-
-  // [P6] Weekly Identity Inference (Every Sunday 21:00 WIB)
-  // Menjalankan Mesin Inferensi Kognitif:
-  //   1. Baca 7 hari observasi (behavior log + chat memories)
-  //   2. AI mensintesis hipotesis 7 Layer Identitas
-  //   3. Filter berdasarkan Confidence Score
-  //   4. Kirim proposal ke Telegram jika confidence > 85%
-  //   5. Stage jika confidence 60-85% (konsolidasi minggu depan)
-  // NOTE: Dijalankan 1 jam SETELAH Weekly Behavior Review (20:00) agar tidak
-  //       tumpang tindih dan behavior summary sudah terkirim lebih dulu.
-  cron.schedule('0 21 * * 0', async () => {
-    console.log('[CRON-INFERENCE] Executing Weekly Identity Inference (Phase 6)...');
-    try {
-      const inferenceEngine = require('../domain/Inference_Engine');
-      const result = await inferenceEngine.runWeeklyIdentityInference();
-
-      const { sendTelegramOutbound } = require('./webhook');
-
-      if (result.success && result.saved > 0) {
-        // Kirim ringkasan proses inferensi ke Telegram
-        const summaryMsg = [
-          `🧠 <b>Weekly Identity Inference Selesai</b>`,
-          `<i>(Siklus Pemahaman Mingguan N.E.X.A)</i>`,
-          '',
-          `📊 Hipotesis yang dianalisis : <b>${result.totalHypotheses}</b>`,
-          `✅ Proposal baru tersimpan   : <b>${result.saved}</b>`,
-          `📨 Dikirim untuk review      : <b>${result.pendingSent}</b>`,
-          `📂 Di-stage (bukti kurang)   : <b>${result.staged}</b>`,
-          `⚡ Diabaikan (duplikat/lemah): <b>${result.skipped}</b>`,
-          '',
-          result.pendingSent > 0
-            ? `💡 Silakan review proposal identitas di atas, Tuan.`
-            : `📝 Semua hipotesis minggu ini di-stage untuk observasi lanjutan.`
-        ].join('\n');
-
-        await sendTelegramOutbound(summaryMsg, true); // skipMemory=true karena ini sistem
-        console.log('[CRON-INFERENCE] Identity Inference summary sent to Telegram.');
-
-      } else if (result.success && result.saved === 0) {
-        console.log('[CRON-INFERENCE] No new identity proposals this week. Model is stable.');
-      } else {
-        console.error('[CRON-INFERENCE] Inference failed:', result.error);
-      }
-
-    } catch (e) {
-      console.error('[CRON-INFERENCE] Weekly Identity Inference failed:', e.message);
-    }
-  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+  // [BUG FIX #1] Blok cron Phase 6 '0 21 * * 0' yang duplikat telah DIHAPUS.
+  // Logika summaryMsg sudah dipindahkan ke dalam orchestrator Phase 7 di atas (STEP 1).
+  // Hanya SATU schedule '0 21 * * 0' yang boleh aktif.
 
 
   // ================================================================

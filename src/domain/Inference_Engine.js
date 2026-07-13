@@ -644,14 +644,20 @@ async function _persistProposal(hypothesis, stagedProposals, currentIdentityFull
 
   // ── TIER 1: AUTO-APPROVE — Langsung commit ke identity_model ──
   if (tier === 1 && existingTrait) {
+    // [BUG FIX #5] Sertakan decay_lambda yang benar per layer saat auto-approve.
+    // Tanpa ini, trait yang di-auto-approve tetap menggunakan default 0.020
+    // alih-alih nilai spesifik layer (HABITS=0.040, FACTS=0.005, dll.).
+    const correctLambda = DECAY_LAMBDA_BY_LAYER[layer] || 0.020;
+
     const { error } = await sb
       .from('nexa_identity_model')
       .update({
-        trait_value:        String(hypothesis.proposed_value).trim(),
-        confidence:         parseFloat(newConfidence.toFixed(2)),
+        trait_value:           String(hypothesis.proposed_value).trim(),
+        confidence:            parseFloat(newConfidence.toFixed(2)),
         inferred_from_summary: String(hypothesis.reasoning).trim(),
-        last_reinforced_at: new Date().toISOString(),
-        updated_at:         new Date().toISOString()
+        last_reinforced_at:    new Date().toISOString(),
+        decay_lambda:          correctLambda, // [BUG FIX #5] Set lambda yang benar per layer
+        updated_at:            new Date().toISOString()
       })
       .eq('layer', layer)
       .eq('trait_key', traitKey);
@@ -661,9 +667,10 @@ async function _persistProposal(hypothesis, stagedProposals, currentIdentityFull
       return { success: false, proposalId: null, status: 'ERROR', tier: 1 };
     }
 
-    console.log(`[INFERENCE] ⚡ TIER 1 AUTO-APPROVED: [${layer}] ${traitKey} = "${hypothesis.proposed_value}"`);
+    console.log(`[INFERENCE] ⚡ TIER 1 AUTO-APPROVED: [${layer}] ${traitKey} = "${hypothesis.proposed_value}" (λ=${correctLambda})`);
     return { success: true, proposalId: null, status: 'AUTO_APPROVED', tier: 1 };
   }
+
 
   // ── Cek apakah sudah ada proposal STAGED untuk trait yang sama ─
   const existingStaged = stagedProposals.find(
@@ -986,7 +993,14 @@ async function runDailyDecayPass() {
         const lastReinforced = trait.last_reinforced_at
           ? new Date(trait.last_reinforced_at).getTime()
           : new Date(0).getTime();
-        const daysSince = Math.max(0, (now - lastReinforced) / (1000 * 60 * 60 * 24));
+
+        // [BUG FIX #7] Tambahkan cap 365 hari untuk mencegah extreme decay.
+        // Tanpa cap, trait dengan last_reinforced_at = null/epoch menghasilkan
+        // daysSince ribuan hari \u2014 formula e^(-\u03bb \u00d7 t) mendekati 0,
+        // sehingga confidence langsung terjun ke nol sebelum trait sempat diobservasi.
+        const rawDays = (now - lastReinforced) / (1000 * 60 * 60 * 24);
+        const daysSince = Math.min(365, Math.max(0, rawDays));
+
 
         // Gunakan λ dari kolom database, fallback ke konstanta default per layer
         const lambda = parseFloat(trait.decay_lambda)

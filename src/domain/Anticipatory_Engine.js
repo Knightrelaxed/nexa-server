@@ -597,14 +597,21 @@ async function getLatestMoodContext() {
   if (!sb) return { mood_7d_trend: 'STABLE', mood_7d_variance: 'LOW' };
 
   try {
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // [BUG FIX #6] Window diperluas dari 24h ke 36h.
+    // computeMoodTimeSeries berjalan pukul 23:30 WIB. Dengan window 24 jam,
+    // antara pukul 00:00-23:29 WIB keesokan harinya (hampir seharian penuh),
+    // tidak ada data terbaru dalam window \u2014 sehingga mood_7d_trend selalu 'STABLE'
+    // dan pola negative_mood_trend_alert tidak pernah aktif siang hari.
+    // 36 jam memastikan data dari run 23:30 kemarin selalu tersedia.
+    const thirtyFourHoursAgo = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString();
     const { data } = await sb
       .from('nexa_behavior_log')
       .select('event_data')
       .eq('event_type', 'MOOD_TIME_SERIES')
-      .gte('created_at', oneDayAgo)
+      .gte('created_at', thirtyFourHoursAgo)
       .order('created_at', { ascending: false })
       .limit(1);
+
 
     if (data && data.length > 0 && data[0].event_data) {
       return {

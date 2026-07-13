@@ -379,7 +379,9 @@ async function computeMoodTimeSeries() {
     const scores7d  = [];  // Semua skor 7 hari
     const scoresOld = [];  // Skor 3 hari pertama (hari ke 7-4)
     const scoresNew = [];  // Skor 4 hari terakhir (hari ke 3-0)
-    const scores24h = [];  // Skor 24 jam terakhir
+    // [BUG FIX #4] Array scores24h dihapus karena dead code — menggunakan
+    // oneDayAgo.length (panjang string ISO = 24 char) sebagai millisecond,
+    // bukan 24 jam. Diganti dengan scores24hReal di bawah yang sudah benar.
 
     for (const row of data) {
       const score = getMoodScore(row.event_data, row.event_type);
@@ -388,7 +390,8 @@ async function computeMoodTimeSeries() {
       const ts = new Date(row.created_at).getTime();
       scores7d.push(score);
 
-      if (ts >= now - oneDayAgo.length) scores24h.push(score); // akan diganti di bawah
+      // [BUG FIX #4] Kondisi scores24h dihapus (dead code, lihat komentar di atas).
+      // Pemisahan old/new tetap dipertahankan untuk kalkulasi tren 7 hari:
       if (ts < threeDaysAgo) {
         scoresOld.push(score);
       } else {

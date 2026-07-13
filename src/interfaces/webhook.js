@@ -35,6 +35,49 @@ let pendingDatabaseContext = null;
 // Structure: { intent, extractedData, lastUserText, lastAssistantReply, askedAt }
 let conversationContext = null;
 
+// [BUG FIX #3] Session Advice Counter — melacak berapa kali intent ADVICE muncul
+// dalam satu sesi percakapan beruntun (window: 1 jam).
+// Digunakan oleh Anticipatory_Engine untuk mendeteksi pola overthinking_spiral.
+// Struktur: Map<chatId, { count: number, lastAt: number }>
+const _adviceSessionMap = new Map();
+const ADVICE_SESSION_TTL_MS = 60 * 60 * 1000; // 1 jam
+
+/**
+ * Increment session ADVICE counter dan kembalikan jumlah terkini.
+ * Counter di-reset otomatis jika sudah lebih dari 1 jam sejak interaksi terakhir.
+ * @param {string|number} chatId - Telegram chat ID sebagai key
+ * @returns {number} Jumlah ADVICE dalam session ini
+ */
+function _trackAdviceSession(chatId) {
+  const key = String(chatId || 'default');
+  const now = Date.now();
+  const session = _adviceSessionMap.get(key);
+
+  if (!session || (now - session.lastAt) > ADVICE_SESSION_TTL_MS) {
+    // Session baru atau sudah kedaluarsa — reset ke 1
+    _adviceSessionMap.set(key, { count: 1, lastAt: now });
+    return 1;
+  }
+
+  // Update session yang sudah ada
+  const newCount = session.count + 1;
+  _adviceSessionMap.set(key, { count: newCount, lastAt: now });
+  return newCount;
+}
+
+/**
+ * Baca jumlah ADVICE session tanpa increment (untuk non-ADVICE intent).
+ * @param {string|number} chatId
+ * @returns {number}
+ */
+function _getAdviceSessionCount(chatId) {
+  const key = String(chatId || 'default');
+  const now = Date.now();
+  const session = _adviceSessionMap.get(key);
+  if (!session || (now - session.lastAt) > ADVICE_SESSION_TTL_MS) return 0;
+  return session.count;
+}
+
 // Pending Vault Context: confirmation loop for metadata
 // Structure: { vaultRowId, driveFileId, driveLink, fileName, mimeType, telegramFileId, category, metadata, askedAt }
 let pendingVaultContext = null;
@@ -2021,6 +2064,13 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })
       ).getHours();
 
+      // [BUG FIX #3] Hitung session advice count secara riil.
+      const currentChatId = message?.chat?.id || 'default';
+      const currentIntent = String(routingData.intent || 'NORMAL_CHAT').toUpperCase();
+      const sessionAdviceCount = currentIntent === 'ADVICE'
+        ? _trackAdviceSession(currentChatId)
+        : _getAdviceSessionCount(currentChatId);
+
       // Jalankan anticipation check secara async (ambil mood context & run check bersamaan)
       (async () => {
         try {
@@ -2031,8 +2081,9 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             hour:              jakartaHour,
             mood_7d_trend:     moodCtx.mood_7d_trend,
             mood_7d_variance:  moodCtx.mood_7d_variance,
-            sessionAdviceCount: 0 // TODO: bisa dikembangkan dengan session counter di M4+
+            sessionAdviceCount // [BUG FIX #3] Nilai riil dari session counter, bukan hardcoded 0
           });
+
         } catch (_) {}
       })();
     }

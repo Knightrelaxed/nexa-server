@@ -401,14 +401,20 @@ async function runOutcomeCheckPass() {
   const nowIso = new Date().toISOString();
 
   try {
-    // Ambil keputusan yang sudah waktunya dievaluasi (outcome_result IS NULL)
+    // [BUG FIX #2] Tambah filter outcome_received_at IS NULL:
+    // Tanpa filter ini, setiap hari sistem akan menanyakan hal yang sama
+    // (karena outcome_result tetap NULL sampai user membalas), menyebabkan
+    // spam tak terbatas. Dengan filter ini, begitu pesan pertama dikirim
+    // dan outcome_received_at diisi, baris tidak akan pernah ditarik lagi.
     const { data: pendingOutcomes, error: fetchError } = await sb
       .from('nexa_decision_journal')
       .select('*')
       .is('outcome_result', null)
+      .is('outcome_received_at', null)         // [BUG FIX #2] Hanya yang BELUM pernah ditanya
       .lte('outcome_check_at', nowIso)
       .order('outcome_check_at', { ascending: true })
       .limit(3); // Maks 3 pertanyaan outcome per hari
+
 
     if (fetchError) {
       console.warn('[INTENTION] Failed to fetch pending outcomes:', fetchError.message);
