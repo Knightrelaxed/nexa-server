@@ -17,6 +17,7 @@ module.exports = {
   GROQ_API_KEY_1: process.env.GROQ_API_KEY_1,
   GROQ_API_KEY_2: process.env.GROQ_API_KEY_2,
   GROQ_API_KEY_3: process.env.GROQ_API_KEY_3,
+  GROQ_API_KEY_4: process.env.GROQ_API_KEY_4,
   CEREBRAS_API_KEY_1: process.env.CEREBRAS_API_KEY_1 || process.env.CEREBRAS_API_KEY,
   CEREBRAS_API_KEY_2: process.env.CEREBRAS_API_KEY_2,
   CEREBRAS_API_KEY_3: process.env.CEREBRAS_API_KEY_3,
