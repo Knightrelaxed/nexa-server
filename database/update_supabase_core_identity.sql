@@ -195,8 +195,33 @@ Mekanisme    : Tier 0 Relay Edge -> Local Audio Download -> HF Turbo & Native Au
 [Tier 12] Groq Cloud   — Whisper Large v3 (Key 4)
 ================================================================================', '2026-07-13 04:11:08+00'),
 (131, '================================================================================
-4. KOGNISI IDENTITAS BERLANJUT (COGNITIVE IDENTITY ENGINE - PHASE 6)
+4. ARSITEKTUR KOGNISI IDENTITAS BERLANJUT (COGNITIVE IDENTITY ENGINE - PHASE 6)
 ================================================================================
-Fungsi Utama : Sintesis otomatis 7 layer identitas dari pola perilaku & obrolan
-Mekanisme    : Inference_Engine.js mengevaluasi nexa_behavior_log dan nexa_chat_memories setiap Minggu pukul 21:00 WIB. Menggunakan LLM (Temperature 0.2) untuk merumuskan hipotesis identitas pada 7 Layer (FACTS, PREFERENCES, HABITS, VALUES, DECISION_STYLE, WEAKNESSES, MOTIVATIONS). Proposal identitas dengan confidence > 85% akan dikirim ke Telegram via webhook.js (Inline Keyboard) untuk persetujuan (APPROVE/REJECT) oleh pengguna secara eksplisit.
-Sistem Check-In : Modul Intelligence_Brief.js memiliki parser cerdas dengan regex 80+ kosakata harian & keluhan (mager, pusing, karena, dsb) untuk memilah respons metrik biologis cepat (fast-path) dengan evaluasi kontekstual via LLM. AI kemudian menyimpan data tersebut ke log perilaku dengan narasi reflektif yang otomatis dikalibrasi.', '2026-07-13 10:00:00+00');
+Fungsi Utama : Evolusi pemahaman kepribadian Tuan Faqih secara mandiri, reflektif, dan akurat
+Modul Utama  : domain/Inference_Engine.js, domain/Intelligence_Brief.js, core/AI_Router.js
+
+[1. STRUKTUR 7 LAYER IDENTITAS (nexa_identity_model)]
+N.E.X.A memetakan kepribadian Tuan Faqih secara holistik ke dalam 7 lapisan psikologis:
+- FACTS         : Fakta permanen dan objektif (misal: domisili Yogyakarta, mahasiswa S1).
+- PREFERENCES   : Kesukaan, ketidaksukaan, dan selera (misal: lebih suka kopi pahit, mode gelap).
+- HABITS        : Pola perilaku dan rutinitas berulang (misal: aktif di malam hari, bimbingan tiap pekan).
+- VALUES        : Prinsip hidup dan aturan moral yang dipegang teguh.
+- DECISION_STYLE: Pendekatan analisis dan pengambilan keputusan Tuan Faqih.
+- WEAKNESSES    : Area kerentanan atau hambatan produktivitas yang perlu dibantu N.E.X.A.
+- MOTIVATIONS   : Pendorong utama, cita-cita diplomasi, dan ambisi jangka panjang.
+
+[2. SIKLUS INFERENSI MINGGUAN (INFERENCE ENGINE)]
+- Berjalan otomatis setiap hari Minggu pukul 21:00 WIB via cron.js -> Inference_Engine.runWeeklyIdentityInference().
+- Mensintesis observasi 7 hari dari tabel nexa_behavior_log dan nexa_chat_memories menggunakan LLM (Temperature 0.2).
+- Menghasilkan hipotesis kepribadian yang disimpan ke tabel nexa_identity_proposals dengan tingkat keyakinan (confidence 0.01 - 1.00).
+
+[3. PERSETJUAN EKSPLISIT VIA TELEGRAM (HUMAN-IN-THE-LOOP)]
+- Proposal dengan confidence > 85% akan dikirim via webhook.js dengan tombol Inline Keyboard: [ ✅ APPROVE & COMMIT ] dan [ ❌ REJECT ].
+- Jika APPROVE: Trait resmi dimasukkan ke tabel nexa_identity_model dan langsung disuntikkan ke prompt N.E.X.A pada obrolan berikutnya.
+- Jika REJECT: N.E.X.A menanyakan koreksi/alasan dari Tuan Faqih, mencatatnya di database agar tidak mengulang kesimpulan salah yang sama.
+
+[4. AI-CALIBRATED MORNING CHECK-IN & 80+ NARRATIVE REGEX]
+- Modul Intelligence_Brief.js menangani pelaporan kondisi pagi (Skor Tidur 1-5, Energi 1-5, Fokus/Target Hari Ini).
+- Menggunakan detektor kata kunci naratif berkapasitas 80+ kosakata harian & keluhan (contoh: mager, lemas, pusing, meriang, begadang, karena, soalnya, revisi, dsb).
+- Jika Tuan Faqih memberi angka saja ("4, 3, siap"), N.E.X.A memproses kilat tanpa AI (Fast-Path).
+- Jika Tuan Faqih memberi alasan ("4, 3, agak mager karena semalam revisi bab 3"), AI Parser menganalisis alasan tersebut, mengkalibrasi skor agar realistis, dan membalas dalam format tepat 2 Bubble Pesan terpisah yang berempati dan aplikatif.', '2026-07-13 10:00:00+00');
