@@ -250,6 +250,7 @@ async function callHuggingFaceInference(prompt, systemInstruction, temperature, 
       { role: 'user', content: prompt }
     ],
     temperature,
+    top_p: 0.9,
     max_tokens: 1500
   };
   if (jsonMode) requestBody.response_format = { type: 'json_object' };
