@@ -137,3 +137,47 @@ FROM information_schema.columns
 WHERE table_schema = 'public'
   AND table_name IN ('nexa_pending_intentions', 'nexa_decision_journal')
 ORDER BY table_name, ordinal_position;
+
+-- ============================================================
+-- MILESTONE 3: Emotional Time-Series Engine + Personality Version History
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABEL 5: nexa_identity_history
+-- Mencatat setiap perubahan yang terjadi pada nexa_identity_model
+-- saat Tuan Faqih menyetujui proposal. Digunakan untuk melacak
+-- "kecepatan pergeseran kepribadian" dan menghasilkan narasi evolusi.
+--
+-- shift_velocity : (confidence_new - confidence_old) / days_since_last_reinforced
+--                  Mengukur seberapa cepat perubahan terjadi (poin/hari).
+-- shift_trigger  : Ringkasan konteks atau reasoning yang memicu perubahan.
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "public"."nexa_identity_history" (
+  "id"               BIGSERIAL PRIMARY KEY,
+  "layer"            TEXT NOT NULL,
+  "trait_key"        TEXT NOT NULL,
+  "trait_value_old"  TEXT,                        -- Nilai sebelum diubah (NULL jika trait baru)
+  "trait_value_new"  TEXT NOT NULL,               -- Nilai baru setelah approval
+  "confidence_old"   NUMERIC(4,2),               -- Confidence sebelum diubah
+  "confidence_new"   NUMERIC(4,2),               -- Confidence setelah diubah
+  "shift_velocity"   NUMERIC(6,4),               -- Kecepatan pergeseran (poin confidence/hari)
+  "shift_trigger"    TEXT,                        -- Konteks / reasoning pemicu perubahan
+  "approved_at"      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index untuk query riwayat per trait
+CREATE INDEX IF NOT EXISTS "idx_identity_history_trait"
+  ON "public"."nexa_identity_history" ("layer", "trait_key", "approved_at" DESC);
+
+-- Index untuk query narasi evolusi terbaru
+CREATE INDEX IF NOT EXISTS "idx_identity_history_approved_at"
+  ON "public"."nexa_identity_history" ("approved_at" DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- VERIFIKASI M3: Cek tabel berhasil dibuat
+-- ────────────────────────────────────────────────────────────
+SELECT table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'nexa_identity_history'
+ORDER BY ordinal_position;

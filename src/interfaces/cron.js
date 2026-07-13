@@ -55,21 +55,50 @@ function initCronJobs() {
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // [PHASE 6] 1.8. Weekly Cognitive Identity Inference (Minggu 21:00 WIB)
+  // [PHASE 7 — M3] Setelah inferensi, generate & kirim Personality Evolution Narrative
   cron.schedule('0 21 * * 0', async () => {
     console.log('[CRON] Executing Weekly Cognitive Identity Inference...');
     try {
       const inferenceEngine = require('../domain/Inference_Engine');
-      await inferenceEngine.runWeeklyIdentityInference();
+      const result = await inferenceEngine.runWeeklyIdentityInference();
+      console.log(`[CRON] Weekly Inference done: saved=${result.saved} pendingSent=${result.pendingSent} staged=${result.staged}`);
+
+      // [PHASE 7 — M3] Generate dan kirim Personality Evolution Narrative
+      // Dikirim beberapa detik setelah inference selesai agar tidak menumpuk dengan notifikasi proposal
+      await new Promise(r => setTimeout(r, 5000));
+      try {
+        const narrative = await inferenceEngine.getPersonalityEvolutionNarrative(30);
+        const { sendTelegramOutbound } = require('./webhook');
+        await sendTelegramOutbound(narrative, true);
+        console.log('[CRON] Personality Evolution Narrative sent to Telegram.');
+      } catch (narrativeErr) {
+        console.warn('[CRON] Personality narrative failed (non-blocking):', narrativeErr.message);
+      }
+
     } catch (e) {
       console.error('[CRON] Weekly Identity Inference failed:', e.message);
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
-  // [PHASE 7 — M1] Daily Memory Decay Pass (setiap hari 23:30 WIB)
-  // Menjalankan fungsi Ebbinghaus decay pada semua trait di nexa_identity_model.
-  // Trait yang confidence-nya turun di bawah 60% akan memicu soft check-in ke Telegram.
+  // [PHASE 7 — M1+M3] Daily Evening Pass (setiap hari 23:30 WIB)
+  // Menjalankan dua operasi kognitif malam berurutan:
+  //   1. Mood Time-Series: hitung dan simpan tren emosional 24h/7d ke behavior_log
+  //   2. Memory Decay: jalankan Ebbinghaus decay pada semua trait identity_model
   cron.schedule('30 23 * * *', async () => {
-    console.log('[CRON] Executing Daily Memory Decay Pass...');
+    console.log('[CRON] Executing Daily Evening Cognitive Pass (MoodTimeSeries + MemoryDecay)...');
+
+    // 1. Compute Mood Time-Series [PHASE 7 — M3]
+    try {
+      const behaviorEngine = require('../domain/Behavior_Engine');
+      const ts = await behaviorEngine.computeMoodTimeSeries();
+      if (ts) {
+        console.log(`[CRON] Mood Time-Series done: 24h=${ts.mood_24h_state} | 7d=${ts.mood_7d_trend} | var=${ts.mood_7d_variance}`);
+      }
+    } catch (e) {
+      console.error('[CRON] Mood Time-Series failed:', e.message);
+    }
+
+    // 2. Memory Decay Pass [PHASE 7 — M1]
     try {
       const inferenceEngine = require('../domain/Inference_Engine');
       const stats = await inferenceEngine.runDailyDecayPass();
@@ -77,6 +106,7 @@ function initCronJobs() {
     } catch (e) {
       console.error('[CRON] Daily Memory Decay Pass failed:', e.message);
     }
+
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // [PHASE 7 — M1+M2] Morning Pass (setiap hari 08:15 WIB)

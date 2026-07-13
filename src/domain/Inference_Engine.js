@@ -262,6 +262,20 @@ function _synthesizeBehaviorSummary(logs) {
     lines.push(`MOOD_DETECTED: ${moods.length}x total. Distribusi: ${moodStr}.`);
   }
 
+  // ── [PHASE 7 — M3] Mood Time-Series (Emotional Trend Context) ─────────
+  // Baca event MOOD_TIME_SERIES terbaru yang dihitung oleh computeMoodTimeSeries()
+  // Jika ada, inject sebagai konteks tren emosional ke prompt AI.
+  const moodTimeSeries = grouped['MOOD_TIME_SERIES'] || [];
+  if (moodTimeSeries.length > 0) {
+    // Ambil yang paling baru
+    const latest = moodTimeSeries[moodTimeSeries.length - 1];
+    const d = latest.event_data || {};
+    const state24h = d.mood_24h_state || 'NEUTRAL';
+    const trend7d  = d.mood_7d_trend  || 'STABLE';
+    const variance = d.mood_7d_variance || 'LOW';
+    lines.push(`MOOD_TIME_SERIES (M3): 24h_state=${state24h} | 7d_trend=${trend7d} | variance=${variance}. Sampel=${d.sample_count || 0} event.`);
+  }
+
   // ── Finance Pattern ────────────────────────────────────────
   const finances = grouped['FINANCE_RECORD'] || [];
   if (finances.length > 0) {
@@ -1146,12 +1160,107 @@ async function runTier2SoftApprovePass() {
 }
 
 // ============================================================
+// [PHASE 7 — M3] PERSONALITY EVOLUTION NARRATIVE
+// ============================================================
+
+/**
+ * Membaca nexa_identity_history (30 hari terakhir) dan menghasilkan narasi
+ * ringkas tentang pola perubahan kepribadian Tuan Faqih.
+ *
+ * Dipanggil oleh cron.js setiap Minggu sebagai bagian dari Weekly Strategic Review,
+ * dan ditambahkan ke laporan mingguan sebagai seksi "Evolusi Identitas".
+ *
+ * Format output: string HTML Telegram-ready (menggunakan <b> dan <i>)
+ *
+ * @param {number} [daysBack=30] - Berapa hari ke belakang yang dianalisis
+ * @returns {Promise<string>} - Narasi evolusi atau pesan fallback jika belum ada data
+ */
+async function getPersonalityEvolutionNarrative(daysBack = 30) {
+  const sb = _getSupabase();
+  if (!sb) return '📖 Data evolusi kepribadian belum tersedia.';
+
+  const daysAgo = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    const { data: history, error } = await sb
+      .from('nexa_identity_history')
+      .select('layer, trait_key, trait_value_old, trait_value_new, confidence_old, confidence_new, shift_velocity, approved_at')
+      .gte('approved_at', daysAgo)
+      .order('approved_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.warn('[INFERENCE] Failed to fetch identity history:', error.message);
+      return '📖 Gagal membaca data evolusi kepribadian.';
+    }
+
+    if (!history || history.length === 0) {
+      return `📖 <b>Evolusi Kepribadian</b>\nBelum ada perubahan identitas yang disetujui dalam ${daysBack} hari terakhir.`;
+    }
+
+    // Kelompokkan perubahan berdasarkan layer
+    const byLayer = {};
+    for (const h of history) {
+      if (!byLayer[h.layer]) byLayer[h.layer] = [];
+      byLayer[h.layer].push(h);
+    }
+
+    const layerEmoji = {
+      FACTS: '📌', PREFERENCES: '💬', HABITS: '🔁',
+      VALUES: '⚖️', DECISION_STYLE: '🧠', WEAKNESSES: '⚡', MOTIVATIONS: '🚀'
+    };
+
+    // Identifikasi trait dengan pergeseran tercepat (absolute velocity terbesar)
+    const fastestShift = [...history]
+      .filter(h => h.shift_velocity !== null)
+      .sort((a, b) => Math.abs(b.shift_velocity) - Math.abs(a.shift_velocity))[0];
+
+    let narrative = `📖 <b>Evolusi Identitas — ${daysBack} Hari Terakhir</b>\n`;
+    narrative += `<i>(${history.length} perubahan tercatat)</i>\n\n`;
+
+    // Ringkasan per layer
+    for (const [layer, changes] of Object.entries(byLayer)) {
+      const emoji = layerEmoji[layer] || '💡';
+      narrative += `${emoji} <b>${layer}</b> (${changes.length}x berubah)\n`;
+      // Tampilkan maksimal 2 perubahan terbaru per layer
+      for (const c of changes.slice(0, 2)) {
+        const confDelta = (c.confidence_new !== null && c.confidence_old !== null)
+          ? (c.confidence_new - c.confidence_old > 0 ? '↑' : '↓')
+          : '';
+        narrative += `  • <code>${c.trait_key}</code> ${confDelta}\n`;
+        if (c.trait_value_old) {
+          narrative += `    <s>${String(c.trait_value_old).substring(0, 50)}</s> → `;
+        } else {
+          narrative += `    [baru] → `;
+        }
+        narrative += `<i>${String(c.trait_value_new).substring(0, 60)}</i>\n`;
+      }
+      narrative += '\n';
+    }
+
+    // Sorot trait dengan pergeseran kepercayaan tercepat
+    if (fastestShift) {
+      const direction = fastestShift.shift_velocity > 0 ? 'meningkat' : 'menurun';
+      narrative += `⚡ <b>Pergeseran Tercepat:</b>\n`;
+      narrative += `  <b>${fastestShift.layer}</b> › <code>${fastestShift.trait_key}</code> — confidence ${direction} ${Math.abs(fastestShift.shift_velocity).toFixed(3)} poin/hari\n`;
+    }
+
+    return narrative;
+
+  } catch (err) {
+    console.error('[INFERENCE] Error generating personality narrative:', err.message);
+    return '📖 Gagal menghasilkan narasi evolusi kepribadian.';
+  }
+}
+
+// ============================================================
 // EXPORTS
 // ============================================================
 module.exports = {
   runWeeklyIdentityInference,
   runDailyDecayPass,
   runTier2SoftApprovePass,
+  getPersonalityEvolutionNarrative,  // [PHASE 7 — M3]
 
   // Expose internal helpers untuk unit testing
   _synthesizeBehaviorSummary,

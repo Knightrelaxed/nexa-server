@@ -304,6 +304,151 @@ function formatWeeklySummary(summary) {
   return msg;
 }
 
+// ============================================================
+// [PHASE 7 — M3] EMOTIONAL TIME-SERIES ENGINE
+// ============================================================
+
+/**
+ * Menghitung dan menyimpan 3 metrik mood rolling berdasarkan data 7 hari terakhir.
+ * Dipanggil oleh cron.js setiap malam agar Inference Engine selalu punya
+ * gambaran tren emosional terbaru saat menjalankan Weekly Identity Inference.
+ *
+ * Menghasilkan event MOOD_TIME_SERIES dengan 3 dimensi:
+ *   - mood_24h_state  : NEGATIVE | NEUTRAL | POSITIVE   (snapshot 24 jam terakhir)
+ *   - mood_7d_trend   : ASCENDING | STABLE | DESCENDING (tren 7 hari)
+ *   - mood_7d_variance: LOW | HIGH                      (konsistensi emosi)
+ *
+ * Algoritma:
+ *   1. Bagi 7 hari menjadi dua paruh: 3 hari pertama (lama) vs 4 hari terakhir (baru)
+ *   2. Hitung skor rata-rata mood tiap paruh (POSITIVE=+1, NEUTRAL=0, NEGATIVE=-1)
+ *   3. Tren = perbedaan skor antar paruh (>0.2 = ASCENDING, <-0.2 = DESCENDING)
+ *   4. Variance = standar deviasi skor (>0.7 = HIGH)
+ *
+ * @returns {Promise<{mood_24h_state: string, mood_7d_trend: string, mood_7d_variance: string}|null>}
+ */
+async function computeMoodTimeSeries() {
+  const sb = getSupabase();
+  if (!sb) {
+    console.warn('[BEHAVIOR] Supabase not configured. Skipping Mood Time-Series.');
+    return null;
+  }
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const oneDayAgo    = new Date(Date.now() - 1  * 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    // Ambil semua MOOD_DETECTED dan USER_INTERACTION 7 hari terakhir
+    const { data, error } = await sb
+      .from(TABLE)
+      .select('event_type, event_data, created_at')
+      .in('event_type', ['MOOD_DETECTED', 'USER_INTERACTION'])
+      .gte('created_at', sevenDaysAgo)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.warn('[BEHAVIOR] Failed to fetch mood data for time-series:', error.message);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
+      console.log('[BEHAVIOR] No mood data in last 7 days. Skipping time-series.');
+      return null;
+    }
+
+    // ── Fungsi pemetaan mood ke skor numerik ─────────────────────────────
+    const MOOD_SCORE = {
+      'HAPPY':    1.0,  'EXCITED':  1.0, 'MOTIVATED': 0.8, 'FOCUSED':   0.5,
+      'POSITIVE': 1.0,  'NEUTRAL':  0.0, 'CALM':      0.2,
+      'TIRED':   -0.5,  'BORED':   -0.3, 'STRESSED': -0.8, 'NEGATIVE': -1.0,
+      'ANXIOUS': -0.7,  'ANGRY':   -0.8, 'SAD':      -0.9, 'UNKNOWN':   0.0,
+    };
+
+    const getMoodScore = (eventData, eventType) => {
+      const mood = eventType === 'USER_INTERACTION'
+        ? eventData?.mood
+        : eventData?.mood;
+      if (!mood) return null;
+      const upper = String(mood).toUpperCase();
+      return MOOD_SCORE[upper] ?? 0.0;
+    };
+
+    // ── Pisahkan data berdasarkan waktu ───────────────────────────────────
+    const now = Date.now();
+    const threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000;
+
+    const scores7d  = [];  // Semua skor 7 hari
+    const scoresOld = [];  // Skor 3 hari pertama (hari ke 7-4)
+    const scoresNew = [];  // Skor 4 hari terakhir (hari ke 3-0)
+    const scores24h = [];  // Skor 24 jam terakhir
+
+    for (const row of data) {
+      const score = getMoodScore(row.event_data, row.event_type);
+      if (score === null) continue;
+
+      const ts = new Date(row.created_at).getTime();
+      scores7d.push(score);
+
+      if (ts >= now - oneDayAgo.length) scores24h.push(score); // akan diganti di bawah
+      if (ts < threeDaysAgo) {
+        scoresOld.push(score);
+      } else {
+        scoresNew.push(score);
+      }
+    }
+
+    // Hitung ulang scores24h dengan perbandingan timestamp yang benar
+    const scores24hReal = data
+      .filter(r => new Date(r.created_at).getTime() >= Date.now() - 24 * 60 * 60 * 1000)
+      .map(r => getMoodScore(r.event_data, r.event_type))
+      .filter(s => s !== null);
+
+    // ── Hitung metrik 24h ─────────────────────────────────────────────────
+    let mood_24h_state = 'NEUTRAL';
+    if (scores24hReal.length > 0) {
+      const avg24h = scores24hReal.reduce((a, b) => a + b, 0) / scores24hReal.length;
+      if (avg24h > 0.25)       mood_24h_state = 'POSITIVE';
+      else if (avg24h < -0.25) mood_24h_state = 'NEGATIVE';
+      else                     mood_24h_state = 'NEUTRAL';
+    }
+
+    // ── Hitung tren 7 hari ────────────────────────────────────────────────
+    let mood_7d_trend = 'STABLE';
+    if (scoresOld.length > 0 && scoresNew.length > 0) {
+      const avgOld = scoresOld.reduce((a, b) => a + b, 0) / scoresOld.length;
+      const avgNew = scoresNew.reduce((a, b) => a + b, 0) / scoresNew.length;
+      const delta  = avgNew - avgOld;
+      if      (delta > 0.20)  mood_7d_trend = 'ASCENDING';
+      else if (delta < -0.20) mood_7d_trend = 'DESCENDING';
+      else                    mood_7d_trend = 'STABLE';
+    }
+
+    // ── Hitung variance 7 hari ────────────────────────────────────────────
+    let mood_7d_variance = 'LOW';
+    if (scores7d.length >= 3) {
+      const mean = scores7d.reduce((a, b) => a + b, 0) / scores7d.length;
+      const variance = scores7d.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / scores7d.length;
+      const stdDev = Math.sqrt(variance);
+      mood_7d_variance = stdDev > 0.50 ? 'HIGH' : 'LOW';
+    }
+
+    // ── Simpan sebagai event MOOD_TIME_SERIES di nexa_behavior_log ────────
+    const timeSeries = { mood_24h_state, mood_7d_trend, mood_7d_variance };
+    await logBehaviorEvent('MOOD_TIME_SERIES', {
+      ...timeSeries,
+      sample_count:    scores7d.length,
+      sample_count_24h: scores24hReal.length,
+      computed_at:     new Date().toISOString()
+    });
+
+    console.log(`[BEHAVIOR] 📊 Mood Time-Series computed: 24h=${mood_24h_state} | 7d_trend=${mood_7d_trend} | variance=${mood_7d_variance}`);
+    return timeSeries;
+
+  } catch (e) {
+    console.warn('[BEHAVIOR] Unexpected error in computeMoodTimeSeries:', e.message);
+    return null;
+  }
+}
+
 module.exports = {
   logBehaviorEvent,
   logWakeUp,
@@ -312,5 +457,6 @@ module.exports = {
   logPassiveLearning,
   logUserInteraction,
   getWeeklySummary,
-  formatWeeklySummary
+  formatWeeklySummary,
+  computeMoodTimeSeries,   // [PHASE 7 — M3]
 };

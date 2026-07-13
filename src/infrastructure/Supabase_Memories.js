@@ -745,6 +745,10 @@ async function setProposalTelegramMessageId(proposalId, telegramMessageId) {
 /**
  * Menyetujui proposal: Ubah status jadi APPROVED dan otomatis commit ke nexa_identity_model.
  * Ini adalah fungsi inti yang dipanggil saat Tuan Faqih menekan tombol APPROVE.
+ *
+ * [PHASE 7 — M3] Juga menulis delta perubahan ke nexa_identity_history untuk
+ * melacak evolusi kepribadian (shift_velocity, shift_trigger).
+ *
  * @param {number} proposalId - ID baris di nexa_identity_proposals
  * @returns {Promise<{success: boolean, identityRow: object|null, error?: string}>}
  */
@@ -773,6 +777,29 @@ async function approveIdentityProposal(proposalId) {
     return { success: false, error: updateError.message };
   }
 
+  // [PHASE 7 — M3] Baca nilai LAMA dari identity_model sebelum di-upsert
+  // untuk menghitung shift_velocity dan menulis version history
+  let traitOldValue     = null;
+  let confidenceOld     = null;
+  let lastReinforcedAt  = null;
+
+  try {
+    const { data: oldTrait } = await supabase
+      .from('nexa_identity_model')
+      .select('trait_value, confidence, last_reinforced_at')
+      .eq('layer', proposalData.layer)
+      .eq('trait_key', proposalData.trait_key)
+      .single();
+
+    if (oldTrait) {
+      traitOldValue    = oldTrait.trait_value;
+      confidenceOld    = parseFloat(oldTrait.confidence) || null;
+      lastReinforcedAt = oldTrait.last_reinforced_at;
+    }
+  } catch (_) {
+    // Trait belum ada di model (baru) — tidak apa-apa
+  }
+
   // 3. Commit ke nexa_identity_model menggunakan upsertIdentityTrait
   const result = await upsertIdentityTrait({
     layer: proposalData.layer,
@@ -786,6 +813,44 @@ async function approveIdentityProposal(proposalId) {
   if (!result.success) {
     console.error('[IDENTITY] Error committing proposal to identity model:', result.error);
     return { success: false, error: result.error };
+  }
+
+  // [PHASE 7 — M3] Tulis perubahan ke nexa_identity_history
+  try {
+    const confidenceNew = parseFloat(proposalData.confidence) || 0;
+
+    // Hitung shift_velocity: poin confidence per hari sejak last_reinforced_at
+    let shiftVelocity = null;
+    if (confidenceOld !== null && lastReinforcedAt) {
+      const daysSinceReinforced = Math.max(
+        0.5, // Minimum 0.5 hari agar tidak divide-by-zero
+        (Date.now() - new Date(lastReinforcedAt).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      shiftVelocity = parseFloat(
+        ((confidenceNew - confidenceOld) / daysSinceReinforced).toFixed(4)
+      );
+    }
+
+    await supabase
+      .from('nexa_identity_history')
+      .insert([{
+        layer:            proposalData.layer,
+        trait_key:        proposalData.trait_key,
+        trait_value_old:  traitOldValue,
+        trait_value_new:  proposalData.proposed_value,
+        confidence_old:   confidenceOld,
+        confidence_new:   parseFloat(confidenceNew.toFixed(2)),
+        shift_velocity:   shiftVelocity,
+        shift_trigger:    proposalData.reasoning
+          ? String(proposalData.reasoning).substring(0, 500)
+          : null,
+        approved_at:      new Date().toISOString()
+      }]);
+
+    console.log(`[IDENTITY] 📖 History recorded: [${proposalData.layer}] ${proposalData.trait_key} | velocity=${shiftVelocity?.toFixed(4) || 'N/A'}`);
+  } catch (histErr) {
+    // Non-blocking: kegagalan tulis history tidak boleh membatalkan approval
+    console.warn('[IDENTITY] Failed to write identity history (non-blocking):', histErr.message);
   }
 
   console.log(`[IDENTITY] ✅ Proposal #${proposalId} APPROVED & COMMITTED: ${proposalData.layer}.${proposalData.trait_key} = "${proposalData.proposed_value}"`);
