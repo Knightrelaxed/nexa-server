@@ -101,6 +101,7 @@ CRITICAL ROUTING RULES:
     - "transfer/TF/via BCA/Mandiri" -> "Transfer bank"
     - "kartu kredit/gesek/cicil/cc" -> "Kartu Kredit"
     - "tunai/cash/uang fisik" -> "Tunai"
+12. TELEGRAM FORMATTING RULE: DILARANG menyebar karakter asterisk/bintang (*) berlebihan dalam reply_message. Gunakan bahasa Indonesia natural yang bersih, atau tag HTML <b>teks</b> jika ingin penekanan kata.
 
 OUTPUT JSON FORMAT:
 {

@@ -529,11 +529,15 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     const deliverWebhookReply = () => {
       if (res.headersSent) return;
       if (webhookReply) {
+        const formattedReply = webhookReply
+          .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+          .replace(/\*([^*]+)\*/g, '<i>$1</i>')
+          .replace(/`([^`]+)`/g, '<code>$1</code>');
         console.log('[TELEGRAM] Delivering via webhook response (zero outbound)');
         res.status(200).json({
           method: 'sendMessage',
           chat_id: message.chat.id,
-          text: webhookReply,
+          text: formattedReply,
           parse_mode: 'HTML',
         });
       } else {

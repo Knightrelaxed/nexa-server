@@ -234,8 +234,17 @@ async function postToRelay(path, body, timeoutMs = 90_000) {
   }
 }
 
+function formatTelegramHtml(text) {
+  if (!text) return '';
+  let str = String(text);
+  str = str.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  str = str.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+  str = str.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return str;
+}
+
 async function sendTelegramMessage(text, chatId, botToken) {
-  const safeText = String(text).substring(0, 4000);
+  const safeText = formatTelegramHtml(String(text).substring(0, 4000));
   const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}`;
   return fetchWithFailover(telegramUrl, { timeoutMs: 30_000, maxRetriesPerProxy: 3 });
 }
@@ -245,6 +254,7 @@ module.exports = {
   fetchRelayB64,
   postToRelay,
   sendTelegramMessage,
+  formatTelegramHtml,
   buildProxyChain,
   enqueueOutbound,
 };
