@@ -19,15 +19,22 @@ const groqKeys = [
   env.GROQ_API_KEY_4
 ];
 
+const cerebrasKeys = [
+  env.CEREBRAS_API_KEY_1,
+  env.CEREBRAS_API_KEY_2,
+  env.CEREBRAS_API_KEY_3,
+  env.CEREBRAS_API_KEY_4
+];
+
 /**
- * Execute AI Prompt with Multi-Tier Fallback (12 Layers)
+ * Execute AI Prompt with Multi-Tier Fallback (15 Layers)
  *
- * Tier 1-4 : Groq Llama 3.3 70B Versatile Key 1-4 (The Sprinters)
- * Tier 5-8 : Gemini 2.5 Flash Key 1-4           (The Deep Thinkers)
- * Tier 9   : Cerebras Gemma 4 31B                 (The Backup Sprinter)
- * Tier 10  : Hugging Face Gemma 4 31B IT          (The Free Safety Net)
- * Tier 11  : Mistral Pixtral 12B                  (The Reliable Closer)
- * Tier 12  : OpenRouter Multi-Model Free          (The Indestructible Last Resort)
+ * Tier 1-4 : Cerebras Gemma 4 31B Key 1-4     (The Ultra-Fast WSE-3 Sprinters — ABCD order)
+ * Tier 5-8 : Groq Llama 3.3 70B Versatile Key 1-4 (The Secondary Sprinters)
+ * Tier 9-12: Gemini 2.5 Flash Key 1-4           (The Deep Thinkers)
+ * Tier 13  : Hugging Face Gemma 4 31B IT        (The Free Safety Net)
+ * Tier 14  : Mistral Pixtral 12B                (The Reliable Closer)
+ * Tier 15  : OpenRouter Multi-Model Free        (The Indestructible Last Resort)
  */
 const getErrDetails = (e) => {
   const status = e.status || e.response?.status || 'NET';
@@ -36,108 +43,132 @@ const getErrDetails = (e) => {
 };
 
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  // Tier 1: Groq Llama 3.3 70B Versatile (Key 1)
+  // Tier 1: Cerebras Gemma 4 31B (Key 1 - A)
+  if (cerebrasKeys[0]) {
+    try {
+      return await callCerebras(cerebrasKeys[0], prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 1 (Cerebras Key 1) failed:', getErrDetails(e)); }
+  }
+
+  // Tier 2: Cerebras Gemma 4 31B (Key 2 - B)
+  if (cerebrasKeys[1]) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 2 (Cerebras Key 2)...');
+      return await callCerebras(cerebrasKeys[1], prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 2 (Cerebras Key 2) failed:', getErrDetails(e)); }
+  }
+
+  // Tier 3: Cerebras Gemma 4 31B (Key 3 - C)
+  if (cerebrasKeys[2]) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 3 (Cerebras Key 3)...');
+      return await callCerebras(cerebrasKeys[2], prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 3 (Cerebras Key 3) failed:', getErrDetails(e)); }
+  }
+
+  // Tier 4: Cerebras Gemma 4 31B (Key 4 - D)
+  if (cerebrasKeys[3]) {
+    try {
+      console.log('[FALLBACK] Switching to Tier 4 (Cerebras Key 4)...');
+      return await callCerebras(cerebrasKeys[3], prompt, systemInstruction, temperature, jsonMode);
+    } catch (e) { console.warn('[FALLBACK] Tier 4 (Cerebras Key 4) failed:', getErrDetails(e)); }
+  }
+
+  // Tier 5: Groq Llama 3.3 70B Versatile (Key 1)
   if (groqKeys[0]) {
     try {
+      console.log('[FALLBACK] Switching to Tier 5 (Groq Key 1)...');
       return await callGroq(groqKeys[0], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 1 (Groq Key 1) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 5 (Groq Key 1) failed:', getErrDetails(e)); }
   }
 
-  // Tier 2: Groq Llama 3.3 70B Versatile (Key 2)
+  // Tier 6: Groq Llama 3.3 70B Versatile (Key 2)
   if (groqKeys[1]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 2 (Groq Key 2)...');
+      console.log('[FALLBACK] Switching to Tier 6 (Groq Key 2)...');
       return await callGroq(groqKeys[1], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 2 (Groq Key 2) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 6 (Groq Key 2) failed:', getErrDetails(e)); }
   }
 
-  // Tier 3: Groq Llama 3.3 70B Versatile (Key 3)
+  // Tier 7: Groq Llama 3.3 70B Versatile (Key 3)
   if (groqKeys[2]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 3 (Groq Key 3)...');
+      console.log('[FALLBACK] Switching to Tier 7 (Groq Key 3)...');
       return await callGroq(groqKeys[2], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 3 (Groq Key 3) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 7 (Groq Key 3) failed:', getErrDetails(e)); }
   }
 
-  // Tier 4: Groq Llama 3.3 70B Versatile (Key 4)
+  // Tier 8: Groq Llama 3.3 70B Versatile (Key 4)
   if (groqKeys[3]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 4 (Groq Key 4)...');
+      console.log('[FALLBACK] Switching to Tier 8 (Groq Key 4)...');
       return await callGroq(groqKeys[3], prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 4 (Groq Key 4) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 8 (Groq Key 4) failed:', getErrDetails(e)); }
   }
 
-  // Tier 5: Gemini 2.5 Flash (Key 1)
+  // Tier 9: Gemini 2.5 Flash (Key 1)
   if (geminiClients[0]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 5 (Gemini 2.5 Flash Key 1)...');
+      console.log('[FALLBACK] Switching to Tier 9 (Gemini 2.5 Flash Key 1)...');
       return await callGeminiWithRetry(geminiClients[0], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 5 (Gemini 2.5 Key 1) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 9 (Gemini 2.5 Key 1) failed:', getErrDetails(e)); }
   }
 
-  // Tier 6: Gemini 2.5 Flash (Key 2)
+  // Tier 10: Gemini 2.5 Flash (Key 2)
   if (geminiClients[1]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 6 (Gemini 2.5 Flash Key 2)...');
+      console.log('[FALLBACK] Switching to Tier 10 (Gemini 2.5 Flash Key 2)...');
       return await callGeminiWithRetry(geminiClients[1], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 6 (Gemini 2.5 Key 2) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 10 (Gemini 2.5 Key 2) failed:', getErrDetails(e)); }
   }
 
-  // Tier 7: Gemini 2.5 Flash (Key 3)
+  // Tier 11: Gemini 2.5 Flash (Key 3)
   if (geminiClients[2]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 7 (Gemini 2.5 Flash Key 3)...');
+      console.log('[FALLBACK] Switching to Tier 11 (Gemini 2.5 Flash Key 3)...');
       return await callGeminiWithRetry(geminiClients[2], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 7 (Gemini 2.5 Key 3) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 11 (Gemini 2.5 Key 3) failed:', getErrDetails(e)); }
   }
 
-  // Tier 8: Gemini 2.5 Flash (Key 4)
+  // Tier 12: Gemini 2.5 Flash (Key 4)
   if (geminiClients[3]) {
     try {
-      console.log('[FALLBACK] Switching to Tier 8 (Gemini 2.5 Flash Key 4)...');
+      console.log('[FALLBACK] Switching to Tier 12 (Gemini 2.5 Flash Key 4)...');
       return await callGeminiWithRetry(geminiClients[3], 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 8 (Gemini 2.5 Key 4) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 12 (Gemini 2.5 Key 4) failed:', getErrDetails(e)); }
   }
 
-  // Tier 9: Cerebras Gemma 4 31B
-  if (env.CEREBRAS_API_KEY) {
-    try {
-      console.log('[FALLBACK] Switching to Tier 9 (Cerebras Gemma 4 31B)...');
-      return await callCerebras(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 9 (Cerebras) failed:', getErrDetails(e)); }
-  }
-
-  // Tier 10: Hugging Face Router (Gemma 4 31B IT)
+  // Tier 13: Hugging Face Router (Gemma 4 31B IT)
   if (env.HF_INFERENCE_TOKEN) {
     try {
-      console.log('[FALLBACK] Switching to Tier 10 (Hugging Face Gemma 4 31B)...');
+      console.log('[FALLBACK] Switching to Tier 13 (Hugging Face Gemma 4 31B)...');
       return await callHuggingFaceInference(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 10 (Hugging Face) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 13 (Hugging Face) failed:', getErrDetails(e)); }
   }
 
-  // Tier 11: Mistral API (Pixtral 12B)
+  // Tier 14: Mistral API (Pixtral 12B)
   if (env.MISTRAL_API_KEY) {
     try {
-      console.log('[FALLBACK] Switching to Tier 11 (Mistral Pixtral 12B)...');
+      console.log('[FALLBACK] Switching to Tier 14 (Mistral Pixtral 12B)...');
       return await callMistral(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 11 (Mistral) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 14 (Mistral) failed:', getErrDetails(e)); }
   }
 
-  // Tier 12: OpenRouter (Gemma 2 27B)
+  // Tier 15: OpenRouter (Gemma 2 27B)
   if (env.OPENROUTER_API_KEY) {
     try {
-      console.log('[FALLBACK] Switching to Tier 12 (OpenRouter)...');
+      console.log('[FALLBACK] Switching to Tier 15 (OpenRouter)...');
       return await callOpenRouter(prompt, systemInstruction, temperature, jsonMode);
-    } catch (e) { console.warn('[FALLBACK] Tier 12 (OpenRouter) failed:', getErrDetails(e)); }
+    } catch (e) { console.warn('[FALLBACK] Tier 15 (OpenRouter) failed:', getErrDetails(e)); }
   }
 
   // Fallback Final
-  console.error('[FALLBACK] ⚠️ All 12 AI layers exhausted. Entering Dumb Mode.');
+  console.error('[FALLBACK] ⚠️ All 15 AI layers exhausted. Entering Dumb Mode.');
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,
     god_mode_trigger: false,
-    reply_message: '⚠️ Sistem Otak N.E.X.A (AI Router) mengalami Down Total di semua 12 peladen dunia. Mohon tunggu beberapa saat.'
+    reply_message: '⚠️ Sistem Otak N.E.X.A (AI Router) mengalami Down Total di semua 15 peladen dunia. Mohon tunggu beberapa saat.'
   });
 }
 

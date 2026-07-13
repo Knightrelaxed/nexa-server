@@ -19,10 +19,12 @@ const GROQ_KEYS = [
 
 const GROQ_CLIENTS = GROQ_KEYS.map(key => new Groq({ apiKey: key }));
 
-// Gemini 2.0 Flash keys for Native Audio fallback (Tier 5-6)
+// Gemini 2.5 Flash keys for Native Audio fallback (Tier 5-8)
 const GEMINI_NATIVE_KEYS = [
   env.GEMINI_API_KEY_1,
   env.GEMINI_API_KEY_2,
+  env.GEMINI_API_KEY_3,
+  env.GEMINI_API_KEY_4,
 ].filter(Boolean);
 
 // ============================================================
@@ -314,23 +316,26 @@ async function transcribeTelegramVoice(fileId) {
   }
 
   try {
-    // Build tier list dynamically from available keys
+    // Build tier list dynamically based on priorities:
+    // Tier 1-4: Hugging Face Whisper Large v3 Turbo (4 Attempts / Slots)
+    // Tier 5-8: Gemini 2.5 Flash Native Audio (Keys 1-4)
+    // Tier 9-12: Groq Whisper Large v3 (Keys 1-4 as backup)
     const tiers = [
-      // Tier 1-4: Groq Whisper (4 Keys)
-      ...GROQ_CLIENTS.map((client, i) => ({
-        name: `Tier${i + 1} (Groq Whisper Key ${i + 1})`,
-        fn: () => callGroqWhisper(client, tmpFilePath)
+      // Tier 1-4: Hugging Face Whisper Large v3 Turbo (Ultra-Fast 4 Slots)
+      ...Array.from({ length: 4 }).map((_, i) => ({
+        name: `Tier${i + 1} (HuggingFace Whisper Large v3 Turbo Slot ${i + 1})`,
+        fn: () => callHuggingFaceWhisper(tmpFilePath)
       })),
-      // Tier 5-6: Gemini 2.5 Flash Native Audio (2 Keys)
+      // Tier 5-8: Gemini 2.5 Flash Native Audio (Keys 1-4)
       ...GEMINI_NATIVE_KEYS.map((key, i) => ({
-        name: `Tier${GROQ_CLIENTS.length + i + 1} (Gemini 2.5 Native Audio Key ${i + 1})`,
+        name: `Tier${i + 5} (Gemini 2.5 Flash Native Audio Key ${i + 1})`,
         fn: () => callGeminiNativeAudio(key, tmpFilePath)
       })),
-      // Tier 7: Hugging Face Whisper Large v3 Turbo (Free Safety Net)
-      {
-        name: `Tier${GROQ_CLIENTS.length + GEMINI_NATIVE_KEYS.length + 1} (HuggingFace Whisper Turbo)`,
-        fn: () => callHuggingFaceWhisper(tmpFilePath)
-      }
+      // Tier 9-12: Groq Whisper (Backup Keys)
+      ...GROQ_CLIENTS.map((client, i) => ({
+        name: `Tier${i + 5 + GEMINI_NATIVE_KEYS.length} (Groq Whisper Key ${i + 1})`,
+        fn: () => callGroqWhisper(client, tmpFilePath)
+      }))
     ];
 
     for (const tier of tiers) {

@@ -30,6 +30,13 @@ const GROQ_KEYS = [
   env.GROQ_API_KEY_4,
 ].filter(Boolean);
 
+const CEREBRAS_VISION_KEYS = [
+  env.CEREBRAS_API_KEY_4, // D
+  env.CEREBRAS_API_KEY_3, // C
+  env.CEREBRAS_API_KEY_1, // A
+  env.CEREBRAS_API_KEY_2, // B
+].filter(Boolean);
+
 // ============================================================
 // UNIVERSAL IMAGE INTERPRETER — System Prompt
 // ============================================================
@@ -259,6 +266,45 @@ async function callGroqVision(apiKey, imageData, caption, retries = 3, systemPro
 }
 
 // ============================================================
+// CEREBRAS VISION CALLER (gemma-4-31b) — Ultra-Fast WSE-3 Vision
+// ============================================================
+async function callCerebrasVision(apiKey, imageData, caption, retries = 2, systemPromptOverride = '') {
+  if (!apiKey) throw new Error('No Cerebras API key provided');
+  const captionContext = caption
+    ? `\nCaption dari pengguna: "${caption}". Gunakan ini sebagai petunjuk utama.`
+    : '\nTidak ada caption. Analisis gambar secara mandiri.';
+  const finalSystemPrompt = systemPromptOverride || (VISION_SYSTEM_PROMPT + captionContext);
+
+  const requestBody = {
+    model: 'gemma-4-31b',
+    messages: [
+      { role: 'system', content: finalSystemPrompt },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Analisis gambar ini secara mendetail sesuai instruksi sistem.' },
+          { type: 'image_url', image_url: { url: `data:${imageData.mimeType};base64,${imageData.data}` } }
+        ]
+      }
+    ],
+    max_tokens: 1200
+  };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post('https://api.cerebras.ai/v1/chat/completions', requestBody, {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 25000
+      });
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      if (e.response?.status === 404 || e.response?.status === 429 || e.response?.status === 400) throw e;
+      if (attempt === retries) throw e;
+    }
+  }
+}
+
+// ============================================================
 // HF VISION CALLER (Qwen2-VL-7B-Instruct) — Final Safety Net
 // ============================================================
 async function callHuggingFaceVision(imageData, caption, systemPromptOverride = '') {
@@ -371,7 +417,7 @@ async function processTelegramImage(fileId, caption = '', systemPromptOverride =
   }
 
   // ============================================================
-  // TIER 1-11: Download image ONCE, then try all AI providers
+  // TIER 1-13: Download image ONCE, then try all AI providers
   // ============================================================
   console.log('[VISION] Downloading image from Telegram...');
   const imageData = await downloadTelegramImageAsBase64(fileId);
@@ -379,24 +425,24 @@ async function processTelegramImage(fileId, caption = '', systemPromptOverride =
 
   // Build tier list dynamically from available keys
   const tiers = [
-    // Tier 1-4: Gemini 2.5 Flash (Premium Quality, 4 Keys)
+    // Tier 1-4: Cerebras Gemma 4 31B Vision (Ultra-Fast WSE-3, DCAB order)
+    ...CEREBRAS_VISION_KEYS.map((key, i) => ({
+      name: `Tier${i + 1} (Cerebras Gemma 4 Vision Key ${i + 1})`,
+      fn: () => callCerebrasVision(key, imageData, caption, 2, systemPromptOverride)
+    })),
+    // Tier 5-8: Gemini 2.5 Flash (Premium Quality, 4 Keys)
     ...GEMINI_25_KEYS.map((key, i) => ({
-      name: `Tier${i + 1} (Gemini 2.5 Flash Key ${i + 1})`,
+      name: `Tier${CEREBRAS_VISION_KEYS.length + i + 1} (Gemini 2.5 Flash Key ${i + 1})`,
       fn: () => callGeminiVision(key, 'gemini-2.5-flash', imageData, caption, 3, systemPromptOverride)
     })),
-    // Tier 5-8: Groq Llama 4 Scout 17B (Balanced, 4 Keys)
+    // Tier 9-12: Groq Vision (Balanced, 4 Keys)
     ...GROQ_KEYS.map((key, i) => ({
-      name: `Tier${GEMINI_25_KEYS.length + i + 1} (Groq Llama4-Scout Key ${i + 1})`,
+      name: `Tier${CEREBRAS_VISION_KEYS.length + GEMINI_25_KEYS.length + i + 1} (Groq Vision Key ${i + 1})`,
       fn: () => callGroqVision(key, imageData, caption, 3, systemPromptOverride)
     })),
-    // Tier 9-10: Gemini 2.0 Flash (Generous Quota, 2 Keys)
-    ...GEMINI_20_KEYS.map((key, i) => ({
-      name: `Tier${GEMINI_25_KEYS.length + GROQ_KEYS.length + i + 1} (Gemini 2.0 Flash Key ${i + 1})`,
-      fn: () => callGeminiVision(key, 'gemini-2.0-flash', imageData, caption, 3, systemPromptOverride)
-    })),
-    // Tier 11: Hugging Face Qwen2-VL (Safety Net — No daily quota)
+    // Tier 13: Hugging Face Qwen2-VL (Safety Net — No daily quota)
     {
-      name: `Tier${GEMINI_25_KEYS.length + GROQ_KEYS.length + GEMINI_20_KEYS.length + 1} (HuggingFace Qwen2-VL)`,
+      name: `Tier${CEREBRAS_VISION_KEYS.length + GEMINI_25_KEYS.length + GROQ_KEYS.length + 1} (HuggingFace Qwen2-VL)`,
       fn: () => callHuggingFaceVision(imageData, caption, systemPromptOverride)
     }
   ];
