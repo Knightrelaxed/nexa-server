@@ -1792,11 +1792,15 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
     // Execute Domain Logic based on Intent
     let domainReply = null;
 
-    // [SPLIT] TITIK 3 (UNIVERSAL PRIORITY): PERINTAH SPLIT PADA TRANSAKSI EXISTING (via reply)
-    // Dijalankan sebelum clarification message agar reply split tidak pernah diblokir
-    if (routingData.intent === 'FINANCE' && message.reply_to_message) {
+    // [SPLIT] TITIK 3 (UNIVERSAL PRIORITY): PERINTAH SPLIT PADA TRANSAKSI EXISTING (via reply to bot receipt)
+    const isReplyToBotReceipt = message.reply_to_message &&
+      message.reply_to_message.from &&
+      message.reply_to_message.from.is_bot === true &&
+      /(?:Nominal|Berhasil mencatat|Pengeluaran|Pemasukan)/i.test(message.reply_to_message.text || '');
+
+    if (routingData.intent === 'FINANCE' && isReplyToBotReceipt) {
       const splitEngine = require('../domain/Split_Engine');
-      const isSplitCmd = /\bsplit\b|\bpecah\b|\brincian\b/i.test(textInput) || splitEngine.isSplitIntent(textInput);
+      const isSplitCmd = /\bsplit\b|\bpecah\b|\brincian\b/i.test(textInput);
       if (isSplitCmd) {
         try {
           const replyTxt = message.reply_to_message.text || '';
