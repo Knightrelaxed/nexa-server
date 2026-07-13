@@ -494,13 +494,32 @@ Tentukan intent dan ekstrak data!
 
   try {
     const routingData = JSON.parse(cleanStr);
-
-    // 5. Save new memory ONLY after successful parse (symmetric context)
-    // We only save the user's input here. The final reply (domainReply or reply_message)
-    // will be saved by the caller (e.g. webhook.js) to ensure we don't save duplicate "draft" messages.
-
     return routingData;
   } catch (err) {
+    // Smart repair: try extracting the first complete balanced JSON object ignoring trailing junk
+    try {
+      let depth = 0, inString = false, escape = false, endIdx = -1;
+      for (let i = firstBrace; i < cleanStr.length; i++) {
+        const c = cleanStr[i];
+        if (escape) { escape = false; continue; }
+        if (c === '\\') { escape = true; continue; }
+        if (c === '"') { inString = !inString; continue; }
+        if (!inString) {
+          if (c === '{') depth++;
+          else if (c === '}') {
+            depth--;
+            if (depth === 0) { endIdx = i; break; }
+          }
+        }
+      }
+      if (endIdx !== -1) {
+        const repaired = cleanStr.substring(firstBrace, endIdx + 1);
+        const routingData = JSON.parse(repaired);
+        console.log('[ROUTER] Smart JSON Repair SUCCESS after trailing garbage');
+        return routingData;
+      }
+    } catch (_) {}
+
     console.error('[ROUTER] JSON Parse Error:', err.message, resultJsonStr);
     return {
       intent: 'ERROR',

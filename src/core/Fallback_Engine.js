@@ -230,6 +230,7 @@ async function callCerebras(apiKey, prompt, systemInstruction, temperature, json
       { role: 'user', content: prompt }
     ],
     temperature,
+    top_p: 0.85,
     max_tokens: 1500
   };
   if (jsonMode) requestBody.response_format = { type: 'json_object' };
