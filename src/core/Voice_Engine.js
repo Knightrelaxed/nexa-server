@@ -156,7 +156,7 @@ async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
   const audioBuffer = fs.readFileSync(tmpFilePath);
   const base64Audio = audioBuffer.toString('base64');
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const payload = {
     contents: [{
       parts: [
@@ -195,6 +195,41 @@ async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
         const delay = attempt * 2000;
         console.warn(`[VOICE] Gemini Native Audio 503 attempt ${attempt}/${retries}, retry in ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+// ============================================================
+// HUGGING FACE WHISPER TURBO CALLER (Safety Net Tier 7)
+// ============================================================
+async function callHuggingFaceWhisper(tmpFilePath, retries = 2) {
+  const token = env.HF_INFERENCE_TOKEN;
+  if (!token) throw new Error('No HF_INFERENCE_TOKEN configured');
+
+  const audioBuffer = fs.readFileSync(tmpFilePath);
+  const url = 'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo';
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post(url, audioBuffer, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'audio/ogg'
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        timeout: 45000
+      });
+
+      const text = typeof response.data === 'string' ? response.data : (response.data.text || JSON.stringify(response.data));
+      if (!text || text.trim().length < 1) throw new Error('Hugging Face Whisper returned empty transcription');
+      return text.trim();
+    } catch (e) {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 1500));
         continue;
       }
       throw e;
@@ -251,10 +286,11 @@ async function callWorkerTranscription(fileId) {
 }
 
 // ============================================================
-// MAIN ENTRY POINT — 7-TIER GOD MODE VOICE FALLBACK
+// MAIN ENTRY POINT — 8-TIER GOD MODE VOICE FALLBACK
 // Tier 0:   Worker Transcription (Cloudflare does everything)
 // Tier 1-4: Groq Whisper Large v3 (4 Keys) + local file
-// Tier 5-6: Gemini 2.0 Flash Native Audio (2 Keys) + local file
+// Tier 5-6: Gemini 2.5 Flash Native Audio (2 Keys) + local file
+// Tier 7:   Hugging Face Whisper Large v3 Turbo (HF_INFERENCE_TOKEN) + local file
 // ============================================================
 async function transcribeTelegramVoice(fileId) {
   // ============================================================
@@ -285,11 +321,16 @@ async function transcribeTelegramVoice(fileId) {
         name: `Tier${i + 1} (Groq Whisper Key ${i + 1})`,
         fn: () => callGroqWhisper(client, tmpFilePath)
       })),
-      // Tier 5-6: Gemini 2.0 Flash Native Audio (2 Keys)
+      // Tier 5-6: Gemini 2.5 Flash Native Audio (2 Keys)
       ...GEMINI_NATIVE_KEYS.map((key, i) => ({
-        name: `Tier${GROQ_CLIENTS.length + i + 1} (Gemini 2.0 Native Audio Key ${i + 1})`,
+        name: `Tier${GROQ_CLIENTS.length + i + 1} (Gemini 2.5 Native Audio Key ${i + 1})`,
         fn: () => callGeminiNativeAudio(key, tmpFilePath)
-      }))
+      })),
+      // Tier 7: Hugging Face Whisper Large v3 Turbo (Free Safety Net)
+      {
+        name: `Tier${GROQ_CLIENTS.length + GEMINI_NATIVE_KEYS.length + 1} (HuggingFace Whisper Turbo)`,
+        fn: () => callHuggingFaceWhisper(tmpFilePath)
+      }
     ];
 
     for (const tier of tiers) {
@@ -309,7 +350,7 @@ async function transcribeTelegramVoice(fileId) {
     }
 
     // FALLBACK FINAL — All tiers exhausted
-    throw new Error('⚠️ VOICE DOWN TOTAL: Semua 7 Tier Telinga N.E.X.A gagal (Worker + 4x Groq Whisper + 2x Gemini Native Audio).');
+    throw new Error('⚠️ VOICE DOWN TOTAL: Semua 8 Tier Telinga N.E.X.A gagal (Worker + 4x Groq Whisper + 2x Gemini 2.5 Audio + HF Whisper Turbo).');
 
   } finally {
     // Always clean up temp file — even if all tiers fail
