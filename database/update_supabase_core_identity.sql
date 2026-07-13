@@ -3,6 +3,7 @@
 -- 100% Cocok & Siap Eksekusi Langsung di Supabase SQL Editor
 -- ==============================================================================
 
+-- Reset & restart tabel sekaligus sequence-nya
 TRUNCATE TABLE "public"."nexa_core_identity" RESTART IDENTITY;
 
 INSERT INTO "public"."nexa_core_identity" ("id", "content", "created_at") VALUES 
@@ -225,3 +226,15 @@ N.E.X.A memetakan kepribadian Tuan Faqih secara holistik ke dalam 7 lapisan psik
 - Menggunakan detektor kata kunci naratif berkapasitas 80+ kosakata harian & keluhan (contoh: mager, lemas, pusing, meriang, begadang, karena, soalnya, revisi, dsb).
 - Jika Tuan Faqih memberi angka saja ("4, 3, siap"), N.E.X.A memproses kilat tanpa AI (Fast-Path).
 - Jika Tuan Faqih memberi alasan ("4, 3, agak mager karena semalam revisi bab 3"), AI Parser menganalisis alasan tersebut, mengkalibrasi skor agar realistis, dan membalas dalam format tepat 2 Bubble Pesan terpisah yang berempati dan aplikatif.', '2026-07-13 10:00:00+00');
+
+-- ============================================================
+-- PENTING: Reset sequence BIGSERIAL agar INSERT otomatis dari N.E.X.A
+-- tidak bertabrakan dengan ID 1-131 yang sudah di-insert di atas.
+-- Tanpa ini, server akan error "duplicate key value violates unique constraint"
+-- setiap kali saveCoreIdentity() dipanggil dari Passive Learning.
+-- ============================================================
+SELECT setval(
+  pg_get_serial_sequence('"public"."nexa_core_identity"', 'id'),
+  (SELECT MAX(id) FROM "public"."nexa_core_identity"),
+  true  -- 'true' artinya nilai berikutnya = MAX(id) + 1 = 132
+);

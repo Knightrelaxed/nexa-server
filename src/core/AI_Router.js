@@ -31,10 +31,48 @@ const _CAL_DOMAIN_KWS = [
 // ============================================================
 // PROGRESSIVE FACT INJECTION
 // ============================================================
-const PROFILE_CORE_COUNT  = 20; // fakta tertua — selalu diinjeksi
-const PROFILE_KW_LIMIT    = 15; // max fakta tambahan dari dynamic word resonance
+const PROFILE_CORE_COUNT  = 15; // fakta tertua — selalu diinjeksi (diturunkan dari 20 → 15 untuk menjaga budget token)
+const PROFILE_KW_LIMIT    = 8;  // max fakta tambahan dari dynamic word resonance (diturunkan dari 15 → 8)
 const IDENTITY_CORE_COUNT = 10; // 10 identitas pokok — selalu diinjeksi
-const IDENTITY_KW_LIMIT   = 15; // max kamus log/teknis tambahan dari penyaringan
+const IDENTITY_KW_LIMIT   = 5;  // max kamus log/teknis tambahan dari penyaringan (diturunkan dari 15 → 5)
+
+// ============================================================
+// TOKEN BUDGET GUARD — Proteksi agar prompt tidak melebihi batas Groq
+// Groq Free Tier: 12.000 TPM. Guard threshold: 10.500 char (~2.625 token).
+// Estimasi kasar: 1 token ≈ 4 karakter (konservatif untuk Bahasa Indonesia)
+// Jika prompt > GROQ_CHAR_LIMIT, pangkas histori chat dari yang tertua.
+// ============================================================
+const GROQ_CHAR_LIMIT = 42000; // ~10.500 token × 4 char/token (batas aman sebelum kena 413)
+
+/**
+ * Perkirakan jumlah karakter prompt sebelum dikirim ke AI.
+ * Jika melebihi GROQ_CHAR_LIMIT, potong histori chat dari yang paling tua
+ * hingga total karakter turun di bawah threshold.
+ * @param {string} basePrompt - Prompt lengkap sebelum histori dimasukkan
+ * @param {string} historyStr - String histori obrolan
+ * @param {string} systemPrompt - System prompt
+ * @returns {string} - String histori yang sudah dipangkas jika perlu
+ */
+function _applyTokenBudgetGuard(basePrompt, historyStr, systemPrompt) {
+  const totalChars = basePrompt.length + historyStr.length + systemPrompt.length;
+  if (totalChars <= GROQ_CHAR_LIMIT) return historyStr; // Aman, tidak perlu dipangkas
+
+  // Pisahkan history per baris dan pangkas dari yang tertua
+  const lines = historyStr.split('\n');
+  let trimmed = lines;
+  let currentTotal = totalChars;
+
+  // Hapus dua baris terlama (1 pasang user/nexa) per iterasi
+  while (currentTotal > GROQ_CHAR_LIMIT && trimmed.length > 4) {
+    const removed = trimmed.splice(0, 2); // Hapus 2 baris paling atas
+    currentTotal -= removed.reduce((s, l) => s + l.length + 1, 0);
+  }
+
+  if (trimmed.length < lines.length) {
+    console.log(`[ROUTER] Token guard active: history trimmed ${lines.length} → ${trimmed.length} lines. Total ~${Math.round(currentTotal/4)} tokens.`);
+  }
+  return trimmed.join('\n');
+}
 
 // ============================================================
 // PERSONAL FACTS CACHE (Module-level — lives as long as server runs)
@@ -634,7 +672,7 @@ ${factsContext}${activeAccountsBlock}${activeCategoriesBlock}${sentimentBlock}${
 ${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
 
 [RIWAYAT OBROLAN]
-${contextStr}
+${_applyTokenBudgetGuard(factsContext + activeAccountsBlock + activeCategoriesBlock + sentimentBlock + crossDomainBlock + runtimeContextBlock, contextStr, ROUTER_SYSTEM_PROMPT)}
 
 [PESAN TERBARU TUAN FAQIH]
 ${textInput}
@@ -811,51 +849,81 @@ BALAS HANYA dengan satu kata: YES, NO, atau AMBIGUOUS. Tanpa penjelasan apapun.`
   }
 }
 
+// ── Mutex sederhana untuk mencegah race condition double-insert ──────────────
+// Kunci per (type + newFact) agar dua call paralel tidak menyebabkan dua INSERT.
+const _dedupInFlight = new Set();
+
 /**
  * Smart Deduplication System
  * Compares newFact with existing facts.
+ * Dilindungi oleh in-flight mutex untuk mencegah race condition double-insert.
  */
 async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
-  const existingFactsObj = await loadPersonalFactsWithCache();
-  const existingFacts = type === 'USER_PROFILE' ? existingFactsObj.userProfile : existingFactsObj.coreIdentity;
-  
-  if (!existingFacts || existingFacts.length === 0) {
-    if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
-    else await supabaseMemories.saveCoreIdentity(newFact);
-    return true;
-  }
-
-  const prompt = `EXISTING FACTS:\n${existingFacts.map((f, i) => `[${i}] ${f}`).join('\n')}\n\nNEW FACT: "${newFact}"\n\nTASK: Compare NEW FACT against EXISTING FACTS. Reply ONLY with:\n- "NEW": If totally new.\n- "UPDATE [ID]": If more detailed/complete than fact [ID].\n- "DUPLICATE": If exact match or less detailed.`;
-
-  const result = await executeWithFallback(prompt, "Reply strictly in requested format.", 0.1, false);
-  const decision = String(result).trim().toUpperCase();
-
-  if (decision.startsWith('NEW')) {
-    if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
-    else await supabaseMemories.saveCoreIdentity(newFact);
-    return true;
-  } else if (decision.startsWith('UPDATE')) {
-    const match = decision.match(/UPDATE\s+(\d+)/);
-    if (match) {
-      const idx = parseInt(match[1], 10);
-      if (existingFacts[idx]) {
-        if (type === 'USER_PROFILE') {
-          await supabaseMemories.deleteFromUserProfile(existingFacts[idx]);
-          await supabaseMemories.saveUserProfile(newFact);
-        } else {
-          await supabaseMemories.deleteFromCoreIdentity(existingFacts[idx]);
-          await supabaseMemories.saveCoreIdentity(newFact);
-        }
-        return true;
-      }
-    }
-    // Fallback if regex fails
-    if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
-    else await supabaseMemories.saveCoreIdentity(newFact);
-    return true;
-  } else {
-    console.log(`[ROUTER] Deduplication: Skipped duplicate fact - ${newFact}`);
+  // ── Guard: tolak jika fact yang identik sedang diproses oleh call lain ──
+  const lockKey = `${type}::${newFact}`;
+  if (_dedupInFlight.has(lockKey)) {
+    console.log(`[ROUTER] Deduplication: Skipped in-flight duplicate - ${newFact}`);
     return false;
+  }
+  _dedupInFlight.add(lockKey);
+
+  try {
+    const existingFactsObj = await loadPersonalFactsWithCache();
+    const existingFacts = type === 'USER_PROFILE' ? existingFactsObj.userProfile : existingFactsObj.coreIdentity;
+
+    if (!existingFacts || existingFacts.length === 0) {
+      if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
+      else await supabaseMemories.saveCoreIdentity(newFact);
+      invalidatePersonalFactsCache();
+      return true;
+    }
+
+    // Batasi existing facts yang dikirim ke AI agar prompt dedup tidak membengkak
+    // Ambil 40 fakta terbaru saja — cukup representatif tanpa token boros
+    const factsForCheck = existingFacts.slice(-40);
+    const prompt = `EXISTING FACTS:\n${factsForCheck.map((f, i) => `[${i}] ${f}`).join('\n')}\n\nNEW FACT: "${newFact}"\n\nTASK: Compare NEW FACT against EXISTING FACTS. Reply ONLY with:\n- "NEW": If totally new.\n- "UPDATE [ID]": If more detailed/complete than fact [ID].\n- "DUPLICATE": If exact match or less detailed.`;
+
+    const result = await executeWithFallback(prompt, 'Reply strictly in requested format.', 0.1, false);
+    const decision = String(result).trim().toUpperCase();
+
+    if (decision.startsWith('NEW')) {
+      if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
+      else await supabaseMemories.saveCoreIdentity(newFact);
+      invalidatePersonalFactsCache();
+      return true;
+    } else if (decision.startsWith('UPDATE')) {
+      const match = decision.match(/UPDATE\s+(\d+)/);
+      if (match) {
+        const idx = parseInt(match[1], 10);
+        const targetFact = factsForCheck[idx];
+        if (targetFact) {
+          // DELETE dulu, baru INSERT — tidak boleh INSERT dua kali
+          if (type === 'USER_PROFILE') {
+            await supabaseMemories.deleteFromUserProfile(targetFact);
+            await supabaseMemories.saveUserProfile(newFact);
+          } else {
+            await supabaseMemories.deleteFromCoreIdentity(targetFact);
+            await supabaseMemories.saveCoreIdentity(newFact);
+          }
+          invalidatePersonalFactsCache();
+          return true;
+        }
+      }
+      // Fallback HANYA jika regex UPDATE gagal: cek dulu apakah sudah ada yang mirip
+      // Jangan langsung INSERT — ini adalah akar dari duplicate key!
+      // Simpan sebagai NEW karena AI menyarankan update tapi ID tidak valid
+      console.warn(`[ROUTER] Deduplication: UPDATE id not found, saving as NEW - ${newFact}`);
+      if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
+      else await supabaseMemories.saveCoreIdentity(newFact);
+      invalidatePersonalFactsCache();
+      return true;
+    } else {
+      console.log(`[ROUTER] Deduplication: Skipped duplicate fact - ${newFact}`);
+      return false;
+    }
+  } finally {
+    // Selalu bebaskan kunci, bahkan jika terjadi error
+    _dedupInFlight.delete(lockKey);
   }
 }
 
