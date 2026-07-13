@@ -283,7 +283,7 @@ async function callHuggingFaceVision(imageData, caption, systemPromptOverride = 
     },
     {
       headers: {
-        'Authorization': `Bearer ${env.HF_INFERENCE_TOKEN || env.HF_TOKEN}`,
+        'Authorization': `Bearer ${env.HF_INFERENCE_TOKEN}`,
         'Content-Type': 'application/json'
       },
       timeout: 60000
