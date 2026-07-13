@@ -231,7 +231,8 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
   }
 }
 
-async function callCerebras(prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
+async function callCerebras(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 2) {
+  if (!apiKey) throw new Error('No Cerebras API key provided');
   const requestBody = {
     model: 'gemma-4-31b',  // Updated: Cerebras deprecated llama-3.3-70b and upgraded to gemma-4-31b
     messages: [
@@ -246,7 +247,7 @@ async function callCerebras(prompt, systemInstruction, temperature, jsonMode = t
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await axios.post('https://api.cerebras.ai/v1/chat/completions', requestBody, {
-        headers: { 'Authorization': `Bearer ${env.CEREBRAS_API_KEY}`, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         timeout: 15000
       });
       return response.data.choices[0].message.content;
