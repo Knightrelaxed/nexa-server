@@ -2009,6 +2009,34 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       }
     }
 
+    // [PHASE 7 — M4] Anticipatory Engine — JARVIS-level Proactive Intervention
+    // Fire-and-forget: tidak memblokir respons webhook sama sekali.
+    // Memeriksa apakah konteks saat ini mengaktifkan pola negatif yang diketahui.
+    {
+      const anticipatoryEngine = require('../domain/Anticipatory_Engine');
+
+      // Bangun konteks untuk anticipation pass
+      // Jam Jakarta (UTC+7)
+      const jakartaHour = new Date(
+        new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })
+      ).getHours();
+
+      // Jalankan anticipation check secara async (ambil mood context & run check bersamaan)
+      (async () => {
+        try {
+          const moodCtx = await anticipatoryEngine.getLatestMoodContext();
+          await anticipatoryEngine.runAnticipationPass({
+            intent:            routingData.intent || 'NORMAL_CHAT',
+            mood:              routingData.detected_mood || 'NEUTRAL',
+            hour:              jakartaHour,
+            mood_7d_trend:     moodCtx.mood_7d_trend,
+            mood_7d_variance:  moodCtx.mood_7d_variance,
+            sessionAdviceCount: 0 // TODO: bisa dikembangkan dengan session counter di M4+
+          });
+        } catch (_) {}
+      })();
+    }
+
     // Execute Domain Logic based on Intent
     let domainReply = null;
 

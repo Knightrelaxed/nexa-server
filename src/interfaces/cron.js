@@ -56,15 +56,18 @@ function initCronJobs() {
 
   // [PHASE 6] 1.8. Weekly Cognitive Identity Inference (Minggu 21:00 WIB)
   // [PHASE 7 — M3] Setelah inferensi, generate & kirim Personality Evolution Narrative
+  // [PHASE 7 — M4] Kemudian bangun/perbarui Causal Knowledge Graph
   cron.schedule('0 21 * * 0', async () => {
-    console.log('[CRON] Executing Weekly Cognitive Identity Inference...');
+    console.log('[CRON] ── Weekly Cognitive Sunday Pass starting...');
+
+    // STEP 1: Weekly Identity Inference [PHASE 6]
     try {
       const inferenceEngine = require('../domain/Inference_Engine');
       const result = await inferenceEngine.runWeeklyIdentityInference();
       console.log(`[CRON] Weekly Inference done: saved=${result.saved} pendingSent=${result.pendingSent} staged=${result.staged}`);
 
-      // [PHASE 7 — M3] Generate dan kirim Personality Evolution Narrative
-      // Dikirim beberapa detik setelah inference selesai agar tidak menumpuk dengan notifikasi proposal
+      // STEP 2: [PHASE 7 — M3] Personality Evolution Narrative
+      // Delay 5 detik agar notifikasi proposal tidak bertabrakan
       await new Promise(r => setTimeout(r, 5000));
       try {
         const narrative = await inferenceEngine.getPersonalityEvolutionNarrative(30);
@@ -75,9 +78,22 @@ function initCronJobs() {
         console.warn('[CRON] Personality narrative failed (non-blocking):', narrativeErr.message);
       }
 
+      // STEP 3: [PHASE 7 — M4] Build Causal Knowledge Graph
+      // Delay tambahan 3 detik sebelum AI call berikutnya
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const anticipatoryEngine = require('../domain/Anticipatory_Engine');
+        const gStats = await anticipatoryEngine.buildCausalGraph();
+        console.log(`[CRON] Causal Graph built: new=${gStats.newEdges} updated=${gStats.updatedEdges} errors=${gStats.errors}`);
+      } catch (graphErr) {
+        console.warn('[CRON] Causal Graph build failed (non-blocking):', graphErr.message);
+      }
+
     } catch (e) {
       console.error('[CRON] Weekly Identity Inference failed:', e.message);
     }
+
+    console.log('[CRON] ── Weekly Cognitive Sunday Pass complete.');
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // [PHASE 7 — M1+M3] Daily Evening Pass (setiap hari 23:30 WIB)

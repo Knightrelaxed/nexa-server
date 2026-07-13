@@ -181,3 +181,82 @@ FROM information_schema.columns
 WHERE table_schema = 'public'
   AND table_name = 'nexa_identity_history'
 ORDER BY ordinal_position;
+
+-- ============================================================
+-- MILESTONE 4: Causal Knowledge Graph + Anticipatory Engine
+-- ============================================================
+
+-- ────────────────────────────────────────────────────────────
+-- TABEL 6: nexa_causal_graph
+-- Menyimpan relasi kausal antar trait di 7 Layer Identitas.
+-- Setiap baris adalah satu "edge" dalam directed influence graph:
+--   from_layer.from_trait_key → [causal_direction] → to_layer.to_trait_key
+--
+-- causal_direction values:
+--   AMPLIFIES  : Sumber memperkuat target (positif)
+--   SUPPRESSES : Sumber melemahkan target (negatif)
+--   TRIGGERS   : Sumber memicu pola di target
+--   COMPENSATES: Sumber mengkompensasi kelemahan target
+--
+-- Upsert pakai onConflict (from_layer, from_trait_key, to_layer, to_trait_key)
+-- untuk menghindari duplikasi edge dan hanya update evidence_count + strength.
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "public"."nexa_causal_graph" (
+  "id"               BIGSERIAL PRIMARY KEY,
+  "from_layer"       TEXT NOT NULL,           -- Layer sumber pengaruh
+  "from_trait_key"   TEXT NOT NULL,           -- Trait key sumber
+  "to_layer"         TEXT NOT NULL,           -- Layer target yang dipengaruhi
+  "to_trait_key"     TEXT NOT NULL,           -- Trait key target
+  "causal_direction" TEXT NOT NULL,           -- AMPLIFIES | SUPPRESSES | TRIGGERS | COMPENSATES
+  "strength"         NUMERIC(3,2) DEFAULT 0.50, -- Kekuatan pengaruh 0.00-1.00
+  "evidence_count"   INT NOT NULL DEFAULT 1,  -- Berapa kali relasi ini diobservasi
+  "reasoning"        TEXT,                    -- Penalaran AI mengapa relasi ini ada
+  "last_observed_at" TIMESTAMPTZ DEFAULT NOW(),
+  "created_at"       TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT "uq_causal_graph_edge"
+    UNIQUE ("from_layer", "from_trait_key", "to_layer", "to_trait_key")
+);
+
+-- Index untuk traversal graph ke depan (forward lookup dari source node)
+CREATE INDEX IF NOT EXISTS "idx_causal_graph_from"
+  ON "public"."nexa_causal_graph" ("from_layer", "from_trait_key");
+
+-- Index untuk traversal graph ke belakang (backward lookup ke target node)
+CREATE INDEX IF NOT EXISTS "idx_causal_graph_to"
+  ON "public"."nexa_causal_graph" ("to_layer", "to_trait_key");
+
+-- Index untuk query edges dengan kekuatan tertinggi
+CREATE INDEX IF NOT EXISTS "idx_causal_graph_strength"
+  ON "public"."nexa_causal_graph" ("strength" DESC);
+
+-- ────────────────────────────────────────────────────────────
+-- TABEL 7: nexa_anticipatory_alerts
+-- Menyimpan alert yang di-fire saat Anticipatory Engine
+-- mendeteksi pola negatif sedang diaktifkan.
+-- resolved_at diisi ketika pola selesai / user merespons.
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "public"."nexa_anticipatory_alerts" (
+  "id"           BIGSERIAL PRIMARY KEY,
+  "pattern_name" TEXT NOT NULL,           -- Nama pola (misalnya: 'stress_finance_spiral')
+  "trigger_node" TEXT NOT NULL,           -- Node pemicu dalam format 'LAYER.trait_key'
+  "prediction"   TEXT NOT NULL,           -- Prediksi apa yang akan terjadi
+  "intervention" TEXT NOT NULL,           -- Teks intervensi yang dikirim ke Telegram
+  "confidence"   NUMERIC(3,2),            -- Confidence prediksi 0.00-1.00
+  "context_data" JSONB DEFAULT '{}',      -- Konteks saat alert di-fire (intent, mood, jam)
+  "fired_at"     TIMESTAMPTZ DEFAULT NOW(),
+  "resolved_at"  TIMESTAMPTZ DEFAULT NULL -- NULL = masih aktif
+);
+
+-- Index untuk cek alert aktif yang belum resolved (cegah spam alert)
+CREATE INDEX IF NOT EXISTS "idx_anticipatory_alerts_active"
+  ON "public"."nexa_anticipatory_alerts" ("fired_at" DESC)
+  WHERE "resolved_at" IS NULL;
+
+-- ────────────────────────────────────────────────────────────
+-- VERIFIKASI M4: Cek tabel berhasil dibuat
+-- ────────────────────────────────────────────────────────────
+SELECT table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name IN ('nexa_causal_graph', 'nexa_anticipatory_alerts')
+ORDER BY table_name, ordinal_position;
