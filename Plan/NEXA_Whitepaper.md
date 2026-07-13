@@ -298,39 +298,42 @@ Setiap tahap USM dirancang agar **tidak bisa dilewati**. Bahkan pesan sederhana 
 
 Sebelum teks menyentuh AI Router, pesan mentah melewati tiga indera khusus yang menerjemahkan sinyal non-teks menjadi bahasa yang dapat diproses.
 
-#### 3.2.1 Voice Engine — Telinga N.E.X.A (7-Tier Fallback)
+#### 3.2.1 Voice Engine — Telinga N.E.X.A (13-Tier Fallback)
 
 Ketika Tuan Faqih mengirim Voice Note, `Voice_Engine.js` mengaktifkan pipeline transkripsi berlapis:
 
 **Tier 0 — Worker Transcription (Game Changer):**
-N.E.X.A mengirim *hanya* `file_path` ke Vercel Relay melalui `postToRelay('/api/transcribe', ...)`. Worker Vercel yang mendownload audio secara langsung dari Telegram dan menjalankan Groq Whisper di sisi Cloudflare. N.E.X.A hanya menerima teks transkripsi dalam respons JSON kecil. **Tidak ada file audio besar yang perlu diunduh oleh kontainer HF.**
+N.E.X.A mengirim *hanya* `file_path` ke Vercel Relay melalui `postToRelay('/api/transcribe', ...)`. Worker Vercel yang mendownload audio secara langsung dari Telegram dan menjalankan transkripsi di sisi Edge. N.E.X.A hanya menerima teks transkripsi dalam respons JSON kecil. **Tidak ada file audio besar yang perlu diunduh oleh kontainer HF.**
 
-**Tier 1–4 — Groq Whisper Large v3 (4 Kunci Rotasi):**
-Jika Worker gagal, sistem mendownload file audio `.ogg` ke file sementara (`tmpFilePath`) di RAM HF, lalu mencoba 4 kunci Groq Whisper secara berurutan dengan *smart retry* 503 (jeda 2 detik per attempt, 3x).
+**Tier 1–4 — Hugging Face Whisper Large v3 Turbo (4 Attempts / Slots):**
+Jika Worker gagal, sistem mendownload file audio `.ogg` ke file sementara (`tmpFilePath`) di RAM HF, lalu menjalankan transkripsi kilat dengan model Whisper Large v3 Turbo.
 
-**Tier 5–6 — Gemini 2.0 Flash Native Audio (2 Kunci):**
-Jika semua Groq gagal, file `.ogg` dibaca sebagai `Buffer`, di-encode ke Base64, lalu dikirim langsung ke Gemini sebagai `inlineData` dengan `mimeType: 'audio/ogg'`. Temperature dikunci di 0.1 untuk akurasi transkripsi.
+**Tier 5–8 — Gemini 2.5 Flash Native Audio (4 Kunci Rotasi):**
+Jika Hugging Face gagal, file `.ogg` dibaca sebagai `Buffer`, di-encode ke Base64, lalu dikirim langsung ke Gemini 2.5 Flash sebagai `inlineData` dengan `mimeType: 'audio/ogg'`.
+
+**Tier 9–12 — Groq Whisper Large v3 (4 Kunci Rotasi sebagai Backup):**
+Jika seluruh tier di atas gagal, sistem beralih ke 4 kunci Groq Whisper Large v3 secara berurutan dengan *smart retry* internal.
 
 **Cleanup Otomatis:** Terlepas dari tier mana yang berhasil atau jika semua gagal, blok `finally` memastikan file temp selalu dihapus dari disk.
 
-#### 3.2.2 Vision Engine — Mata N.E.X.A (12-Tier Fallback)
+#### 3.2.2 Vision Engine — Mata N.E.X.A (14-Tier Fallback)
 
 Ketika Tuan Faqih mengirim foto atau dokumen, `Vision_Engine.js` mengaktifkan pipeline analisis visual:
 
 **Tier 0 — Worker Vision (Zero Binary Download):**
-N.E.X.A mengirim `file_path` + `gemini_key` (dipilih acak dari pool) ke Vercel Relay melalui `postToRelay('/api/vision', ...)`. Worker yang mendownload gambar dan memanggil Gemini Vision langsung dari sisi Cloudflare. N.E.X.A hanya menerima deskripsi teks.
+N.E.X.A mengirim `file_path` + `gemini_key` ke Vercel Relay melalui `postToRelay('/api/vision', ...)`. Worker yang mendownload gambar dan memanggil Gemini Vision langsung dari sisi Edge.
 
-**Tier 1–4 — Gemini 2.5 Flash (4 Kunci, Premium Quality):**
-Gambar diunduh sebagai Base64 via `downloadTelegramImageAsBase64()` dengan dua jalur proxy: *Vercel Relay B64 mode* (Worker encode biner ke JSON) dan *AllOrigins* sebagai backup. Gambar di-embed sebagai `inlineData` ke Gemini API.
+**Tier 1–4 — Cerebras Gemma 4 31B Vision (4 Kunci WSE-3 Ultra-Fast):**
+Gambar diunduh sebagai Base64 dan diproses dengan kecepatan kilat chip Cerebras WSE-3.
 
-**Tier 5–8 — Groq Llama 4 Scout 17B (4 Kunci, Balanced):**
-Gambar yang sama (sudah diunduh) dikirim ke Groq Vision via format `image_url` dengan prefix `data:{mimeType};base64,...`.
+**Tier 5–8 — Gemini 2.5 Flash Vision (4 Kunci Rotasi, Premium Quality):**
+Analisis visual mendalam menggunakan model multimodal Google Gemini 2.5 Flash terbaru.
 
-**Tier 9–10 — Gemini 2.0 Flash (2 Kunci, Generous Quota):**
-Fallback ke model Gemini generasi sebelumnya yang memiliki kuota lebih besar.
+**Tier 9–12 — Groq Vision Llama 3.2 90B/11B Vision (4 Kunci Rotasi):**
+Penalaran visual berkecepatan tinggi menggunakan Llama 3.2 Vision di infrastruktur Groq Cloud.
 
-**Tier 11 — Hugging Face Qwen2-VL-7B-Instruct (Safety Net):**
-Terakhir, model *open-source* yang dijalankan via HF Inference API. Tidak ada batas kuota harian karena beroperasi di infrastruktur HF sendiri.
+**Tier 13 — Hugging Face Qwen2-VL Vision (Free Safety Net):**
+Terakhir, model multimodal *open-weight* yang dijalankan via HF Inference API tanpa batasan kuota harian.
 
 **Dual Mode Vision (Narasi vs JSON Extraction):**
 Vision Engine mendukung dua *system prompt* berbeda:
@@ -462,26 +465,29 @@ Jika validasi gagal, N.E.X.A mengirim pertanyaan klarifikasi spesifik dan menghe
 
 ---
 
-### 3.5 Fallback Engine — 11 Lapisan Ketidakmatiaan
+### 3.5 Fallback Engine — 15 Lapisan Ketangguhan & Validasi JSON Dinamis
 
-`Fallback_Engine.js` adalah sistem ketersediaan AI N.E.X.A. Setiap panggilan ke `executeWithFallback()` melewati 11 tier model secara berurutan—hanya berpindah ke tier berikutnya jika tier sebelumnya melempar error.
+`Fallback_Engine.js` adalah sistem ketersediaan AI N.E.X.A. Setiap panggilan ke `executeWithFallback()` melewati 15 tier model secara berurutan—berpindah ke tier berikutnya jika tier sebelumnya melempar error jaringan, limit rate 429, atau menghasilkan sintaks JSON cacat.
 
 | Tier | Model | Provider | Karakteristik |
 |---|---|---|---|
-| 1–4 | Llama 3.3 70B Versatile | Groq (4 Kunci) | The Sprinters — cepat & murah, ~200ms |
-| 5–6 | Gemini 2.5 Flash | Google (Kunci 1–2) | The Deep Thinkers — reasoning terbaik |
-| 7 | Llama 3.3 70B | Cerebras | The Backup Sprinter — ultra-cepat |
-| 8–9 | Gemini 2.0 Flash | Google (Kunci 3–4) | The Infinite Context — kuota besar |
-| 10 | Pixtral 12B | Mistral | The Reliable Closer |
-| 11 | Gemma 2 27B | OpenRouter | The Last Resort |
+| 1–4 | Gemma 4 31B | Cerebras WSE-3 (4 Kunci Rotasi) | Natural, empatik, kecepatan kilat ~0 milidetik |
+| 5–8 | Llama 3.3 70B Versatile | Groq Cloud (4 Kunci Rotasi) | Enterprise logic & structured output |
+| 9–12 | Gemini 2.5 Flash | Google AI (4 Kunci Rotasi) | High context limit & deep reasoning |
+| 13 | Gemma 4 31B IT | Hugging Face Router | Open-weight dedicated safety net |
+| 14 | Pixtral 12B | Mistral AI API | Reliable European API close |
+| 15 | Multi-Model Free Pool | OpenRouter | Indestructible last resort |
 
-Setiap API wrapper (`callGroq`, `callGemini`, `callCerebras`, dll.) memiliki **503 Smart Retry** internal: jika mendapat error 503 (service overloaded), sistem menunggu `attempt × 2000ms` sebelum mencoba ulang (maksimal 3x), sebelum menyerahkan ke tier berikutnya.
+**Dynamic Tier JSON Validation:**
+Setiap eksekusi tier yang membutuhkan `jsonMode = true` dilindungi oleh fungsi `validateResponseJson()`. Jika suatu model mengembalikan JSON cacat (*malformed syntax*), sistem langsung menolak hasil tersebut dan otomatis melompat (*failover*) ke tier berikutnya hingga mendapatkan JSON 100% valid.
 
-**Dumb Mode** — Jika semua 11 tier gagal:
+Setiap API wrapper (`callCerebras`, `callGroq`, `callGemini`, dll.) juga dilengkapi **503 Smart Retry** internal untuk perlindungan terhadap *momentary server overload*.
+
+**Dumb Mode** — Jika semua 15 tier gagal:
 ```json
 {
   "intent": "DUMB_MODE",
-  "reply_message": "⚠️ Sistem Otak N.E.X.A mengalami Down Total di semua 11 peladen dunia."
+  "reply_message": "⚠️ Sistem Otak N.E.X.A mengalami Down Total di semua 15 peladen dunia."
 }
 ```
 
