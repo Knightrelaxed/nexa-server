@@ -1,8 +1,49 @@
 -- ==============================================================================
--- N.E.X.A CORE IDENTITY MASTER RESET & FULL RE-INJECTION SCRIPT (v3.0)
+-- N.E.X.A CORE IDENTITY & PHASE 6 MASTER RESET & FULL INJECTION SCRIPT (v3.0)
 -- 100% Cocok & Siap Eksekusi Langsung di Supabase SQL Editor
 -- ==============================================================================
 
+-- ────────────────────────────────────────────────────────────
+-- 1. PEMBUATAN TABEL KOGNISI IDENTITAS (PHASE 6) JIKA BELUM ADA
+-- ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.nexa_identity_model (
+  id          BIGSERIAL PRIMARY KEY,
+  layer       TEXT NOT NULL,
+  trait_key   TEXT NOT NULL,
+  trait_value TEXT NOT NULL,
+  confidence  NUMERIC(4,2) DEFAULT 0.90,
+  inferred_from_summary TEXT,
+  updated_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(layer, trait_key)
+);
+
+CREATE TABLE IF NOT EXISTS public.nexa_identity_proposals (
+  id              BIGSERIAL PRIMARY KEY,
+  layer           TEXT NOT NULL,
+  trait_key       TEXT NOT NULL,
+  proposed_value  TEXT NOT NULL,
+  old_value       TEXT DEFAULT NULL,
+  confidence      NUMERIC(4,2) NOT NULL,
+  reasoning       TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'STAGED',
+  telegram_message_id BIGINT DEFAULT NULL,
+  rejection_reason TEXT DEFAULT NULL,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.nexa_core_identity (
+  id          BIGSERIAL PRIMARY KEY,
+  content     TEXT NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_identity_model_layer ON public.nexa_identity_model(layer);
+CREATE INDEX IF NOT EXISTS idx_identity_proposals_status ON public.nexa_identity_proposals(status);
+CREATE INDEX IF NOT EXISTS idx_behavior_log_created_event ON public.nexa_behavior_log(created_at DESC, event_type);
+
+-- ────────────────────────────────────────────────────────────
+-- 2. MASTER RESET & RE-INJECTION TABEL nexa_core_identity (131 ROWS)
+-- ────────────────────────────────────────────────────────────
 TRUNCATE TABLE "public"."nexa_core_identity" RESTART IDENTITY;
 
 INSERT INTO "public"."nexa_core_identity" ("id", "content", "created_at") VALUES 
