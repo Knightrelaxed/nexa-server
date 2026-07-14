@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const https = require('https');
 const fs = require('fs');
-const { downloadProxyToFile, fetchProxyJSON } = require('../utils/telegram_proxy.js');
+const { downloadProxyToFile, downloadRelayB64ToFile, fetchProxyJSON } = require('../utils/telegram_proxy.js');
 const { buildProxyChain, sendTelegramMessage } = require('../utils/telegram_network');
 const path = require('path');
 const os = require('os');
@@ -438,6 +438,25 @@ function getProxyList(targetUrl) {
   return buildProxyChain(targetUrl);
 }
 
+function getBinaryProxyList(targetUrl) {
+  const proxies = [];
+  const relayBase = env.NEXA_VERCEL_RELAY_URL || env.TELEGRAM_PROXY_URL;
+  if (relayBase) {
+    proxies.push({
+      name: 'Vercel Relay B64',
+      url: relayBase.replace(/\?url=$/, '').replace(/\/+$/, ''),
+      targetUrl,
+      useB64: true,
+    });
+  }
+  proxies.push({
+    name: 'AllOrigins',
+    url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+    useB64: false,
+  });
+  return proxies;
+}
+
 async function fetchJsonWithFailover(targetUrl, opts = {}) {
   const timeoutMs = (opts.timeout || 30) * 1000;
   const proxies = getProxyList(targetUrl);
@@ -472,14 +491,20 @@ async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
   const ext = preferredExt || (filePath.includes('.') ? filePath.split('.').pop() : 'bin');
 
   const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const proxies = getProxyList(fileUrl);
+  const proxies = getBinaryProxyList(fileUrl);
 
   console.log('[VAULT] Step 2: Downloading document binary...');
 
   for (const proxy of proxies) {
     try {
       console.log(`[VAULT] Downloading binary via: ${proxy.name}...`);
-      const result = await downloadProxyToFile(proxy.url, ext, 20 * 1024 * 1024);
+      let result;
+      if (proxy.useB64) {
+        // Mode B64: Cloudflare Worker/Vercel encode biner jadi JSON (bypass HF egress & Vercel streaming limits)
+        result = await downloadRelayB64ToFile(proxy.url, proxy.targetUrl, ext, 20 * 1024 * 1024);
+      } else {
+        result = await downloadProxyToFile(proxy.url, ext, 20 * 1024 * 1024);
+      }
       if (result.sizeBytes > 50) {
         console.log(`[VAULT] File downloaded via ${proxy.name}. Size: ${result.sizeBytes} bytes`);
         return { tmpFilePath: result.filePath, originalFilePath: filePath };
