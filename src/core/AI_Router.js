@@ -350,15 +350,31 @@ OUTPUT JSON FORMAT:
 function _detectSentiment(text) {
   if (!text) return 'NEUTRAL';
   const str = text.toLowerCase();
-  // If it contains rush words, lots of typos (heuristic: repeated letters/caps), or exclamation marks
+  
+  // 1. STRESSED / RUSH (Urgency & Panic)
   const rushWords = ['cepet', 'buruan', 'darurat', 'penting', 'sekarang', 'urgent', 'gawat'];
   const hasRush = rushWords.some(w => str.includes(w));
   const hasExclamation = (text.match(/!/g) || []).length >= 2;
   const isAllCaps = text.length > 5 && text === text.toUpperCase();
-
   if (hasRush || hasExclamation || isAllCaps) return 'STRESSED';
 
-  const casualWords = ['santai', 'nggak buru', 'nanti aja', 'kalo sempet', 'haha', 'wkwk'];
+  // 2. ANGRY (Frustration & Anger)
+  const angryWords = ['kesel', 'marah', 'benci', 'muak', 'sialan', 'jengkel', 'emosi'];
+  const hasAngry = angryWords.some(w => str.includes(w));
+  if (hasAngry) return 'ANGRY';
+
+  // 3. SAD (Sadness, Confusion & Demotivation)
+  const sadWords = ['sedih', 'nangis', 'hancur', 'bingung', 'hilang semangat', 'susah semangat', 'nyerah', 'capek', 'lelah', 'putus asa', 'kecewa', 'sakit'];
+  const hasSad = sadWords.some(w => str.includes(w));
+  if (hasSad) return 'SAD';
+
+  // 4. HAPPY (Joy & Excitement)
+  const happyWords = ['seneng', 'seru', 'alhamdulillah', 'asik', 'mantap', 'keren', 'bahagia', 'yes'];
+  const hasHappy = happyWords.some(w => str.includes(w));
+  if (hasHappy) return 'HAPPY';
+
+  // 5. CASUAL (Relaxed)
+  const casualWords = ['santai', 'nggak buru', 'nanti aja', 'kalo sempet', 'haha', 'wkwk', 'hehe'];
   const isCasual = casualWords.some(w => str.includes(w));
   if (isCasual) return 'CASUAL';
 
