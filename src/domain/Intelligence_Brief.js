@@ -316,7 +316,10 @@ async function parseMorningCheckInWithAI(text) {
 
   // Gunakan fast path (tanpa AI) jika panjang teks < 45 ATAU tidak ada kata keterangan/alasan/cerita
   const hasNarrativeWords = /\b(karena|karna|tapi|namun|gara|soalnya|sebab|walau|meski|cuma|cuman|jadinya|makanya|terus|agak|lumayan|banget|sangat|pusing|capek|lelah|ngantuk|sakit|begadang|tadi|semalam|kemarin|pas|waktu|mikir|bingung|stres|kurang|telat|baru|kesiangan|alasan|malas|males|mager|lemes|lemas|cape|letih|lesu|loyo|drop|meriang|demam|flu|batuk|migrain|insomnia|nyeri|pegal|pegel|badmood|mood|marah|kesel|sedih|kacau|berantakan|mumet|penat|hancur|berat|seger|segar|fit|semangat|siap|santai|selow|padahal|sedangkan|malah|malahan|akhirnya|ujungnya|bikin|buat|kepikiran|terlalu|kemaleman|kepagian|kebablasan|lupa|inget|ingat|dikit|banyak|pol|parah|gila|ampun|tugas|revisi|makalah|skripsi|dosen|kampus|kuliah|kerja|rapat|meeting)\b/i.test(text);
-  
+
+  // FIX: variabel 'quick' adalah hasil fast-path parseExplicitScores.
+  // Baris ini hilang saat refactoring sehingga menyebabkan ReferenceError: quick is not defined.
+  const quick = parseExplicitScores(text);
   if (quick && (text.length < 45 && !hasNarrativeWords)) {
     return quick;
   }
