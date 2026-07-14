@@ -2760,14 +2760,19 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           } else if (action === 'READ') {
             const keyword = routingData.extracted_data.search_keyword || textInput;
             const facts = await supabaseMemories.getPersonalFacts();
-            if (facts.userProfile && facts.userProfile.length > 0) {
-              const aiRouter = require('../core/AI_Router');
-              const relevantFacts = aiRouter.selectUserProfileFacts(facts.userProfile, textInput);
-              const list = relevantFacts.map(f => `- ${f}`).join('\n');
-              const prompt = `FILTERED PERMANENT FACTS ABOUT TUAN FAQIH:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user's question using ONLY the relevant facts above. Summarize them into a warm, natural narrative from an assistant's perspective. Do NOT use bullet points. CRITICAL RULE: ALWAYS address and refer to the user as "Tuan" or "Tuan Faqih". NEVER address or refer to the user as "Bapak", "Mas", or "Anda". MUST answer in fluent, elegant Indonesian.`;
+            const aiRouter = require('../core/AI_Router');
+            const relevantFacts = facts.userProfile ? aiRouter.selectUserProfileFacts(facts.userProfile, textInput) : [];
+            const relevantVault = (facts.vaultItems && aiRouter.selectVaultFacts) ? aiRouter.selectVaultFacts(facts.vaultItems, textInput) : [];
+            
+            if (relevantFacts.length > 0 || relevantVault.length > 0) {
+              const list = [
+                ...relevantFacts.map(f => `- [USER PROFILE] ${f}`),
+                ...relevantVault.map(f => `- [VAULT DOKUMEN/ARSIP] ${f}`)
+              ].join('\n');
+              const prompt = `FILTERED PERMANENT FACTS & VAULT DOCUMENTS ABOUT TUAN FAQIH:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user's question accurately using ONLY the relevant facts and vault document metadata above. If the answer (such as birth place, NIK, birth date, name, address) is found in the VAULT DOKUMEN/ARSIP metadata, answer clearly and proudly citing that it is recorded in their vaulted documents. Summarize them into a warm, natural narrative from an assistant's perspective. Do NOT use bullet points unless requested. CRITICAL RULE: ALWAYS address and refer to the user as "Tuan" or "Tuan Faqih". NEVER address or refer to the user as "Bapak", "Mas", or "Anda". MUST answer in fluent, elegant Indonesian.`;
               domainReply = await aiRouter.callAI(prompt);
             } else {
-              domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen tentang Tuan Faqih.`;
+              domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen maupun arsip di Vault terkait hal tersebut, Tuan Faqih.`;
             }
           }
         }
