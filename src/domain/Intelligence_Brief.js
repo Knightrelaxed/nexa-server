@@ -225,19 +225,13 @@ async function generateEveningBriefing() {
   console.log('[INTELLIGENCE] Generating Evening Briefing (Phase 6 — Reflective Diary)...');
 
   // Ambil agenda esok
+  // [BUG FIX #3] Sebelumnya memanggil getTodaysEvents() — data hari INI yang sudah berlalu.
+  // Diganti dengan getTomorrowEvents() yang benar agar Evening Briefing menampilkan
+  // persiapan esok hari yang relevan.
   let tomorrowAgenda = 'Tidak ada agenda terjadwal esok.';
   try {
-    const tomorrowStart = new Date();
-    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-    tomorrowStart.setHours(0, 0, 0, 0);
-    const tomorrowEnd = new Date(tomorrowStart);
-    tomorrowEnd.setHours(23, 59, 59, 999);
-
-    // Coba ambil events esok dari Google Calendar
-    const events = await googleWorkspace.getTodaysEvents(); // fallback, idealnya ambil tomorrow
-    // Filter hanya esok jika ada data
+    const events = await googleWorkspace.getTomorrowEvents();
     if (events && events.length > 0) {
-      const tomorrowDateStr = tomorrowStart.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
       tomorrowAgenda = events.map(e => {
         const startRaw = e.start?.dateTime || e.start?.date;
         const timeLabel = startRaw ? _formatTimeWib(startRaw) : '?';

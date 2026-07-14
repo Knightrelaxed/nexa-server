@@ -404,9 +404,15 @@ function initCronJobs() {
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
-  // 9. [P6] Tomorrow Prep (21:00 WIB)
+  // 9. [P6] Tomorrow Prep (21:00 WIB, Senin–Sabtu)
   // Preview agenda besok + deadline kritis.
-  cron.schedule('0 21 * * *', async () => {
+  // [BUG FIX #4] Jadwal diubah dari '0 21 * * *' (setiap hari) ke '0 21 * * 1-6' (Senin-Sabtu).
+  // Setiap Minggu pukul 21:00, jadwal '0 21 * * 0' (Weekly Cognitive Sunday Pass) sudah aktif
+  // menjalankan proses berat: Identity Inference + Personality Narrative + Causal Graph Build.
+  // Apabila Tomorrow Prep juga aktif bersamaan, terjadi 4 AI call simultan + pesan Telegram
+  // bertabrakan. Pada hari Minggu, Weekly Cognitive Pass sudah mencakup tinjauan strategis
+  // yang jauh lebih komprehensif dari Tomorrow Prep, sehingga skip Minggu tidak mengurangi nilai.
+  cron.schedule('0 21 * * 1-6', async () => {
     console.log('[CRON-P6] Executing Tomorrow Prep...');
     try {
       const { sendTelegramOutbound } = require('./webhook');
