@@ -2005,7 +2005,10 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
 
     // [PHASE 6] Log perilaku interaksi user & fakta ke nexa_behavior_log
     const behaviorEngine = require('../domain/Behavior_Engine');
-    behaviorEngine.logUserInteraction(routingData.intent, textInput, 'NEUTRAL').catch(() => {});
+    behaviorEngine.logUserInteraction(routingData.intent, textInput, routingData.mood || 'NEUTRAL').catch(() => {});
+    if (routingData.mood && routingData.mood !== 'NEUTRAL') {
+      behaviorEngine.logMood(routingData.mood, textInput).catch(() => {});
+    }
 
     // Passive Background Learning (Auto-Extraction)
     if (routingData.learned_user_facts && Array.isArray(routingData.learned_user_facts) && routingData.learned_user_facts.length > 0) {

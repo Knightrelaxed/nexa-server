@@ -770,6 +770,7 @@ Tentukan intent dan ekstrak data!
 
   try {
     const routingData = JSON.parse(cleanStr);
+    routingData.mood = _sentimentScore;
     return routingData;
   } catch (err) {
     // Smart repair: try extracting the first complete balanced JSON object ignoring trailing junk
@@ -791,6 +792,7 @@ Tentukan intent dan ekstrak data!
       if (endIdx !== -1) {
         const repaired = cleanStr.substring(firstBrace, endIdx + 1);
         const routingData = JSON.parse(repaired);
+        routingData.mood = _sentimentScore;
         console.log('[ROUTER] Smart JSON Repair SUCCESS after trailing garbage');
         return routingData;
       }
@@ -799,7 +801,8 @@ Tentukan intent dan ekstrak data!
     console.error('[ROUTER] JSON Parse Error:', err.message, resultJsonStr);
     return {
       intent: 'ERROR',
-      reply_message: 'Maaf Tuan, saya mengalami disonansi kognitif saat memproses instruksi tersebut.'
+      reply_message: 'Maaf Tuan, saya mengalami disonansi kognitif saat memproses instruksi tersebut.',
+      mood: _sentimentScore
     };
   }
 }
