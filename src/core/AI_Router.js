@@ -351,32 +351,88 @@ function _detectSentiment(text) {
   if (!text) return 'NEUTRAL';
   const str = text.toLowerCase();
   
-  // 1. STRESSED / RUSH (Urgency & Panic)
-  const rushWords = ['cepet', 'buruan', 'darurat', 'penting', 'sekarang', 'urgent', 'gawat'];
-  const hasRush = rushWords.some(w => str.includes(w));
+  // Helper using Regex boundaries to prevent false positives (e.g. "sos" inside "sosis")
+  const matchAny = (words) => words.some(w => new RegExp(`\\b${w.replace(/ /g, '\\s+')}\\b`, 'i').test(str));
+
+  // 1. STRESSED — Kepanikan, Ketergesaan, Darurat
+  const rushWords = [
+    "panik", "darurat", "buru-buru", "keburu", "mepet", "gawat",
+    "urgent", "buruan", "cepetan", "ngebut", "kepepet", "sos",
+    "emergency", "last minute", "ga sempet", "hampir telat",
+    "dikejar waktu", "waktunya abis", "tolong cepat",
+    "butuh bantuan segera", "sekarang juga", "telat parah",
+    "kerjaan numpuk", "tugas numpuk", "ga ada waktu",
+    "deg deg ser", "takut telat", "gelagapan", "keteteran",
+    "pusing pala", "puyeng", "overwhelmed", "stres banget",
+    "panik banget", "ngejar deadline", "deadline besok",
+    "waktu mepet", "mepet banget", "dikejar-kejar",
+    "mampus telat", "kacau banget", "berantakan semua"
+  ];
   const hasExclamation = (text.match(/!/g) || []).length >= 2;
   const isAllCaps = text.length > 5 && text === text.toUpperCase();
-  if (hasRush || hasExclamation || isAllCaps) return 'STRESSED';
+  if (matchAny(rushWords) || hasExclamation || isAllCaps) return 'STRESSED';
 
-  // 2. ANGRY (Frustration & Anger)
-  const angryWords = ['kesel', 'marah', 'benci', 'muak', 'sialan', 'jengkel', 'emosi'];
-  const hasAngry = angryWords.some(w => str.includes(w));
-  if (hasAngry) return 'ANGRY';
+  // 2. ANGRY — Kemarahan, Frustrasi, Kekesalan
+  const angryWords = [
+    "anjing", "ajg", "brengsek", "sialan", "keparat", "bangsat",
+    "goblok", "tolol", "nyebelin", "bikin emosi", "bikin kesel",
+    "frustrasi", "jengkel", "gondok", "muak", "sebel", "marah",
+    "ngamuk", "kesal", "dongkol", "ngeselin", "bete parah",
+    "eneg", "kampret", "bedebah", "jahanam", "najis",
+    "bikin naik darah", "ngegas", "emosi jiwa", "nyolot",
+    "kesel parah", "marah banget", "emosi parah", "setan",
+    "menyebalkan", "kesel banget", "gondok banget",
+    "capek ngurusin", "males banget ngurusin", "sebel parah",
+    "naik pitam"
+  ];
+  if (matchAny(angryWords)) return 'ANGRY';
 
-  // 3. SAD (Sadness, Confusion & Demotivation)
-  const sadWords = ['sedih', 'nangis', 'hancur', 'bingung', 'hilang semangat', 'susah semangat', 'nyerah', 'capek', 'lelah', 'putus asa', 'kecewa', 'sakit'];
-  const hasSad = sadWords.some(w => str.includes(w));
-  if (hasSad) return 'SAD';
+  // 3. SAD — Kesedihan, Demotivasi, Putus Asa, Sakit
+  const sadWords = [
+    "sedih", "nangis", "galau", "hopeless", "sakit hati",
+    "mati rasa", "putus asa", "depresi", "down", "nelangsa",
+    "patah hati", "kehilangan", "kecewa", "hancur", "hampa",
+    "terpuruk", "kesepian", "ga semangat", "demotivasi",
+    "nyesel", "remuk", "murung", "nestapa", "merana",
+    "capek hidup", "ngerasa gagal", "gak ada harapan",
+    "mau nyerah", "pengen nangis", "sakit banget", "terluka",
+    "ditinggal", "dikhianati", "ngerasa sendiri", "sedih banget",
+    "nangis bombay", "hancur lebur", "drop banget",
+    "hidup hampa", "males hidup", "ga ada motivasi"
+  ];
+  if (matchAny(sadWords)) return 'SAD';
 
-  // 4. HAPPY (Joy & Excitement)
-  const happyWords = ['seneng', 'seru', 'alhamdulillah', 'asik', 'mantap', 'keren', 'bahagia', 'yes'];
-  const hasHappy = happyWords.some(w => str.includes(w));
-  if (hasHappy) return 'HAPPY';
+  // 4. HAPPY — Kegembiraan, Kepuasan, Antusiasme
+  const happyWords = [
+    "seneng", "bahagia", "mantul", "yeay", "asik",
+    "gembira", "happy", "semangat", "excited", "girang",
+    "pecah", "keren banget", "mantap", "yess", "berhasil",
+    "sukses", "bangga", "alhamdulillah", "seru banget",
+    "puas banget", "hepi", "luar biasa", "amazing",
+    "gila keren", "wohoo", "asyik banget", "juara",
+    "top banget", "gokil abis", "legend", "epic",
+    "kece", "sip banget", "senangnya", "bahagia banget",
+    "excited parah", "ga sabar nunggu", "hore",
+    "mantap jiwa", "suka banget", "terharu bahagia",
+    "jos gandos", "top markotop", "anjay keren"
+  ];
+  if (matchAny(happyWords)) return 'HAPPY';
 
-  // 5. CASUAL (Relaxed)
-  const casualWords = ['santai', 'nggak buru', 'nanti aja', 'kalo sempet', 'haha', 'wkwk', 'hehe'];
-  const isCasual = casualWords.some(w => str.includes(w));
-  if (isCasual) return 'CASUAL';
+  // 5. CASUAL — Santai, Candaan, Tidak Terburu-buru
+  const casualWords = [
+    "wkwk", "haha", "santai", "gabut", "mager", "bercanda",
+    "becanda", "ngakak", "lol", "hehe", "iseng", "slow",
+    "peace", "kwkw", "xixi", "ngetroll", "ngeledek",
+    "btw", "fyi", "ngobrol", "nongkrong",
+    "rebahan", "healing", "receh", "gaje",
+    "garing", "random", "asal ngomong",
+    "hmm", "bosen", "gabut parah",
+    "mager banget", "otw", "ntar", "besok aja",
+    "santuy", "gengs", "bestie", "chill",
+    "gausah buru-buru", "pelan-pelan aja", "yaudah",
+    "gitu deh", "ngalir aja"
+  ];
+  if (matchAny(casualWords)) return 'CASUAL';
 
   return 'NEUTRAL';
 }
