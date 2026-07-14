@@ -2987,6 +2987,12 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             break;
           }
           const rowsPreview = result.rows.map((r) => {
+            if (tableName && (tableName.toLowerCase() === 'nexa_vault_items' || result.table === 'nexa_vault_items')) {
+              let metaDetails = typeof r.metadata_json === 'object' && r.metadata_json
+                ? Object.entries(r.metadata_json).map(([k,v]) => `${k}: ${v}`).join(' | ')
+                : String(r.metadata_json || '');
+              return `• [${r.category || 'ARSIP'}] ${r.file_name} — ${metaDetails} (Link: ${r.drive_web_view_link || '-'})`;
+            }
             const summary = Object.entries(r)
               .slice(0, 4)
               .map(([k, v]) => `${k}: ${String(v).substring(0, 80)}`)

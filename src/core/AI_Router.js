@@ -499,6 +499,32 @@ function _selectCoreIdentityFacts(coreIdentity, userMessage) {
   return [...core, ...relevant.slice(0, IDENTITY_KW_LIMIT)];
 }
 
+/**
+ * Progressive vault item fact injection with Dynamic Keyword Matching
+ */
+function _selectVaultFacts(vaultItems, userMessage) {
+  if (!vaultItems || !Array.isArray(vaultItems) || vaultItems.length === 0) return [];
+
+  // Always include top 3 latest vault items so N.E.X.A knows recent uploads/metadata immediately
+  const core = vaultItems.slice(0, 3);
+  const remaining = vaultItems.slice(3);
+  if (remaining.length === 0) return core;
+
+  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana', 'nexa', 'tuan', 'faqih', 'sistem', 'adalah', 'yaitu', 'merupakan', 'oleh', 'sebagai', 'harus', 'wajib', 'juga', 'lagi', 'saja', 'tadi', 'baru', 'banyak', 'berikan', 'tolong', 'bukakan', 'bacakan', 'nomor', 'apakah']);
+  const msgStr = typeof userMessage === 'string' ? userMessage : String(userMessage || '');
+  const words = msgStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 2 && !stopWords.has(w));
+
+  if (words.length === 0) return core;
+
+  const relevant = remaining.filter(fact => {
+    if (typeof fact !== 'string' || !fact) return false;
+    const fLower = fact.toLowerCase();
+    return words.some(w => fLower.includes(w));
+  });
+
+  return [...core, ...relevant.slice(0, 7)];
+}
+
 async function _fetchRecentFinanceSummary(limit) {
   try {
     const financeEngine = require('../domain/Finance_Engine');
@@ -588,6 +614,12 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   if (personalFacts.coreIdentity && personalFacts.coreIdentity.length > 0) {
     const _selectedIdentity = _selectCoreIdentityFacts(personalFacts.coreIdentity, textInput);
     factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${_selectedIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+  }
+  if (personalFacts.vaultItems && personalFacts.vaultItems.length > 0) {
+    const _selectedVault = _selectVaultFacts(personalFacts.vaultItems, textInput);
+    if (_selectedVault.length > 0) {
+      factsContext += `\n[ARSIP & DOKUMEN VAULT TERSIMPAN TENTANG TUAN FAQIH (TERMASUK METADATA/NIK/DLL)]\n${_selectedVault.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+    }
   }
 
   // [PHASE 6] 3.5. Build Targeted Identity Layer Injection
@@ -1093,6 +1125,7 @@ module.exports = {
   // ── Selectors (untuk testing / external use) ─────────────────
   selectUserProfileFacts: _selectUserProfileFacts,
   selectCoreIdentityFacts: _selectCoreIdentityFacts,
+  selectVaultFacts: _selectVaultFacts,
   // [PHASE 6] Identity helpers (untuk testing)
   detectTopicContext: _detectTopicContext,
   buildIdentityContextBlock: _buildIdentityContextBlock,

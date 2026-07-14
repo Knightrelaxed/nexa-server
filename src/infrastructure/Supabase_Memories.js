@@ -297,16 +297,30 @@ function findMatchingIds(rows, searchKeyword) {
  * @returns {Promise<string[]>} Array of fact strings
  */
 async function getPersonalFacts() {
-  if (!supabase) return [];
+  if (!supabase) return { userProfile: [], coreIdentity: [], vaultItems: [] };
   
-  const [profileRes, identityRes] = await Promise.all([
+  const [profileRes, identityRes, vaultRes] = await Promise.all([
     supabase.from('nexa_user_profile').select('content').order('created_at', { ascending: true }),
-    supabase.from('nexa_core_identity').select('content').order('created_at', { ascending: true })
+    supabase.from('nexa_core_identity').select('content').order('created_at', { ascending: true }),
+    supabase.from('nexa_vault_items').select('file_name, category, metadata_json, drive_web_view_link, status').order('created_at', { ascending: false }).limit(30)
   ]);
+
+  const vaultItems = (vaultRes.data || []).map(item => {
+    let metaStr = '';
+    if (item.metadata_json && typeof item.metadata_json === 'object') {
+      metaStr = Object.entries(item.metadata_json)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ');
+    } else if (item.metadata_json) {
+      metaStr = String(item.metadata_json);
+    }
+    return `[${item.category || 'ARSIP'} | Status: ${item.status || 'DRAFT'}] ${item.file_name || 'Dokumen'} — Metadata: ${metaStr || 'Tidak ada spesifik detail'} (Link Drive: ${item.drive_web_view_link || '-'})`;
+  });
 
   return {
     userProfile: profileRes.data ? profileRes.data.map(r => r.content) : [],
-    coreIdentity: identityRes.data ? identityRes.data.map(r => r.content) : []
+    coreIdentity: identityRes.data ? identityRes.data.map(r => r.content) : [],
+    vaultItems
   };
 }
 
