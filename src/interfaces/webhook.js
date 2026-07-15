@@ -163,26 +163,7 @@ function isFactAboutNexa(fact) {
   // Possessive: "ku" suffix strongly implies user's own attribute
   if (/\w+ku\b/.test(f) && !/\b(namaku|diriku sebagai)\b/.test(f)) score -= 1;
 
-function _triggerConversationalSynthesis(textInput, resultMessage, action) {
-  setTimeout(async () => {
-    try {
-      const { executeWithFallback } = require('../core/Fallback_Engine');
-      const { NEXA_PERSONALITY } = require('../config/personality');
-      
-      const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nDashboard / Result:\n${resultMessage}\n\nTask: Write a 1-2 sentence friendly, caring response IN INDONESIAN analyzing the operation or schedule above. Act as a dedicated, elegant personal assistant. Provide a brief relevant suggestion, encouragement, prep tip, priority guidance, or warm appreciation. DO NOT repeat the items, events, or confirmation text. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
-      
-      const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
-      if (advice && !advice.includes('DUMB_MODE')) {
-        const cleanAdvice = stripSurroundingQuotes(advice);
-        await sendTelegramOutbound(cleanAdvice);
-      }
-    } catch (err) {
-      console.error('[CONVERSATIONAL SYNTHESIS] Failed:', err.message);
-    }
-  }, 1500);
-}
-
-// ── PASSIVE LEARNING & ADVICE MEMORY HOOKS ────────────────────────────────────────
+  // ── STRONG N.E.X.A signals (add) ────────────────────────────────────────
   // Explicitly names the AI
   if (/\b(nexa|n\.e\.x\.a)\b/.test(f)) score += 3;
   // 2nd person pronoun as the SUBJECT of the sentence (typically refers to AI)
@@ -201,6 +182,25 @@ function _triggerConversationalSynthesis(textInput, resultMessage, action) {
   if (/\b(dirimu|diri kamu|diri anda)\b/.test(f)) score += 2;
 
   return score > 0;
+}
+
+function _triggerConversationalSynthesis(textInput, resultMessage, action) {
+  setTimeout(async () => {
+    try {
+      const { executeWithFallback } = require('../core/Fallback_Engine');
+      const { NEXA_PERSONALITY } = require('../config/personality');
+      
+      const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nDashboard / Result:\n${resultMessage}\n\nTask: Write a 1-2 sentence friendly, caring response IN INDONESIAN analyzing the operation or schedule above. Act as a dedicated, elegant personal assistant. Provide a brief relevant suggestion, encouragement, prep tip, priority guidance, or warm appreciation. DO NOT repeat the items, events, or confirmation text. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
+      
+      const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
+      if (advice && !advice.includes('DUMB_MODE')) {
+        const cleanAdvice = stripSurroundingQuotes(advice);
+        await sendTelegramOutbound(cleanAdvice);
+      }
+    } catch (err) {
+      console.error('[CONVERSATIONAL SYNTHESIS] Failed:', err.message);
+    }
+  }, 1500);
 }
 
 function parseJsonObjectFromText(raw) {
