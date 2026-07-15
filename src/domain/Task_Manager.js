@@ -549,10 +549,11 @@ async function handleTaskIntent(extractedData, chatId = null) {
         
         // [PHASE 4: Two-Way Status Sync]
         try {
-          // BUG #3 FIX: prefix disinkronkan dengan format event baru yang dibuat di CREATE
-          const events = await googleWorkspace.findEventByTitle(`🔴 DEADLINE: ${t.title}`);
-          if (events && events.length > 0) {
-            await googleWorkspace.updateCalendarEventColor(events[0].id, '8'); // 8 = Graphite
+          const dlEvents = await googleWorkspace.findEventByTitle(`🔴 DEADLINE: ${t.title}`);
+          const wbEvents = await googleWorkspace.findEventByTitle(`⏰ BLOK KERJA: ${t.title}`);
+          const allEvents = [...(dlEvents || []), ...(wbEvents || [])];
+          for (const ev of allEvents) {
+            await googleWorkspace.updateCalendarEventColor(ev.id, '8'); // 8 = Graphite
             syncedEvents++;
           }
         } catch (e) {
@@ -563,7 +564,7 @@ async function handleTaskIntent(extractedData, chatId = null) {
       const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
       let msg = `✅ Tugas ${names} ditandai <b>Selesai</b>! 🎉`;
       if (syncedEvents > 0) {
-        msg += `\n📅 ${syncedEvents} jadwal deadline di Kalender otomatis diredupkan (abu-abu).`;
+        msg += `\n📅 ${syncedEvents} jadwal (deadline & blok kerja) di Kalender otomatis diredupkan (abu-abu).`;
       }
       return { status: 'SUCCESS', message: msg };
     }
@@ -574,13 +575,31 @@ async function handleTaskIntent(extractedData, chatId = null) {
       if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dihapus.' };
       const matches = await googleTasks.findTasksByKeyword(keyword);
       if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
+      
+      let deletedEvents = 0;
       for (const t of matches) {
         await googleTasks.deleteTask(t.id, t.listId);
         // [PHASE: Parallel Sync to Notion]
         notionClient.deleteTask(t.title).catch(e => console.error('[NOTION SYNC] Failed:', e.message));
+
+        try {
+          const dlEvents = await googleWorkspace.findEventByTitle(`🔴 DEADLINE: ${t.title}`);
+          const wbEvents = await googleWorkspace.findEventByTitle(`⏰ BLOK KERJA: ${t.title}`);
+          const allEvents = [...(dlEvents || []), ...(wbEvents || [])];
+          for (const ev of allEvents) {
+            await googleWorkspace.deleteCalendarEvent(ev.id);
+            deletedEvents++;
+          }
+        } catch (e) {
+          console.warn('[TASKS] Failed to delete calendar events on task deletion:', e.message);
+        }
       }
       const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
-      return { status: 'SUCCESS', message: `🗑️ Tugas ${names} berhasil dihapus.` };
+      let msg = `🗑️ Tugas ${names} berhasil dihapus.`;
+      if (deletedEvents > 0) {
+        msg += `\n📅 ${deletedEvents} jadwal terkait (deadline & blok kerja) otomatis dihapus dari Kalender.`;
+      }
+      return { status: 'SUCCESS', message: msg };
     }
 
     // ── CLEAR_DONE ──────────────────────────────────────────

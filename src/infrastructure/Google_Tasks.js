@@ -199,11 +199,29 @@ async function clearCompletedTasks(listId = null) {
 }
 
 /**
+ * Reliable Jakarta YYYY-MM-DD date calculation with optional day offset
+ */
+function _getJakartaDateStr(daysOffset = 0) {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(now);
+  const year = parseInt(parts.find(p => p.type === 'year').value, 10);
+  const month = parseInt(parts.find(p => p.type === 'month').value, 10) - 1;
+  const day = parseInt(parts.find(p => p.type === 'day').value, 10);
+  const target = new Date(Date.UTC(year, month, day + daysOffset));
+  return target.toISOString().split('T')[0];
+}
+
+/**
  * Get tasks due specifically today (Jakarta timezone)
  */
 async function getTasksDueToday(listId = null) {
   const tasks = await getActiveTasks(listId);
-  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
+  const todayStr = _getJakartaDateStr(0);
   return tasks.filter(t => t.due && t.due.startsWith(todayStr));
 }
 
@@ -212,7 +230,7 @@ async function getTasksDueToday(listId = null) {
  */
 async function getTasksDueTomorrow(listId = null) {
   const tasks = await getActiveTasks(listId);
-  const tmrwStr = new Date(Date.now() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
+  const tmrwStr = _getJakartaDateStr(1);
   return tasks.filter(t => t.due && t.due.startsWith(tmrwStr));
 }
 
@@ -221,7 +239,7 @@ async function getTasksDueTomorrow(listId = null) {
  */
 async function getOverdueTasks(listId = null) {
   const tasks = await getActiveTasks(listId);
-  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  const todayStr = _getJakartaDateStr(0);
   return tasks.filter(t => t.due && t.due.split('T')[0] < todayStr);
 }
 
@@ -230,8 +248,8 @@ async function getOverdueTasks(listId = null) {
  */
 async function getUpcomingTasks(daysAhead = 7, listId = null) {
   const tasks = await getActiveTasks(listId);
-  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-  const futureStr = new Date(Date.now() + daysAhead * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  const todayStr = _getJakartaDateStr(0);
+  const futureStr = _getJakartaDateStr(daysAhead);
   return tasks.filter(t => {
     if (!t.due) return false;
     const d = t.due.split('T')[0];

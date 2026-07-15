@@ -25,7 +25,7 @@ const _CAL_TIME_KWS = [
 const _CAL_DOMAIN_KWS = [
   'jadwal', 'kalender', 'meeting', 'rapat', 'event', 'reminder',
   'ingatkan', 'buat jadwal', 'agenda', 'matkul', 'kelas', 'kuliah',
-  'tugas hari ini', 'deadline', 'jadwal hari'
+  'jadwal hari'
 ];
 
 // ============================================================

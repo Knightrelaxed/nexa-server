@@ -92,6 +92,31 @@ async function parseDurationMinutes(text) {
   return null;
 }
 
+async function _tryProactiveTaskSuggestion(summary) {
+  try {
+    const { callAI } = require('../core/AI_Router');
+    const aiPrompt = `Acara kalender baru ditambahkan: "${summary}". Apakah acara ini (rapat, seminar, ujian, kuliah, presentasi, tugas kelompok, dll) umumnya membutuhkan 1-2 tugas persiapan yang terukur (seperti menyiapkan dokumen, membaca materi, membuat slide)? Jawab HANYA dengan format ini jika Ya:\nYa, saya rekomendasikan tugas persiapan:\n1. [Tugas 1]\n2. [Tugas 2]\n\nATAU jawab "Tidak" jika acaranya kasual/tidak butuh persiapan. Jangan bertele-tele.`;
+    const aiResponse = await callAI(aiPrompt);
+    if (aiResponse.toLowerCase().startsWith('ya')) {
+      const tasks = [];
+      const lines = aiResponse.split('\n');
+      for (const line of lines) {
+        const m = line.match(/^\d+\.\s*(.+)$/);
+        if (m && m[1]) {
+          tasks.push(m[1].trim());
+        }
+      }
+      return {
+        text: `\n\n💡 <b>Saran Proaktif N.E.X.A:</b>\n${escapeHtml(aiResponse)}\n<i>(Jika Tuan setuju, balas: "Buatkan tugas untuk persiapan agenda tersebut" atau "Setuju")</i>`,
+        tasks
+      };
+    }
+  } catch (e) {
+    console.warn('[AGENDA] Failed to generate proactive tasks:', e.message);
+  }
+  return null;
+}
+
 async function handleCalendarIntent(extractedData, rawUserText = '') {
   let { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence, color_id } = extractedData;
   console.log(`[AGENDA] Executing Calendar Intent: ${action}`);
@@ -151,7 +176,17 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
           if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
           if (recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
           if (color_id) successMsg += `\n🎨 Warna event disesuaikan.`;
-          return { status: 'SUCCESS', message: successMsg, eventId: result.id };
+
+          const proactive = await _tryProactiveTaskSuggestion(summary);
+          let proactiveTasks = null;
+          if (proactive) {
+            successMsg += proactive.text;
+            if (proactive.tasks && proactive.tasks.length > 0) {
+              proactiveTasks = { summary, tasks: proactive.tasks };
+            }
+          }
+
+          return { status: 'SUCCESS', message: successMsg, eventId: result.id, proactiveTasks };
         }
 
         // No duration in text → return PENDING_END and schedule auto-create after 15 min
@@ -206,19 +241,16 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       if (recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
       if (color_id) successMsg += `\n🎨 Warna event disesuaikan.`;
 
-      // [PHASE 4: Proactive Calendar-to-Task Generation]
-      try {
-        const { callAI } = require('../core/AI_Router');
-        const aiPrompt = `Acara kalender baru ditambahkan: "${summary}". Apakah acara ini (rapat, seminar, ujian, dll) umumnya membutuhkan 1-2 tugas persiapan yang terukur (seperti menyiapkan dokumen, membaca materi)? Jawab HANYA dengan "Ya, saya rekomendasikan tugas persiapan: 1. [Tugas 1] 2. [Tugas 2]" ATAU jawab "Tidak" jika acaranya kasual/tidak butuh persiapan. Jangan bertele-tele.`;
-        const aiResponse = await callAI(aiPrompt);
-        if (aiResponse.toLowerCase().startsWith('ya')) {
-          successMsg += `\n\n💡 <b>Saran Proaktif N.E.X.A:</b>\n${escapeHtml(aiResponse)}\n<i>(Jika Tuan setuju, balas: "Buatkan tugas untuk persiapan agenda tersebut")</i>`;
+      const proactive = await _tryProactiveTaskSuggestion(summary);
+      let proactiveTasks = null;
+      if (proactive) {
+        successMsg += proactive.text;
+        if (proactive.tasks && proactive.tasks.length > 0) {
+          proactiveTasks = { summary, tasks: proactive.tasks };
         }
-      } catch (e) {
-        console.warn('[AGENDA] Failed to generate proactive tasks:', e.message);
       }
 
-      return { status: 'SUCCESS', message: successMsg, eventId: result.id };
+      return { status: 'SUCCESS', message: successMsg, eventId: result.id, proactiveTasks };
     }
     else if (action === 'UPDATE') {
       // If we have eventId directly from AI, use it. Otherwise, find the event by title.

@@ -25,6 +25,9 @@ let pendingCalendarContext = null;
 // Pending Conflict Event: holds a conflicting calendar event waiting for user confirmation
 // Structure: { pendingEvent: { summary, start, end, description, location, reminder_minutes, recurrence }, askedAt }
 let pendingConflictEvent = null;
+// Pending Proactive Tasks: holds suggested prep tasks from calendar creation until user approves
+// Structure: { summary, tasks: ["Task 1", ...], askedAt }
+let pendingProactiveTasks = null;
 // Pending Email Context: keeps last email search context for follow-up commands
 // Structure: { searchKeyword, lastLimit, cursorIndex, lastBatch, askedAt }
 let pendingEmailContext = null;
@@ -1544,6 +1547,19 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         }
 
         await respondToTelegram(resolved.message);
+        if (resolved.status === 'SUCCESS') {
+          setTimeout(async () => {
+            try {
+              const { executeWithFallback } = require('../core/Fallback_Engine');
+              const { NEXA_PERSONALITY } = require('../config/personality');
+              const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Result:\n${resolved.message}\n\nTask: Write a 1-2 sentence friendly response IN INDONESIAN analyzing the newly added calendar event above. Act as a caring personal assistant. Provide a brief prep suggestion or encouragement. DO NOT repeat the confirmation text. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
+              const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
+              if (advice && !advice.includes('DUMB_MODE')) {
+                await sendTelegramOutbound(stripSurroundingQuotes(advice));
+              }
+            } catch (err) { console.error('[CALENDAR PENDING] Advice failed:', err.message); }
+          }, 1500);
+        }
 
         return;
       }
@@ -1959,6 +1975,46 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         }
         pendingConflictEvent = null;
 
+        return;
+      }
+      // AMBIGUOUS — fall through to normal routing
+    }
+
+    // ============================================================
+    // PENDING PROACTIVE TASKS CONFIRMATION — AI-Powered (intercept ya/buatkan)
+    // ============================================================
+    if (pendingProactiveTasks && (Date.now() - (pendingProactiveTasks.askedAt || 0)) < 15 * 60 * 1000) {
+      const pTasks = pendingProactiveTasks;
+      const proactiveContext = `buatkan tugas persiapan untuk agenda "${pTasks.summary}" (${(pTasks.tasks || []).join(', ')})`;
+      const { classifyYesNo } = require('../core/AI_Router');
+      const verdict = await classifyYesNo(textInput, proactiveContext);
+      console.log(`[PROACTIVE TASKS INTERCEPTOR] AI verdict: "${verdict}" for input: "${textInput}"`);
+
+      if (verdict === 'YES' || verdict === 'NO') {
+        if (verdict === 'YES') {
+          try {
+            let createdCount = 0;
+            const createdNames = [];
+            for (const taskTitle of (pTasks.tasks || [])) {
+              await taskManager.handleTaskIntent({
+                action: 'CREATE',
+                title: taskTitle,
+                due_date: null,
+                notes: `Tugas persiapan proaktif untuk agenda: ${pTasks.summary}`,
+                sync_calendar: false,
+                calendar_start_time: null
+              }, chatIdStr);
+              createdCount++;
+              createdNames.push(`'<b>${escapeHtml(taskTitle)}</b>'`);
+            }
+            await respondToTelegram(`✅ Berhasil membuat <b>${createdCount} tugas persiapan</b> untuk agenda '<b>${escapeHtml(pTasks.summary)}</b>':\n${createdNames.join('\n')}`);
+          } catch (e) {
+            await respondToTelegram(`❌ Gagal membuat tugas persiapan: ${e.message}`);
+          }
+        } else {
+          await respondToTelegram(`🚫 Baik Tuan, saran tugas persiapan untuk '<b>${escapeHtml(pTasks.summary)}</b>' dilewatkan.`);
+        }
+        pendingProactiveTasks = null;
         return;
       }
       // AMBIGUOUS — fall through to normal routing
@@ -2476,6 +2532,10 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             pendingConflictEvent = null;
           }
 
+          if (calResult && calResult.proactiveTasks && calResult.proactiveTasks.tasks && calResult.proactiveTasks.tasks.length > 0) {
+            pendingProactiveTasks = { summary: calResult.proactiveTasks.summary, tasks: calResult.proactiveTasks.tasks, askedAt: Date.now() };
+          }
+
           if (calResult && calResult.message) {
             domainReply = calResult.message;
             
@@ -2492,13 +2552,13 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
               }
             }
             
-            if (!isPast && ['READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(action)) {
+            if (!isPast && ['CREATE', 'UPDATE', 'READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(action)) {
               setTimeout(async () => {
                 try {
                   const { executeWithFallback } = require('../core/Fallback_Engine');
                   const { NEXA_PERSONALITY } = require('../config/personality');
                   
-                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Dashboard:\n${calResult.message}\n\nTask: Write a 1-2 sentence friendly response IN INDONESIAN analyzing the schedule above. Act as a caring personal assistant. Provide a brief prep suggestion or encouragement based on how busy the schedule is. DO NOT repeat the events. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
+                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Dashboard / Result:\n${calResult.message}\n\nTask: Write a 1-2 sentence friendly response IN INDONESIAN analyzing the calendar operation or schedule above. Act as a caring personal assistant. Provide a brief prep suggestion, encouragement, or relevant tip based on the schedule or newly added event. DO NOT repeat the events or confirmation text. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
                   
                   const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
                   if (advice && !advice.includes('DUMB_MODE')) {
@@ -2627,8 +2687,28 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
 
             domainReply = taskResult.message;
           } else if (taskResult && taskResult.message) {
-
             domainReply = taskResult.message;
+
+            // Add conversational advice / synthesis for CREATE, READ and COMPLETE actions
+            const action = routingData.extracted_data.action;
+            if (['CREATE', 'CREATE_SUBTASK', 'READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING', 'READ_OVERDUE', 'READ_LISTS', 'COMPLETE'].includes(action)) {
+              setTimeout(async () => {
+                try {
+                  const { executeWithFallback } = require('../core/Fallback_Engine');
+                  const { NEXA_PERSONALITY } = require('../config/personality');
+                  
+                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nTask Dashboard / Result:\n${taskResult.message}\n\nTask: Write a 1-2 sentence friendly, caring response IN INDONESIAN analyzing the task operation above (whether it is a task creation, task list, or completion). Act as a dedicated, elegant personal assistant. Provide a brief relevant suggestion, encouragement, priority tips, or warm appreciation. DO NOT repeat the task list or confirmation. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
+                  
+                  const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
+                  if (advice && !advice.includes('DUMB_MODE')) {
+                    const cleanAdvice = stripSurroundingQuotes(advice);
+                    await sendTelegramOutbound(cleanAdvice);
+                  }
+                } catch (err) {
+                  console.error('[TASK] Failed to generate conversational advice:', err.message);
+                }
+              }, 1500); // Wait 1.5s so the Task Dashboard arrives first
+            }
           }
         }
         break;
