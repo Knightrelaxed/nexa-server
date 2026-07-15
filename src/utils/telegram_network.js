@@ -277,11 +277,46 @@ async function sendTelegramMessage(text, chatId, botToken, payload = null) {
   return fetchWithFailover(telegramUrl, { timeoutMs: 30_000, maxRetriesPerProxy: 3 });
 }
 
+async function sendChatAction(chatId, botToken, action = 'typing') {
+  if (!chatId || !botToken) return Promise.resolve();
+  const telegramUrl = `https://api.telegram.org/bot${botToken}/sendChatAction`;
+  return fetchWithFailover(telegramUrl, {
+    method: 'POST',
+    body: { chat_id: chatId, action },
+    timeoutMs: 15_000,
+    maxRetriesPerProxy: 1,
+  }).catch(() => {
+    // Silently catch so proxy lag never throws or blocks main processing
+  });
+}
+
+function startTypingLoop(chatId, botToken, intervalMs = 4500) {
+  if (!chatId || !botToken) return () => {};
+
+  // Fire immediately
+  sendChatAction(chatId, botToken, 'typing');
+
+  // Loop refresh every 4.5 seconds
+  const timer = setInterval(() => {
+    sendChatAction(chatId, botToken, 'typing');
+  }, intervalMs);
+
+  let stopped = false;
+  return () => {
+    if (!stopped) {
+      stopped = true;
+      clearInterval(timer);
+    }
+  };
+}
+
 module.exports = {
   fetchWithFailover,
   fetchRelayB64,
   postToRelay,
   sendTelegramMessage,
+  sendChatAction,
+  startTypingLoop,
   formatTelegramHtml,
   buildProxyChain,
   enqueueOutbound,

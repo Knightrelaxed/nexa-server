@@ -687,6 +687,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
   let webhookReply = null;
 
   setImmediate(async () => {
+    const { startTypingLoop } = require('../utils/telegram_network');
+    const stopTyping = startTypingLoop(message.chat?.id, env.TELEGRAM_BOT_TOKEN?.trim());
+
     // Helper: escape untrusted strings for HTML parse_mode
     const escapeHtml = (str) => String(str)
       .replace(/&/g, '&amp;')
@@ -706,6 +709,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     };
 
     const deliverWebhookReply = () => {
+      stopTyping();
       if (res.headersSent) return;
       if (webhookReply) {
         const formattedReply = webhookReply
@@ -3228,6 +3232,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
       console.error('[TELEGRAM] Error processing message:', error.message);
       webhookReply = `⚠️ N.E.X.A mengalami gangguan internal:\n<code>${escapeHtml(error.message)}</code>\n\nSilakan cek log server di Hugging Face Space dashboard.`;
     } finally {
+      stopTyping();
       deliverWebhookReply();
     }
   }); // END setImmediate
