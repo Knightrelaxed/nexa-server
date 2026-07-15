@@ -163,7 +163,26 @@ function isFactAboutNexa(fact) {
   // Possessive: "ku" suffix strongly implies user's own attribute
   if (/\w+ku\b/.test(f) && !/\b(namaku|diriku sebagai)\b/.test(f)) score -= 1;
 
-  // ── STRONG N.E.X.A signals (add) ────────────────────────────────────────
+function _triggerConversationalSynthesis(textInput, resultMessage, action) {
+  setTimeout(async () => {
+    try {
+      const { executeWithFallback } = require('../core/Fallback_Engine');
+      const { NEXA_PERSONALITY } = require('../config/personality');
+      
+      const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nDashboard / Result:\n${resultMessage}\n\nTask: Write a 1-2 sentence friendly, caring response IN INDONESIAN analyzing the operation or schedule above. Act as a dedicated, elegant personal assistant. Provide a brief relevant suggestion, encouragement, prep tip, priority guidance, or warm appreciation. DO NOT repeat the items, events, or confirmation text. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
+      
+      const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
+      if (advice && !advice.includes('DUMB_MODE')) {
+        const cleanAdvice = stripSurroundingQuotes(advice);
+        await sendTelegramOutbound(cleanAdvice);
+      }
+    } catch (err) {
+      console.error('[CONVERSATIONAL SYNTHESIS] Failed:', err.message);
+    }
+  }, 1500);
+}
+
+// ── PASSIVE LEARNING & ADVICE MEMORY HOOKS ────────────────────────────────────────
   // Explicitly names the AI
   if (/\b(nexa|n\.e\.x\.a)\b/.test(f)) score += 3;
   // 2nd person pronoun as the SUBJECT of the sentence (typically refers to AI)
@@ -1828,7 +1847,10 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             sync_calendar: false,
             calendar_start_time: null,
           }, null);
-          if (floatResult && floatResult.message) await respondToTelegram(floatResult.message);
+          if (floatResult && floatResult.message) {
+            await respondToTelegram(floatResult.message);
+            _triggerConversationalSynthesis(textInput, floatResult.message, 'CREATE');
+          }
           return;
         }
 
@@ -1859,6 +1881,10 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             if (!isNaN(parsedDur) && parsedDur > 0) durationMins = parsedDur;
           } catch (e) { /* pakai default */ }
 
+          if (!pendingTask.dueDate && calStartTime) {
+            pendingTask.dueDate = calStartTime.split('T')[0];
+          }
+
           const syncResult = await taskManager.handleTaskIntent({
             action: 'CREATE',
             title: pendingTask.title,
@@ -1869,7 +1895,10 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             sync_calendar: true,
             calendar_start_time: calStartTime,
           }, null);
-          if (syncResult && syncResult.message) await respondToTelegram(syncResult.message);
+          if (syncResult && syncResult.message) {
+            await respondToTelegram(syncResult.message);
+            _triggerConversationalSynthesis(textInput, syncResult.message, 'CREATE');
+          }
           return;
         }
 
@@ -1914,6 +1943,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         const resTask = await taskManager.executePendingTask(chatId, pendingTask.listName);
         if (resTask && resTask.message) {
           await respondToTelegram(resTask.message);
+          _triggerConversationalSynthesis(textInput, resTask.message, 'CREATE');
 
           return;
         }
@@ -1940,6 +1970,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         const resTask = await taskManager.executePendingTask(chatId, overrideList);
         if (resTask && resTask.message) {
           await respondToTelegram(resTask.message);
+          _triggerConversationalSynthesis(textInput, resTask.message, 'CREATE');
 
           return;
         }
@@ -1995,11 +2026,12 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           try {
             let createdCount = 0;
             const createdNames = [];
+            const targetDue = pTasks.start ? pTasks.start.split('T')[0] : new Date(Date.now() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
             for (const taskTitle of (pTasks.tasks || [])) {
               await taskManager.handleTaskIntent({
                 action: 'CREATE',
                 title: taskTitle,
-                due_date: null,
+                due_date: targetDue,
                 notes: `Tugas persiapan proaktif untuk agenda: ${pTasks.summary}`,
                 sync_calendar: false,
                 calendar_start_time: null
@@ -2007,7 +2039,9 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
               createdCount++;
               createdNames.push(`'<b>${escapeHtml(taskTitle)}</b>'`);
             }
-            await respondToTelegram(`✅ Berhasil membuat <b>${createdCount} tugas persiapan</b> untuk agenda '<b>${escapeHtml(pTasks.summary)}</b>':\n${createdNames.join('\n')}`);
+            const successText = `✅ Berhasil membuat <b>${createdCount} tugas persiapan</b> untuk agenda '<b>${escapeHtml(pTasks.summary)}</b>':\n${createdNames.join('\n')}`;
+            await respondToTelegram(successText);
+            _triggerConversationalSynthesis(textInput, successText, 'CREATE');
           } catch (e) {
             await respondToTelegram(`❌ Gagal membuat tugas persiapan: ${e.message}`);
           }
@@ -2533,7 +2567,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           }
 
           if (calResult && calResult.proactiveTasks && calResult.proactiveTasks.tasks && calResult.proactiveTasks.tasks.length > 0) {
-            pendingProactiveTasks = { summary: calResult.proactiveTasks.summary, tasks: calResult.proactiveTasks.tasks, askedAt: Date.now() };
+            pendingProactiveTasks = { summary: calResult.proactiveTasks.summary, tasks: calResult.proactiveTasks.tasks, start: calData.start || null, askedAt: Date.now() };
           }
 
           if (calResult && calResult.message) {
@@ -2553,22 +2587,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             }
             
             if (!isPast && ['CREATE', 'UPDATE', 'READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(action)) {
-              setTimeout(async () => {
-                try {
-                  const { executeWithFallback } = require('../core/Fallback_Engine');
-                  const { NEXA_PERSONALITY } = require('../config/personality');
-                  
-                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nCalendar Dashboard / Result:\n${calResult.message}\n\nTask: Write a 1-2 sentence friendly response IN INDONESIAN analyzing the calendar operation or schedule above. Act as a caring personal assistant. Provide a brief prep suggestion, encouragement, or relevant tip based on the schedule or newly added event. DO NOT repeat the events or confirmation text. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
-                  
-                  const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
-                  if (advice && !advice.includes('DUMB_MODE')) {
-                    const cleanAdvice = stripSurroundingQuotes(advice);
-                    await sendTelegramOutbound(cleanAdvice);
-                  }
-                } catch (err) {
-                  console.error('[CALENDAR] Failed to generate conversational advice:', err.message);
-                }
-              }, 1500); // Wait 1.5s so the Dashboard arrives first
+              _triggerConversationalSynthesis(textInput, calResult.message, action);
             }
           }
         }
@@ -2692,22 +2711,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
             // Add conversational advice / synthesis for CREATE, READ and COMPLETE actions
             const action = routingData.extracted_data.action;
             if (['CREATE', 'CREATE_SUBTASK', 'READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING', 'READ_OVERDUE', 'READ_LISTS', 'COMPLETE'].includes(action)) {
-              setTimeout(async () => {
-                try {
-                  const { executeWithFallback } = require('../core/Fallback_Engine');
-                  const { NEXA_PERSONALITY } = require('../config/personality');
-                  
-                  const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"\n\nTask Dashboard / Result:\n${taskResult.message}\n\nTask: Write a 1-2 sentence friendly, caring response IN INDONESIAN analyzing the task operation above (whether it is a task creation, task list, or completion). Act as a dedicated, elegant personal assistant. Provide a brief relevant suggestion, encouragement, priority tips, or warm appreciation. DO NOT repeat the task list or confirmation. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
-                  
-                  const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
-                  if (advice && !advice.includes('DUMB_MODE')) {
-                    const cleanAdvice = stripSurroundingQuotes(advice);
-                    await sendTelegramOutbound(cleanAdvice);
-                  }
-                } catch (err) {
-                  console.error('[TASK] Failed to generate conversational advice:', err.message);
-                }
-              }, 1500); // Wait 1.5s so the Task Dashboard arrives first
+              _triggerConversationalSynthesis(textInput, taskResult.message, action);
             }
           }
         }
