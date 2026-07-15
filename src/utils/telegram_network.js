@@ -277,27 +277,62 @@ async function sendTelegramMessage(text, chatId, botToken, payload = null) {
   return fetchWithFailover(telegramUrl, { timeoutMs: 30_000, maxRetriesPerProxy: 3 });
 }
 
+// Dedicated outbound chain just for typing — separate from the global
+// message chain so typing signals never block or wait for AI responses.
+let typingChain = Promise.resolve();
+function enqueueTyping(task) {
+  const run = typingChain.then(task, task);
+  typingChain = run.catch(() => {});
+  return run;
+}
+
 async function sendChatAction(chatId, botToken, action = 'typing') {
-  if (!chatId || !botToken) return Promise.resolve();
-  const telegramUrl = `https://api.telegram.org/bot${botToken}/sendChatAction?chat_id=${chatId}&action=${encodeURIComponent(action)}`;
-  return fetchWithFailover(telegramUrl, {
-    method: 'GET',
-    timeoutMs: 15_000,
-    maxRetriesPerProxy: 1,
-  }).catch(() => {
-    // Silently catch so proxy lag never throws or blocks main processing
-  });
+  if (!chatId || !botToken) return;
+  const relayBase = getRelayBaseUrl();
+  if (!relayBase) {
+    // No relay configured — silently skip (HF blocks direct outbound anyway)
+    return;
+  }
+  const secret = String(env.NEXA_RELAY_SECRET || '').trim();
+  const relayUrl = relayBase.includes('?url=')
+    ? `${relayBase.replace(/\?url=$/, '')}/sendAction`
+    : `${relayBase}/api/sendAction`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const resp = await fetch(relayUrl, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Connection: 'close',
+        ...(secret ? { 'X-Nexa-Relay-Secret': secret } : {}),
+      },
+      body: JSON.stringify({ bot_token: botToken, chat_id: chatId, action }),
+    });
+    clearTimeout(timer);
+    const data = await resp.json().catch(() => ({}));
+    if (data.ok) {
+      console.log(`[TYPING] sendChatAction OK — chat_id=${chatId} action=${action}`);
+    } else {
+      console.warn(`[TYPING] sendChatAction failed — ${JSON.stringify(data).substring(0, 120)}`);
+    }
+  } catch (err) {
+    clearTimeout(timer);
+    // Silently suppress — typing is best-effort, never block main flow
+  }
 }
 
 function startTypingLoop(chatId, botToken, intervalMs = 4500) {
   if (!chatId || !botToken) return () => {};
 
-  // Fire immediately
-  sendChatAction(chatId, botToken, 'typing');
+  // Fire immediately via dedicated typing chain (non-blocking to main queue)
+  enqueueTyping(() => sendChatAction(chatId, botToken, 'typing'));
 
-  // Loop refresh every 4.5 seconds
+  // Auto-refresh loop every 4.5s
   const timer = setInterval(() => {
-    sendChatAction(chatId, botToken, 'typing');
+    enqueueTyping(() => sendChatAction(chatId, botToken, 'typing'));
   }, intervalMs);
 
   let stopped = false;
