@@ -683,13 +683,25 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     return res.status(200).send('OK');
   }
 
-  // DO NOT send res.status(200) here — keep connection open for webhook response
-  let webhookReply = null;
+  // DO NOT block — we will now ack the webhook IMMEDIATELY with sendChatAction
+  // This achieves 3 massive benefits:
+  // 1. The typing indicator is 100% guaranteed to show instantly natively.
+  // 2. Telegram's webhook lock is freed, preventing 30-second timeout retries if AI is slow.
+  // 3. We use Vercel Relay for the final message delivery, which is fast and reliable.
+  
+  const { startTypingLoop, sendTelegramMessage } = require('../utils/telegram_network');
+  
+  // Ack immediately with typing
+  res.status(200).json({
+    method: 'sendChatAction',
+    chat_id: message.chat.id,
+    action: 'typing'
+  });
 
-  // Fire typing indicator IMMEDIATELY — before setImmediate defers to next tick.
-  // This is synchronous so the fetch() fires at the absolute earliest moment.
-  const { startTypingLoop } = require('../utils/telegram_network');
+  // Start auto-refresh loop via Relay (in case AI takes > 5 seconds)
   const stopTyping = startTypingLoop(message.chat?.id, env.TELEGRAM_BOT_TOKEN?.trim());
+
+  let webhookReply = null;
 
   setImmediate(async () => {
 
@@ -701,7 +713,7 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       .replace(/"/g, '&quot;');
 
     // ============================================================
-    // respondToTelegram — Capture reply for webhook response (zero outbound)
+    // respondToTelegram — Capture reply
     // ============================================================
     const respondToTelegram = async (text, skipMemory = false) => {
       const cleanText = stripSurroundingQuotes(String(text));
@@ -711,23 +723,16 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       webhookReply = cleanText.substring(0, 4000);
     };
 
-    const deliverWebhookReply = () => {
+    const deliverWebhookReply = async () => {
       stopTyping();
-      if (res.headersSent) return;
       if (webhookReply) {
         const formattedReply = webhookReply
           .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
           .replace(/\*([^*]+)\*/g, '<i>$1</i>')
           .replace(/`([^`]+)`/g, '<code>$1</code>');
-        console.log('[TELEGRAM] Delivering via webhook response (zero outbound)');
-        res.status(200).json({
-          method: 'sendMessage',
-          chat_id: message.chat.id,
-          text: formattedReply,
-          parse_mode: 'HTML',
-        });
-      } else {
-        res.status(200).send('OK');
+        
+        console.log('[TELEGRAM] Delivering via outbound API (webhook already acked)');
+        await sendTelegramMessage(formattedReply, message.chat.id, env.TELEGRAM_BOT_TOKEN?.trim());
       }
     };
 
