@@ -279,10 +279,9 @@ async function sendTelegramMessage(text, chatId, botToken, payload = null) {
 
 async function sendChatAction(chatId, botToken, action = 'typing') {
   if (!chatId || !botToken) return Promise.resolve();
-  const telegramUrl = `https://api.telegram.org/bot${botToken}/sendChatAction`;
+  const telegramUrl = `https://api.telegram.org/bot${botToken}/sendChatAction?chat_id=${chatId}&action=${encodeURIComponent(action)}`;
   return fetchWithFailover(telegramUrl, {
-    method: 'POST',
-    body: { chat_id: chatId, action },
+    method: 'GET',
     timeoutMs: 15_000,
     maxRetriesPerProxy: 1,
   }).catch(() => {
