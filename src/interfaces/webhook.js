@@ -686,9 +686,12 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
   // DO NOT send res.status(200) here — keep connection open for webhook response
   let webhookReply = null;
 
+  // Fire typing indicator IMMEDIATELY — before setImmediate defers to next tick.
+  // This is synchronous so the fetch() fires at the absolute earliest moment.
+  const { startTypingLoop } = require('../utils/telegram_network');
+  const stopTyping = startTypingLoop(message.chat?.id, env.TELEGRAM_BOT_TOKEN?.trim());
+
   setImmediate(async () => {
-    const { startTypingLoop } = require('../utils/telegram_network');
-    const stopTyping = startTypingLoop(message.chat?.id, env.TELEGRAM_BOT_TOKEN?.trim());
 
     // Helper: escape untrusted strings for HTML parse_mode
     const escapeHtml = (str) => String(str)
