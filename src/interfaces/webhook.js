@@ -726,7 +726,9 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
     const deliverWebhookReply = async () => {
       stopTyping();
       if (webhookReply) {
-        const formattedReply = webhookReply
+        const replyToSend = webhookReply;
+        webhookReply = null; // Clear immediately to prevent double-delivery from finally blocks
+        const formattedReply = replyToSend
           .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
           .replace(/\*([^*]+)\*/g, '<i>$1</i>')
           .replace(/`([^`]+)`/g, '<code>$1</code>');
