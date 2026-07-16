@@ -45,7 +45,7 @@ async function _fetchAllProxies() {
       const text = await res.text();
       text.split('\n')
         .map(l => l.trim())
-        .filter(l => /^\d+\.\d+\.\d+\.\d+:\d+$/.test(l)) // Validasi format IP:Port
+        .filter(l => /^\d+\.\d+\.\d+\.\d+:(80|443|8080)$/.test(l)) // Validasi IP dan HANYA port 80, 443, 8080 (HF Outbound Firewall)
         .forEach(p => allProxies.add(p));
     } catch (e) {
       // Sumber tidak bisa dijangkau, lewati
