@@ -101,10 +101,10 @@ if (require.main === module) {
     // Jika belum diisi, server tetap berjalan normal tanpa error.
     if (env.WHATSAPP_OWNER_JID || env.WHATSAPP_OWNER_NUMBER) {
       const waAdapter = require('./interfaces/whatsapp/adapter');
-      const { sendTelegramOutbound } = require('./interfaces/webhook');
+      const { sendTelegramOutbound, sendTelegramQrDelivery } = require('./interfaces/webhook');
 
       // Daftarkan fungsi QR delivery ke Telegram (Fase 4 coupling siap)
-      waAdapter.setQrDeliveryFn(sendTelegramOutbound);
+      waAdapter.setQrDeliveryFn(sendTelegramQrDelivery);
 
       // Boot socket Baileys (non-blocking — error tidak akan crash server)
       waAdapter.startWhatsAppSocket().then(() => {
