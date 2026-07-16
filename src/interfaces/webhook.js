@@ -728,13 +728,8 @@ router.post('/telegram', security.telegramWebhookSecret, security.telegramIdenti
       if (webhookReply) {
         const replyToSend = webhookReply;
         webhookReply = null; // Clear immediately to prevent double-delivery from finally blocks
-        const formattedReply = replyToSend
-          .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-          .replace(/\*([^*]+)\*/g, '<i>$1</i>')
-          .replace(/`([^`]+)`/g, '<code>$1</code>');
-        
         console.log('[TELEGRAM] Delivering via outbound API (webhook already acked)');
-        await sendTelegramMessage(formattedReply, message.chat.id, env.TELEGRAM_BOT_TOKEN?.trim());
+        await sendTelegramMessage(replyToSend, message.chat.id, env.TELEGRAM_BOT_TOKEN?.trim());
       }
     };
 

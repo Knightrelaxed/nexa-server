@@ -248,10 +248,33 @@ async function postToRelay(path, body, timeoutMs = 90_000) {
 function formatTelegramHtml(text) {
   if (!text) return '';
   let str = String(text);
+
+  // 1. Convert common HTML breaks and block elements from LLM to clean linebreaks
+  str = str.replace(/<br\s*\/?>/gi, '\n');
+  str = str.replace(/<\/?p>/gi, '\n\n');
+  str = str.replace(/<\/?div>/gi, '\n');
+  str = str.replace(/<h[1-6]>(.*?)<\/h[1-6]>/gi, '<b>$1</b>\n');
+  str = str.replace(/<\/?(ul|ol)>/gi, '\n');
+  str = str.replace(/<li>(.*?)<\/li>/gi, '• $1\n');
+  str = str.replace(/<hr\s*\/?>/gi, '\n— — — — —\n');
+
+  // 2. Convert standard markdown syntax to Telegram HTML
   str = str.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   str = str.replace(/\*([^*]+)\*/g, '<i>$1</i>');
   str = str.replace(/`([^`]+)`/g, '<code>$1</code>');
-  return str;
+
+  // 3. Protect allowed Telegram HTML tags using temporary placeholders
+  const validTags = ['b', 'i', 'u', 's', 'code', 'pre', 'a', 'blockquote', 'tg-spoiler', 'strong', 'em', 'strike', 'del'];
+  const validTagRegex = new RegExp(`<(\/?)(${validTags.join('|')})\\b([^>]*)>`, 'gi');
+  str = str.replace(validTagRegex, '###TAG_$1$2$3###');
+
+  // 4. Escape all remaining < and > characters to prevent Telegram HTTP 400 Bad Request
+  str = str.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // 5. Restore protected valid tags
+  str = str.replace(/###TAG_(\/?)([a-z0-9_-]+)([^#]*)###/gi, '<$1$2$3>');
+
+  return str.trim();
 }
 
 async function sendTelegramMessage(text, chatId, botToken, payload = null) {
