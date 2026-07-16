@@ -149,17 +149,27 @@ async function startWhatsAppSocket(opts = {}) {
   // Muat sesi persisten dari Supabase
   const { state, saveCreds } = await useSupabaseAuthState('nexa_wa_main');
 
-    // Buat socket Baileys
-  // Dukungan SOCKS5 proxy via env.WA_SOCKS_PROXY (misal: socks5://user:pass@host:port)
+  // Buat socket Baileys
+  // Dukungan SOCKS5 proxy: pakai env.WA_SOCKS_PROXY jika ada, jika tidak otomatis cari free proxy
   let waAgent;
   try {
+    const { SocksProxyAgent } = require('socks-proxy-agent');
     if (env.WA_SOCKS_PROXY) {
-      const { SocksProxyAgent } = require('socks-proxy-agent');
       waAgent = new SocksProxyAgent(env.WA_SOCKS_PROXY);
-      console.log('[WHATSAPP] 🔒 Menggunakan SOCKS5 proxy untuk bypass cloud IP block.');
+      console.log('[WHATSAPP] 🔒 Menggunakan SOCKS5 proxy manual dari .env');
+    } else {
+      console.log('[WHATSAPP] 📡 WA_SOCKS_PROXY kosong. Mengaktifkan N.E.X.A Auto-Proxy Hunter...');
+      const { getWorkingFreeProxy } = require('./proxy_rotator');
+      const freeProxyUrl = await getWorkingFreeProxy();
+      if (freeProxyUrl) {
+        waAgent = new SocksProxyAgent(freeProxyUrl);
+        console.log('[WHATSAPP] 🔒 Menggunakan SOCKS5 proxy publik: ' + freeProxyUrl);
+      } else {
+        console.warn('[WHATSAPP] ⚠️ Auto-Proxy gagal menemukan proxy cepat. Melanjutkan dengan IP server (risiko diblokir).');
+      }
     }
   } catch (err) {
-    console.warn('[WHATSAPP] socks-proxy-agent tidak tersedia:', err.message);
+    console.warn('[WHATSAPP] Sistem proxy gagal (pastikan socks-proxy-agent terinstall):', err.message);
   }
 
   sock = makeWASocket({
