@@ -150,7 +150,7 @@ async function startWhatsAppSocket(opts = {}) {
   const { state, saveCreds } = await useSupabaseAuthState('nexa_wa_main');
 
   // Buat socket Baileys menggunakan Deno WSS Relay
-  const relayUrl = env.NEXA_WA_RELAY_URL ? env.NEXA_WA_RELAY_URL.replace('https://', 'wss://') : 'wss://peppy-horse-9232.knightrelaxed.deno.net';
+  const relayUrl = env.NEXA_WA_RELAY_URL ? env.NEXA_WA_RELAY_URL.replace('https://', 'wss://') : 'wss://peppy-horse-9232.deno.dev';
   console.log(`[WHATSAPP] 🛡️ Menghubungkan ke Meta melalui Deno Relay: ${relayUrl}`);
 
   sock = makeWASocket({

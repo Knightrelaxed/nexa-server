@@ -59,5 +59,5 @@ module.exports = {
   WHATSAPP_OWNER_JID: process.env.WHATSAPP_OWNER_JID,
   WHATSAPP_OWNER_NUMBER: process.env.WHATSAPP_OWNER_NUMBER,
   // Deno Deploy WSS Relay URL to bypass Meta's IP block
-  NEXA_WA_RELAY_URL: process.env.NEXA_WA_RELAY_URL || 'wss://peppy-horse-9232.knightrelaxed.deno.net',
+  NEXA_WA_RELAY_URL: process.env.NEXA_WA_RELAY_URL || 'wss://peppy-horse-9232.deno.dev',
 };
