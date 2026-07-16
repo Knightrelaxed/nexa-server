@@ -153,14 +153,23 @@ async function startWhatsAppSocket(opts = {}) {
     version,
     auth: state,
     printQRInTerminal: true,  // Tetap print ke terminal sebagai backup debugging
-    browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
+    browser: Browsers ? Browsers.macOS('Desktop') : ['Mac OS', 'Desktop', '14.4.1'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 10000,
     markOnlineOnConnect: false,   // Hemat baterai HP sekunder
     syncFullHistory: false,       // Tidak perlu sinkron riwayat lama
     generateHighQualityLinkPreview: false,
-    getMessage: async () => ({ conversation: '' }) // Hindari error saat pesan lama diminta ulang
+    getMessage: async () => ({ conversation: '' }), // Hindari error saat pesan lama diminta ulang
+    options: {
+      origin: 'https://web.whatsapp.com',
+      headers: {
+        'Origin': 'https://web.whatsapp.com',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://web.whatsapp.com/',
+        'Host': 'web.whatsapp.com'
+      }
+    }
   });
 
   // ── Event: Simpan kredensial sesi setiap kali berubah ────────────────────
