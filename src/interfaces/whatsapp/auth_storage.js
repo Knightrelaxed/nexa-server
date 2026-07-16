@@ -27,7 +27,7 @@ const { supabase } = require('../../infrastructure/Supabase_Memories');
  */
 async function useSupabaseAuthState(sessionId = 'nexa_wa_main') {
   // Lazy require Baileys to avoid crashing if package is not yet installed
-  let BufferJSON;
+  let BufferJSON, initAuthCreds;
   try {
     const baileys = require('@whiskeysockets/baileys');
     // BufferJSON is inside baileys.BufferJSON in newer versions, or we fallback to standard serialization if undefined (though Baileys exports it)
@@ -35,31 +35,14 @@ async function useSupabaseAuthState(sessionId = 'nexa_wa_main') {
       replacer: (k, v) => v,
       reviver: (k, v) => v
     };
+    initAuthCreds = baileys.initAuthCreds;
   } catch (err) {
     console.error('[WA-AUTH] @whiskeysockets/baileys belum terinstall:', err.message);
     BufferJSON = { replacer: null, reviver: null };
   }
 
-  // Fallback creds struktur bersih jika belum ada sesi tersimpan
-  let creds = {
-    noiseKey: null,
-    pairingEphemeralKeyPair: null,
-    signedIdentityKey: null,
-    signedPreKey: null,
-    registrationId: 0,
-    advSecretKey: '',
-    processedHistoryMessages: [],
-    nextPreKeyId: 1,
-    firstUnuploadedPreKeyId: 1,
-    accountSettings: { unarchiveChats: false },
-    deviceId: '',
-    phoneId: '',
-    identityId: '',
-    registered: false,
-    backupToken: '',
-    registration: {},
-    pairingCode: ''
-  };
+  // Fallback creds: generate initial cryptographic keys (noiseKey, pairingEphemeralKeyPair, etc.) via initAuthCreds()
+  let creds = initAuthCreds ? initAuthCreds() : {};
 
   // ── KEY STORE: get & set dari tabel Supabase ──────────────────────────
   const keys = {
@@ -153,10 +136,16 @@ async function useSupabaseAuthState(sessionId = 'nexa_wa_main') {
           : JSON.parse(JSON.stringify(row.value), BufferJSON.reviver);
         console.log(`[WA-AUTH] Sesi '${sessionId}' berhasil dimuat dari Supabase.`);
       } else {
-        console.log(`[WA-AUTH] Belum ada sesi tersimpan untuk '${sessionId}' — memulai sesi baru.`);
+        console.log(`[WA-AUTH] Belum ada sesi tersimpan untuk '${sessionId}' — membuat sesi baru (initAuthCreds).`);
+        if ((!creds || !creds.noiseKey) && initAuthCreds) {
+          creds = initAuthCreds();
+        }
       }
     } catch (err) {
       console.log('[WA-AUTH] Sesi baru (tabel kosong atau belum dibuat):', err.message);
+      if ((!creds || !creds.noiseKey) && initAuthCreds) {
+        creds = initAuthCreds();
+      }
     }
   } else {
     console.warn('[WA-AUTH] Supabase tidak terkonfigurasi — sesi tidak akan tersimpan setelah restart!');
