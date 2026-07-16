@@ -33,6 +33,7 @@ let reconnectTimer = null; // Debounce handle untuk reconnect
 
 const RECONNECT_DELAY_MS = 5000;   // 5 detik jeda sebelum reconnect
 const MAX_RECONNECT_DELAY_MS = 60000; // Batas atas backoff: 1 menit
+const MAX_RECONNECT_ATTEMPTS = 5;     // Stop reconnect setelah 5x gagal (IP blocked)
 let _reconnectAttempts = 0;
 
 // ── QR Code sender reference (di-set dari Fase 4 coupling) ───────────────────
@@ -148,7 +149,19 @@ async function startWhatsAppSocket(opts = {}) {
   // Muat sesi persisten dari Supabase
   const { state, saveCreds } = await useSupabaseAuthState('nexa_wa_main');
 
-  // Buat socket Baileys
+    // Buat socket Baileys
+  // Dukungan SOCKS5 proxy via env.WA_SOCKS_PROXY (misal: socks5://user:pass@host:port)
+  let waAgent;
+  try {
+    if (env.WA_SOCKS_PROXY) {
+      const { SocksProxyAgent } = require('socks-proxy-agent');
+      waAgent = new SocksProxyAgent(env.WA_SOCKS_PROXY);
+      console.log('[WHATSAPP] 🔒 Menggunakan SOCKS5 proxy untuk bypass cloud IP block.');
+    }
+  } catch (err) {
+    console.warn('[WHATSAPP] socks-proxy-agent tidak tersedia:', err.message);
+  }
+
   sock = makeWASocket({
     version,
     auth: state,
@@ -161,6 +174,7 @@ async function startWhatsAppSocket(opts = {}) {
     syncFullHistory: false,       // Tidak perlu sinkron riwayat lama
     generateHighQualityLinkPreview: false,
     getMessage: async () => ({ conversation: '' }), // Hindari error saat pesan lama diminta ulang
+    ...(waAgent ? { agent: waAgent, fetchAgent: waAgent } : {}),
     options: {
       origin: 'https://web.whatsapp.com',
       headers: {
@@ -300,10 +314,24 @@ function _scheduleReconnect() {
   if (reconnectTimer) return; // Sudah ada reconnect yang terjadwal
 
   _reconnectAttempts += 1;
+
+  // Jika sudah melebihi batas maksimum, hentikan loop dan beri tahu Tuan
+  if (_reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+    console.error(`[WHATSAPP] ❌ Reconnect dihentikan setelah ${MAX_RECONNECT_ATTEMPTS} percobaan gagal.`);
+    console.error('[WHATSAPP] ❌ Kemungkinan IP cloud diblokir oleh Meta. Gunakan /wa_login untuk mencoba ulang.');
+    _notifyTelegramStatus(
+      `⚠️ *Pintu 2 WhatsApp Gagal Terhubung*\n\nN.E.X.A telah mencoba ${MAX_RECONNECT_ATTEMPTS}x namun koneksi selalu ditolak oleh server WhatsApp (SSL alert — IP cloud diblokir Meta).\n\nSolusi:\n1. Ketik */wa_login* untuk mencoba ulang manual\n2. Atau set secret *WA_SOCKS_PROXY* (format: \`socks5://user:pass@host:port\`) di Hugging Face untuk melewati blokir IP\n\nSemua fitur Telegram tetap aktif normal, Tuan Faqih.`
+    );
+    sock = null;
+    isConnecting = false;
+    _reconnectAttempts = 0; // Reset agar /wa_login bisa mencoba lagi
+    return;
+  }
+
   const delay = Math.min(RECONNECT_DELAY_MS * Math.pow(1.5, _reconnectAttempts - 1), MAX_RECONNECT_DELAY_MS);
   const delaySeconds = Math.round(delay / 1000);
 
-  console.log(`[WHATSAPP] 🔄 Reconnect ke-${_reconnectAttempts} dijadwalkan dalam ${delaySeconds}s...`);
+  console.log(`[WHATSAPP] 🔄 Reconnect ke-${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dijadwalkan dalam ${delaySeconds}s...`);
 
   reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
@@ -311,7 +339,7 @@ function _scheduleReconnect() {
       await startWhatsAppSocket();
     } catch (err) {
       console.error('[WHATSAPP] Reconnect gagal:', err.message);
-      _scheduleReconnect(); // Coba lagi
+      _scheduleReconnect(); // Coba lagi sampai batas
     }
   }, delay);
 }

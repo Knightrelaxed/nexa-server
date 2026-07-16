@@ -97,21 +97,18 @@ if (require.main === module) {
     });
 
     // ── Pintu 2: WhatsApp (Baileys Socket Engine) ─────────────────────────
-    // Hanya aktif jika WHATSAPP_OWNER_JID atau WHATSAPP_OWNER_NUMBER di-.env
-    // Jika belum diisi, server tetap berjalan normal tanpa error.
+    // Auto-start DINONAKTIFKAN: IP cloud (HF Space) diblokir oleh Meta/WhatsApp.
+    // Socket hanya dimulai saat Tuan Faqih mengetik /wa_login di Telegram.
+    // Setelah berhasil login QR dan sesi tersimpan di Supabase, socket akan
+    // otomatis reconnect antar restart karena sesi persisten di nexa_wa_sessions.
     if (env.WHATSAPP_OWNER_JID || env.WHATSAPP_OWNER_NUMBER) {
       const waAdapter = require('./interfaces/whatsapp/adapter');
-      const { sendTelegramOutbound, sendTelegramQrDelivery } = require('./interfaces/webhook');
+      const { sendTelegramQrDelivery } = require('./interfaces/webhook');
 
       // Daftarkan fungsi QR delivery ke Telegram (Fase 4 coupling siap)
       waAdapter.setQrDeliveryFn(sendTelegramQrDelivery);
 
-      // Boot socket Baileys (non-blocking — error tidak akan crash server)
-      waAdapter.startWhatsAppSocket().then(() => {
-        console.log('[N.E.X.A] 📱 Pintu 2 WhatsApp: socket engine booting...');
-      }).catch(err => {
-        console.warn('[N.E.X.A] Pintu 2 WhatsApp gagal start (non-fatal):', err.message);
-      });
+      console.log('[N.E.X.A] 📱 Pintu 2 WhatsApp: siap. Ketik /wa_login di Telegram untuk menghubungkan.');
     } else {
       console.log('[N.E.X.A] 📱 Pintu 2 WhatsApp: WHATSAPP_OWNER_JID/NUMBER belum di-set di .env — dilewati.');
     }

@@ -58,4 +58,6 @@ module.exports = {
   // WhatsApp Pintu 2 Security & Owner JID
   WHATSAPP_OWNER_JID: process.env.WHATSAPP_OWNER_JID,
   WHATSAPP_OWNER_NUMBER: process.env.WHATSAPP_OWNER_NUMBER,
+  // Optional SOCKS5 proxy to bypass cloud IP block from Meta (format: socks5://user:pass@host:port)
+  WA_SOCKS_PROXY: process.env.WA_SOCKS_PROXY,
 };
