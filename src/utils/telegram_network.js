@@ -300,6 +300,24 @@ async function sendTelegramMessage(text, chatId, botToken, payload = null) {
   return fetchWithFailover(telegramUrl, { timeoutMs: 30_000, maxRetriesPerProxy: 3 });
 }
 
+async function sendTelegramPhoto(photoUrl, caption, chatId, botToken, extraOptions = {}) {
+  const safeCaption = formatTelegramHtml(String(caption || '').substring(0, 1024));
+  const telegramUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+  const body = {
+    chat_id: chatId,
+    photo: photoUrl,
+    caption: safeCaption,
+    parse_mode: 'HTML',
+    ...extraOptions
+  };
+  return fetchWithFailover(telegramUrl, {
+    method: 'POST',
+    body,
+    timeoutMs: 30_000,
+    maxRetriesPerProxy: 3
+  });
+}
+
 // sendChatAction — Pure fire-and-forget, NO serialization queue.
 // Each call races independently to Telegram so typing appears INSTANTLY,
 // never waiting behind any other outbound request.
@@ -367,6 +385,7 @@ module.exports = {
   fetchRelayB64,
   postToRelay,
   sendTelegramMessage,
+  sendTelegramPhoto,
   sendChatAction,
   startTypingLoop,
   formatTelegramHtml,

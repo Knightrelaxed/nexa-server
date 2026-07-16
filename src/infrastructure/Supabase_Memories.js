@@ -28,18 +28,18 @@ function resolveAllowedTableName(tableName) {
 /**
  * Save user chat memory for Contextual Retrieval
  */
-async function saveChatMemory(role, content) {
+async function saveChatMemory(role, content, platform = 'telegram') {
   if (!supabase) return;
   const { data, error } = await supabase
     .from('nexa_chat_memories')
-    .insert([{ role, content, created_at: new Date().toISOString() }]);
+    .insert([{ role, content, platform: platform || 'telegram', created_at: new Date().toISOString() }]);
 
   if (error) console.error('[SUPABASE] Error saving chat memory:', error.message);
   return data;
 }
 
 /**
- * Get last N chat memories for state awareness
+ * Get last N chat memories for state awareness (with Historical Null Handling)
  */
 async function getRecentMemories(limit = 10) {
   if (!supabase) return [];
@@ -53,7 +53,10 @@ async function getRecentMemories(limit = 10) {
     console.error('[SUPABASE] Error fetching memories:', error.message);
     return [];
   }
-  return data.reverse();
+  return (data || []).reverse().map(m => ({
+    ...m,
+    platform: m.platform || 'telegram'
+  }));
 }
 
 /**
@@ -379,6 +382,7 @@ async function insertDatabaseRow(tableName, rowData = {}) {
   if (table === 'nexa_chat_memories') {
     payload.role = String(rowData.role || 'user').slice(0, 50);
     payload.content = String(rowData.content || '').trim();
+    payload.platform = String(rowData.platform || 'telegram').slice(0, 50);
     payload.created_at = new Date().toISOString();
     if (!payload.content) return { success: false, error: 'Field content wajib diisi.' };
   } else if (table === 'nexa_finance_dedup') {
@@ -406,6 +410,9 @@ async function updateDatabaseRows(tableName, updateData = {}, { rowId, searchKey
   if (table === 'nexa_chat_memories') {
     if (updateData.role) patch.role = String(updateData.role).slice(0, 50);
     if (updateData.content !== undefined) patch.content = String(updateData.content).trim();
+    if (updateData.platform !== undefined) {
+      patch.platform = updateData.platform ? String(updateData.platform).slice(0, 50) : null;
+    }
   } else if (table === 'nexa_finance_dedup') {
     if (updateData.composite_key !== undefined) patch.composite_key = String(updateData.composite_key).trim();
     if (updateData.transaction_time !== undefined) patch.transaction_time = updateData.transaction_time;
@@ -984,7 +991,7 @@ async function getTodayMemories() {
 
   const { data, error } = await supabase
     .from('nexa_chat_memories')
-    .select('role, content, created_at')
+    .select('role, content, created_at, platform')
     .gte('created_at', midnightJakarta.toISOString())
     .order('created_at', { ascending: true });
 
@@ -992,5 +999,8 @@ async function getTodayMemories() {
     console.error('[SUPABASE] Error fetching today memories:', error.message);
     return [];
   }
-  return data || [];
+  return (data || []).map(m => ({
+    ...m,
+    platform: m.platform || 'telegram'
+  }));
 }

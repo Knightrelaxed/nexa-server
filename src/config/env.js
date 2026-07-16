@@ -54,4 +54,8 @@ module.exports = {
   // Notion API
   NOTION_API_KEY: process.env.NOTION_API_KEY,
   NOTION_TASKS_DB_ID: process.env.NOTION_TASKS_DB_ID,
+
+  // WhatsApp Pintu 2 Security & Owner JID
+  WHATSAPP_OWNER_JID: process.env.WHATSAPP_OWNER_JID,
+  WHATSAPP_OWNER_NUMBER: process.env.WHATSAPP_OWNER_NUMBER,
 };

@@ -126,7 +126,7 @@ async function _getChatMemories7Days() {
 
   const { data, error } = await sb
     .from('nexa_chat_memories')
-    .select('role, content, created_at')
+    .select('role, content, created_at, platform')
     .gte('created_at', sevenDaysAgo)
     .order('created_at', { ascending: true })
     .limit(200);
@@ -135,7 +135,10 @@ async function _getChatMemories7Days() {
     console.warn('[INFERENCE] Failed to fetch chat memories:', error.message);
     return [];
   }
-  return data || [];
+  return (data || []).map(m => ({
+    ...m,
+    platform: m.platform || 'telegram'
+  }));
 }
 
 /**

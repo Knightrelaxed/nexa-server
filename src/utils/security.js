@@ -94,8 +94,61 @@ function generateTaskerSignature(timestamp, level) {
                .digest('hex');
 }
 
+/**
+ * Security Guard to ensure WhatsApp messages ONLY come from Tuan Faqih (authorized owner).
+ * Works both as direct validator function (returning boolean) and as Express/WebSocket middleware.
+ * @param {Object|string} messageOrReq - Baileys message object, sender JID string, or Express req object.
+ * @param {Object} [res] - Express res object (if used as HTTP middleware).
+ * @param {Function} [next] - Express next function (if used as HTTP middleware).
+ * @returns {boolean|void} True if authorized, False (or HTTP 403) if rejected.
+ */
+function whatsappIdentityLock(messageOrReq, res, next) {
+  let senderJid = '';
+
+  if (typeof messageOrReq === 'string') {
+    senderJid = messageOrReq;
+  } else if (messageOrReq?.key) {
+    // BUGFIX: Always check participant first for WhatsApp Group messages
+    senderJid = messageOrReq.key.participant || messageOrReq.key.remoteJid || '';
+  } else if (messageOrReq?.body) {
+    const b = messageOrReq.body;
+    senderJid = b.message?.key?.participant || b.message?.key?.remoteJid || b.participant || b.remoteJid || '';
+  }
+
+  const cleanSender = String(senderJid || '').trim().toLowerCase();
+  const cleanNumber = cleanSender.replace(/@.*$/, '').replace(/[^0-9]/g, '');
+
+  const ownerJid = String(env.WHATSAPP_OWNER_JID || '').trim().toLowerCase();
+  const ownerNumber = String(env.WHATSAPP_OWNER_NUMBER || '').trim().replace(/[^0-9]/g, '');
+
+  if (cleanSender.includes('status@broadcast')) {
+    if (res && typeof res.status === 'function') return res.status(200).send('OK');
+    return false;
+  }
+
+  if (!ownerJid && !ownerNumber) {
+    console.warn('[SECURITY] whatsappIdentityLock triggered but WHATSAPP_OWNER_JID/NUMBER is not set in env.');
+    if (res && typeof res.status === 'function') return res.status(403).send('Forbidden: WhatsApp owner not configured');
+    return false;
+  }
+
+  const isAuthorized =
+    (ownerJid && cleanSender === ownerJid) ||
+    (ownerNumber && cleanNumber === ownerNumber);
+
+  if (!isAuthorized) {
+    console.warn(`[SECURITY] Unauthorized WhatsApp access attempt blocked from sender: ${cleanSender || 'UNKNOWN'}`);
+    if (res && typeof res.status === 'function') return res.status(403).send('Forbidden: Identity Lock Active');
+    return false;
+  }
+
+  if (typeof next === 'function') return next();
+  return true;
+}
+
 module.exports = {
   telegramIdentityLock,
+  whatsappIdentityLock,
   telegramWebhookSecret,
   webhookAuth,
   generateTaskerSignature
