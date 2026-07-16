@@ -149,33 +149,15 @@ async function startWhatsAppSocket(opts = {}) {
   // Muat sesi persisten dari Supabase
   const { state, saveCreds } = await useSupabaseAuthState('nexa_wa_main');
 
-  // Buat socket Baileys
-  // Dukungan SOCKS5 proxy: pakai env.WA_SOCKS_PROXY jika ada, jika tidak otomatis cari free proxy
-  let waAgent;
-  try {
-    const { SocksProxyAgent } = require('socks-proxy-agent');
-    if (env.WA_SOCKS_PROXY) {
-      waAgent = new SocksProxyAgent(env.WA_SOCKS_PROXY);
-      console.log('[WHATSAPP] 🔒 Menggunakan SOCKS5 proxy manual dari .env');
-    } else {
-      console.log('[WHATSAPP] 📡 WA_SOCKS_PROXY kosong. Mengaktifkan N.E.X.A Auto-Proxy Hunter...');
-      const { getWorkingFreeProxy } = require('./proxy_rotator');
-      const freeProxyUrl = await getWorkingFreeProxy();
-      if (freeProxyUrl) {
-        waAgent = new SocksProxyAgent(freeProxyUrl);
-        console.log('[WHATSAPP] 🔒 Menggunakan SOCKS5 proxy publik: ' + freeProxyUrl);
-      } else {
-        console.warn('[WHATSAPP] ⚠️ Auto-Proxy gagal menemukan proxy cepat. Melanjutkan dengan IP server (risiko diblokir).');
-      }
-    }
-  } catch (err) {
-    console.warn('[WHATSAPP] Sistem proxy gagal (pastikan socks-proxy-agent terinstall):', err.message);
-  }
+  // Buat socket Baileys menggunakan Deno WSS Relay
+  const relayUrl = env.NEXA_WA_RELAY_URL ? env.NEXA_WA_RELAY_URL.replace('https://', 'wss://') : 'wss://peppy-horse-9232.knightrelaxed.deno.net';
+  console.log(`[WHATSAPP] 🛡️ Menghubungkan ke Meta melalui Deno Relay: ${relayUrl}`);
 
   sock = makeWASocket({
     version,
     auth: state,
     printQRInTerminal: true,  // Tetap print ke terminal sebagai backup debugging
+    waWebSocketUrl: relayUrl, // Ini kunci bypass IP Block!
     browser: Browsers ? Browsers.macOS('Desktop') : ['Mac OS', 'Desktop', '14.4.1'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
@@ -184,9 +166,7 @@ async function startWhatsAppSocket(opts = {}) {
     syncFullHistory: false,       // Tidak perlu sinkron riwayat lama
     generateHighQualityLinkPreview: false,
     getMessage: async () => ({ conversation: '' }), // Hindari error saat pesan lama diminta ulang
-    ...(waAgent ? { agent: waAgent, fetchAgent: waAgent } : {}),
     options: {
-      origin: 'https://web.whatsapp.com',
       headers: {
         'Origin': 'https://web.whatsapp.com',
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
