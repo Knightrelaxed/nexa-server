@@ -107,12 +107,13 @@ async function startWhatsAppSocket(opts = {}) {
   isConnecting = true;
 
   // Lazy require Baileys agar server tetap boot meski paket belum terinstall
-  let makeWASocket, DisconnectReason, fetchLatestBaileysVersion;
+  let makeWASocket, DisconnectReason, fetchLatestBaileysVersion, Browsers;
   try {
     const baileys = require('@whiskeysockets/baileys');
     makeWASocket = baileys.makeWASocket;
     DisconnectReason = baileys.DisconnectReason;
     fetchLatestBaileysVersion = baileys.fetchLatestBaileysVersion;
+    Browsers = baileys.Browsers;
   } catch (err) {
     console.error('[WHATSAPP] @whiskeysockets/baileys belum terinstall:', err.message);
     isConnecting = false;
@@ -152,7 +153,10 @@ async function startWhatsAppSocket(opts = {}) {
     version,
     auth: state,
     printQRInTerminal: true,  // Tetap print ke terminal sebagai backup debugging
-    browser: ['N.E.X.A Assistant', 'Chrome', '120.0.0'],
+    browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 10000,
     markOnlineOnConnect: false,   // Hemat baterai HP sekunder
     syncFullHistory: false,       // Tidak perlu sinkron riwayat lama
     generateHighQualityLinkPreview: false,
