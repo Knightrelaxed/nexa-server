@@ -29,7 +29,7 @@ const cerebrasKeys = [
 /**
  * Execute AI Prompt with Multi-Tier Fallback (15 Layers)
  *
- * Tier 1   : Mistral Pixtral 12B                (The Ultra-Fast European Giant — Promoted for Testing)
+ * Tier 1   : Mistral Codestral Latest           (The Ultra-Fast Coding Master — 96.8 TPS)
  * Tier 2-4 : Cerebras Gemma 4 31B Key 2-4     (The Ultra-Fast WSE-3 Sprinters — BCD order)
  * Tier 5-8 : Groq Llama 3.3 70B Versatile Key 1-4 (The Secondary Sprinters)
  * Tier 9-12: Gemini 2.5 Flash Key 1-4           (The Deep Thinkers)
@@ -58,10 +58,10 @@ function validateResponseJson(str, jsonMode) {
 
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
   const tiers = [
-    // Tier 1: Mistral Pixtral 12B (Promoted to Tier 1 for testing)
+    // Tier 1: Mistral Codestral Latest (96.8 TPS)
     ...(env.MISTRAL_API_KEY ? [{
-      name: 'Tier 1 (Mistral Pixtral 12B)',
-      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode)
+      name: 'Tier 1 (Mistral Codestral Latest)',
+      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
     }] : []),
     // Tier 2-4: Cerebras Gemma 4 31B Key 2, 3, 4
     ...cerebrasKeys.slice(1).map((key, i) => ({
@@ -225,9 +225,9 @@ async function callHuggingFaceInference(prompt, systemInstruction, temperature, 
   }
 }
 
-async function callMistral(prompt, systemInstruction, temperature, jsonMode = true, retries = 3) {
+async function callMistral(prompt, systemInstruction, temperature, jsonMode = true, modelId = 'codestral-latest', retries = 3) {
   const requestBody = {
-    model: 'pixtral-12b-2409',
+    model: modelId,
     messages: [
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
