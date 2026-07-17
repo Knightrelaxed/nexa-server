@@ -181,31 +181,64 @@
     "auth_env": "MISTRAL_API_KEY",
     "verified_live_benchmarks": [
       {
-        "model_id": "pixtral-12b-2409",
-        "category": "Multimodal Vision & Teks",
-        "live_latency_ms": 796,
-        "tpm_limit": 937500,
-        "rpm_limit": 30,
+        "model_id": "ministral-3b-latest",
+        "category": "Ultra-Fast Speed Champion (3B)",
+        "live_latency_ms": 1384,
+        "generation_tps": 130.1,
+        "tpm_limit": 625000,
+        "rpm_limit": 188,
         "context_window": "128.000 tokens",
-        "best_use_case": "Pilihan utama transisi jika Groq/Cerebras lepas. Sangat cepat (<0.8s) dengan kuota monster hampir 1 Juta TPM."
+        "best_use_case": "Juara Mutlak Kecepatan Mistral (130.1 tokens/sec). Sangat cepat untuk percakapan kilat, klasifikasi intent, dan rangkuman gesit."
       },
       {
         "model_id": "codestral-latest",
         "category": "Spesialis Pemrograman (Coding)",
-        "live_latency_ms": 900,
+        "live_latency_ms": 1601,
+        "generation_tps": 96.8,
         "tpm_limit": 625000,
         "rpm_limit": 125,
         "context_window": "256.000 tokens",
-        "best_use_case": "Penulisan kode multi-bahasa, debugging, dan pembuatan fungsi kompleks dengan kuota 625K TPM & 125 RPM."
+        "best_use_case": "Peringkat #2 tercepat (96.8 tokens/sec). Penulisan kode multi-bahasa, debugging, dan pembuatan fungsi kompleks dengan kuota 625K TPM & 125 RPM."
+      },
+      {
+        "model_id": "mistral-small-latest",
+        "category": "Balanced Fast Assistant",
+        "live_latency_ms": 2114,
+        "generation_tps": 85.1,
+        "tpm_limit": 50000,
+        "rpm_limit": 50,
+        "context_window": "32.000 tokens",
+        "best_use_case": "Peringkat #3 tercepat (85.1 tokens/sec). Asisten serbaguna dengan stabilitas dan kecepatan tinggi."
+      },
+      {
+        "model_id": "magistral-small-latest",
+        "category": "Fast Reasoning Assistant",
+        "live_latency_ms": 2227,
+        "generation_tps": 80.8,
+        "tpm_limit": 50000,
+        "rpm_limit": 50,
+        "context_window": "32.000 tokens",
+        "best_use_case": "Varian penalaran cepat (80.8 tokens/sec) untuk logika dan analisis gesit."
+      },
+      {
+        "model_id": "pixtral-12b-2409",
+        "category": "Multimodal Vision & Teks",
+        "live_latency_ms": 3324,
+        "generation_tps": 72.7,
+        "tpm_limit": 937500,
+        "rpm_limit": 30,
+        "context_window": "128.000 tokens",
+        "best_use_case": "Pilihan utama transisi vision & penalaran mendalam. Kuota monster hampir 1 Juta TPM dengan kecepatan seimbang 72.7 tokens/sec."
       },
       {
         "model_id": "ministral-8b-latest",
-        "category": "Ultra-Fast Lightweight Assistant",
-        "live_latency_ms": 650,
+        "category": "Ultra-Fast Lightweight Assistant (8B)",
+        "live_latency_ms": 3552,
+        "generation_tps": 50.7,
         "tpm_limit": 625000,
         "rpm_limit": 188,
         "context_window": "128.000 tokens",
-        "best_use_case": "Model gesit dengan RPM tertinggi (188 request/min) untuk klasifikasi intent, rangkuman, dan percakapan santai."
+        "best_use_case": "Model gesit dengan RPM tertinggi (188 request/min) untuk klasifikasi intent dan obrolan santai tanpa jeda."
       },
       {
         "model_id": "open-mistral-nemo",

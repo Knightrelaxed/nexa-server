@@ -16,17 +16,18 @@ Dokumen ini adalah acuan darurat eksekutif (*Emergency Contingency Guide*) dan k
 
 ## 💥 Katalog Live & Hasil Benchmark Spesifikasi Mistral AI (`MISTRAL_API_KEY`)
 
-Berdasarkan hasil pemindaian langsung (*live terminal request*) ke API Mistral, akun kita memiliki akses ke **72 Model Aktif** dengan kecepatan dan kuota yang sangat masif (*monster limits*). Berikut adalah 7 model pilihan terbaik beserta hasil pengukurannya:
+Berdasarkan hasil pemindaian langsung (*live terminal request*) dan pengujian benchmark head-to-head ke API Mistral, akun kita memiliki akses ke **72 Model Aktif** dengan kecepatan dan kuota yang sangat masif (*monster limits*). Berikut adalah peringkat 8 model pilihan terbaik beserta hasil pengukurannya:
 
-| Nama Model (`model_id`) | Kategori & Tingkat Kecerdasan | Kecepatan (*Latency*) | Kuota TPM (*Tokens/Min*) | Kuota RPM (*Req/Min*) | Jendela Konteks | Keunggulan & Peran Terbaik di N.E.X.A |
+| Peringkat & Nama Model (`model_id`) | Kategori & Tingkat Kecerdasan | Kecepatan Generasi (*TPS*) | Kuota TPM (*Tokens/Min*) | Kuota RPM (*Req/Min*) | Jendela Konteks | Keunggulan & Peran Terbaik di N.E.X.A |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`pixtral-12b-2409`** *(Tier 14 saat ini)* | **Multimodal Vision & Teks** *(Kecerdasan Tinggi)* | **🏎️ Super Kilat (`~796ms`)** | **`937.500 TPM`** *(Hampir 1 Juta!)* | `30 RPM` | `128.000 token` | **Juara TPM & Kecepatan.** Mampu menganalisis gambar maupun balasan teks. Sangat layak dinaikkan ke Tier atas jika Groq/Cerebras lepas. |
-| **`codestral-latest`** | **Master Pemrograman** *(Sangat Cerdas untuk Kode)* | **⚡ Sangat Cepat (`~900ms`)** | **`625.000 TPM`** | **`125 RPM`** | `256.000 token` | **Spesialis Coding.** Kode multi-bahasa, perbaikan *bug*, dan otomatisasi. RPM & TPM sangat masif. |
-| **`ministral-8b-latest`** | **Ultra-Lightweight & Fast** *(Kecerdasan Gesit)* | **🏎️ Kilat (`~650ms`)** | **`625.000 TPM`** | **`188 RPM`** *(RPM Tertinggi)* | `128.000 token` | **Juara RPM & Latensi.** Cocok untuk klasifikasi intent, rangkuman cepat, atau obrolan santai tanpa jeda. |
-| **`open-mistral-nemo`** | **Open-Source Generalist** *(Kecerdasan Menengah-Tinggi)* | **⚡ Cepat (`~1100ms`)** | **`500.000 TPM`** *(Setengah Juta!)* | `30 RPM` | `128.000 token` | **Master Konteks Panjang.** Sangat tangguh untuk membaca dokumen panjang dan riwayat percakapan yang banyak. |
-| **`mistral-large-latest`** | **Flagship Deep Reasoner** *(Kecerdasan Tertinggi — setara GPT-4o)* | **🧠 Mendalam (`~2000ms`)** | **`250.000 TPM`** | `4 RPM` | `128.000 token` | **Pikir Berat (*Heavy Duty*).** Gunakan hanya untuk analisis strategis kompleks, matematika, atau pengambilan keputusan kognitif tingkat tinggi. |
-| **`mistral-small-latest`** | **Balanced Assistant** *(Kecerdasan Standar)* | **⚖️ Stabil (`~1623ms`)** | `50.000 TPM` | `50 RPM` | `32.000 token` | Model serbaguna untuk tugas-tugas keseharian dengan keseimbangan kuota dan kecepatan. |
-| **`voxtral-small-latest`** | **Audio & Voice Processing** *(Spesialis Suara)* | **🔊 Audio Fast** | `50.000 TPM` | `60 RPM` | Khusus Audio | Mampu mentranskripsikan suara maupun analisis audio langsung dari ekosistem Mistral. |
+| **🥇 `ministral-3b-latest`** | **Ultra-Fast Speed Champion (3B)** | **`130.1 tokens/sec`** 🚀 | `625.000 TPM` | `188 RPM` | `128.000 token` | **Juara Mutlak Kecepatan Mistral.** Sangat ringan, gesit, dan menyemburkan balasan hanya dalam 1,3 detik! Pilihan terbaik untuk percakapan kilat. |
+| **🥈 `codestral-latest`** | **Master Pemrograman** *(Sangat Cerdas untuk Kode)* | **`96.8 tokens/sec`** ⚡ | **`625.000 TPM`** | **`125 RPM`** | `256.000 token` | **Spesialis Coding.** Peringkat #2 tercepat. Kode multi-bahasa, perbaikan *bug*, dan otomatisasi dengan kuota monster. |
+| **🥉 `mistral-small-latest`** | **Balanced Fast Assistant** *(Kecerdasan Standar)* | **`85.1 tokens/sec`** 🏎️ | `50.000 TPM` | `50 RPM` | `32.000 token` | Model serbaguna seimbang yang sangat cepat dan cerdas untuk percakapan sehari-hari. |
+| **4. `magistral-small-latest`** | **Fast Reasoning Assistant** | **`80.8 tokens/sec`** | `50.000 TPM` | `50 RPM` | `32.000 token` | Varian penalaran cepat (*magistral*) untuk logika dan analisis gesit. |
+| **5. `pixtral-12b-2409`** *(Tier 1 saat ini)* | **Multimodal Vision & Teks** *(Kecerdasan Tinggi)* | `72.7 tokens/sec` *(~3,3s)* | **`937.500 TPM`** *(Hampir 1 Juta!)* | `30 RPM` | `128.000 token` | **Juara TPM.** Mampu menganalisis gambar maupun balasan teks panjang dengan kuota terbesar. |
+| **6. `ministral-8b-latest`** | **Ultra-Lightweight & Fast (8B)** | `50.7 tokens/sec` *(~3,5s)* | **`625.000 TPM`** | **`188 RPM`** *(RPM Tertinggi)* | `128.000 token` | **Juara RPM.** Cocok untuk klasifikasi intent, rangkuman cepat, atau obrolan santai tanpa jeda. |
+| **7. `open-mistral-nemo`** | **Open-Source Generalist (12B)** | `37.8 tokens/sec` *(~4,7s)* | **`500.000 TPM`** *(Setengah Juta!)* | `30 RPM` | `128.000 token` | **Master Konteks Panjang.** Sangat tangguh untuk membaca dokumen panjang dan riwayat percakapan yang banyak. |
+| **8. `voxtral-small-latest`** | **Audio & Voice Processing** | **🔊 Audio Fast** | `50.000 TPM` | `60 RPM` | Khusus Audio | Mampu mentranskripsikan suara maupun analisis audio langsung dari ekosistem Mistral. |
 
 ---
 
