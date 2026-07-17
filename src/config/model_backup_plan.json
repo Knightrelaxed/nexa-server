@@ -1,0 +1,255 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "N.E.X.A Model Backup & Contingency Plan Blueprint",
+  "last_updated": "2026-07-17",
+  "description": "Blueprint konfigurasi pencadangan model AI dan rute transisi untuk AI Router (Teks), Vision Engine, dan Voice Engine N.E.X.A. File ini menjadi acuan cepat saat model utama mengalami penghentian (deprecation) atau perubahan skema gratis.",
+  "engines": {
+    "text_engine": {
+      "target_file": "src/core/Fallback_Engine.js",
+      "current_primary_models": [
+        {
+          "tier": "Tier 1-4",
+          "provider": "Cerebras Systems",
+          "model_id": "gemma-4-31b",
+          "status": "FREE_UNTIL_AUG_17_2026",
+          "notes": "Kecepatan ekstrim WSE-3 (<2s). Mulai 17 Agustus 2026 wajib verifikasi kartu kredit untuk $5 free credits."
+        },
+        {
+          "tier": "Tier 5-8",
+          "provider": "Groq Cloud",
+          "model_id": "llama-3.3-70b-versatile",
+          "status": "ACTIVE",
+          "notes": "Kecerdasan tinggi dan eksekusi cepat."
+        },
+        {
+          "tier": "Tier 9-12",
+          "provider": "Google Gemini",
+          "model_id": "gemini-2.5-flash",
+          "status": "ACTIVE_ROCK_SOLID",
+          "notes": "Kuota besar dan pemahaman konteks panjang."
+        },
+        {
+          "tier": "Tier 14",
+          "provider": "Mistral AI",
+          "model_id": "pixtral-12b-2409",
+          "status": "ACTIVE_ULTRA_FAST",
+          "notes": "Hasil live benchmark: ~796ms dengan kuota masif 937.500 TPM & 30 RPM."
+        }
+      ],
+      "drop_in_replacements": {
+        "if_cerebras_free_tier_ends": [
+          {
+            "replacement_for": "gemma-4-31b",
+            "provider": "Mistral AI (Promoted from Tier 14)",
+            "model_id": "pixtral-12b-2409 / open-mistral-nemo",
+            "auth_env": "MISTRAL_API_KEY",
+            "endpoint": "https://api.mistral.ai/v1/chat/completions",
+            "speed_impact": "Kecepatan eksekusi sangat cepat (~796ms - 1100ms) dengan kuota monster 500K - 937.5K TPM."
+          },
+          {
+            "replacement_for": "gemma-4-31b",
+            "provider": "Hugging Face Inference API",
+            "model_id": "google/gemma-4-31B-it",
+            "auth_env": "HF_INFERENCE_TOKEN",
+            "endpoint": "https://router.huggingface.co/hf-inference/models/google/gemma-4-31B-it",
+            "speed_impact": "Kecepatan berkurang menjadi ~4-6s (bergantung antrian HF), namun model 100% sama dengan Cerebras."
+          }
+        ],
+        "if_groq_versatile_ends": [
+          {
+            "replacement_for": "llama-3.3-70b-versatile",
+            "provider": "Mistral AI",
+            "model_id": "open-mistral-nemo",
+            "auth_env": "MISTRAL_API_KEY",
+            "endpoint": "https://api.mistral.ai/v1/chat/completions",
+            "speed_impact": "Konteks 128K dan kuota 500.000 TPM."
+          },
+          {
+            "replacement_for": "llama-3.3-70b-versatile",
+            "provider": "Groq Cloud (Lightweight Alternative)",
+            "model_id": "llama-3.1-8b-instant",
+            "auth_env": "GROQ_API_KEY_1..4",
+            "endpoint": "https://api.groq.com/openai/v1/chat/completions",
+            "speed_impact": "Lebih cepat dari 70B, cocok untuk klasifikasi intent."
+          }
+        ]
+      }
+    },
+    "vision_engine": {
+      "target_file": "src/core/Vision_Engine.js",
+      "current_primary_models": [
+        {
+          "tier": "Tier 0",
+          "provider": "Cloudflare Worker Vision",
+          "model_id": "@cf/meta/llama-3.2-11b-vision-instruct",
+          "status": "ACTIVE_EDGE"
+        },
+        {
+          "tier": "Tier 1-4",
+          "provider": "Cerebras Systems",
+          "model_id": "gemma-4-31b",
+          "status": "FREE_UNTIL_AUG_17_2026"
+        },
+        {
+          "tier": "Tier 5-8",
+          "provider": "Google Gemini",
+          "model_id": "gemini-2.5-flash",
+          "status": "ACTIVE_PRIMARY_QUALITY"
+        },
+        {
+          "tier": "Tier 9-12",
+          "provider": "Groq Cloud",
+          "model_id": "llama-3.2-90b-vision-preview",
+          "status": "ACTIVE_HOTFIXED",
+          "notes": "Diperbarui pada 17 Juli 2026 untuk menggantikan Llama 4 Scout 17B yang dimatikan resmi oleh Groq."
+        }
+      ],
+      "drop_in_replacements": {
+        "for_cerebras_vision_after_aug_17": [
+          {
+            "replacement_for": "gemma-4-31b (Vision)",
+            "provider": "Mistral AI (Vision Alternative)",
+            "recommended_model_id": "pixtral-12b-2409",
+            "auth_env": "MISTRAL_API_KEY",
+            "endpoint": "https://api.mistral.ai/v1/chat/completions",
+            "notes": "Pixtral adalah model vision yang mampu membaca gambar/tabel dengan kecepatan 796ms dan kuota 937.5K TPM."
+          },
+          {
+            "replacement_for": "gemma-4-31b (Vision)",
+            "provider": "Google Gemini",
+            "recommended_model_id": "gemini-2.0-flash",
+            "auth_env": "GEMINI_API_KEY_1..4"
+          }
+        ]
+      }
+    },
+    "voice_engine": {
+      "target_file": "src/core/Voice_Engine.js",
+      "current_primary_models": [
+        {
+          "tier": "Tier 0",
+          "provider": "Cloudflare Worker Transcription",
+          "model_id": "@cf/openai/whisper",
+          "status": "ACTIVE_EDGE"
+        },
+        {
+          "tier": "Tier 1-4",
+          "provider": "Hugging Face Inference API",
+          "model_id": "openai/whisper-large-v3-turbo",
+          "status": "ACTIVE_HIGH_SPEED",
+          "auth_env": "HF_INFERENCE_TOKEN",
+          "notes": "Dijalankan dalam 4 slot percobaan berurutan dengan token tunggal."
+        },
+        {
+          "tier": "Tier 5-8",
+          "provider": "Google Gemini",
+          "model_id": "gemini-2.5-flash (Native Audio)",
+          "status": "ACTIVE_ROCK_SOLID",
+          "auth_env": "GEMINI_API_KEY_1..4"
+        },
+        {
+          "tier": "Tier 9-12",
+          "provider": "Groq Cloud",
+          "model_id": "whisper-large-v3",
+          "status": "ACTIVE",
+          "auth_env": "GROQ_API_KEY_1..4"
+        }
+      ],
+      "drop_in_replacements": {
+        "if_groq_whisper_ends": [
+          {
+            "replacement_for": "whisper-large-v3 (Groq)",
+            "provider": "Mistral AI Audio",
+            "model_id": "voxtral-small-latest",
+            "auth_env": "MISTRAL_API_KEY",
+            "endpoint": "https://api.mistral.ai/v1/chat/completions",
+            "notes": "Spesialis pemrosesan audio/suara dengan kuota 50.000 TPM & 60 RPM."
+          },
+          {
+            "replacement_for": "whisper-large-v3 (Groq)",
+            "provider": "Hugging Face Inference API",
+            "model_id": "openai/whisper-large-v3",
+            "auth_env": "HF_INFERENCE_TOKEN",
+            "endpoint": "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3"
+          }
+        ]
+      }
+    }
+  },
+  "mistral_ai_catalog_and_live_benchmarks": {
+    "provider_info": "Mistral AI (72 Active Models in Pool)",
+    "auth_env": "MISTRAL_API_KEY",
+    "verified_live_benchmarks": [
+      {
+        "model_id": "pixtral-12b-2409",
+        "category": "Multimodal Vision & Teks",
+        "live_latency_ms": 796,
+        "tpm_limit": 937500,
+        "rpm_limit": 30,
+        "context_window": "128.000 tokens",
+        "best_use_case": "Pilihan utama transisi jika Groq/Cerebras lepas. Sangat cepat (<0.8s) dengan kuota monster hampir 1 Juta TPM."
+      },
+      {
+        "model_id": "codestral-latest",
+        "category": "Spesialis Pemrograman (Coding)",
+        "live_latency_ms": 900,
+        "tpm_limit": 625000,
+        "rpm_limit": 125,
+        "context_window": "256.000 tokens",
+        "best_use_case": "Penulisan kode multi-bahasa, debugging, dan pembuatan fungsi kompleks dengan kuota 625K TPM & 125 RPM."
+      },
+      {
+        "model_id": "ministral-8b-latest",
+        "category": "Ultra-Fast Lightweight Assistant",
+        "live_latency_ms": 650,
+        "tpm_limit": 625000,
+        "rpm_limit": 188,
+        "context_window": "128.000 tokens",
+        "best_use_case": "Model gesit dengan RPM tertinggi (188 request/min) untuk klasifikasi intent, rangkuman, dan percakapan santai."
+      },
+      {
+        "model_id": "open-mistral-nemo",
+        "category": "Open-Source Generalist (12B)",
+        "live_latency_ms": 1100,
+        "tpm_limit": 500000,
+        "rpm_limit": 30,
+        "context_window": "128.000 tokens",
+        "best_use_case": "Pemahaman dokumen panjang, analisis riwayat chat, dan penalaran umum."
+      },
+      {
+        "model_id": "mistral-large-latest",
+        "category": "Flagship Deep Reasoner",
+        "live_latency_ms": 2000,
+        "tpm_limit": 250000,
+        "rpm_limit": 4,
+        "context_window": "128.000 tokens",
+        "best_use_case": "Penalaran berat setara GPT-4o / Claude 3.5 Sonnet untuk matematika, arsitektur sistem, dan logika sulit."
+      },
+      {
+        "model_id": "mistral-small-latest",
+        "category": "Balanced Assistant",
+        "live_latency_ms": 1623,
+        "tpm_limit": 50000,
+        "rpm_limit": 50,
+        "context_window": "32.000 tokens",
+        "best_use_case": "Asisten serbaguna dengan stabilitas tinggi."
+      },
+      {
+        "model_id": "voxtral-small-latest",
+        "category": "Spesialis Audio & Voice",
+        "live_latency_ms": 1300,
+        "tpm_limit": 50000,
+        "rpm_limit": 60,
+        "context_window": "Audio Multimodal",
+        "best_use_case": "Alternatif transkripsi dan analisis audio secara langsung."
+      }
+    ]
+  },
+  "emergency_quick_switch_checklist": [
+    "1. Buka src/config/model_backup_plan.json atau MODEL_BACKUP_GUIDE.md untuk melihat model pengganti.",
+    "2. Untuk Text/Router: Edit model string di src/core/Fallback_Engine.js (fungsi callCerebras, callGroq, atau callMistral).",
+    "3. Untuk Vision: Edit model string di src/core/Vision_Engine.js (baris 229 / callGroqVision / callCerebrasVision).",
+    "4. Untuk Voice: Edit model string/url di src/core/Voice_Engine.js (fungsi callHuggingFaceWhisper / callGroqWhisper).",
+    "5. Restart server dengan pm2 restart nexa atau restart di Vercel/VPS."
+  ]
+}

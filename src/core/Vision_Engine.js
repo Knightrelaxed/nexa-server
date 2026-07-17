@@ -216,7 +216,7 @@ async function callGeminiVision(apiKey, modelName, imageData, caption, retries =
 }
 
 // ============================================================
-// GROQ VISION CALLER (Llama 4 Scout 17B) — with 503 Smart Retry
+// GROQ VISION CALLER (Llama 3.2 90B Vision) — with 503 Smart Retry
 // ============================================================
 async function callGroqVision(apiKey, imageData, caption, retries = 3, systemPromptOverride = '') {
   const captionContext = caption
@@ -226,7 +226,7 @@ async function callGroqVision(apiKey, imageData, caption, retries = 3, systemPro
   const finalSystemPrompt = systemPromptOverride || (VISION_SYSTEM_PROMPT + captionContext);
 
   const requestBody = {
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    model: 'llama-3.2-90b-vision-preview',
     messages: [{
       role: 'user',
       content: [
@@ -401,7 +401,7 @@ async function callWorkerVision(fileId, caption = '', systemPromptOverride = '')
 // MAIN ENTRY POINT — 12-TIER GOD MODE VISION FALLBACK
 // Tier 0:   Worker Vision (Cloudflare does everything)
 // Tier 1-4: Gemini 2.5 Flash (Premium Quality, 4 Keys) + local file
-// Tier 5-8: Groq Llama 4 Scout 17B (Balanced, 4 Keys) + local file
+// Tier 5-8: Groq Llama 3.2 90B Vision (Balanced, 4 Keys) + local file
 // Tier 9-10: Gemini 2.0 Flash (Generous Quota, 2 Keys) + local file
 // Tier 11: Hugging Face Qwen2-VL (Safety Net) + local file
 // ============================================================

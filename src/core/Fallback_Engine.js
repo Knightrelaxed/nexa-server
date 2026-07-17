@@ -29,11 +29,12 @@ const cerebrasKeys = [
 /**
  * Execute AI Prompt with Multi-Tier Fallback (15 Layers)
  *
- * Tier 1-4 : Cerebras Gemma 4 31B Key 1-4     (The Ultra-Fast WSE-3 Sprinters — ABCD order)
+ * Tier 1   : Mistral Pixtral 12B                (The Ultra-Fast European Giant — Promoted for Testing)
+ * Tier 2-4 : Cerebras Gemma 4 31B Key 2-4     (The Ultra-Fast WSE-3 Sprinters — BCD order)
  * Tier 5-8 : Groq Llama 3.3 70B Versatile Key 1-4 (The Secondary Sprinters)
  * Tier 9-12: Gemini 2.5 Flash Key 1-4           (The Deep Thinkers)
  * Tier 13  : Hugging Face Gemma 4 31B IT        (The Free Safety Net)
- * Tier 14  : Mistral Pixtral 12B                (The Reliable Closer)
+ * Tier 14  : Cerebras Gemma 4 31B Key 1         (Swapped with Mistral for Testing)
  * Tier 15  : OpenRouter Multi-Model Free        (The Indestructible Last Resort)
  */
 const getErrDetails = (e) => {
@@ -57,9 +58,14 @@ function validateResponseJson(str, jsonMode) {
 
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
   const tiers = [
-    // Tier 1-4: Cerebras Gemma 4 31B (ABCD order)
-    ...cerebrasKeys.map((key, i) => ({
-      name: `Tier ${i + 1} (Cerebras Key ${i + 1})`,
+    // Tier 1: Mistral Pixtral 12B (Promoted to Tier 1 for testing)
+    ...(env.MISTRAL_API_KEY ? [{
+      name: 'Tier 1 (Mistral Pixtral 12B)',
+      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode)
+    }] : []),
+    // Tier 2-4: Cerebras Gemma 4 31B Key 2, 3, 4
+    ...cerebrasKeys.slice(1).map((key, i) => ({
+      name: `Tier ${i + 2} (Cerebras Key ${i + 2})`,
       fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
     })),
     // Tier 5-8: Groq Llama 3.3 70B Versatile
@@ -77,10 +83,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       name: 'Tier 13 (Hugging Face Gemma 4 31B)',
       fn: () => callHuggingFaceInference(prompt, systemInstruction, temperature, jsonMode)
     }] : []),
-    // Tier 14: Mistral Pixtral 12B
-    ...(env.MISTRAL_API_KEY ? [{
-      name: 'Tier 14 (Mistral Pixtral 12B)',
-      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode)
+    // Tier 14: Cerebras Gemma 4 31B Key 1 (Swapped to Tier 14)
+    ...(cerebrasKeys[0] ? [{
+      name: 'Tier 14 (Cerebras Key 1)',
+      fn: () => callCerebras(cerebrasKeys[0], prompt, systemInstruction, temperature, jsonMode)
     }] : []),
     // Tier 15: OpenRouter
     ...(env.OPENROUTER_API_KEY ? [{
