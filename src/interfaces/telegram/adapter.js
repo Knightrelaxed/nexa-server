@@ -22,6 +22,7 @@ const googleWorkspace = require("../../infrastructure/Google_Workspace");
 // Pending Calendar Context: holds an incomplete calendar CREATE until user provides missing info
 // Structure: { summary, start, askedAt }
 const { sendTelegramOutbound, stripSurroundingQuotes } = require("./actions");
+const { handleDisciplineCallback } = require("./callback_handler");
 
 let pendingCalendarContext = null;
 // Pending Conflict Event: holds a conflicting calendar event waiting for user confirmation
@@ -621,6 +622,11 @@ async function handleTelegramWebhook(req, res) {
         extractedData: { proposalId },
         askedAt: Date.now()
       };
+      return;
+    }
+
+    // ── DISCIPLINE FEEDBACK LOOP (Level 2: d:ok, d:no, d:ext) ──
+    if (await handleDisciplineCallback(callbackQuery)) {
       return;
     }
 
@@ -1448,53 +1454,7 @@ async function handleTelegramWebhook(req, res) {
 
       return null;
     };
-    // Database follow-up is now purely handled by AI Router's natural language comprehension
 
-    // ============================================================
-    // LAPISAN 4: BLACK BOX — Emergency Telegram Buffer Parser
-    // ============================================================
-    if (textInput && textInput.trim().startsWith('[BUFFER]')) {
-      console.log('[BUFFER] Emergency buffer message received from Tasker via Telegram.');
-      try {
-        const bufferContent = textInput.replace('[BUFFER]', '').trim();
-        const parts = bufferContent.split('|').map(s => s.trim());
-
-        if (parts.length < 2) {
-          await respondToTelegram('⚠️ [BUFFER] Format tidak valid. Gunakan: [BUFFER] nominal | merchant | timestamp');
-          return;
-        }
-
-        const nominal = parseFloat(parts[0]);
-        const merchant = parts[1] || 'Unknown';
-        const rawTime = parts[2] || '';
-        const parsedTime = rawTime ? new Date(rawTime) : new Date();
-        const transactionTime = isNaN(parsedTime.getTime()) ? new Date() : parsedTime;
-
-        if (isNaN(nominal) || nominal <= 0) {
-          await respondToTelegram('⚠️ [BUFFER] Nominal tidak valid. Harus berupa angka positif.');
-          return;
-        }
-
-        const result = await financeEngine.processTransaction({
-          nominal,
-          type: 'EXPENSE',
-          destination: merchant,
-          category: 'Auto-Buffer Recovery',
-          description: 'Recovered from Telegram Buffer (Server was starting up)',
-          time: transactionTime.toISOString()
-        }, 'TASKER_FINANCE');
-
-        if (result.status === 'DUPLICATE') {
-          await respondToTelegram(`⚠️ [BUFFER] Transaksi Rp${nominal.toLocaleString('id-ID')} ke ${merchant} sudah tercatat sebelumnya. Duplikasi diabaikan.`);
-        } else {
-          await respondToTelegram(`✅ [BUFFER] Pulih: Rp${nominal.toLocaleString('id-ID')} ke ${merchant} berhasil dicatat.`);
-        }
-      } catch (bufferErr) {
-        console.error('[BUFFER] Recovery failed:', bufferErr.message);
-        await respondToTelegram(`❌ [BUFFER] Gagal memulihkan transaksi: ${bufferErr.message}`);
-      }
-      return;
-    }
 
     // ============================================================
     // VOICE NOTE PROCESSING

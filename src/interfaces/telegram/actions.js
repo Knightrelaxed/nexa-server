@@ -166,10 +166,93 @@ async function sendTelegramQrDelivery(qrString) {
   }
 }
 
+// ============================================================
+// [PHASE 8] sendTelegramWithKeyboard
+// Mengirim pesan dengan Inline Keyboard (Level 2 Intervention)
+// ============================================================
+async function sendTelegramWithKeyboard(text, replyMarkup) {
+  try {
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return null;
+    const botToken = env.TELEGRAM_BOT_TOKEN.trim();
+    const chatId = env.TELEGRAM_CHAT_ID.trim();
+    const cleanText = stripSurroundingQuotes(String(text));
+
+    const payload = {
+      chat_id: chatId,
+      text: cleanText,
+      parse_mode: 'HTML',
+      reply_markup: replyMarkup
+    };
+
+    const result = await sendTelegramMessage(cleanText, chatId, botToken, payload);
+    return result?.result || result;
+  } catch (e) {
+    console.error('[TELEGRAM-KEYBOARD] Error:', e.message);
+    return null;
+  }
+}
+
+// ============================================================
+// [PHASE 8] editTelegramMessage
+// Mengedit pesan Telegram yang sudah ada (untuk update status tombol)
+// ============================================================
+async function editTelegramMessage(messageId, newText, newReplyMarkup = null) {
+  try {
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID || !messageId) return null;
+    const botToken = env.TELEGRAM_BOT_TOKEN.trim();
+    const chatId = env.TELEGRAM_CHAT_ID.trim();
+
+    const payload = {
+      method: 'editMessageText',
+      chat_id: chatId,
+      message_id: messageId,
+      text: formatTelegramHtml(String(newText).substring(0, 4000)),
+      parse_mode: 'HTML'
+    };
+    if (newReplyMarkup) {
+      payload.reply_markup = newReplyMarkup;
+    }
+
+    const result = await sendTelegramMessage(newText, chatId, botToken, payload);
+    return result?.result || result;
+  } catch (e) {
+    console.error('[TELEGRAM-EDIT] Error:', e.message);
+    return null;
+  }
+}
+
+// ============================================================
+// [PHASE 8] answerCallbackQuery
+// Menjawab callback query agar loading spinner pada tombol di Telegram hilang
+// ============================================================
+async function answerCallbackQuery(callbackQueryId, text = '', showAlert = false) {
+  try {
+    if (!env.TELEGRAM_BOT_TOKEN || !callbackQueryId) return null;
+    const botToken = env.TELEGRAM_BOT_TOKEN.trim();
+    const chatId = env.TELEGRAM_CHAT_ID?.trim() || '';
+
+    const payload = {
+      method: 'answerCallbackQuery',
+      callback_query_id: callbackQueryId,
+      text: String(text || '').substring(0, 200),
+      show_alert: !!showAlert
+    };
+
+    const result = await sendTelegramMessage('', chatId, botToken, payload);
+    return result?.result || result;
+  } catch (e) {
+    console.error('[TELEGRAM-ANSWER-CB] Error:', e.message);
+    return null;
+  }
+}
+
 module.exports = {
   sendTelegramOutbound,
   sendIdentityProposalToTelegram,
   sendEveningBriefing,
   sendTelegramQrDelivery,
+  sendTelegramWithKeyboard,
+  editTelegramMessage,
+  answerCallbackQuery,
   stripSurroundingQuotes,
 };

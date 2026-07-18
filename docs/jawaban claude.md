@@ -1,229 +1,653 @@
-Ini adalah analisis mendalam yang sangat well-structured. Mari kita bedah satu per satu dengan jujur, lalu saya tambahkan opsi yang belum Anda pertimbangkan.---
-
-## Diagnosis Akar Masalah
-
-Sebelum evaluasi solusi, perlu dipastikan satu hal: error `SSL alert number 0` yang Anda lihat bukan SSL error biasa — ini adalah TLS `close_notify` yang dikirim secara sengaja oleh server Meta. Artinya, TCP dan TLS handshake sukses, tapi Meta langsung menutup koneksi setelah membaca source IP. Ini adalah **IP/ASN-level block**, bukan fingerprint TLS. Konfirmasi penting ini sekaligus membuktikan bahwa mengubah TLS fingerprint saja tidak akan membantu.
+Evaluasi yang bagus dari sisi klarifikasi — mengetahui Behavior Engine dan Memory Engine sudah aktif membuka ruang desain yang jauh lebih kaya. Mari kita bedah keempat poin secara mendalam.
 
 ---
 
-## Evaluasi 4 Opsi yang Anda Ajukan
+## 1. Escalation State Machine
 
-### 1. Cloudflare Workers sebagai WebSocket Relay — Probabilitas ~35–50%
+### Keputusan Arsitektur: Supabase, bukan In-Memory
 
-Secara teknis ini paling feasible untuk mempertahankan Baileys. Mekanismenya:
+HF Spaces bisa restart kapan saja. In-memory Map akan hancur saat restart, merusak sesi disiplin aktif. Redis menambah dependency baru. **Supabase sudah ada, cukup kita tambah satu tabel dedicated.**
 
-Baileys menerima parameter `waWebSocketUrl` di `makeWASocket()`. Jika diarahkan ke CF Worker Anda, Worker tersebut membuka koneksi baru ke `wss://web.whatsapp.com/ws/chat` dari IP Cloudflare, lalu relay binary frames secara bidireksional. Meta melihat IP Cloudflare, bukan HF.
+Mengapa *tidak* pakai `nexa_behavior_log` yang ada? Karena log itu append-only (events), sedangkan discipline state butuh upsert. Pola query-nya berbeda: analytics vs. real-time state lookup. Pisahkan keduanya.
 
-Pertanyaan krusialnya adalah: **apakah Meta memblokir IP Cloudflare?** Jawaban yang jujur adalah "tidak diketahui pasti, dan mungkin tidak sepenuhnya." CF adalah CDN terbesar di dunia — memblokir seluruh range IP CF akan memutus jutaan website legitimate yang diproxy melalui CF, termasuk banyak bisnis yang menggunakan WhatsApp Business. Meta kemungkinan besar tidak melakukan block masif terhadap CF IP.
+### Schema Tabel Baru
 
-Namun ada dua risiko yang perlu diantisipasi:
+```sql
+-- Migration: create nexa_discipline_state
+CREATE TABLE nexa_discipline_state (
+  session_key         TEXT PRIMARY KEY,        -- "{app_name}:{YYYY-MM-DD}"
+  app_name            TEXT NOT NULL,
+  current_level       INTEGER DEFAULT 0,
+  violation_count     INTEGER DEFAULT 0,
+  
+  -- Feedback loop state (untuk Point 3)
+  pending_callback    BOOLEAN DEFAULT FALSE,
+  callback_expires_at TIMESTAMPTZ,
+  callback_message_id TEXT,                    -- Telegram message_id untuk diedit
+  ten_min_used_count  INTEGER DEFAULT 0,
+  
+  -- Dynamic profile (dari Behavior Engine, Point 2)
+  mood_baseline       INTEGER DEFAULT 1,
+  max_level_cap       INTEGER DEFAULT 4,
+  message_tone        TEXT DEFAULT 'firm',     -- 'gentle' | 'firm' | 'urgent'
+  
+  first_triggered_at  TIMESTAMPTZ DEFAULT NOW(),
+  last_triggered_at   TIMESTAMPTZ,
+  expires_at          TIMESTAMPTZ NOT NULL,    -- TTL: akhir hari (23:59)
+  
+  created_at          TIMESTAMPTZ DEFAULT NOW()
+);
 
-Pertama, **durasi koneksi.** CF Workers free tier memiliki CPU time limit 10ms/request (tapi untuk WebSocket yang idle-relaying, CPU usage per-frame sangat kecil). Koneksi WebSocket long-lived berpotensi diterminate oleh CF setelah ~25 menit. Baileys memiliki reconnect logic bawaan, jadi ini bisa ditoleransi — tapi harus dimonitor.
-
-Kedua, **CF Workers `cloudflare:sockets` API** adalah pendekatan lebih kuat. Alih-alih relay di level WebSocket, Worker membuka koneksi **TCP mentah** ke `web.whatsapp.com:443`, lalu meneruskan TLS handshake secara transparan. Hasilnya adalah proxy TLS end-to-end yang hampir tidak terdeteksi berbeda dari koneksi langsung — hanya source IP-nya saja yang berubah menjadi IP CF.
-
-Implementasi CF Workers WS relay (versi sederhana):
-
-```javascript
-// wrangler.toml: compatibility_date = "2024-01-01"
-export default {
-  async fetch(request, env) {
-    const upgradeHeader = request.headers.get('Upgrade');
-    if (upgradeHeader?.toLowerCase() !== 'websocket') {
-      return new Response('Expected WebSocket', { status: 426 });
-    }
-
-    const waUrl = 'wss://web.whatsapp.com/ws/chat';
-    // Teruskan headers penting dari Baileys ke WhatsApp
-    const waHeaders = {};
-    for (const [k, v] of request.headers) {
-      if (['origin', 'user-agent', 'sec-websocket-version',
-           'sec-websocket-extensions'].includes(k.toLowerCase())) {
-        waHeaders[k] = v;
-      }
-    }
-    waHeaders['Origin'] = 'https://web.whatsapp.com';
-    waHeaders['Host']   = 'web.whatsapp.com';
-
-    const waSocket = new WebSocket(waUrl, [], { headers: waHeaders });
-    const [client, wa] = Object.values(new WebSocketPair());
-
-    waSocket.accept?.(); // CF-specific
-    client.accept();
-
-    // Bidirectional relay
-    client.addEventListener('message', e => {
-      if (waSocket.readyState === WebSocket.OPEN)
-        waSocket.send(e.data);
-    });
-    waSocket.addEventListener('message', e => {
-      if (client.readyState === WebSocket.OPEN)
-        client.send(e.data);
-    });
-
-    const close = (code, reason) => {
-      try { client.close(code, reason); } catch {}
-      try { waSocket.close(); } catch {}
-    };
-    client.addEventListener('close', e => close(e.code, e.reason));
-    waSocket.addEventListener('close', e => close(e.code, e.reason));
-
-    return new Response(null, { status: 101, webSocket: client });
-  }
-};
+-- Index untuk cron query (Point 3: expired callbacks)
+CREATE INDEX idx_discipline_pending 
+  ON nexa_discipline_state(pending_callback, callback_expires_at) 
+  WHERE pending_callback = TRUE;
 ```
 
-Kemudian di N.E.X.A:
-```javascript
-const sock = makeWASocket({
-  waWebSocketUrl: 'wss://your-relay.your-subdomain.workers.dev',
-  // ... config lainnya
-});
-```
-
----
-
-### 2. Free Residential Proxy — Probabilitas ~2%
-
-Ini adalah **dead end**. Tidak ada layanan residential proxy yang benar-benar gratis dan sustain. Yang muncul di hasil pencarian umumnya adalah:
-- Trial berbatas waktu (14 hari, bukan "free tier abadi")
-- Bandwidth sangat kecil (10MB/bulan — tidak cukup untuk koneksi WA yang persisten)
-- Honeypot untuk credential harvesting
-
-Satu-satunya pengecualian parsial adalah **iproyal.com** (250MB gratis saat registrasi) — tapi ini one-time, bukan abadi. Tidak ada yang mendekati layak untuk use case 24/7.
-
----
-
-### 3. BoringTun/WireGuard Userspace — Probabilitas ~5%
-
-Analisis teknis yang jujur: Implementasi WireGuard userspace (BoringTun, wireguard-go) tetap membutuhkan pembuatan **TUN device** di kernel level. Membuat TUN device memerlukan capability `CAP_NET_ADMIN`, dan HF Docker tanpa `--privileged` tidak memilikinya.
-
-Ada satu teori alternatif menggunakan `smoltcp` (Rust network stack) atau pendekatan raw socket userspace, tapi ini membutuhkan pengembangan library yang sangat custom dan tidak ada implementasi yang sudah jadi untuk Node.js.
-
-Bahkan jika berhasil dijalankan, **semua free WireGuard server (Mullvad free, dsb.) menggunakan datacenter IP** — masalah fundamentalnya tidak terpecahkan.
-
----
-
-### 4. Mobile API / g.whatsapp.net — Probabilitas ~15–25%
-
-Ini menarik tapi sering disalahpahami. Endpoint `g.whatsapp.net` adalah endpoint XMPP lama yang sudah deprecated oleh Meta sejak 2021. Baileys modern menggunakan protokol Multi-Device yang tetap terhubung ke `web.whatsapp.com`. Tidak ada Baileys fork yang aktif di-maintain yang benar-benar menggunakan `g.whatsapp.net` saat ini.
-
-Yang masih bisa dicoba adalah flag `useMobileAgent` pada Baileys, yang mengubah User-Agent string menjadi mobile WhatsApp client. Ini *sangat* mudah dicoba (zero cost) dan ada kemungkinan kecil bahwa Meta menggunakan kriteria berbeda untuk mobile UA vs web UA:
+### `adapter.js` — Refactoring dengan State Machine
 
 ```javascript
-const sock = makeWASocket({
-  browser: Browsers.ubuntu('Chrome'),
-  // Coba kombinasi ini:
-  mobile: true, // jika tersedia di versi Baileys Anda
-});
-```
+// src/interfaces/tasker/adapter.js
+'use strict';
 
-Tapi ekspektasi realistis: Meta's IP block beroperasi di layer ASN, bukan layer UA/endpoint. Kemungkinan tidak berhasil.
+const supabase = require('../../infrastructure/supabase_client');
+const godMode  = require('../../domain/Discipline_GodMode');
+const behaviorEngine = require('../../domain/Behavior_Engine');
+const { sendTelegramOutbound } = require('../telegram/actions');
 
----
+// ─────────────────────────────────────────────
+// STATE MACHINE HELPERS
+// ─────────────────────────────────────────────
 
-## Opsi Tambahan Yang Saya Rekomendasikan
+/**
+ * Ambil atau buat sesi disiplin hari ini untuk satu app.
+ * Session key format: "TikTok:2025-01-15" → reset otomatis tiap hari.
+ */
+async function getOrInitSession(appName) {
+  const today = new Date().toISOString().split('T')[0];
+  const sessionKey = `${appName}:${today}`;
 
-### Path A: WhatsApp Business Cloud API — Probabilitas ~88%
+  const { data } = await supabase
+    .from('nexa_discipline_state')
+    .select('*')
+    .eq('session_key', sessionKey)
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle();
 
-Ini adalah **satu-satunya solusi yang mengeliminasi masalah secara fundamental**, bukan menyiasatinya. Logikanya sederhana: alih-alih Baileys membuat outbound WebSocket ke Meta (yang diblokir), biarkan Meta yang menghubungi HF via webhook.
+  if (data) return data;
 
-Arsitekturnya:
-- HF N.E.X.A menerima pesan dari Meta via **inbound HTTPS webhook** (Meta → HF, port 443) — HF mengizinkan traffic masuk
-- HF N.E.X.A mengirim pesan via **REST API ke `graph.facebook.com`** (HF → Meta, port 443) — HF mengizinkan traffic keluar ke port 443
+  // Sesi baru — konsultasi Behavior Engine untuk mood profile
+  const moodProfile = await behaviorEngine.getCurrentMoodProfile();
+  const { baselineLevel, maxLevelCap, messageTone } =
+    computeDynamicProfile(moodProfile);
 
-Tidak ada outbound WebSocket. Tidak ada masalah IP block.
+  const newSession = {
+    session_key:     sessionKey,
+    app_name:        appName,
+    current_level:   0,
+    violation_count: 0,
+    mood_baseline:   baselineLevel,
+    max_level_cap:   maxLevelCap,
+    message_tone:    messageTone,
+    expires_at:      `${today}T23:59:59+07:00`
+  };
 
-Biayanya: gratis hingga 1.000 conversation windows per bulan. Satu conversation window = 24 jam setelah pesan pertama user. Untuk AI Assistant yang merespons inbound queries, ini sering sudah cukup. Jika tidak, tier selanjutnya relatif murah.
-
-Kelemahannya yang perlu jujur disebutkan: WABA membutuhkan nomor telepon yang didedikasikan (tidak bisa pakai nomor WhatsApp personal yang sudah ada), dan membutuhkan verifikasi Meta Business.
-
-Contoh migrasi N.E.X.A ke WABA:
-
-```javascript
-// Ganti Baileys connection dengan WABA webhook handler
-// Menggunakan @chatloop/waba-node atau implementasi langsung
-
-// 1. Terima pesan (webhook dari Meta)
-app.post('/webhook', (req, res) => {
-  const { entry } = req.body;
-  const message = entry[0]?.changes[0]?.value?.messages?.[0];
-  if (!message) return res.sendStatus(200);
-
-  handleIncomingMessage(message); // Logic AI Anda
-  res.sendStatus(200);
-});
-
-// 2. Kirim pesan
-async function sendWAMessage(to, text) {
-  await fetch(
-    `https://graph.facebook.com/v19.0/${process.env.WABA_PHONE_ID}/messages`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.WABA_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body: text }
-      })
-    }
-  );
+  await supabase.from('nexa_discipline_state').insert(newSession);
+  return newSession;
 }
 
-// 3. Verifikasi webhook saat setup
-app.get('/webhook', (req, res) => {
-  if (req.query['hub.verify_token'] === process.env.VERIFY_TOKEN) {
-    res.send(req.query['hub.challenge']);
+/**
+ * Naikkan level satu langkah dan simpan ke Supabase.
+ * Menghormati max_level_cap dari mood profile.
+ */
+async function advanceLevel(session) {
+  const rawNext = (session.current_level || 0) + 1;
+  const nextLevel = Math.min(rawNext, session.max_level_cap, 4);
+
+  await supabase
+    .from('nexa_discipline_state')
+    .update({
+      current_level:    nextLevel,
+      violation_count:  (session.violation_count || 0) + 1,
+      last_triggered_at: new Date().toISOString()
+    })
+    .eq('session_key', session.session_key);
+
+  return nextLevel;
+}
+
+// ─────────────────────────────────────────────
+// MAIN HANDLER
+// ─────────────────────────────────────────────
+
+async function handleTaskerWebhook(req, res) {
+  const { type, data } = req.body;
+  if (!type) return res.status(400).json({ error: 'Missing event type' });
+  if (!data || typeof data !== 'object')
+    return res.status(400).json({ error: 'Missing or invalid data payload' });
+
+  if (type === 'SCREEN_TIME_VIOLATION') {
+    const appName = data.app_name || 'Unknown App';
+
+    try {
+      const session  = await getOrInitSession(appName);
+      const nextLevel = await advanceLevel(session);
+
+      console.log(`[TASKER] ${appName} → Escalation Level ${nextLevel} (cap: ${session.max_level_cap})`);
+
+      // Level 2 butuh feedback loop — delegasi ke handler khusus
+      if (nextLevel === 2) {
+        await fireLevel2WithFeedback(session, { violation_app: appName });
+      } else {
+        await godMode.triggerGodMode(nextLevel, {
+          violation_app: appName,
+          message_tone:  session.message_tone,
+          session_key:   session.session_key
+        });
+      }
+
+      // Log ke behavior engine untuk analytics mingguan
+      await behaviorEngine.logEvent('DISCIPLINE_ESCALATION', {
+        app_name:  appName,
+        level:     nextLevel,
+        tone:      session.message_tone
+      }).catch(() => {}); // fire-and-forget
+
+      res.status(200).json({ status: 'ok', level: nextLevel });
+    } catch (e) {
+      console.error('[TASKER] State machine error:', e.message);
+      res.status(500).json({ error: 'Escalation failed' });
+    }
+
+  } else if (type === 'ALARM_DISMISSED') {
+    // ... logika briefing pagi tidak berubah
+  } else {
+    res.status(400).json({ error: `Unknown event type: ${type}` });
+  }
+}
+
+module.exports = { handleTaskerWebhook };
+```
+
+---
+
+## 2. Dynamic Baseline Level dari Behavior Engine
+
+### Formula: Mood Mengatur Ceiling, Recidivism Mengatur Floor
+
+Prinsip kunci: **jangan matikan enforcement saat stres — ubah nadanya.** Enforcement yang ada justru bisa jadi anchor psikologis ketika pengguna kehilangan kontrol diri. Yang berubah adalah *seberapa keras* dan *seberapa jauh* ia bisa naik.
+
+```javascript
+// src/domain/Discipline_GodMode.js — tambahkan fungsi ini
+
+/**
+ * Menghitung profil dinamis berdasarkan data Behavior Engine.
+ * @param {object} moodData - Output dari behaviorEngine.getCurrentMoodProfile()
+ * @param {object} historyData - { violationsToday: number }
+ * @returns {{ baselineLevel, maxLevelCap, messageTone, includeWellnessNote }}
+ */
+function computeDynamicProfile(moodData = {}, historyData = {}) {
+  const {
+    mood_24h_state  = 'NEUTRAL',   // 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE'
+    mood_7d_trend   = 'STABLE',    // 'IMPROVING' | 'STABLE' | 'DECLINING'
+    mood_7d_variance = 'LOW'       // 'HIGH' | 'MEDIUM' | 'LOW'
+  } = moodData;
+
+  const violationsToday = historyData.violationsToday || 0;
+  const currentHour = new Date().getHours();
+
+  let baselineLevel     = 1;
+  let maxLevelCap       = 4;
+  let messageTone       = 'firm';
+  let includeWellnessNote = false;
+
+  // ── MOOD: Atur Ceiling ──────────────────────────────────────────
+  if (mood_24h_state === 'NEGATIVE') {
+    maxLevelCap = 3;         // Proteksi dari isolasi total saat burnout
+    messageTone = 'gentle';
+    includeWellnessNote = true;
+  } else if (mood_24h_state === 'POSITIVE' && mood_7d_trend === 'IMPROVING') {
+    maxLevelCap = 4;
+    messageTone = 'firm';    // Mood bagus = toleransi lebih rendah terhadap penundaan
+  } else if (mood_24h_state === 'NEUTRAL') {
+    maxLevelCap = 4;
+    messageTone = 'firm';
+  }
+
+  // ── TREN MINGGUAN: Fine-tuning ──────────────────────────────────
+  if (mood_7d_trend === 'DECLINING' && mood_7d_variance === 'HIGH') {
+    // Mood tidak stabil dan memburuk — hati-hati
+    maxLevelCap = Math.min(maxLevelCap, 3);
+    includeWellnessNote = true;
+    messageTone = 'gentle';
+  }
+
+  if (mood_7d_trend === 'IMPROVING') {
+    // Tren positif = bisa lebih tegas karena resiliensi tinggi
+    messageTone = mood_24h_state === 'NEGATIVE' ? 'gentle' : 'urgent';
+  }
+
+  // ── RECIDIVISM: Atur Floor ──────────────────────────────────────
+  // Semakin sering melanggar hari ini, baseline naik
+  if (violationsToday >= 3) {
+    baselineLevel = Math.min(2, maxLevelCap - 1);
+  }
+  if (violationsToday >= 5) {
+    baselineLevel = Math.min(3, maxLevelCap - 1);
+    messageTone = 'urgent'; // Override gentle jika sudah 5x hari ini
+  }
+
+  // ── TIME OF DAY: Safety Cap ─────────────────────────────────────
+  // Setelah jam 22.00 atau sebelum jam 07.00 — hindari Level 4
+  if (currentHour >= 22 || currentHour < 7) {
+    maxLevelCap = Math.min(maxLevelCap, 2);
+  }
+
+  return { baselineLevel, maxLevelCap, messageTone, includeWellnessNote };
+}
+```
+
+### Integrasi ke `getEscalationPlan`
+
+Tambahkan parameter `tone` dan `wellnessNote` ke dalam fungsi yang sudah ada:
+
+```javascript
+function getEscalationPlan(level = 1, metadata = {}) {
+  const tone = metadata.message_tone || 'firm';
+  const wellnessNote = metadata.include_wellness_note
+    ? '\n\n💙 <i>N.E.X.A mendeteksi Anda sedang dalam tekanan berat hari ini. Istirahat 5 menit setelah ini adalah produktif, bukan kalah.</i>'
+    : '';
+
+  const messageVariants = {
+    gentle: {
+      level1: `Tuan Faqih, N.E.X.A mendeteksi Anda sudah ${duration} menit di ${violationApp}. Mungkin saatnya ambil napas dan kembali ke prioritas — tanpa terburu-buru.`,
+      level2: `Tuan Faqih, sesi ${violationApp} sudah melebihi batas. Layar diarahkan ke Home. Tidak apa-apa jika perlu konfirmasi dulu di Telegram.`
+    },
+    firm: {
+      level1: `Tuan Faqih, ${duration} menit di ${violationApp}. Kembalilah ke tugas sekarang.`,
+      level2: `Batas waktu terlampaui. Layar dikembalikan ke Home. Konfirmasikan alasan atau Level 3 aktif.`
+    },
+    urgent: {
+      level1: `⚠️ Tuan Faqih — ${violationApp} sudah ${duration} menit. Target hari ini belum tercapai. Kembali SEKARANG.`,
+      level2: `BATAS FINAL. ${violationApp} ditutup. Tidak ada lagi toleransi untuk hari ini.`
+    }
+  };
+  // Gunakan variant sesuai tone dan sisipkan wellnessNote...
+}
+```
+
+---
+
+## 3. Telegram Inline Keyboard & Auto-Timeout
+
+### Arsitektur: Supabase Pending State + Cron (Paling Resilient)
+
+```
+Level 2 trigger
+      │
+      ▼
+Kirim Telegram Inline Keyboard
+Simpan pending_callback = TRUE + callback_expires_at (now + 3 menit)
+      │
+      ├── Jika user klik callback → handleDisciplineCallback()
+      │         ├── [Riset]    → Reset level, tutup pending
+      │         ├── [Menunda]  → Langsung eskalasi Level 3
+      │         └── [+10 min]  → Perpanjang callback_expires_at
+      │
+      └── Jika timeout → cron.js mendeteksi dan eskalasi Level 3
+```
+
+### `fireLevel2WithFeedback` — Kirim & Simpan Pending
+
+```javascript
+// Tambahkan ke src/interfaces/tasker/adapter.js
+
+const { sendTelegramWithKeyboard } = require('../telegram/actions');
+
+async function fireLevel2WithFeedback(session, metadata) {
+  const plan = godMode.getEscalationPlan(2, {
+    ...metadata,
+    message_tone: session.message_tone
+  });
+
+  // Keyboard dengan callback_data yang mengandung session_key
+  // Format singkat agar < 64 bytes: "d:{action}:{session_key}"
+  const keyboard = {
+    inline_keyboard: [[
+      { text: '✅ Ini Riset Penting',  callback_data: `d:ok:${session.session_key}` },
+      { text: '❌ Saya Menunda',       callback_data: `d:no:${session.session_key}` },
+      { text: '⏰ +10 Menit',          callback_data: `d:ext:${session.session_key}` }
+    ]]
+  };
+
+  // Kirim notifikasi ntfy (aksi fisik Tasker langsung)
+  await taskerClient.pushNtfy(plan.ntfyMessage, {
+    title: plan.title,
+    priority: plan.priority,
+    tags: plan.tags
+  });
+
+  // Kirim Telegram dengan keyboard
+  const msgResult = await sendTelegramWithKeyboard(plan.telegramMessage, keyboard);
+
+  // Simpan pending state
+  const expiresAt = new Date(Date.now() + 3 * 60 * 1000).toISOString();
+  await supabase
+    .from('nexa_discipline_state')
+    .update({
+      pending_callback:    true,
+      callback_expires_at: expiresAt,
+      callback_message_id: String(msgResult?.message_id || '')
+    })
+    .eq('session_key', session.session_key);
+}
+```
+
+### Callback Handler di `webhook.js`
+
+```javascript
+// src/interfaces/telegram/callback_handler.js
+
+async function handleDisciplineCallback(callbackQuery) {
+  const data    = callbackQuery?.data || '';
+  const msgId   = callbackQuery?.message?.message_id;
+  const cbId    = callbackQuery?.id;
+
+  const parts = data.split(':');
+  if (parts[0] !== 'd' || parts.length < 3) return;
+
+  const action     = parts[1]; // 'ok' | 'no' | 'ext'
+  // session_key bisa mengandung ':', rebuild dari sisa parts
+  const sessionKey = parts.slice(2).join(':');
+
+  const { data: session } = await supabase
+    .from('nexa_discipline_state')
+    .select('*')
+    .eq('session_key', sessionKey)
+    .maybeSingle();
+
+  if (!session || !session.pending_callback) {
+    await answerCallbackQuery(cbId, '⚠️ Sesi sudah tidak aktif.', true);
+    return;
+  }
+
+  if (action === 'ok') {
+    // User konfirmasi riset — reset level, tutup pending
+    await supabase.from('nexa_discipline_state').update({
+      pending_callback: false,
+      current_level:    0           // Grace granted — mulai fresh
+    }).eq('session_key', sessionKey);
+
+    await answerCallbackQuery(cbId, '✅ Diterima. Semangat risetnya, Tuan Faqih!');
+    await editTelegramMessage(msgId,
+      '✅ <b>N.E.X.A mencatat ini sebagai sesi riset yang valid.</b>\nLanjutkan — dan pastikan hasilnya dicatat.'
+    );
+
+  } else if (action === 'no') {
+    // User mengakui penundaan — eskalasi segera
+    await supabase.from('nexa_discipline_state').update({
+      pending_callback: false,
+      current_level:    3
+    }).eq('session_key', sessionKey);
+
+    await godMode.triggerGodMode(3, { violation_app: session.app_name });
+    await answerCallbackQuery(cbId, '💪 Level 3 diaktifkan. Kembali fokus!');
+    await editTelegramMessage(msgId,
+      '🚫 <b>Surgical Force diaktifkan.</b>\nTuan Faqih memilih akuntabilitas. Respect.'
+    );
+
+  } else if (action === 'ext') {
+    const usedCount = session.ten_min_used_count || 0;
+
+    if (usedCount >= 2) {
+      // Opsi +10 menit dikunci setelah 2x penggunaan per hari
+      await answerCallbackQuery(cbId, '⛔ Opsi ini sudah habis untuk hari ini.', true);
+      // Langsung eskalasi karena sudah mencoba memanfaatkan sistem
+      await supabase.from('nexa_discipline_state').update({
+        pending_callback: false,
+        current_level:    3
+      }).eq('session_key', sessionKey);
+      await godMode.triggerGodMode(3, { violation_app: session.app_name });
+      await editTelegramMessage(msgId,
+        '🚫 <b>+10 Menit sudah digunakan 2x hari ini.</b>\nLevel 3 diaktifkan otomatis.'
+      );
+    } else {
+      // Berikan perpanjangan 10 menit + reset timer callback (13 menit total)
+      const newExpiry = new Date(Date.now() + 13 * 60 * 1000).toISOString();
+      await supabase.from('nexa_discipline_state').update({
+        callback_expires_at:  newExpiry,
+        ten_min_used_count:   usedCount + 1
+      }).eq('session_key', sessionKey);
+
+      await answerCallbackQuery(cbId,
+        `⏰ +10 menit diberikan (${usedCount + 1}/2 penggunaan hari ini).`
+      );
+      await editTelegramMessage(msgId,
+        `⏰ <b>+10 menit dikabulkan (${usedCount + 1}/2).</b>\nN.E.X.A menunggu. Buktikan ini perlu.`
+      );
+    }
+  }
+}
+```
+
+### Cron Checker — Auto-Escalate Expired Callbacks
+
+Tambahkan ke `cron.js` yang sudah ada, jalankan setiap menit:
+
+```javascript
+// Di src/infrastructure/cron.js — tambahkan job ini
+
+cron.schedule('* * * * *', async () => {
+  // Cek pending callbacks yang sudah expired
+  const { data: expiredSessions } = await supabase
+    .from('nexa_discipline_state')
+    .select('*')
+    .eq('pending_callback', true)
+    .lt('callback_expires_at', new Date().toISOString());
+
+  if (!expiredSessions?.length) return;
+
+  for (const session of expiredSessions) {
+    console.log(`[CRON] Auto-escalating expired callback: ${session.session_key}`);
+
+    // Update state terlebih dulu (hindari double-trigger jika cron overlap)
+    const { count } = await supabase
+      .from('nexa_discipline_state')
+      .update({ pending_callback: false, current_level: 3 })
+      .eq('session_key', session.session_key)
+      .eq('pending_callback', true); // Optimistic lock — hanya update jika masih true
+
+    if (count === 0) continue; // Sudah di-handle oleh cron run sebelumnya
+
+    // Edit pesan Telegram untuk memberi tahu timeout
+    if (session.callback_message_id) {
+      await editTelegramMessage(
+        session.callback_message_id,
+        '⏱️ <b>Tidak ada respons (3 menit).</b>\nLevel 3 diaktifkan otomatis oleh N.E.X.A.'
+      ).catch(() => {});
+    }
+
+    // Trigger Level 3
+    await godMode.triggerGodMode(3, { violation_app: session.app_name }).catch(() => {});
   }
 });
 ```
 
 ---
 
-### Path C: Oracle Cloud Always Free sebagai Relay — Probabilitas ~45%
+## 4. Emergency Bypass & Panic Button Architecture
 
-Oracle's Always Free tier memberikan 2 VM Ampere A1 (ARM64, 1 OCPU, 1GB RAM) yang genuinely free selamanya — bukan trial. ASN Oracle Cloud Infrastructure (OCI) berbeda dari AWS (ASN 16509) dan HF. Meta mungkin belum atau tidak memblokir OCI ASN secara agresif karena OCI lebih banyak digunakan untuk enterprise workloads.
+### Prinsip Desain: Three-Factor Anti-Abuse
 
-Strateginya: deploy relay WebSocket ringan di Oracle Free VM, jadikan itu sebagai hop antara HF dan Meta. Total latency overhead kecil (mungkin 20–50ms) tapi untuk chat assistant ini tidak signifikan.
+Tantangannya bukan membuat bypass yang *bisa* digunakan, tapi yang *tidak enak* digunakan kecuali benar-benar darurat — sementara tetap cepat saat darurat nyata.
+
+```
+┌─────────────────────────────────────────┐
+│         TIGA LAPIS ANTI-ABUSE           │
+│                                         │
+│  Layer 1 — FISIK: Vol sequence (Tasker) │
+│  Layer 2 — TEMPORAL: 10-detik cooldown  │
+│  Layer 3 — PSIKOLOGIS: Audit log visible│
+│             di Weekly Review            │
+└─────────────────────────────────────────┘
+```
+
+### Revisi Level 4 — "God Mode Bedah" vs. "God Mode Mutlak"
+
+Masalah terbesar Level 4 saat ini: memutus semua koneksi termasuk potensi darurat. Solusi yang lebih surgical tanpa root:
 
 ```javascript
-// relay.js di Oracle VM (Node.js WebSocket proxy minimal)
-const WebSocket = require('ws');
-const server = new WebSocket.Server({ port: 443 });
+// Revisi Level 4 actions di getEscalationPlan:
+case 4:
+  return {
+    actions: [
+      // Matikan Wi-Fi (sumber utama distraksi di rumah)
+      // Mobile data tetap HIDUP untuk panggilan & pesan darurat
+      { action: 'DISABLE_WIFI', params: { duration_minutes: 45 } },
+      
+      // DND dengan whitelist Favorit (keluarga, nomor darurat)
+      { action: 'ENABLE_DND_PRIORITY_ONLY', params: {
+          allow_calls_from: 'FAVORITES',
+          allow_repeat_callers: true,  // Jika seseorang menelepon 2x dalam 15 menit
+          duration_minutes: 45
+        }
+      },
+      
+      // Focus Mode Samsung — blokir app hiburan spesifik
+      // (lebih surgical dari mematikan semua internet)
+      { action: 'ENABLE_FOCUS_MODE', params: {
+          mode_name: 'GOD MODE',
+          blocked_apps: ['com.zhiliaoapp.musically', 'com.instagram.android',
+                         'com.google.android.youtube', 'com.twitter.android'],
+          duration_minutes: 45
+        }
+      },
+      
+      { action: 'LOCK_SCREEN', params: {
+          message: '🔴 GOD MODE: Fokus atau sesali. Darurat? Vol↓ × 3'
+        }
+      }
+    ]
+  };
+```
 
-server.on('connection', (clientWS) => {
-  const waWS = new WebSocket('wss://web.whatsapp.com/ws/chat', {
-    headers: { /* forward headers dari Baileys */ }
-  });
+Dengan desain ini: Wi-Fi mati (distraksi hilang), mobile data hidup (darurat tetap bisa), app hiburan terkunci via Focus Mode, telepon dari Favorit tetap masuk.
 
-  clientWS.on('message', data => {
-    if (waWS.readyState === WebSocket.OPEN) waWS.send(data);
-  });
-  waWS.on('message', data => {
-    if (clientWS.readyState === WebSocket.OPEN) clientWS.send(data);
-  });
+### Panic Button — Tasker Configuration (Pseudocode Resmi)
 
-  clientWS.on('close', () => waWS.close());
-  waWS.on('close', () => clientWS.close());
-});
+```
+╔══════════════════════════════════════════════════════╗
+║  PROFILE: "NEXA Emergency Bypass Monitor"            ║
+║  Trigger: Variable Set — %NEXA_GOD_LEVEL eq 4        ║
+╠══════════════════════════════════════════════════════╣
+║  TASK: "Monitor Emergency Exit"                      ║
+║                                                      ║
+║  A1: Variable Set %VOL_COUNT = 0                     ║
+║                                                      ║
+║  A2: [LOOP — maks 10 menit]                          ║
+║      Wait for Event: Volume Down Key Press           ║
+║        → If detected within 3s:                      ║
+║            %VOL_COUNT + 1                            ║
+║        → Else:                                       ║
+║            %VOL_COUNT = 0  (reset jika terlalu lama) ║
+║      If %VOL_COUNT >= 3: Exit Loop                   ║
+║                                                      ║
+║  A3: Flash — "⚠️ DARURAT? Tahan Vol+ 5 detik"       ║
+║      Haptic feedback (long vibrate 2x)               ║
+║                                                      ║
+║  A4: Wait for Event: Volume Up Long Press (≥ 5 detik)║
+║      Timeout: 10 detik                               ║
+║      If NOT received: kembali ke A2 (false alarm)    ║
+║                                                      ║
+║  A5: [KONFIRMASI DITERIMA]                           ║
+║      Cancel all God Mode tasks                       ║
+║      Enable Wi-Fi                                    ║
+║      Disable Focus Mode                              ║
+║      Disable DND                                     ║
+║      HTTP POST → NEXA server:                        ║
+║        { type: 'EMERGENCY_BYPASS_ACTIVATED',         ║
+║          timestamp, trigger: 'panic_button' }        ║
+║      Notify: "🚨 Emergency Override aktif.           ║
+║               N.E.X.A mencatat ini. Stay safe."      ║
+╚══════════════════════════════════════════════════════╝
+```
+
+### Server-Side Emergency Bypass Handler
+
+```javascript
+// Endpoint baru: POST /webhook/tasker
+// Tambahkan ke adapter.js
+
+} else if (type === 'EMERGENCY_BYPASS_ACTIVATED') {
+  // Catat ke behavior log untuk weekly review
+  await behaviorEngine.logEvent('EMERGENCY_BYPASS', {
+    trigger:   data.trigger || 'panic_button',
+    timestamp: data.timestamp,
+    god_mode_level: data.god_mode_level || 4
+  }).catch(() => {});
+
+  // Kirim notifikasi Telegram sebagai audit trail
+  await sendTelegramOutbound(
+    `🚨 <b>Emergency Override Diaktifkan</b>\n\n` +
+    `Tuan Faqih menggunakan Panic Button pada pukul ` +
+    `${new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' })}.\n` +
+    `<i>Kejadian ini tercatat dalam Weekly Discipline Review.</i>`
+  );
+
+  // Reset discipline state untuk app yang aktif
+  const today = new Date().toISOString().split('T')[0];
+  await supabase
+    .from('nexa_discipline_state')
+    .update({ current_level: 0, pending_callback: false })
+    .like('session_key', `%:${today}`)
+    .eq('current_level', 4);
+
+  res.status(200).json({ status: 'bypass_acknowledged' });
+```
+
+### Tampilan di Weekly Review
+
+Override ini harus muncul di Weekly Report agar ada biaya psikologis yang nyata:
+
+```
+📊 Weekly Discipline Report — 13–19 Jan 2025
+
+✅ Sesi fokus berhasil: 34/40 (85%)
+⚠️ Escalation terpicu: 12 kali
+🚨 Emergency Override: 2 kali
+   → Senin 13 Jan, 22:47 (panic button)
+   → Kamis 16 Jan, 14:23 (panic button)
+
+Catatan: 2 override terjadi di saat deadline aktif.
+Apakah ini genuine emergency atau resistensi?
 ```
 
 ---
 
-## Strategi Eksekusi yang Saya Rekomendasikan
+## Ringkasan Integrasi Keempat Komponen
 
-Urutan berdasarkan risk-reward ratio:
+```
+Tasker sends SCREEN_TIME_VIOLATION
+           │
+           ▼
+  getOrInitSession(app_name)     ← Supabase nexa_discipline_state
+  + computeDynamicProfile()      ← Behavior_Engine mood data
+           │
+           ▼
+    advanceLevel()               ← Naik 1 level, hormat max_level_cap
+           │
+    ┌──────┴──────┐
+  Level 2?      Lainnya?
+    │               │
+    ▼               ▼
+fireLevel2       triggerGodMode(n)
+WithFeedback()   (langsung)
+    │
+    ├── Telegram Inline Keyboard
+    ├── Supabase: pending_callback = true
+    └── cron.js: cek expiry setiap menit
+              │
+              └── Auto-eskalasi Level 3 jika timeout
+```
 
-Pertama, **langsung daftarkan WABA** (Path A) sebagai solusi jangka panjang. Ini bukan workaround — ini adalah arsitektur yang benar untuk AI assistant yang di-host di cloud. Proses setup butuh 1–3 hari tapi sekali jalan tidak ada maintenance infrastruktur proxy.
-
-Kedua, selagi menunggu WABA diapprove, **deploy CF Workers relay** (Path B) dan test segera. Ini bisa selesai dalam 30 menit dan memberikan data empiris apakah CF IPs diblokir Meta atau tidak.
-
-Ketiga, jika CF Workers juga gagal, **daftar Oracle Cloud Free** dan deploy relay Node.js di sana. Oracle IP ranges lebih tidak predictable dari perspektif Meta's block list.
-
-Keempat, opsi terakhir yang sering diabaikan: **test `useMobileAgent: true`** di Baileys sambil menunggu. Zero effort, dan ada kemungkinan Meta's mobile endpoint rule berbeda.
-
-Satu hal penting: jika CF Workers berhasil, pastikan Anda memantau CF Free tier limits (100.000 requests/hari). Setiap binary frame yang diteruskan menghitung sebagai invocation, tapi dengan paket berbayar ($5/bulan) limitnya naik dramatis.
+Keempat komponen ini sekarang saling terhubung dengan satu state store (Supabase), satu sumber kebenaran mood (Behavior Engine), dan satu audit trail (behavior log + weekly review). Tidak ada lagi logika yang berjalan "di udara" tanpa persistensi.

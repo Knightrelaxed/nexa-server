@@ -628,10 +628,61 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
+  // 14. [PHASE 8] Auto-Escalation Checker (Every 1 Minute)
+  // Memeriksa sesi disiplin yang pending_callback = true dan waktu konfirmasi telah habis (callback_expires_at < NOW).
+  // Jika ditemukan, eskalasi otomatis ke Level 3 dan hapus tombol di Telegram.
+  cron.schedule('* * * * *', async () => {
+    try {
+      if (!env.SUPABASE_URL || !env.SUPABASE_KEY) return;
+      const { createClient } = require('@supabase/supabase-js');
+      const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_KEY);
+
+      const nowIso = new Date().toISOString();
+      const { data: expiredSessions, error } = await supabase
+        .from('nexa_discipline_state')
+        .select('*')
+        .eq('pending_callback', true)
+        .lt('callback_expires_at', nowIso);
+
+      if (error || !expiredSessions || expiredSessions.length === 0) return;
+
+      console.log(`[CRON-DISCIPLINE] Found ${expiredSessions.length} expired pending callback(s). Escalating to Level 3...`);
+      const godMode = require('../domain/Discipline_GodMode');
+      const { editTelegramMessage } = require('./telegram/actions');
+
+      for (const session of expiredSessions) {
+        try {
+          await supabase
+            .from('nexa_discipline_state')
+            .update({ pending_callback: false, current_level: 3 })
+            .eq('session_key', session.session_key);
+
+          await godMode.triggerGodMode(3, {
+            violation_app: session.app_name,
+            message_tone: session.message_tone,
+            session_key: session.session_key
+          });
+
+          if (session.callback_message_id) {
+            await editTelegramMessage(
+              session.callback_message_id,
+              `⚠️ <b>Batas waktu konfirmasi habis.</b>\n\nTuan Faqih tidak merespons tombol dalam batas waktu toleransi.\nSurgical Force (Level 3) diaktifkan otomatis.`
+            );
+          }
+        } catch (itemErr) {
+          console.error(`[CRON-DISCIPLINE] Error escalating session ${session.session_key}:`, itemErr.message);
+        }
+      }
+    } catch (e) {
+      console.error('[CRON-DISCIPLINE] Check error:', e.message);
+    }
+  });
+
   console.log('[CRON] 🛡️ Telegram Alert Watchdog active (90s interval).');
   console.log('[CRON-P6] ✅ Phase 6 Proactive Crons active: Proximity, Midday, Evening, Tomorrow, Weekly Review.');
   console.log('[CRON-MEM] 🧠 Memory Consolidation active (23:59 WIB).');
   console.log('[CRON-BUDGET] 📊 Budget Recaps active (End of Week & Month).');
+  console.log('[CRON-DISCIPLINE] ⚡ Discipline Auto-Escalation active (1m interval).');
 }
 
 module.exports = { initCronJobs };
