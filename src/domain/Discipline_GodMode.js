@@ -185,7 +185,7 @@ function getEscalationPlan(level = 1, metadata = {}) {
         title: '🔴 SURGICAL GOD MODE MUTLAK',
         priority: 'urgent',
         tags: 'skull_and_crossbones,warning,sos',
-        ntfyMessage: `DISABLE_NET_AND_LOCK|Tuan Faqih, surgical god mode level empat aktif. Wi-Fi dan data seluler dimatikan serta layar dikunci agar Anda kembali ke meja kerja.`,
+        ntfyMessage: `DISABLE_WIFI_AND_LOCK_SCREEN|Tuan Faqih, surgical god mode level empat aktif. Wi-Fi dan data seluler dimatikan serta layar dikunci agar Anda kembali ke meja kerja.`,
         telegramMessage: `🔴 <b>SURGICAL GOD MODE MUTLAK (Level 4)</b>\n\nTuan Faqih,\nBatas toleransi penundaan di <b>${safeApp}</b> telah habis.\n\n🔒 <b>Isolasi Fisik Bedah (Samsung A33 5G):</b>\n• Wi-Fi & Data Seluler dimatikan selama 45 menit (memotong seluruh sumber distraksi internet)\n• One UI DND Priority Only (tetap mengizinkan panggilan telepon seluler darurat dari kontak Favorit/Keluarga)\n• One UI Focus Mode mengunci aplikasi hiburan\n• Layar ponsel dikunci otomatis tanpa opsi bypass fisik\n\n<i>Kembalilah ke meja kerja Anda. Waktu berlanjut setelah 45 menit.</i>`,
         actions: [
           // Matikan Wi-Fi dan Data Seluler (memotong koneksi internet)

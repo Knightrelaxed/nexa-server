@@ -92,15 +92,15 @@ Bertugas menjalankan hukuman fisik di ponsel begitu menerima sinyal ntfy yang me
 *   **1. Variable Split** (`Name %evtprm3 Splitter |`)
     *(Memecah data ntfy: `%evtprm31` = Kode Perintah, `%evtprm32` = Teks Suara Dinamis dari AI)*
 *   **2. If** `%evtprm32 Set`
-    *   **3. Say** (`Text %evtprm32 Engine:Voice default:id-ID Stream Media Continue Task Immediately [✔]`)
-    *(Mengucapkan nasihat dinamis dari cloud secara seketika tanpa menahan task)*
+    *   **3. Say** (`Text %evtprm32 Engine:Voice default:id-ID Stream Alarm Continue Task Immediately [ ]`)
+    *(Mengucapkan nasihat dinamis dari cloud secara utuh dan lantang hingga selesai sebelum eksekusi penguncian)*
 *   **4. End If**
 *   **5. If** `%evtprm31 ~ *GO_HOME* | %evtprm2 ~ *Intervention*`
     *   **6. Go Home** (`Page 0`)
 *   **7. End If**
 *   **8. If** `%evtprm31 ~ *DISABLE_WIFI*/*LOCK_SCREEN*`
-    *   **9. WiFi** (`Set Off`)
-    *   **10. System Lock**
+    *   **9. Airplane Mode** (`Set On`) *ATAU* **Mobile Data (`Set Off`) + Custom Setting (`Global: wifi_on = 0`)**
+    *   **10. System Lock** (`Membutuhkan izin Admin Perangkat / Device Admin`)
 *   **11. End If**
 *   **12. If** `%evtprm31 ~ *FORCE_STOP_APP*`
     *   **13. Variable Split** (`Name %evtprm31 Splitter :`)
