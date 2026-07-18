@@ -185,8 +185,8 @@ function getEscalationPlan(level = 1, metadata = {}) {
         title: '🔴 SURGICAL GOD MODE MUTLAK',
         priority: 'urgent',
         tags: 'skull_and_crossbones,warning,sos',
-        ntfyMessage: `DISABLE_WIFI_AND_LOCK_SCREEN|Tuan Faqih, surgical god mode level empat aktif. Wi-Fi dan data seluler dimatikan serta layar dikunci agar Anda kembali ke meja kerja.`,
-        telegramMessage: `🔴 <b>SURGICAL GOD MODE MUTLAK (Level 4)</b>\n\nTuan Faqih,\nBatas toleransi penundaan di <b>${safeApp}</b> telah habis.\n\n🔒 <b>Isolasi Fisik Bedah (Samsung A33 5G):</b>\n• Wi-Fi & Data Seluler dimatikan selama 45 menit (memotong seluruh sumber distraksi internet)\n• One UI DND Priority Only (tetap mengizinkan panggilan telepon seluler darurat dari kontak Favorit/Keluarga)\n• One UI Focus Mode mengunci aplikasi hiburan\n• Layar ponsel dikunci otomatis tanpa opsi bypass fisik\n\n<i>Kembalilah ke meja kerja Anda. Waktu berlanjut setelah 45 menit.</i>`,
+        ntfyMessage: `DISABLE_WIFI_AND_LOCK_SCREEN|Tuan Faqih, surgical god mode level empat aktif. Mode pesawat dinyalakan dan layar dikunci agar Anda kembali ke meja kerja.`,
+        telegramMessage: `🔴 <b>SURGICAL GOD MODE MUTLAK (Level 4)</b>\n\nTuan Faqih,\nBatas toleransi penundaan di <b>${safeApp}</b> telah habis.\n\n🔒 <b>Isolasi Fisik Bedah (Samsung A33 5G):</b>\n• Mode Pesawat (Airplane Mode) dinyalakan selama 45 menit (memotong total seluruh koneksi internet Wi-Fi & Kuota)\n• One UI DND Priority Only aktif\n• One UI Focus Mode mengunci aplikasi hiburan\n• Layar ponsel dikunci otomatis tanpa opsi bypass fisik\n\n<i>Kembalilah ke meja kerja Anda. Waktu berlanjut setelah 45 menit.</i>`,
         actions: [
           // Matikan Wi-Fi dan Data Seluler (memotong koneksi internet)
           { action: 'DISABLE_WIFI', params: { duration_minutes: 45 } },
@@ -233,7 +233,7 @@ async function generateDynamicAISpeech(level, metadata = {}, fallbackSpeechText 
     const tone = metadata.message_tone || 'firm';
 
     const prompt = `Buatkan tepat 2 kalimat nasihat lisan singkat (untuk dibacakan Google TTS di ponsel Samsung A33 5G) kepada Tuan Faqih yang baru saja terdeteksi membuka ${appName} selama ${duration} menit.
-Level intervensi N.E.X.A: Level ${level}.
+Level intervensi N.E.X.A: Level ${level} (${level === 4 ? 'Isolasi Mutlak: Mode Pesawat diaktifkan dan layar dikunci otomatis' : level === 3 ? 'Surgical Force: Aplikasi ditutup paksa dan layar grayscale' : 'Peringatan kembali ke Home'}).
 Nada pembicaraan: ${tone} (${tone === 'gentle' ? 'lembut, empati, menenangkan karena lelah/rentan' : tone === 'urgent' ? 'sangat mendesak, tegas mutlak, tanpa toleransi' : 'tegas, rasional, menyadarkan fokus'}).
 ATURAN MUTLAK:
 1. Maksimal 2 kalimat singkat yang langsung menusuk kesadaran (maksimal 18 kata per kalimat).
