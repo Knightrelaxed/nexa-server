@@ -118,36 +118,37 @@ Bertugas menjalankan hukuman fisik di ponsel begitu menerima sinyal ntfy yang me
 
 ---
 
-### B. Task 2: `Send_TikTok_Violation` (Pelaporan Pelanggaran Waktu Layar)
-Bertugas memonitor durasi penggunaan aplikasi hiburan dan mengirim Webhook ke server N.E.X.A:
+### B. Task 2: `Send_Screen_Violation` (Pelaporan Pelanggaran Waktu Layar Multi-Aplikasi)
+Bertugas memonitor durasi penggunaan aplikasi hiburan (`TikTok`, `Instagram`, `eFootball`, dll) dan mengirim Webhook ke server N.E.X.A saat waktu layar melebihi batas.
 
-*   **1. Wait** `15 Mins`
-*   **2. Test App** (`Type This Package Store Result In %IsTikTokActive`)
-*   **3. If** `%IsTikTokActive = 1` *(Atau = yes / true sesuai pengujian)*
-    *   **4. HTTP Request**
-        *   **Method**: `POST`
-        *   **URL**: `https://nexa-asistant-nexa-core-server.hf.space/webhook/tasker`
-        *   **Headers**:
-            ```text
-            Authorization: Bearer Uo3BFTgX2TBPGca7InTOGrvsU7ed_hPY
-            Content-Type: application/json
-            ```
-        *   **Body (JSON)**:
-            ```json
-            {
-              "type": "SCREEN_TIME_VIOLATION",
-              "data": {
-                "app_name": "TikTok",
-                "duration_minutes": 15
-              }
-            }
-            ```
-    *   **5. Flash** (`Text N.E.X.A: Pelanggaran waktu layar dilaporkan ke server.`)
-*   **6. End If**
+Susunan Task yang bersih, rapi, dan stabil (3 Langkah):
+*   **1. Wait** `15 Mins` *(Atau `59 Mins, 59 Seconds` / sesuai batas waktu layar yang Anda tetapkan)*
+*   **2. HTTP Request**
+    *   **Method**: `POST`
+    *   **URL**: `https://nexa-asistant-nexa-core-server.hf.space/webhook/tasker`
+    *   **Headers**:
+        ```text
+        Authorization: Bearer Uo3BFTgX2TBPGca7lnTOGrvsU7ed_hPY
+        Content-Type: application/json
+        ```
+    *   **Body (JSON)**:
+        ```json
+        {
+          "type": "SCREEN_TIME_VIOLATION",
+          "data": {
+            "app_name": "Aplikasi Hiburan",
+            "duration_minutes": 15
+          }
+        }
+        ```
+*   **3. Flash** (`Text N.E.X.A: Pelanggaran waktu layar TikTok (15+ menit) telah dilaporkan ke server.`, `Long`: centang, `Tasker Layout`: centang)
 
-**Profile 2 (`TikTok Screen Time Monitor`):**
-*   **Trigger**: Application ➡️ Pilih aplikasi `TikTok` (`com.zhiliaoapp.musically`)
-*   **Action**: Jalankan task `Send_TikTok_Violation`
+**Profile 2 (`Screen TimeApps Monitor`):**
+*   **Trigger**: Application ➡️ Pilih aplikasi hiburan/game Anda (`TikTok, eFootball™, Instagram...`)
+*   **Entry Task (`➡️`)**: Jalankan task **`Send_Screen_Violation`**
+*   **Exit Task (`⬅️` - Sangat Penting agar Timer Batal jika Keluar Aplikasi Sebelum Waktu Habis):**
+    *   Tekan tahan nama task `Send_Screen_Violation` di kanan Profile ini ➡️ pilih **`Add Exit Task`** ➡️ `New Task` (`Stop_Violation`) ➡️ pilih aksi **`Task` ➡️ `Stop`** ➡️ ketik/pilih **`Send_Screen_Violation`**.
+    *   *(Dengan Exit Task ini, jika Anda keluar dari Instagram sebelum 15 menit/1 jam, penghitungan mundur otomatis dibatalkan, sehingga laporan tidak dikirim saat Anda sudah di luar aplikasi).*
 
 ---
 
