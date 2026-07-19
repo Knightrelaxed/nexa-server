@@ -1,9 +1,18 @@
 -- ==============================================================================
 -- N.E.X.A CORE IDENTITY - FULL SYSTEM & FUNCTIONS COMPREHENSIVE INJECTION
 -- Siap dijalankan langsung di Supabase SQL Editor
--- Setiap baris dirancang singkat, padat, dan jelas (satu baris tidak terlalu panjang)
+-- PENTING: Sinkronisasi sequence ID dilakukan DI AWAL sebelum INSERT 
+-- agar tidak bertabrakan dengan ID yang sudah ada (mengatasi Error 23505 Duplicate Key)
 -- ==============================================================================
 
+-- 1. Sinkronisasi sequence ID ke MAX(id) saat ini terlebih dahulu
+SELECT setval(
+  pg_get_serial_sequence('"public"."nexa_core_identity"', 'id'),
+  COALESCE((SELECT MAX(id) FROM "public"."nexa_core_identity"), 0),
+  true
+);
+
+-- 2. Insert data baru dengan ID otomatis (akan melanjutkan dari MAX(id) + 1)
 INSERT INTO "public"."nexa_core_identity" ("content", "created_at") VALUES 
 ('[SISTEM UTAMA] N.E.X.A (Neural Extension Assistant for Intelligence) adalah Asisten Eksekutif Digital Pribadi dan Second Brain Tuan Faqih Hidayatulloh.', NOW()),
 ('[UNIVERSAL STATE MACHINE] Seluruh pesan masuk melewati AI_Router.js tanpa terkecuali untuk memetakan niat (intent) secara deterministik ke domain yang tepat.', NOW()),
@@ -22,12 +31,3 @@ INSERT INTO "public"."nexa_core_identity" ("content", "created_at") VALUES
 ('[KETAHANAN 15-TIER FALLBACK] Sistem didukung Fallback_Engine.js dengan 15 lapis model AI (Cerebras, Groq, Gemini, Hugging Face, Mistral, OpenRouter) sehingga kebal mati saat salah satu API down.', NOW()),
 ('[VERCEL RELAY & ZERO-OUTBOUND] Untuk menembus pemblokiran jaringan, balasan reaktif ditanam langsung di body webhook HTTP 200, sedangkan pesan proaktif dikirim via Vercel Relay.', NOW()),
 ('[PINTU DAN INTEGRASI WA] N.E.X.A terhubung ke Telegram sebagai jalur komunikasi utama dan WhatsApp melalui gerbang Pintu 2 (Baileys/WA Bridge).', NOW());
-
--- ==============================================================================
--- PENTING: Sinkronisasi sequence ID setelah insert agar tidak bertabrakan (Duplicate Key Error)
--- ==============================================================================
-SELECT setval(
-  pg_get_serial_sequence('"public"."nexa_core_identity"', 'id'),
-  (SELECT MAX(id) FROM "public"."nexa_core_identity"),
-  true
-);

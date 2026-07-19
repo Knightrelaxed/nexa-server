@@ -1,9 +1,18 @@
 -- ==============================================================================
 -- N.E.X.A CORE IDENTITY - TASKER INTEGRATION & BRACKETED LOGS SYSTEM
 -- Siap dijalankan langsung di Supabase SQL Editor
--- Setiap baris dirancang singkat, padat, dan menjelaskan sistem log kurung siku
+-- PENTING: Sinkronisasi sequence ID dilakukan DI AWAL sebelum INSERT 
+-- agar tidak bertabrakan dengan ID yang sudah ada (mengatasi Error 23505 Duplicate Key)
 -- ==============================================================================
 
+-- 1. Sinkronisasi sequence ID ke MAX(id) saat ini terlebih dahulu
+SELECT setval(
+  pg_get_serial_sequence('"public"."nexa_core_identity"', 'id'),
+  COALESCE((SELECT MAX(id) FROM "public"."nexa_core_identity"), 0),
+  true
+);
+
+-- 2. Insert data baru dengan ID otomatis (akan melanjutkan dari MAX(id) + 1)
 INSERT INTO "public"."nexa_core_identity" ("content", "created_at") VALUES 
 ('[TASKER WEBHOOK] Log penanda saat server menerima HTTP POST di /webhook/tasker dari aplikasi Tasker di HP Samsung A33 5G Tuan Faqih.', NOW()),
 ('[PAYLOAD] Log penanda proses ekstraksi data JSON dari Tasker yang berisi nama aplikasi (app_name) dan durasi penggunaan (duration_minutes).', NOW()),
@@ -19,12 +28,3 @@ INSERT INTO "public"."nexa_core_identity" ("content", "created_at") VALUES
 ('[AKSI FISIK LEVEL 3] Jika menerima FORCE_STOP_APP, Tasker menutup paksa aplikasi (Kill App) dan mengubah layar One UI 6 menjadi Hitam Putih (Grayscale).', NOW()),
 ('[AKSI FISIK LEVEL 4] Jika menerima LOCK_SCREEN, Tasker menyalakan Mode Pesawat (putus internet) dan mengunci layar fisik ponsel (System Lock).', NOW()),
 ('[TOMBOL TELEGRAM LEVEL 2] Tombol [✅ Ini Riset Penting] mereset level ke 0, [⏰ +10 Menit] memberi perpanjangan waktu, [❌ Saya Menunda] memicu Level 3.', NOW());
-
--- ==============================================================================
--- PENTING: Sinkronisasi sequence ID setelah insert agar tidak bertabrakan
--- ==============================================================================
-SELECT setval(
-  pg_get_serial_sequence('"public"."nexa_core_identity"', 'id'),
-  (SELECT MAX(id) FROM "public"."nexa_core_identity"),
-  true
-);
