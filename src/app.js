@@ -33,7 +33,15 @@ app.disable('x-powered-by');
 // MIDDLEWARES
 // ============================================================
 app.use(cors());
-app.use(morgan('dev'));
+app.use(morgan('dev', {
+  skip: (req, res) => {
+    // Skip noisy automated scanner hits (404s like .env, .git, config) and routine health/root checks
+    if (res.statusCode === 404) return true;
+    if (req.url === '/health' && res.statusCode === 200) return true;
+    if (req.url === '/' && res.statusCode === 200) return true;
+    return false;
+  }
+}));
 app.use(express.json({ limit: '1mb' }));
 
 // ============================================================
