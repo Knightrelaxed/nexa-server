@@ -283,10 +283,17 @@ CRITICAL ROUTING RULES:
     - "tunai/cash/uang fisik" -> "Tunai"
 12. TELEGRAM FORMATTING RULE: DILARANG menyebar karakter asterisk/bintang (*) berlebihan dalam reply_message. Gunakan bahasa Indonesia natural yang bersih, atau tag HTML <b>teks</b> jika ingin penekanan kata.
 
+13. MOOD EXTRACTION (EMPATHY & INTENSITY SENSITIVITY):
+    WAJIB evaluasi nada emosi dari pesan Tuan Faqih. Pilih 1 dari: "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD".
+    - Jika Tuan Faqih mengeluh error/bug, protes, bingung, atau frustrasi ("argh", "ga sesuai", "kok gini", "looping", "perbaiki"), pilih STRESSED, ANGRY, atau NEGATIVE.
+    - Jika sedang bekerja/coding/riset/deploy, pilih FOCUSED atau MOTIVATED.
+    - Jika lelah/ngantuk/minta istirahat, pilih TIRED.
+
 OUTPUT JSON FORMAT:
 {
   "reasoning": "1-2 sentences of logical analysis binding context and intent.",
   "intent": "FINANCE|CALENDAR|TASK|EMAIL|DATABASE|WEB_SEARCH|DISCIPLINE|2ND_BRAIN|USER_PROFILE|CORE_IDENTITY|DIAGNOSE_SYSTEM|INCOMPLETE_INFO|NORMAL_CHAT",
+  "mood": "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD",
   "reply_message": "Natural, warm conversational Indonesian response addressing user as Tuan Faqih (MANDATORY for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE, USER_PROFILE, CORE_IDENTITY).",
   "learned_user_facts": ["New permanent facts ABOUT TUAN FAQIH (the human), or empty []"],
   "learned_core_identities": ["New permanent facts ABOUT N.E.X.A ITSELF (the AI), or empty []"],
@@ -351,10 +358,9 @@ function _detectSentiment(text) {
   if (!text) return 'NEUTRAL';
   const str = text.toLowerCase();
   
-  // Helper using Regex boundaries to prevent false positives (e.g. "sos" inside "sosis")
   const matchAny = (words) => words.some(w => new RegExp(`\\b${w.replace(/ /g, '\\s+')}\\b`, 'i').test(str));
 
-  // 1. STRESSED — Kepanikan, Ketergesaan, Darurat
+  // 1. STRESSED / FRUSTRATED — Kepanikan, Ketergesaan, Darurat, Frustrasi Teknis
   const rushWords = [
     "panik", "darurat", "buru-buru", "keburu", "mepet", "gawat",
     "urgent", "buruan", "cepetan", "ngebut", "kepepet", "sos",
@@ -366,13 +372,17 @@ function _detectSentiment(text) {
     "pusing pala", "puyeng", "overwhelmed", "stres banget",
     "panik banget", "ngejar deadline", "deadline besok",
     "waktu mepet", "mepet banget", "dikejar-kejar",
-    "mampus telat", "kacau banget", "berantakan semua"
+    "mampus telat", "kacau banget", "berantakan semua",
+    "argh", "arghh", "bingung", "ga sesuai", "kok gini",
+    "malah balik", "looping", "ngeloop", "kenapa sih",
+    "kok salah", "perbaiki", "benerin", "error terus",
+    "ga jalan", "ga mau", "rusak", "kacau", "pusing parah"
   ];
   const hasExclamation = (text.match(/!/g) || []).length >= 2;
   const isAllCaps = text.length > 5 && text === text.toUpperCase();
   if (matchAny(rushWords) || hasExclamation || isAllCaps) return 'STRESSED';
 
-  // 2. ANGRY — Kemarahan, Frustrasi, Kekesalan
+  // 2. ANGRY — Kemarahan, Frustrasi Berat, Kekesalan
   const angryWords = [
     "anjing", "ajg", "brengsek", "sialan", "keparat", "bangsat",
     "goblok", "tolol", "nyebelin", "bikin emosi", "bikin kesel",
@@ -383,11 +393,29 @@ function _detectSentiment(text) {
     "kesel parah", "marah banget", "emosi parah", "setan",
     "menyebalkan", "kesel banget", "gondok banget",
     "capek ngurusin", "males banget ngurusin", "sebel parah",
-    "naik pitam"
+    "naik pitam", "bodoh", "parah banget", "cacat"
   ];
   if (matchAny(angryWords)) return 'ANGRY';
 
-  // 3. SAD — Kesedihan, Demotivasi, Putus Asa, Sakit
+  // 3. FOCUSED / MOTIVATED — Fokus Kerja, Riset, Coding, Produktivitas
+  const focusedWords = [
+    "riset", "coding", "deploy", "server", "commit", "push",
+    "github", "vercel", "supabase", "database", "fokus",
+    "mengerjakan", "selesaikan", "project", "analisis",
+    "bedah", "pelajari", "simulasikan", "investigasi",
+    "eksekusi", "target", "produktivitas", "kerjaan"
+  ];
+  if (matchAny(focusedWords)) return 'FOCUSED';
+
+  // 4. TIRED / BORED — Lelah, Ngantuk, Jenuh
+  const tiredWords = [
+    "ngantuk", "lelah", "capek", "istirahat", "tidur",
+    "cape banget", "lemas", "bosen", "jenuh", "penat",
+    "letih", "lesu", "rebahan dulu", "capek fisik"
+  ];
+  if (matchAny(tiredWords)) return 'TIRED';
+
+  // 5. SAD — Kesedihan, Demotivasi, Putus Asa, Sakit
   const sadWords = [
     "sedih", "nangis", "galau", "hopeless", "sakit hati",
     "mati rasa", "putus asa", "depresi", "down", "nelangsa",
@@ -402,7 +430,7 @@ function _detectSentiment(text) {
   ];
   if (matchAny(sadWords)) return 'SAD';
 
-  // 4. HAPPY — Kegembiraan, Kepuasan, Antusiasme
+  // 6. HAPPY / EXCITED — Kegembiraan, Kepuasan, Antusiasme
   const happyWords = [
     "seneng", "bahagia", "mantul", "yeay", "asik",
     "gembira", "happy", "semangat", "excited", "girang",
@@ -418,7 +446,7 @@ function _detectSentiment(text) {
   ];
   if (matchAny(happyWords)) return 'HAPPY';
 
-  // 5. CASUAL — Santai, Candaan, Tidak Terburu-buru
+  // 7. CASUAL — Santai, Candaan, Tidak Terburu-buru
   const casualWords = [
     "wkwk", "haha", "santai", "gabut", "mager", "bercanda",
     "becanda", "ngakak", "lol", "hehe", "iseng", "slow",
@@ -426,7 +454,7 @@ function _detectSentiment(text) {
     "btw", "fyi", "ngobrol", "nongkrong",
     "rebahan", "healing", "receh", "gaje",
     "garing", "random", "asal ngomong",
-    "hmm", "bosen", "gabut parah",
+    "hmm", "gabut parah",
     "mager banget", "otw", "ntar", "besok aja",
     "santuy", "gengs", "bestie", "chill",
     "gausah buru-buru", "pelan-pelan aja", "yaudah",
@@ -802,7 +830,8 @@ Tentukan intent dan ekstrak data!
 
   try {
     const routingData = JSON.parse(cleanStr);
-    routingData.mood = _sentimentScore;
+    const detectedMood = (_sentimentScore !== 'NEUTRAL') ? _sentimentScore : (routingData.mood || 'NEUTRAL');
+    routingData.mood = String(detectedMood).toUpperCase();
     return routingData;
   } catch (err) {
     // Smart repair: try extracting the first complete balanced JSON object ignoring trailing junk
@@ -824,7 +853,8 @@ Tentukan intent dan ekstrak data!
       if (endIdx !== -1) {
         const repaired = cleanStr.substring(firstBrace, endIdx + 1);
         const routingData = JSON.parse(repaired);
-        routingData.mood = _sentimentScore;
+        const detectedMood = (_sentimentScore !== 'NEUTRAL') ? _sentimentScore : (routingData.mood || 'NEUTRAL');
+        routingData.mood = String(detectedMood).toUpperCase();
         console.log('[ROUTER] Smart JSON Repair SUCCESS after trailing garbage');
         return routingData;
       }
