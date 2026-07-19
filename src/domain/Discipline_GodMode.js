@@ -33,7 +33,8 @@ function computeDynamicProfile(moodData = {}, historyData = {}) {
   } = moodData;
 
   const violationsToday = historyData.violationsToday || 0;
-  const currentHour = new Date().getHours();
+  const jakartaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  const currentHour = jakartaTime.getHours();
 
   let baselineLevel       = 1;
   let maxLevelCap         = 4;
