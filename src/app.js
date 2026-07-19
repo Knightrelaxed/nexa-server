@@ -35,10 +35,10 @@ app.disable('x-powered-by');
 app.use(cors());
 app.use(morgan('dev', {
   skip: (req, res) => {
-    // Skip noisy automated scanner hits (404s like .env, .git, config) and routine health/root checks
+    // Skip noisy automated scanner hits (404s like .env, .git, config) and routine health/root checks (200 & 304)
     if (res.statusCode === 404) return true;
-    if (req.url === '/health' && res.statusCode === 200) return true;
-    if (req.url === '/' && res.statusCode === 200) return true;
+    const path = req.path || (req.url ? req.url.split('?')[0] : '');
+    if ((path === '/' || path === '/health') && (res.statusCode === 200 || res.statusCode === 304)) return true;
     return false;
   }
 }));
