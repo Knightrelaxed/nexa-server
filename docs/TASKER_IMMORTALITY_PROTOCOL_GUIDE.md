@@ -125,9 +125,9 @@ Bertugas menjalankan hukuman fisik di ponsel begitu menerima sinyal ntfy yang me
 ### B. Task 2: `Send_Screen_Violation` (Pelaporan Pelanggaran Waktu Layar Multi-Aplikasi)
 Bertugas memonitor durasi penggunaan aplikasi hiburan (`TikTok`, `Instagram`, `eFootball`, dll) dan mengirim Webhook ke server N.E.X.A saat waktu layar melebihi batas.
 
-Susunan Task yang bersih, rapi, dan stabil (3 Langkah):
-*   **1. Wait** `15 Mins` *(Atau `59 Mins, 59 Seconds` / sesuai batas waktu layar yang Anda tetapkan)*
-*   **2. HTTP Request**
+Susunan Task yang bersih, rapi, dan stabil dengan Pengaman Ganda (`Double-Lock`):
+*   **1. Wait** `15 Mins` *(Atau `30 Mins` / `59 Mins` sesuai batas waktu layar yang Anda tetapkan)*
+*   **2. HTTP Request** *(Dilengkapi Gembok %PACTIVE agar tidak mengirim laporan saat aplikasi sudah di luar atau layar mati)*
     *   **Method**: `POST`
     *   **URL**: `https://nexa-asistant-nexa-core-server.hf.space/webhook/tasker`
     *   **Headers**:
@@ -145,14 +145,19 @@ Susunan Task yang bersih, rapi, dan stabil (3 Langkah):
           }
         }
         ```
+    *   **(PENGAMAN GANDA / DOUBLE-LOCK)** Di bagian bawah *Action Edit* `HTTP Request`, klik **`+` (`If`)** dan pasang syarat:
+        `%PACTIVE ~ *Screen TimeApps Monitor*`
+        *(Jika saat menit ke-15/30 Anda sudah keluar aplikasi atau layar HP mati, Profile sudah tidak aktif di `%PACTIVE`, sehingga pengiriman HTTP Request seketika dibatalkan otomatis).*
 *   **3. Flash** (`Text N.E.X.A: Pelanggaran waktu layar TikTok (15+ menit) telah dilaporkan ke server.`, `Long`: centang, `Tasker Layout`: centang)
 
 **Profile 2 (`Screen TimeApps Monitor`):**
-*   **Trigger**: Application ➡️ Pilih aplikasi hiburan/game Anda (`TikTok, eFootball™, Instagram...`)
+*   **Syarat 1 (Trigger Application)**: Application ➡️ Pilih aplikasi hiburan/game Anda (`TikTok, eFootball™, Instagram...`)
+*   **Syarat 2 (Kunci Anti-HP Tidur / Display State)**: Tekan tahan tulisan aplikasi di atas ➡️ pilih **`Add` (`+`)** ➡️ **`State`** ➡️ **`Display`** ➡️ **`Display State: On`**
+    *(Memastikan pemantauan hanya berjalan jika layar ponsel benar-benar menyala dan sedang dinikmati)*
 *   **Entry Task (`➡️`)**: Jalankan task **`Send_Screen_Violation`**
-*   **Exit Task (`⬅️` - Sangat Penting agar Timer Batal jika Keluar Aplikasi Sebelum Waktu Habis):**
-    *   Tekan tahan nama task `Send_Screen_Violation` di kanan Profile ini ➡️ pilih **`Add Exit Task`** ➡️ `New Task` (`Stop_Violation`) ➡️ pilih aksi **`Task` ➡️ `Stop`** ➡️ ketik/pilih **`Send_Screen_Violation`**.
-    *   *(Dengan Exit Task ini, jika Anda keluar dari Instagram sebelum 15 menit/1 jam, penghitungan mundur otomatis dibatalkan, sehingga laporan tidak dikirim saat Anda sudah di luar aplikasi).*
+*   **Exit Task (`⬅️` - Sangat Penting agar Timer Batal saat Keluar Aplikasi atau Layar Mati):**
+    *   Tekan tahan nama task `Send_Screen_Violation` di kanan Profile ini ➡️ pilih **`Add Exit Task`** ➡️ `New Task` (`Stop_Violation`) ➡️ pilih aksi **`Task` ➡️ `Stop`** ➡️ ketik/pilih **`Send_Screen_Violation`** *(wajib diisi tepat agar tepat mematikan task yang sedang menunggu)*.
+    *   *(Dengan Exit Task ini, jika Anda keluar ke Home Screen, aplikasi berpindah ke latar belakang, atau layar ponsel mati sebelum batas waktu habis, penghitungan mundur otomatis dibunuh).*
 
 ---
 
@@ -160,13 +165,15 @@ Susunan Task yang bersih, rapi, dan stabil (3 Langkah):
 
 Sistem bekerja dalam ekosistem dua arah (*bidirectional*) yang sangat ketat dan konsisten. Berikut adalah pemetaan seluruh kondisi, skenario, dan respons fisik yang terjadi secara nyata pada perangkat Samsung A33 5G dan server cloud:
 
-### A. Kondisi 0: Penggunaan Aplikasi Normal & Pembatalan Timer (`Exit Task`)
-*   **Aktivitas**: Anda membuka aplikasi hiburan (`TikTok / Instagram / eFootball`). Profile `Screen TimeApps Monitor` aktif dan menjalankan `Send_Screen_Violation` (memulai hitungan mundur `Wait 15 Mins / 1 Jam`).
-*   **Skenario A1 (Sadar Sebelum Waktu Habis)**: Anda menutup aplikasi setelah 10 menit (kembali ke Home Screen / ganti aplikasi kerja).
-    *   **Respons Tasker**: Profile `Screen TimeApps Monitor` memicu `Add Exit Task` (`Stop_Violation` -> `Stop Task: Send_Screen_Violation`).
-    *   **Hasil**: Hitungan mundur langsung dimatikan total di latar belakang. Webhook **TIDAK DIKIRIM** ke server karena belum terjadi pelanggaran.
-*   **Skenario A2 (Pelanggaran Waktu Terpenuhi)**: Anda tetap nongkrong di aplikasi sampai tepat waktu `Wait` habis.
-    *   **Respons Tasker**: Aksi 2 `HTTP Request POST` mengirim payload `SCREEN_TIME_VIOLATION` ke server N.E.X.A (`/webhook/tasker`), lalu memunculkan `Flash` konfirmasi.
+### A. Kondisi 0: Penggunaan Aplikasi Normal, Latar Belakang (*Background*), & Posisi Tidur (*Screen Off*)
+*   **Aktivitas**: Anda membuka aplikasi hiburan (`TikTok / Instagram / eFootball`). Profile `Screen TimeApps Monitor` aktif karena kedua syarat terpenuhi (`Application di layar depan` + `Display State: On`), lalu menjalankan `Send_Screen_Violation` (memulai hitungan mundur `Wait 15/30 Mins`).
+*   **Skenario A1 (Keluar Aplikasi / Aplikasi di Latar Belakang / HP Tidur Sebelum Waktu Habis)**: Anda menutup aplikasi, beralih ke Home Screen (sehingga aplikasi berjalan di latar belakang), atau menekan tombol power mematikan layar (`HP diam dan tidur`).
+    *   **Respons Tasker**: Karena Profile `Application` hanya aktif saat aplikasi di layar depan (*Active Foreground*) dan `Display State` menjadi *False* saat layar mati, Profile `Screen TimeApps Monitor` seketika menjadi **NONAKTIF (*Inactive*)**.
+    *   **Lapis Pengaman 1 (`Stop`)**: Profile memicu `Add Exit Task` (`Stop_Violation -> Stop Task: Send_Screen_Violation`). Hitungan mundur `Wait` langsung dimatikan di latar belakang.
+    *   **Lapis Pengaman 2 (`Double-Lock %PACTIVE`)**: Jika pun hitungan mundur kebetulan selesai tepat di detik itu, aksi `HTTP Request` membaca syarat `If %PACTIVE ~ *Screen TimeApps Monitor*`. Karena Profile tidak lagi aktif di `%PACTIVE`, **pengiriman Webhook seketika dilewati dan dibatalkan total!**
+    *   **Hasil**: Webhook **TIDAK DIKIRIM** ke server. Waktu yang berjalan di latar belakang atau saat HP tidur tidak dianggap sebagai *Screen Time* pelanggaran.
+*   **Skenario A2 (Pelanggaran Waktu Terpenuhi di Layar Depan)**: Anda tetap menatap dan memainkan aplikasi di layar menyala sampai tepat waktu `Wait` habis.
+    *   **Respons Tasker**: Aksi 2 `HTTP Request POST` lolos verifikasi `%PACTIVE`, mengirim payload `SCREEN_TIME_VIOLATION` ke server N.E.X.A (`/webhook/tasker`), lalu memunculkan `Flash` konfirmasi.
 
 ---
 
