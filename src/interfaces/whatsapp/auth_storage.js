@@ -102,20 +102,20 @@ async function useSupabaseAuthState(sessionId = 'nexa_wa_main') {
 
       // Upsert yang masih valid
       if (upsertRows.length > 0) {
-        await supabase
+        const { error: upsertErr } = await supabase
           .from('nexa_wa_sessions')
-          .upsert(upsertRows, { onConflict: 'session_id,key_name' })
-          .catch(err => console.error('[WA-AUTH] Upsert error:', err.message));
+          .upsert(upsertRows, { onConflict: 'session_id,key_name' });
+        if (upsertErr) console.error('[WA-AUTH] Upsert error:', upsertErr.message);
       }
 
       // Hapus yang sudah di-null-kan (key kadaluarsa)
       if (deleteKeys.length > 0) {
-        await supabase
+        const { error: delErr } = await supabase
           .from('nexa_wa_sessions')
           .delete()
           .eq('session_id', sessionId)
-          .in('key_name', deleteKeys)
-          .catch(err => console.error('[WA-AUTH] Delete error:', err.message));
+          .in('key_name', deleteKeys);
+        if (delErr) console.error('[WA-AUTH] Delete error:', delErr.message);
       }
     }
   };

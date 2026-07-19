@@ -80,9 +80,10 @@ async function getOrInitSession(appName) {
     expires_at:      `${today}T23:59:59+07:00`
   };
 
-  await supabase.from('nexa_discipline_state').insert(newSession).catch(err => {
-    console.error('[TASKER-STATE] Insert session error:', err.message);
-  });
+  const { error: insertErr } = await supabase.from('nexa_discipline_state').insert(newSession);
+  if (insertErr) {
+    console.error('[TASKER-STATE] Insert session error:', insertErr.message);
+  }
 
   return newSession;
 }
@@ -97,15 +98,15 @@ async function advanceLevel(session) {
 
   const supabase = getSupabase();
   if (supabase && session.session_key) {
-    await supabase
+    const { error: updateErr } = await supabase
       .from('nexa_discipline_state')
       .update({
         current_level:     nextLevel,
         violation_count:   (session.violation_count || 0) + 1,
         last_triggered_at: new Date().toISOString()
       })
-      .eq('session_key', session.session_key)
-      .catch(err => console.error('[TASKER-STATE] Update level error:', err.message));
+      .eq('session_key', session.session_key);
+    if (updateErr) console.error('[TASKER-STATE] Update level error:', updateErr.message);
   }
 
   return nextLevel;
@@ -144,15 +145,15 @@ async function fireLevel2WithFeedback(session, metadata) {
   const supabase = getSupabase();
   if (supabase && session.session_key) {
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000).toISOString();
-    await supabase
+    const { error: cbErr } = await supabase
       .from('nexa_discipline_state')
       .update({
         pending_callback:    true,
         callback_expires_at: expiresAt,
         callback_message_id: String(msgResult?.message_id || '')
       })
-      .eq('session_key', session.session_key)
-      .catch(err => console.error('[TASKER-STATE] Update pending callback error:', err.message));
+      .eq('session_key', session.session_key);
+    if (cbErr) console.error('[TASKER-STATE] Update pending callback error:', cbErr.message);
   }
 }
 
