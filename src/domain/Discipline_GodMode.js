@@ -278,9 +278,9 @@ async function getDynamicEscalationPlan(level = 1, metadata = {}) {
   const fallbackSpeech = parts.slice(1).join('|').trim() || parts[0];
 
   // Hasilkan kalimat lisan real-time dari AI_Router
-  console.log(`🧠 [GODMODE AI] Requesting real-time dynamic speech from LLM (Level ${level} | Tone: ${metadata.message_tone || 'firm'})...`);
+  console.log(`[GODMODE AI] Requesting real-time dynamic speech from LLM (Level ${level} | Tone: ${metadata.message_tone || 'firm'})...`);
   const dynamicSpeech = await generateDynamicAISpeech(level, metadata, fallbackSpeech);
-  console.log(`🗣️ [GODMODE AI] Speech crafted: "${dynamicSpeech}"`);
+  console.log(`[GODMODE AI] Speech crafted: "${dynamicSpeech}"`);
 
   // Kembalikan plan dengan ntfyMessage yang sudah disuntik kalimat AI real-time
   plan.ntfyMessage = `${command}|${dynamicSpeech}`;
@@ -298,21 +298,21 @@ async function triggerGodMode(level = 1, metadata = {}) {
   const timestamp = new Date().toISOString();
   const plan = await getDynamicEscalationPlan(level, metadata);
 
-  console.log(`🎯 [GODMODE ENGINE] Plan Ready: Level ${level} (${plan.levelName}) for app "${metadata.violation_app || 'Unknown'}"`);
+  console.log(`[GODMODE ENGINE] Plan Ready: Level ${level} (${plan.levelName}) for app "${metadata.violation_app || 'Unknown'}"`);
 
   // ============================================================
   // PRIMARY: ntfy.sh direct push via infrastructure client (Instant, DND-proof)
   // ============================================================
-  console.log(`📤 [GODMODE OUTBOUND] Pushing instant command to ntfy topic (${plan.priority} priority)...`);
+  console.log(`[GODMODE OUTBOUND] Pushing instant command to ntfy topic (${plan.priority} priority)...`);
   const ntfySent = await taskerClient.pushNtfy(plan.ntfyMessage, {
     title: plan.title,
     priority: plan.priority,
     tags: plan.tags
   });
   if (ntfySent) {
-    console.log(`✅ [GODMODE OUTBOUND] Level ${level} (${plan.levelName}) delivered via ntfy.sh instantly.`);
+    console.log(`[GODMODE OUTBOUND] Level ${level} (${plan.levelName}) delivered via ntfy.sh instantly.`);
   } else {
-    console.warn(`⚠️ [GODMODE OUTBOUND] Failed to push Level ${level} via ntfy.sh.`);
+    console.warn(`[GODMODE OUTBOUND] Failed to push Level ${level} via ntfy.sh.`);
   }
 
   // ============================================================
@@ -323,7 +323,7 @@ async function triggerGodMode(level = 1, metadata = {}) {
     try {
       const { sendTelegramOutbound } = require('../interfaces/webhook');
       await sendTelegramOutbound(plan.telegramMessage);
-      console.log(`📨 [GODMODE AUDIT] Telegram notification sent successfully.`);
+      console.log(`[GODMODE AUDIT] Telegram notification sent successfully.`);
     } catch (telegramErr) {
       console.error('[GODMODE AUDIT] Failed to send God Mode audit to Telegram:', telegramErr.message);
     }

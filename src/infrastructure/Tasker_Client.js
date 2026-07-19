@@ -58,7 +58,7 @@ async function pushNtfy(message, options = {}) {
 
   const startTime = Date.now();
   const summaryMsg = message.length > 80 ? message.substring(0, 80) + '...' : message;
-  console.log(`📡 [NTFY PUSH] Sending to topic "${env.NTFY_TOPIC}" | Title: "${title}" | Tags: [${tags}] | Preview: "${summaryMsg}"`);
+  console.log(`[NTFY PUSH] Sending to topic "${env.NTFY_TOPIC}" | Title: "${title}" | Tags: [${tags}] | Preview: "${summaryMsg}"`);
 
   try {
     await axios.post(`https://ntfy.sh/${env.NTFY_TOPIC}`, message, {
@@ -70,10 +70,10 @@ async function pushNtfy(message, options = {}) {
       timeout: 5000
     });
     const elapsed = Date.now() - startTime;
-    console.log(`📡 [NTFY PUSH] Push delivered successfully in ${elapsed}ms!`);
+    console.log(`[NTFY PUSH] Push delivered successfully in ${elapsed}ms!`);
     return true;
   } catch (err) {
-    console.error(`❌ [NTFY PUSH ERROR] Failed to send push after ${Date.now() - startTime}ms:`, err.message);
+    console.error(`[NTFY PUSH ERROR] Failed to send push after ${Date.now() - startTime}ms:`, err.message);
     return false;
   }
 }

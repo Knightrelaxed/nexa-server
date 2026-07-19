@@ -170,37 +170,33 @@ async function handleTaskerWebhook(req, res) {
     return res.status(400).json({ error: 'Missing or invalid data payload' });
   }
 
-  const divider = '═════════════════════════════════════════════════════════════════════════════';
-  console.log(`\n${divider}`);
-  console.log(`🚨 [TASKER WEBHOOK] INCOMING EVENT: ${type}`);
-  console.log(`${divider}`);
+  console.log(`\n🚨 [TASKER WEBHOOK] INCOMING EVENT: ${type}`);
 
   if (type === 'SCREEN_TIME_VIOLATION') {
     const appName = data.app_name || 'Aplikasi Hiburan';
     const duration = data.duration_minutes || 'unknown';
-    console.log(`📦 [PAYLOAD] Target App: "${appName}" | Reported Duration: ${duration} min(s)`);
+    console.log(`[PAYLOAD] Target App: "${appName}" | Reported Duration: ${duration} min(s)`);
 
     try {
-      console.log(`🔎 [SESSION] Loading or initializing database state for "${appName}"...`);
+      console.log(`[SESSION] Loading or initializing database state for "${appName}"...`);
       const session = await getOrInitSession(appName);
 
       // [AUDIT FIX] Lindungi masa toleransi Level 2 (Grace Period) dari trigger berulang Tasker
       if (session.pending_callback && session.callback_expires_at && new Date(session.callback_expires_at) > new Date()) {
-        console.log(`⏳ [GRACE PERIOD] "${appName}" violation received during active Level 2 grace period (until ${session.callback_expires_at}). Suppressing immediate escalation.`);
-        console.log(`${divider}\n`);
+        console.log(`[GRACE PERIOD] "${appName}" violation received during active Level 2 grace period (until ${session.callback_expires_at}). Suppressing immediate escalation.\n`);
         return res.status(200).json({ status: 'in_grace_period', expires_at: session.callback_expires_at });
       }
 
       const prevLevel = session.current_level || 0;
       const nextLevel = await advanceLevel(session);
 
-      console.log(`⚡ [STATE TRANSITION] Level ${prevLevel} ➡️ Escalating to Level ${nextLevel} (Max Cap: ${session.max_level_cap} | Tone: ${session.message_tone})`);
+      console.log(`[STATE TRANSITION] Level ${prevLevel} -> Escalating to Level ${nextLevel} (Max Cap: ${session.max_level_cap} | Tone: ${session.message_tone})`);
 
       if (nextLevel === 2) {
-        console.log(`💬 [EXECUTION] Triggering Level 2 Interactive Friction with Telegram Inline Buttons...`);
+        console.log(`[EXECUTION] Triggering Level 2 Interactive Friction with Telegram Inline Buttons...`);
         await fireLevel2WithFeedback(session, { violation_app: appName, duration_minutes: duration });
       } else {
-        console.log(`🛡️ [EXECUTION] Triggering God Mode Protocol Level ${nextLevel}...`);
+        console.log(`[EXECUTION] Triggering God Mode Protocol Level ${nextLevel}...`);
         await godMode.triggerGodMode(nextLevel, {
           violation_app: appName,
           duration_minutes: duration,
@@ -217,15 +213,13 @@ async function handleTaskerWebhook(req, res) {
           level:     nextLevel,
           tone:      session.message_tone
         });
-        console.log(`📊 [AUDIT LOG] Event saved to Behavior Engine and Supabase.`);
+        console.log(`[AUDIT LOG] Event saved to Behavior Engine and Supabase.`);
       } catch (_) {}
 
-      console.log(`✅ [TASKER WEBHOOK] Processing completed successfully (Status 200 OK).`);
-      console.log(`${divider}\n`);
+      console.log(`[TASKER WEBHOOK] Processing completed successfully (Status 200 OK)\n`);
       res.status(200).json({ status: 'ok', level: nextLevel });
     } catch (e) {
-      console.error(`❌ [TASKER WEBHOOK CRITICAL ERROR] State machine failure: ${e.message}`);
-      console.log(`${divider}\n`);
+      console.error(`[TASKER WEBHOOK CRITICAL ERROR] State machine failure: ${e.message}\n`);
       res.status(500).json({ error: 'Escalation failed', detail: e.message });
     }
 
