@@ -91,30 +91,30 @@ Bertugas menjalankan hukuman fisik di ponsel begitu menerima sinyal ntfy yang me
 
 *   **1. Variable Split** (`Name %evtprm3 Splitter |`)
     *(Memecah data ntfy: `%evtprm31` = Kode Perintah, `%evtprm32` = Teks Suara Dinamis dari AI)*
-*   **2. If** `%evtprm32 Set`
-    *   **3. Say** (`Text %evtprm32 Engine:Voice default:id-ID Stream Alarm Continue Task Immediately [ ]`)
-    *(Mengucapkan nasihat dinamis dari cloud secara utuh dan lantang hingga selesai sebelum eksekusi penguncian)*
-*   **4. End If**
-*   **5. If** `%evtprm31 ~ *GO_HOME* | %evtprm2 ~ *Intervention*`
-    *   **6. Go Home** (`Page 0`)
-*   **7. End If**
-*   **8. If** `%evtprm31 ~ *DISABLE_WIFI*/*LOCK_SCREEN*`
-    *   **9. Airplane Mode** (`Set On`) *ATAU* **Mobile Data (`Set Off`) + Custom Setting (`Global: wifi_on = 0`)**
-    *   **10. System Lock** (`Membutuhkan izin Admin Perangkat / Device Admin`)
-*   **11. End If**
-*   **12. If** `%evtprm31 ~ *FORCE_STOP_APP*`
-    *   **13. Variable Split** (`Name %evtprm31 Splitter :`)
+*   **2. Say** (`Text %evtprm32 Engine:Voice com.google.android.tts:id-ID`)
+    *(Mengucapkan nasihat dinamis dari cloud secara utuh melalui mesin TTS)*
+*   **3. If** `%evtprm31 ~ *GO_HOME*/*Intervention* | %evtprm3 ~ *GO_HOME*`
+    *   **4. Go Home** (`Page 0`)
+    *   **5. Beep** (`Frequency 8000 Duration 1000`)
+*   **6. End If**
+*   **7. If** `%evtprm31 ~ *DISABLE_WIFI*/*LOCK_SCREEN*`
+    *   **8. Airplane Mode** (`Set On`)
+    *   **9. System Lock** (`Membutuhkan izin Admin Perangkat / Device Admin`)
+*   **10. End If**
+*   **11. If** `%evtprm3 ~ *FORCE_STOP_APP*`
+    *   **12. Custom Setting** (`Type Secure Name accessibility_display_daltonizer_enabled Value 1` — *Mengaktifkan mode Grayscale Hitam Putih*)
+    *   **13. Variable Split** (`Name %evtprm3 Splitter :`)
     *   **14. Kill App** (`Use Root Off`)
     *   **15. If** `%err Set`
         *   **16. Flash** (`Text Aplikasi ditutup paksa oleh N.E.X.A`)
     *   **17. End If**
 *   **18. End If**
 
-**Profile 1 (`Ntfy Enforcement`):**
-*   **Trigger**: Event ➡️ UI ➡️ Notification
-*   **Owner Application**: `ntfy` *(Pilih langsung dari ikon 9 kotak)*
-*   **Title**: *(Dapat dikosongkan agar semua perintah ntfy masuk, atau ketik: `*N.E.X.A*/*Intervention*/*GOD MODE*/*Surgical*`)*
-*   **Action**: Jalankan task `NEXA_Executor`
+**Profile (`Ntfy Enforcement`):**
+*   **Trigger**: Event ➡️ UI ➡️ Notification (`Notification ntfy, New Only`)
+*   **Owner Application**: `ntfy` *(io.heckel.ntfy)*
+*   **Title, Text, Subtext, Messages, dll**: Kosongkan / Optional *(Agar seluruh notifikasi perintah baru dari ntfy pasti tertangkap sempurna)*
+*   **Entry Task (`➡️`)**: Jalankan task **`NEXA_Executor`**
 
 ---
 
