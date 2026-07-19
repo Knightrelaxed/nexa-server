@@ -856,6 +856,30 @@ Google Tasks hanya menyimpan tanggal (*Date-Only*) untuk jatuh tempo, tanpa jam.
 
 ---
 
+### 5.6 The Discipline God Mode & Surgical Physical Enforcement (Immortality Protocol v3.1)
+
+Manajemen waktu N.E.X.A dilengkapi dengan **Discipline God Mode** (`Discipline_GodMode.js`), sebuah sistem penegakan kedisiplinan dua arah (*closed-loop bidirectional enforcement*) yang menghubungkan kognisi cloud langsung dengan perangkat fisik Tuan Faqih (Samsung Galaxy A33 5G / Android 14 One UI 6) melalui broker notifikasi `ntfy` dan otomasi `Tasker`.
+
+#### 1. Arsitektur Eskalasi Dinamis 4 Level (*Behavior-Aware Hierarchy*)
+Sistem mengukur tingkat toleransi secara dinamis berdasarkan *Behavior Engine* (analisis mood harian) sebelum memutuskan level penindakan fisik:
+- **Level 1 (*Cognitive Reminder*):** Saat batas waktu penggunaan aplikasi hiburan (`TikTok / Instagram / eFootball`) tercapai pertama kali, server meracik kalimat nasihat dinamis via `AI_Router` dan mengirimkannya melalui `ntfy` (`SPEAK_ONLY`). Tasker membacakannya lewat mesin TTS Google secara lisan tanpa melempar layar ponsel.
+- **Level 2 (*Interactive Friction*):** Jika aplikasi tetap dibuka, server mengirim perintah `GO_HOME`. Tasker membunyikan alarm `Beep` (8000Hz) dan seketika melempar layar ponsel ke *Home Screen*. Secara paralel, Bot Telegram mengirim **3 Tombol Konfirmasi (`Inline Keyboard`)** dengan masa tunggu (*Grace Period*) 3 menit:
+  - `[ ✅ Ini Riset Penting ]`: Mereset status eskalasi kembali ke Level 0.
+  - `[ ⏰ +10 Menit ]`: Memberikan perpanjangan waktu sementara (maks 2x/hari).
+  - `[ ❌ Saya Menunda ]`: Memicu eskalasi langsung ke Level 3.
+- **Level 3 (*Surgical Restriction - Grayscale Hitam Putih*):** Dipicu jika masa tunggu 3 menit diabaikan atau tombol menunda ditekan. Server mengirim `FORCE_STOP_APP`. Tasker mengeksekusi penutupan paksa aplikasi (`Kill App`) dan mengubah pengaturan `Secure` Android One UI 6 (`accessibility_display_daltonizer_enabled = 1`) yang **seketika mengubah layar ponsel menjadi Hitam Putih (*Grayscale*) tanpa Root**, mematikan rangsangan dopamin visual selama 30 menit.
+- **Level 4 (*Surgical God Mode Ultimate*):** Dipicu saat pelanggaran berulang melampaui batas toleransi mood hari itu. Server mengirim `LOCK_SCREEN`. Tasker mengaktifkan Mode Pesawat (`Airplane Mode: Set On`) memotong seluruh koneksi internet, sekaligus mengunci layar fisik ponsel (`System Lock`), memaksa pengguna kembali ke prioritas kerja.
+
+#### 2. Inovasi Proteksi Mutlak di Android 14 (`Double-Lock & Anti-Sleep`)
+Untuk menjamin tidak ada laporan palsu atau eksekusi gaib saat ponsel diam/tidur, protokol penegakan Tasker dibekali pengamanan berlapis:
+- **Pengaman Ganda (`Double-Lock %PACTIVE`):** Aksi pengiriman Webhook (`HTTP Request`) di Task `Send_Screen_Violation` dikunci dengan kondisi `If %PACTIVE ~ *Screen TimeApps Monitor*`. Jika pengguna keluar dari aplikasi sebelum batas waktu berakhir, Profile tidak lagi aktif di variabel global `%PACTIVE`, sehingga pengiriman Webhook otomatis dibatalkan total.
+- **Kunci Anti-HP Tidur (`Display State: On` & `Exit Task`):** Profile pemantauan diwajibkan memenuhi kondisi ganda (`Application di layar depan` DAN `Display State: On`). Begitu pengguna menekan tombol power atau aplikasi bergeser ke latar belakang (*Background*), Profile seketika menjadi *False*, memicu `Exit Task -> Stop -> Send_Screen_Violation` yang membunuh hitungan mundur di detik itu juga.
+
+#### 3. Infrastruktur Pengiriman Nol-Latensi (*Doze Mode Resilience*)
+Komunikasi fisik dari server cloud ke perangkat Samsung mengandalkan topik `ntfy` rahasia dengan pengaturan *Unrestricted Battery* dan *Instant Delivery in Doze Mode*. Ini memastikan perintah bedah paksa seperti `GO_HOME` atau `LOCK_SCREEN` dapat dieksekusi dengan latensi **< 0.5 detik**, bahkan ketika sistem penghemat baterai agresif One UI 6 sedang aktif.
+
+---
+
 ## BAB 6: MEMORI ORGANIK & KESADARAN KONTEKSTUAL
 
 Chatbot biasa mengalami amnesia setelah sesi percakapan selesai. N.E.X.A sebaliknya, ia dirancang untuk berevolusi. Melalui subsistem `Supabase_Memories.js` dan integrasinya dengan `Intelligence_Brief.js`, N.E.X.A mengimplementasikan arsitektur memori berlapis layaknya kognisi manusia.
