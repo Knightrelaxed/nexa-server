@@ -288,12 +288,22 @@ async function sendTelegramMessage(text, chatId, botToken, payload = null) {
       parse_mode: 'HTML',
       ...payload
     };
-    return fetchWithFailover(telegramUrl, {
-      method: 'POST',
-      body,
-      timeoutMs: 30_000,
-      maxRetriesPerProxy: 3
-    });
+    try {
+      return await fetchWithFailover(telegramUrl, {
+        method: 'POST',
+        body,
+        timeoutMs: 30_000,
+        maxRetriesPerProxy: 2
+      });
+    } catch (postErr) {
+      console.warn(`[TELEGRAM-NET] POST failed (${postErr.message.substring(0, 80)}). Attempting GET fallback for reply_markup...`);
+      if (payload.reply_markup && (!payload.method || payload.method === 'sendMessage')) {
+        const replyMarkupStr = typeof payload.reply_markup === 'string' ? payload.reply_markup : JSON.stringify(payload.reply_markup);
+        const getUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}&reply_markup=${encodeURIComponent(replyMarkupStr)}`;
+        return await fetchWithFailover(getUrl, { timeoutMs: 30_000, maxRetriesPerProxy: 2 });
+      }
+      throw postErr;
+    }
   }
 
   const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(safeText)}`;

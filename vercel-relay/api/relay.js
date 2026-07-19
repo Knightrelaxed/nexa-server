@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     }
   }
 
-  if (req.method !== 'GET') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'Method not allowed' });
   }
 
@@ -32,9 +32,17 @@ export default async function handler(req, res) {
   }
 
   try {
-    const upstream = await fetch(target, {
+    const fetchOptions = {
+      method: req.method,
       headers: { 'User-Agent': 'NEXA-Vercel-Relay/1.0' },
-    });
+    };
+
+    if (req.method === 'POST') {
+      fetchOptions.headers['Content-Type'] = 'application/json';
+      fetchOptions.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+    }
+
+    const upstream = await fetch(target, fetchOptions);
 
     const buffer = await upstream.arrayBuffer();
     const bytes = Buffer.from(buffer);
