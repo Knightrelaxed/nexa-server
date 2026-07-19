@@ -102,11 +102,15 @@ Bertugas menjalankan hukuman fisik di ponsel begitu menerima sinyal ntfy yang me
     *   **9. System Lock** (`Membutuhkan izin Admin Perangkat / Device Admin`)
 *   **10. End If**
 *   **11. If** `%evtprm3 ~ *FORCE_STOP_APP*`
-    *   **12. Custom Setting** (`Type Secure Name accessibility_display_daltonizer_enabled Value 1` — *Mengaktifkan mode Grayscale Hitam Putih*)
+    *   **12. Custom Setting**
+        *   **Type**: `Secure`
+        *   **Name**: `accessibility_display_daltonizer_enabled`
+        *   **Value**: `1`
+        *(Mengubah layar Samsung One UI 6 seketika menjadi Hitam Putih / Grayscale tanpa perlu Root)*
     *   **13. Variable Split** (`Name %evtprm3 Splitter :`)
     *   **14. Kill App** (`Use Root Off`)
     *   **15. If** `%err Set`
-        *   **16. Flash** (`Text Aplikasi ditutup paksa oleh N.E.X.A`)
+        *   **16. Flash** (`Text: Aplikasi ditutup paksa oleh N.E.X.A`, `Long`: centang, `Tasker Layout`: centang)
     *   **17. End If**
 *   **18. End If**
 
