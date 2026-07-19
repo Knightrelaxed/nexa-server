@@ -156,7 +156,106 @@ Susunan Task yang bersih, rapi, dan stabil (3 Langkah):
 
 ---
 
-## 🤖 5. Prompt Generator untuk Tasker AI (Gemini Built-in)
+## 🔄 5. Master Skenario & Alur Kerja Bidireksional (`Tasker` ↔ `N.E.X.A Server` ↔ `ntfy` ↔ `Telegram`)
+
+Sistem bekerja dalam ekosistem dua arah (*bidirectional*) yang sangat ketat dan konsisten. Berikut adalah pemetaan seluruh kondisi, skenario, dan respons fisik yang terjadi secara nyata pada perangkat Samsung A33 5G dan server cloud:
+
+### A. Kondisi 0: Penggunaan Aplikasi Normal & Pembatalan Timer (`Exit Task`)
+*   **Aktivitas**: Anda membuka aplikasi hiburan (`TikTok / Instagram / eFootball`). Profile `Screen TimeApps Monitor` aktif dan menjalankan `Send_Screen_Violation` (memulai hitungan mundur `Wait 15 Mins / 1 Jam`).
+*   **Skenario A1 (Sadar Sebelum Waktu Habis)**: Anda menutup aplikasi setelah 10 menit (kembali ke Home Screen / ganti aplikasi kerja).
+    *   **Respons Tasker**: Profile `Screen TimeApps Monitor` memicu `Add Exit Task` (`Stop_Violation` -> `Stop Task: Send_Screen_Violation`).
+    *   **Hasil**: Hitungan mundur langsung dimatikan total di latar belakang. Webhook **TIDAK DIKIRIM** ke server karena belum terjadi pelanggaran.
+*   **Skenario A2 (Pelanggaran Waktu Terpenuhi)**: Anda tetap nongkrong di aplikasi sampai tepat waktu `Wait` habis.
+    *   **Respons Tasker**: Aksi 2 `HTTP Request POST` mengirim payload `SCREEN_TIME_VIOLATION` ke server N.E.X.A (`/webhook/tasker`), lalu memunculkan `Flash` konfirmasi.
+
+---
+
+### B. Kondisi 1: Pelanggaran Pertama — `Level 1` (`COGNITIVE REMINDER`)
+*Dipicu seketika oleh Server saat menerima tembakan Webhook pertama (`current_level = 0` -> `nextLevel = 1`).*
+*   **Tindakan Server**:
+    *   Menghitung batas toleransi dari *Behavior Engine* (analisis mood & tingkat kelelahan Anda hari ini).
+    *   Menghasilkan kalimat nasihat lisan AI (maksimal 2 kalimat menusuk kesadaran via `AI_Router`).
+    *   Mengirim sinyal `ntfy` ke topik ponsel dengan format `SPEAK_ONLY|Tuan Faqih, Anda telah membuka...`.
+    *   Mengirim pesan chat peringatan teks ke Bot Telegram N.E.X.A.
+*   **Tindakan Tasker (`NEXA_Executor`) di HP Samsung**:
+    *   Menangkap notifikasi `ntfy` (`Notification ntfy, New Only`).
+    *   Aksi 1 (`Variable Split %evtprm3`) memecah data menjadi `%evtprm31` (`SPEAK_ONLY`) dan `%evtprm32` (nasihat AI).
+    *   Aksi 2 (`Say`) membacakan suara AI dengan lantang menggunakan TTS Google (`com.google.android.tts:id-ID`).
+*   **Status Akhir Level 1**: Anda hanya diperingatkan secara lisan dan visual. **Belum ada pelemparan ke Home Screen dan belum ada tombol Telegram interaktif.**
+
+---
+
+### C. Kondisi 2: Pelanggaran Kedua — `Level 2` (`INTERACTIVE FRICTION` & Tombol Telegram)
+*Dipicu jika Anda mengabaikan peringatan Level 1 dan tetap melanjutkan aplikasi hiburan sampai tembakan Webhook kedua masuk (`nextLevel = 2`).*
+*   **Tindakan Server**:
+    *   Mengirim sinyal `ntfy` dengan format `GO_HOME|Tuan Faqih, sesi aplikasi melebihi batas. Layar dikembalikan ke Home...`.
+    *   Mengirim pesan chat ke Telegram yang dilengkapi **3 Tombol Konfirmasi (`Inline Keyboard`)**:
+        *   `[ ✅ Ini Riset Penting ]`
+        *   `[ ❌ Saya Menunda ]`
+        *   `[ ⏰ +10 Menit ]`
+    *   Mengaktifkan masa tunggu (*Grace Period / Pending Callback*) di database Supabase selama **3 Menit** (`callback_expires_at`).
+*   **Tindakan Tasker (`NEXA_Executor`) di HP Samsung**:
+    *   Aksi 2 (`Say`) membacakan teguran lisan AI.
+    *   Aksi 3 - 6 (`If %evtprm31 ~ *GO_HOME* OR %evtprm3 ~ *GO_HOME*`) memicu **`Go Home` (Page 0)** dan bunyi **`Beep` (8000Hz, 1s)**.
+*   **Status Akhir Level 2**: Layar ponsel Anda dilempar paksa ke Home Screen seketika (<0.5 detik). Anda diwajibkan mengonfirmasi alasan Anda di Telegram dalam rentang waktu 3 menit.
+
+---
+
+### D. Kondisi 3: Interaksi Tombol Telegram di `Level 2` (`Feedback Loop`)
+Selama masa tunggu 3 menit di Level 2, nasib eskalasi bergantung pada respons tombol yang Anda pilih:
+*   **Skenario D1 — Tombol `[ ✅ Ini Riset Penting ]` Ditekan**:
+    *   **Proses**: Bot Telegram menembak callback `d:ok:session_key` ke server.
+    *   **Respons Server**: Server memverifikasi bahwa aplikasi tersebut memang dibutuhkan untuk riset/kerja saat itu. Status pelanggaran direset kembali ke `Level 0` (`current_level = 0, pending_callback = false`).
+    *   **Hasil**: Anda dibebaskan dari pemantauan sementara, dapat membuka kembali aplikasi tanpa dilempar atau dihukum.
+*   **Skenario D2 — Tombol `[ ⏰ +10 Menit ]` Ditekan**:
+    *   **Proses**: Bot Telegram menembak callback `d:ext:session_key`.
+    *   **Respons Server**: Server memberikan perpanjangan waktu sementara +10 menit (maksimal 2x per hari).
+    *   **Hasil**: Eskalasi ditunda selama 10 menit ke depan.
+*   **Skenario D3 — Tombol `[ ❌ Saya Menunda ]` Ditekan ATAU Diabaikan (> 3 Menit)**:
+    *   **Proses**: Jika Anda mengaku menunda (`d:no`), atau jika Cron latar belakang server (`Discipline Auto-Escalation` - berjalan setiap 1 menit) mendeteksi masa tunggu 3 menit telah habis tanpa jawaban (`callback_expires_at < now`), maka **Server langsung menaikkan status Anda ke `Level 3` (`SURGICAL_RESTRICTION`)!**
+
+---
+
+### E. Kondisi 4: Eskalasi Bedah Paksa — `Level 3` (`SURGICAL RESTRICTION` - Grayscale Hitam Putih)
+*Dipicu otomatis oleh Cron Server (`Discipline Auto-Escalation`) saat tombol Level 2 diabaikan.*
+*   **Tindakan Server**:
+    *   Mengirim sinyal `ntfy` dengan format `FORCE_STOP_APP|Tuan Faqih, pemaksaan bedah level tiga aktif. Aplikasi ditutup paksa. Mode grayscale diaktifkan...`.
+    *   Mencatat audit log ke Telegram (*Surgical Force Level 3 Aktif*).
+*   **Tindakan Tasker (`NEXA_Executor`) di HP Samsung**:
+    *   Aksi 2 (`Say`) membacakan pengumuman bedah paksa.
+    *   Aksi 11 (`If %evtprm3 ~ *FORCE_STOP_APP*`) aktif memicu 3 langkah penindakan ganda:
+        1.  **Aksi 12 (`Custom Setting`)**: Mengubah `Secure` setting `accessibility_display_daltonizer_enabled` menjadi `1`. **Layar Samsung One UI 6 seketika berubah menjadi Hitam Putih (`Grayscale`) tanpa Root.**
+        2.  **Aksi 13 & 14 (`Split & Kill App`)**: Menutup paksa proses aplikasi hiburan yang sedang berjalan (`Use Root Off`).
+        3.  **Aksi 16 (`Flash`)**: Menampilkan notifikasi `Aplikasi ditutup paksa oleh N.E.X.A` sebagai umpan balik sistem.
+*   **Status Akhir Level 3**: Aplikasi tertutup paksa dan layar HP menjadi hitam putih total, mematikan seluruh rangsangan visual/dopamin dari aplikasi hiburan selama 30 menit.
+
+---
+
+### F. Kondisi 5: Isolasi Mutlak — `Level 4` (`SURGICAL GOD MODE ULTIMATE`)
+*Dipicu jika Anda tetap berusaha membobol atau membuka kembali aplikasi hiburan setelah Level 3, hingga mencapai batas atas toleransi mood hari itu (`max_level_cap`).*
+*   **Tindakan Server**:
+    *   Mengirim sinyal `ntfy` dengan format `DISABLE_WIFI_AND_LOCK_SCREEN|Tuan Faqih, surgical god mode level empat aktif. Mode pesawat dinyalakan dan layar dikunci...`.
+*   **Tindakan Tasker (`NEXA_Executor`) di HP Samsung**:
+    *   Aksi 7 - 10 (`If %evtprm31 ~ *DISABLE_WIFI*/*LOCK_SCREEN*`) aktif memicu:
+        1.  **Aksi 8 (`Airplane Mode Set On`)**: Mengaktifkan Mode Pesawat untuk memotong seluruh koneksi internet Wi-Fi maupun Kuota Seluler selama 45 menit.
+        2.  **Aksi 9 (`System Lock`)**: Mengunci layar ponsel fisik secara otomatis (membutuhkan izin *Device Admin*).
+*   **Status Akhir Level 4**: Ponsel terisolasi total dan terkunci rapat, memaksa Anda untuk kembali duduk di meja kerja menyelesaikan prioritas utama.
+
+---
+
+### G. Kondisi 6: Pemulihan Warna & Normalisasi (`Restoref_Color`)
+Setelah masa hukuman Level 3 selesai atau saat Anda ingin mengembalikan warna layar secara manual melalui shortcut Home Screen:
+*   **Prosedur Pemulihan**:
+    1.  Jalankan Task **`Restoref_Color`** (atau ketuk widget shortcut di Home Screen).
+    2.  Task ini menjalankan aksi **`Custom Setting`** dengan parameter:
+        *   **Type**: `Secure`
+        *   **Name**: `accessibility_display_daltonizer_enabled`
+        *   **Value**: `0` *(Mengembalikan warna layar normal)*
+        *   *(Opsional: matikan/ubah sakelar `accessibility_display_daltonizer` jika aktif)*.
+
+---
+
+## 🤖 6. Prompt Generator untuk Tasker AI (Gemini Built-in)
 
 Jika sewaktu-waktu Anda perlu menyusun ulang Profile dan Task menggunakan fitur AI di dalam aplikasi Tasker, salin-tempel prompt berbahasa Inggris berikut:
 
@@ -214,7 +313,7 @@ Task Requirements (Name the task "Send_TikTok_Violation"):
 
 ---
 
-## 🧪 6. Panduan Pengujian & Prosedur Debugging
+## 🧪 7. Panduan Pengujian & Prosedur Debugging
 
 ### A. Pengujian Tembakan Live dari Terminal / Cloud
 Untuk mengetes apakah ponsel berespons terhadap perintah dari server tanpa harus menunggu 15 menit, jalankan perintah `curl` berikut melalui terminal PowerShell / Bash:
