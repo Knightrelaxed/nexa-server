@@ -35,10 +35,8 @@ app.disable('x-powered-by');
 app.use(cors());
 app.use(morgan('dev', {
   skip: (req, res) => {
-    // Skip noisy automated scanner hits (404s like .env, .git, config) and routine health/root checks (200 & 304)
+    // Skip noisy automated web scanner hits (404s like .env, .git, config) but allow UptimeRobot (/health, /) to log normally
     if (res.statusCode === 404) return true;
-    const path = req.path || (req.url ? req.url.split('?')[0] : '');
-    if ((path === '/' || path === '/health') && (res.statusCode === 200 || res.statusCode === 304)) return true;
     return false;
   }
 }));
