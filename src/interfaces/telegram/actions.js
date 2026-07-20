@@ -99,15 +99,18 @@ async function sendIdentityProposalToTelegram(proposal) {
     console.log(`[IDENTITY] Proposal #${proposal.id} sent to Telegram.`);
 
     if (result?.result?.message_id) {
-      await supabaseMemories.setProposalTelegramMessageId(proposal.id, result.result.message_id).catch(() => {});
+      try {
+        await supabaseMemories.setProposalTelegramMessageId(proposal.id, result.result.message_id);
+      } catch (_) {}
     }
 
     const { supabase } = supabaseMemories;
     if (supabase) {
-      await supabase.from('nexa_identity_proposals')
-        .update({ status: 'PENDING' })
-        .eq('id', proposal.id)
-        .catch(() => {});
+      try {
+        await supabase.from('nexa_identity_proposals')
+          .update({ status: 'PENDING' })
+          .eq('id', proposal.id);
+      } catch (_) {}
     }
 
     return result;
