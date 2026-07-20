@@ -225,9 +225,9 @@ Output format TEPAT:
     return [];
   }
 
-  // Validasi dan sanitasi
+  // Validasi dan sanitasi — tolak NaN, null, dan nilai <= 0
   const validItems = items
-    .filter(item => item && item.label && typeof item.nominal === 'number' && item.nominal > 0)
+    .filter(item => item && item.label && typeof item.nominal === 'number' && isFinite(item.nominal) && item.nominal > 0)
     .map(item => ({
       label: String(item.label).trim().substring(0, 100),
       nominal: Math.round(item.nominal),
@@ -280,7 +280,7 @@ Jika bukan struk belanja, output: []`;
     }
 
     return items
-      .filter(item => item && item.label && typeof item.nominal === 'number' && item.nominal > 0)
+      .filter(item => item && item.label && typeof item.nominal === 'number' && isFinite(item.nominal) && item.nominal > 0)
       .map(item => ({
         label: String(item.label).trim().substring(0, 100),
         nominal: Math.round(item.nominal),
@@ -329,11 +329,18 @@ async function executeSplit(items, baseTx, existingTxId = null) {
 
   // Insert setiap item sebagai baris transaksi terpisah
   for (const item of items) {
+    // Guard: tolak item dengan nominal tidak valid sebelum menyentuh Supabase
+    const safeNominal = Math.round(Number(item.nominal));
+    if (!isFinite(safeNominal) || safeNominal <= 0) {
+      failedCount++;
+      console.warn(`[SPLIT_ENGINE] ⚠️ Skipping item "${item.label}": nominal tidak valid (${item.nominal}). Kemungkinan AI gagal mengekstrak harga dari struk — coba sebut total harga di caption.`);
+      continue;
+    }
     try {
       const supabaseFinance = require('../infrastructure/Supabase_Finance');
       const result = await supabaseFinance.writeTransaction({
         txType: baseTx.type || 'EXPENSE',
-        nominal: item.nominal,
+        nominal: safeNominal,
         categoryName: item.category,
         accountName: accountName,
         description: item.label,
@@ -346,7 +353,7 @@ async function executeSplit(items, baseTx, existingTxId = null) {
 
       if (result.status === 'SUCCESS') {
         successCount++;
-        console.log(`[SPLIT_ENGINE] ✅ Saved item: "${item.label}" Rp${item.nominal.toLocaleString('id-ID')} → ${item.category}`);
+        console.log(`[SPLIT_ENGINE] ✅ Saved item: "${item.label}" Rp${safeNominal.toLocaleString('id-ID')} → ${item.category}`);
       } else {
         failedCount++;
         console.warn(`[SPLIT_ENGINE] ❌ Failed to save item "${item.label}": ${result.reason}`);
