@@ -46,14 +46,33 @@ function validateResponseJson(str, jsonMode) {
   if (!jsonMode) return str;
   if (!str || typeof str !== 'string') throw new Error('Empty response string');
   let cleanStr = str.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  // Cari bracket pembuka pertama — bisa array [ atau object {
+  const firstBracket = cleanStr.indexOf('[');
   const firstBrace = cleanStr.indexOf('{');
-  const lastBrace = cleanStr.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    cleanStr = cleanStr.substring(firstBrace, lastBrace + 1);
+
+  // Pilih yang lebih awal muncul di string
+  let startChar, endChar;
+  if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+    startChar = '[';
+    endChar = ']';
+  } else if (firstBrace !== -1) {
+    startChar = '{';
+    endChar = '}';
+  } else {
+    throw new Error('No JSON bracket found in response');
   }
-  JSON.parse(cleanStr);
+
+  const startIdx = cleanStr.indexOf(startChar);
+  const endIdx = cleanStr.lastIndexOf(endChar);
+  if (startIdx !== -1 && endIdx > startIdx) {
+    cleanStr = cleanStr.substring(startIdx, endIdx + 1);
+  }
+
+  JSON.parse(cleanStr); // validate — throw jika malformed
   return str;
 }
+
 
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
   const tiers = [
