@@ -747,6 +747,49 @@ async function handleTelegramWebhook(req, res) {
       return;
     }
 
+    if (textInput && /^(\/trigger_weekly|\/force_weekly|\/weekly_inference)\b/i.test(textInput.trim())) {
+      console.log('[TELEGRAM-CMD] Menerima perintah /trigger_weekly dari Telegram');
+      await respondToTelegram(
+        '🚀 <b>Memulai Weekly Cognitive Sunday Pass...</b>\n\nSedang menganalisis observasi perilaku 7 hari terakhir dan memanggil 15 Tier AI. Hasil proposal dan ringkasan akan dikirim ke obrolan ini dalam beberapa detik...'
+      );
+      deliverWebhookReply();
+      
+      // Jalankan secara asinkron di background
+      (async () => {
+        try {
+          const inferenceEngine = require('../../domain/Inference_Engine');
+          const { sendTelegramOutbound } = require('../webhook');
+          
+          const result = await inferenceEngine.runWeeklyIdentityInference();
+          console.log(`[TELEGRAM-CMD] Weekly Inference done: saved=${result.saved} pendingSent=${result.pendingSent} staged=${result.staged}`);
+
+          if (result.success && result.saved > 0) {
+            const summaryMsg = [
+              `🧠 <b>Weekly Identity Inference Selesai</b>`,
+              `<i>(Siklus Pemahaman Mingguan N.E.X.A — Manual Trigger)</i>`,
+              '',
+              `📊 Hipotesis yang dianalisis : <b>${result.totalHypotheses}</b>`,
+              `✅ Proposal baru tersimpan   : <b>${result.saved}</b>`,
+              `📨 Dikirim untuk review      : <b>${result.pendingSent}</b>`,
+              `📂 Di-stage (bukti kurang)   : <b>${result.staged}</b>`,
+              `⚡ Diabaikan (duplikat/lemah): <b>${result.skipped}</b>`,
+              '',
+              result.pendingSent > 0
+                ? `💡 Silakan review proposal identitas di atas, Tuan.`
+                : `📝 Semua hipotesis minggu ini di-stage untuk observasi lanjutan.`
+            ].join('\n');
+            await sendTelegramOutbound(summaryMsg, true);
+          } else {
+            await sendTelegramOutbound(`🧠 <b>Weekly Identity Inference Selesai</b>\n\nTidak ada hipotesis baru minggu ini (atau data observasi belum cukup). Model identitas stabil.`, true);
+          }
+        } catch (e) {
+          console.error('[TELEGRAM-CMD] Error saat trigger weekly inference:', e.message);
+        }
+      })();
+      return;
+    }
+
+
     // ============================================================
     // [PHASE 6] AWAITING IDENTITY REJECTION REASON
     // Jika user membalas setelah klik REJECT pada proposal identitas
