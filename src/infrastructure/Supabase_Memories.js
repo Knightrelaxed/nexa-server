@@ -300,37 +300,46 @@ async function editIdeaInVault(searchKeyword, newContent) {
  * Smart matcher for IDs, ranges, or keywords
  */
 function findMatchingIds(rows, searchKeyword) {
+  if (!rows || !Array.isArray(rows) || rows.length === 0 || !searchKeyword) return [];
   const sk = String(searchKeyword).toLowerCase().trim();
   const targetIds = new Set();
 
+  // 0. Check exact match on content / trait_value / trait_key first!
+  for (const r of rows) {
+    if (!r || typeof r !== 'object') continue;
+    const val = r.content || r.trait_value || r.trait_key || '';
+    if (val && String(val).toLowerCase().trim() === sk) {
+      return [r.id];
+    }
+  }
+
   // 1. Check if it's an exact ID number
-  if (!isNaN(sk)) {
-    targetIds.add(parseInt(sk));
+  if (!isNaN(sk) && /^\d+$/.test(sk)) {
+    targetIds.add(parseInt(sk, 10));
     return Array.from(targetIds);
   }
 
-  // 2. Check if it's a range like "10 sampai 16" or "10-16" anywhere in the text
-  const rangeMatch = sk.match(/(\d+)\s*(sampai|-|to)\s*(\d+)/);
-  if (rangeMatch) {
-    const start = parseInt(rangeMatch[1], 10);
-    const end = parseInt(rangeMatch[3], 10);
+  // 2. Check if it's explicitly asking for a range of IDs ("id 10 sampai 16" or short string "10-16")
+  const explicitRangeMatch = sk.match(/(?:id|nomor|no|^)\s*(\d+)\s*(?:sampai|-|to)\s*(\d+)\s*$/i);
+  if (explicitRangeMatch && sk.length <= 35) {
+    const start = parseInt(explicitRangeMatch[1], 10);
+    const end = parseInt(explicitRangeMatch[2], 10);
     for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
       targetIds.add(i);
     }
     return Array.from(targetIds);
   }
   
-  // 3. Fallback: Check if it mentions "id 18" or "nomor 18"
-  const idMatch = sk.match(/(?:id|nomor|no)\s*(\d+)/);
-  if (idMatch) {
-    targetIds.add(parseInt(idMatch[1]));
+  // 3. Check if it mentions "id 18" or "nomor 18" explicitly
+  const idMatch = sk.match(/(?:id|nomor|no)\s+(\d+)\b/i);
+  if (idMatch && sk.length <= 35) {
+    targetIds.add(parseInt(idMatch[1], 10));
     return Array.from(targetIds);
   }
 
   // 4. Fallback: Keyword splitting
   const keywords = sk.split(' ').filter(w => w.length > 2);
   rows.forEach(r => {
-    // Use JSON.stringify so it works across all tables, even if they don't have a 'content' column
     const rowText = typeof r === 'object' ? JSON.stringify(r) : String(r);
     const contentLower = rowText.toLowerCase();
     if (keywords.length > 0 && keywords.every(kw => contentLower.includes(kw))) {
