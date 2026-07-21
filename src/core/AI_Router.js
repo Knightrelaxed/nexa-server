@@ -267,7 +267,7 @@ CRITICAL ROUTING RULES:
 3. CONTEXT INFERENCE: For short follow-ups ("iya", "lanjut", "ubah harganya", "hapus itu"), strictly use "Intent Sebelumnya" and "Data Aktif Terakhir" from [STATUS AKTIF] to infer the action. DO NOT default to NORMAL_CHAT.
 4. DATABASE: STRICTLY for Supabase tables. NEVER use for "Buku kas"/"Tabel keuangan" (Use FINANCE). DO NOT invent actions (No "DELETE_ROWS").
 5. PASSIVE LEARNING — CRITICAL SEPARATION:
-   - "learned_user_facts": ONLY facts about TUAN FAQIH (the human user). e.g. his hobbies, habits, goals, preferences, daily life, health. Empty [] if nothing new.
+   - "learned_user_facts": ONLY facts about TUAN FAQIH (the human user). e.g. his hobbies, habits, goals, preferences, daily life, health. CRITICAL: ALSO capture UPDATES and LIFE CHANGES. If Tuan mentions something that CONTRADICTS or UPDATES a previous state (e.g. "sudah berhenti merokok", "sudah lulus", "pindah ke Jakarta", "sekarang olahraga rutin"), EXTRACT it as a learned_user_fact so the system can replace/update the old record. Empty [] if nothing new or changed.
    - "learned_core_identities": ONLY facts about N.E.X.A ITSELF (the AI). Capture ALL of the following types:
        * Explicit capabilities:  "kamu bisa baca PDF", "N.E.X.A sudah bisa analisis emosi"
        * Explicit limitations:   "kamu sering lupa konteks panjang", "kamu belum bisa akses internet langsung"
@@ -1041,7 +1041,7 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
     // Batasi existing facts yang dikirim ke AI agar prompt dedup tidak membengkak
     // Ambil 40 fakta terbaru saja — cukup representatif tanpa token boros
     const factsForCheck = existingFacts.slice(-40);
-    const prompt = `EXISTING FACTS:\n${factsForCheck.map((f, i) => `[${i}] ${f}`).join('\n')}\n\nNEW FACT: "${newFact}"\n\nTASK: Compare NEW FACT against EXISTING FACTS. Reply ONLY with:\n- "NEW": If totally new.\n- "UPDATE [ID]": If more detailed/complete than fact [ID].\n- "DUPLICATE": If exact match or less detailed.`;
+    const prompt = `EXISTING FACTS:\n${factsForCheck.map((f, i) => `[${i}] ${f}`).join('\n')}\n\nNEW FACT: "${newFact}"\n\nTASK: Compare NEW FACT against EXISTING FACTS. Consider ALL of the following reasons to UPDATE:\n1. NEW FACT is MORE DETAILED or more complete than an existing fact.\n2. NEW FACT CONTRADICTS or REVERSES an existing fact (e.g. old: "user smokes", new: "user quit smoking and lives healthy" → this is UPDATE, not NEW).\n3. NEW FACT represents a STATUS CHANGE in something previously recorded (e.g. old: "studying at UGM", new: "graduated from UGM").\n4. NEW FACT is a CORRECTION or revision of a prior belief.\n\nReply ONLY with:\n- "NEW": If totally new information with no related existing fact.\n- "UPDATE [ID]": If NEW FACT should REPLACE fact [ID] for any of the above reasons.\n- "DUPLICATE": If exact match or essentially the same meaning.`;
 
     const result = await executeWithFallback(prompt, 'Reply strictly in requested format.', 0.1, false);
     const decision = String(result).trim().toUpperCase();
