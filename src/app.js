@@ -35,8 +35,11 @@ app.disable('x-powered-by');
 app.use(cors());
 app.use(morgan('dev', {
   skip: (req, res) => {
-    // Skip noisy automated web scanner hits (404s like .env, .git, config) but allow UptimeRobot (/health, /) to log normally
+    // Skip noisy automated web scanner hits (404s like .env, .git, config)
     if (res.statusCode === 404) return true;
+    // Skip noisy GET/HEAD hits to root path (/) and its query variations (/?__theme=dark)
+    // Only /health and /webhook will be logged normally
+    if (req.path === '/' && (req.method === 'GET' || req.method === 'HEAD')) return true;
     return false;
   }
 }));
