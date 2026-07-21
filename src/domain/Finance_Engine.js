@@ -1245,7 +1245,7 @@ async function pollFinanceEmails() {
   isPollingFinance = true;
   try {
     console.log('[FINANCE] Polling for new Finance emails...');
-    const emails = await gmailClient.getLatestEmails('from:noreply.livin@bankmandiri.co.id', 15);
+    const emails = await gmailClient.getLatestEmails('from:noreply.livin@bankmandiri.co.id newer_than:4d', 15);
     if (!emails || emails.length === 0) return 0;
 
     let newCount = 0;
@@ -1296,6 +1296,12 @@ async function pollFinanceEmails() {
       let dateIso = new Date().toISOString();
       const transactionTime = e.date ? new Date(e.date) : new Date();
       if (!isNaN(transactionTime.getTime())) dateIso = transactionTime.toISOString();
+
+      // SAFETY GUARD: Abaikan email/transaksi yang berumur lebih dari 4 hari
+      // Mencegah re-impor transaksi lama yang data dedup-nya sudah dibersihkan oleh cleanupOldFinanceDedup(7)
+      if (Date.now() - transactionTime.getTime() > 4 * 24 * 60 * 60 * 1000) {
+        continue;
+      }
 
       const cleanMerchant = destination.toLowerCase().replace(/[^a-z0-9]/g, '');
       const compositeKey = `${nominal}_${cleanMerchant}`;
