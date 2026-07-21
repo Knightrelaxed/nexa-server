@@ -203,15 +203,19 @@ function isFactAboutNexa(fact) {
  */
 function _classifySelfModelLayer(fact) {
   const f = fact.toLowerCase();
-  // Keterbatasan / kelemahan sistem
-  if (/\b(tidak bisa|tidak mampu|belum bisa|gagal|lupa|terbatas|kendala|kesulitan|error|bug|lambat|keterbatasan|kelemahan)\b/.test(f)) return 'LIMITATIONS';
-  // Koreksi eksplisit dari Tuan
-  if (/\b(ingat ya|catat ini|jangan|tolong jangan|sebaiknya|seharusnya|harap|perbaiki|salah|keliru|koreksi|ralat|ternyata|rupanya)\b/.test(f)) return 'CORRECTIONS';
-  // Preferensi format / komunikasi
-  if (/\b(format|gaya bahasa|gaya bicara|singkat|panjang|poin|paragraf|bahasa|nada|respons|balasan|jawaban|komunikasi)\b/.test(f)) return 'COMMUNICATION_STYLE';
-  // Kapabilitas / kemampuan
+  // 1. LIMITATIONS — dicek paling awal karena "belum mampu/tidak mampu" harus menang atas "mampu"
+  if (/\b(tidak bisa|tidak mampu|belum bisa|belum mampu|gagal|lupa|terbatas|kendala|kesulitan|error|bug|lambat|keterbatasan|kelemahan)\b/.test(f)) return 'LIMITATIONS';
+  // 2. CORRECTIONS — dicek sebelum COMMUNICATION_STYLE
+  //    Sinyal kuat: "ingat ya", "jangan", "tolong jangan", "seharusnya", dll.
+  //    "ternyata kamu" hanya CORRECTIONS jika konteks negatif (salah/tidak) — bukan saat "bisa"
+  if (/\b(ingat ya|catat ini|jangan|tolong jangan|seharusnya|harap|perbaiki|salah|keliru|koreksi|ralat)\b/.test(f)) return 'CORRECTIONS';
+  if (/\b(ternyata kamu|kamu ternyata)\b/.test(f) && !/\b(bisa|mampu|dapat|berhasil)\b/.test(f)) return 'CORRECTIONS';
+  // 3. COMMUNICATION_STYLE — preferensi format murni tanpa nada koreksi
+  //    Hanya kata-kata yang tidak ambigu sebagai instruksi gaya
+  if (/\b(format (jawaban|balasan|respons)|gaya bahasa|gaya bicara|gaya komunikasi|nada (bicara|respons)|responsmu|balasanmu|jawabanmu)\b/.test(f)) return 'COMMUNICATION_STYLE';
+  // 4. CAPABILITIES — kemampuan positif
   if (/\b(bisa|dapat|mampu|berhasil|fitur|fungsi|kemampuan|kapabilitas|dukungan|mendukung|otomatis|sinkronisasi)\b/.test(f)) return 'CAPABILITIES';
-  // Default: aturan operasional
+  // 5. Default: aturan operasional
   return 'OPERATIONAL_RULES';
 }
 
