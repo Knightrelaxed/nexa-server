@@ -966,6 +966,22 @@ Sistem melacak keselarasan antara niat yang diucapkan (*Stated Intention*) denga
 - **Intervensi Proaktif:** N.E.X.A bertindak sebagai pelindung kognitif yang memutus *Overthinking Spiral* saat mendeteksi sesi konsultasi berlarut-larut tanpa keputusan, serta mengaktifkan peringatan *Late Night Decision Guard* saat mendeteksi transaksi finansial berisiko di tengah malam.
 - **Conversational Memory UX:** Menghapus balasan konfirmasi robotik. Setiap operasi penyimpanan atau penghapusan fakta kini dijawab dengan narasi hangat natural dari AI Router yang dikombinasikan dengan *status badge* transparan (`✅ Tersimpan di Memori Personal` atau `🗑️ Dihapus dari Memori Personal`).
 
+### 6.7 *Phase 8: Self-Learning Engine & Passive Knowledge Acquisition*
+
+Evolusi tertinggi dari sistem memori N.E.X.A diwujudkan melalui arsitektur *Self-Learning Engine* (Phase 8). Pada fase ini, N.E.X.A tidak lagi bergantung pada *hardcoded rules* di dalam *source code* untuk memperbaiki pelayanannya. Ia belajar secara pasif (*passive learning*) dari setiap percakapan.
+
+#### 1. Arsitektur Dual-Layer Learning
+Terdapat dua lapisan pembelajaran otonom yang bekerja bersamaan namun terisolasi dari *System Seed* (Aturan Dasar):
+
+- **Layer 1: Passive Real-Time Learning (Senyap & Langsung)**
+  Setiap pesan dari Tuan Faqih dipindai oleh sub-rutin NLP ringan (`isFactAboutNexa`) di `adapter.js`. Jika terdeteksi bahwa pesan tersebut berisi koreksi, teguran, atau observasi tentang perilaku N.E.X.A (contoh: *"jangan pakai format poin lagi"*, *"format balasanmu terlalu formal"*), pesan ini dicegat dan diklasifikasikan ke dalam 5 dimensi (LIMITATIONS, CORRECTIONS, COMMUNICATION_STYLE, CAPABILITIES, OPERATIONAL_RULES). Data kemudian di-*upsert* secara senyap ke tabel `nexa_self_model` menggunakan *fire-and-forget promise*, tanpa mengganggu atau memperlambat respons utama obrolan. Mekanisme ini menggunakan *trait_key* unik untuk memastikan revisi *in-place* tanpa duplikasi atau kontradiksi.
+
+- **Layer 2: Weekly Self-Reflection Pass (Refleksi Mingguan)**
+  Setiap hari Minggu pukul 16:00 WIB, N.E.X.A mengeksekusi `runWeeklySelfReflectionPass()`. Ia menarik seluruh log percakapan selama 7 hari terakhir beserta profil emosionalnya, lalu melakukan kontemplasi internal: *"Apa yang saya pelajari tentang diri saya minggu ini? Di mana saya paling sering ditegur? Kapabilitas baru apa yang sering saya lakukan dengan baik?"*. Hasil kontemplasi ini menghasilkan sintesis identitas baru yang akan memperkuat pemahamannya tentang dirinya sendiri.
+
+#### 2. Konteks Injeksi 5-Fakta
+Agar N.E.X.A dapat langsung mengaplikasikan apa yang baru saja ia pelajari tanpa menghabiskan kuota token berlebih, `AI_Router` dilengkapi mekanisme injeksi cerdas. Sebelum meracik *prompt* untuk AI eksekutor, N.E.X.A memanggil `getSelfModel(5)` untuk menarik 5 fakta pembelajaran teratas. Kelima fakta ini diinjeksi tepat di bawah blok instruksi utamanya dengan tajuk `[PEMAHAMAN DIRI N.E.X.A (SELF-AWARENESS)]`. Ini memastikan bahwa Tuan Faqih tidak perlu mengulangi instruksi gaya komunikasi atau batasan operasional yang sama dua kali.
+
 ---
 
 ## BAB 7: THE PULSE ENGINE (RUTINITAS CRON PROAKTIF)
