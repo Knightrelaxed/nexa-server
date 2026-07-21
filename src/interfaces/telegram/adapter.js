@@ -2870,12 +2870,20 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               );
             }
           } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
-            const success = await supabaseMemories.deleteFromUserProfile(routingData.extracted_data.search_keyword);
+            const kw = routingData.extracted_data.search_keyword;
+            let deletedLayer = null;
+            if (await supabaseMemories.deleteFromUserProfile(kw)) {
+              deletedLayer = 'Personal';
+            } else if (await supabaseMemories.deleteFromCoreIdentity(kw)) {
+              deletedLayer = 'Inti N.E.X.A';
+            } else if (typeof supabaseMemories.deleteFromSelfModel === 'function' && await supabaseMemories.deleteFromSelfModel(kw)) {
+              deletedLayer = 'Self-Learning (Phase 8)';
+            }
             invalidatePersonalFactsCache();
             domainReply = _formatMemoryReply(
               routingData.reply_message,
-              success ? `Baik Tuan Faqih, catatan personal terkait hal tersebut telah saya hapus dari database profil Anda.` : `Maaf Tuan Faqih, saya tidak menemukan catatan terkait hal tersebut di memori profil Anda.`,
-              success ? `🗑️ <i>Dihapus dari Memori Personal</i>` : `❌ <i>Fakta Tidak Ditemukan</i>`
+              deletedLayer ? `Baik Tuan Faqih, catatan/aturan terkait telah saya hapus dari memori ${deletedLayer}.` : `Maaf Tuan Faqih, saya tidak menemukan catatan/aturan terkait hal tersebut di seluruh sistem memori (Personal, Inti, maupun Self-Learning).`,
+              deletedLayer ? `🗑️ <i>Dihapus dari Memori ${deletedLayer}</i>` : `❌ <i>Fakta Tidak Ditemukan di Seluruh Memori</i>`
             );
           } else if (action === 'READ') {
             const keyword = routingData.extracted_data.search_keyword || textInput;
@@ -2919,12 +2927,20 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               saved ? `✅ <i>Tersimpan di Memori Inti N.E.X.A</i>` : `ℹ️ <i>Sudah Tercatat di Memori Inti</i>`
             );
           } else if (action === 'DELETE' && routingData.extracted_data.search_keyword) {
-            const success = await supabaseMemories.deleteFromCoreIdentity(routingData.extracted_data.search_keyword);
+            const kw = routingData.extracted_data.search_keyword;
+            let deletedLayer = null;
+            if (await supabaseMemories.deleteFromCoreIdentity(kw)) {
+              deletedLayer = 'Inti N.E.X.A';
+            } else if (typeof supabaseMemories.deleteFromSelfModel === 'function' && await supabaseMemories.deleteFromSelfModel(kw)) {
+              deletedLayer = 'Self-Learning (Phase 8)';
+            } else if (await supabaseMemories.deleteFromUserProfile(kw)) {
+              deletedLayer = 'Personal';
+            }
             invalidatePersonalFactsCache();
             domainReply = _formatMemoryReply(
               routingData.reply_message,
-              success ? `Baik Tuan Faqih, aturan identitas terkait telah saya hapus dari memori inti.` : `Maaf Tuan Faqih, aturan tersebut tidak ditemukan di sistem memori inti.`,
-              success ? `🗑️ <i>Dihapus dari Memori Inti N.E.X.A</i>` : `❌ <i>Aturan Tidak Ditemukan</i>`
+              deletedLayer ? `Baik Tuan Faqih, aturan identitas/fakta terkait telah saya hapus dari memori ${deletedLayer}.` : `Maaf Tuan Faqih, aturan/catatan tersebut tidak ditemukan di seluruh sistem memori (Inti, Self-Learning, maupun Personal).`,
+              deletedLayer ? `🗑️ <i>Dihapus dari Memori ${deletedLayer}</i>` : `❌ <i>Aturan Tidak Ditemukan di Seluruh Memori</i>`
             );
           } else if (action === 'READ') {
 

@@ -228,6 +228,19 @@ async function deleteFromCoreIdentity(searchKeyword) {
 }
 
 /**
+ * Delete from Self-Learning Model (`nexa_self_model`)
+ */
+async function deleteFromSelfModel(searchKeyword) {
+  if (!supabase || !searchKeyword) return false;
+  const { data: rows } = await supabase.from('nexa_self_model').select('id, trait_key, trait_value');
+  if (!rows || rows.length === 0) return false;
+  const targetIds = findMatchingIds(rows, searchKeyword);
+  if (targetIds.length === 0) return false;
+  const { error } = await supabase.from('nexa_self_model').delete().in('id', targetIds);
+  return !error;
+}
+
+/**
  * Delete idea or personal fact from 2nd Brain Vault by smart matching
  * @param {string} searchKeyword
  */
@@ -1094,7 +1107,8 @@ module.exports = {
   getIdentityProposalById,
   // ── [PHASE 8] Self-Learning Engine ────────────────────────
   upsertSelfModelTrait,
-  getSelfModel
+  getSelfModel,
+  deleteFromSelfModel
 };
 
 /**
