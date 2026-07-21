@@ -1088,6 +1088,86 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
 }
 
 /**
+ * [PHASE 8] Deduplication engine untuk nexa_self_model.
+ * Sebelum menyimpan fakta baru tentang N.E.X.A ke Self-Model, fungsi ini:
+ *   1. Mengambil semua baris existing di layer yang sama.
+ *   2. Meminta AI membandingkan: NEW / UPDATE [trait_key] / DUPLICATE.
+ *   3. Jika UPDATE → update in-place via updateSelfModelTraitByKey.
+ *   4. Jika NEW    → upsert baris baru dengan trait_key dari teks.
+ *   5. Jika DUPLICATE → skip (tidak disimpan).
+ *
+ * @param {string} newFact - Fakta baru tentang N.E.X.A
+ * @param {string} layer   - 'CAPABILITIES'|'LIMITATIONS'|'OPERATIONAL_RULES'|'CORRECTIONS'|'COMMUNICATION_STYLE'
+ * @param {string} [source='PASSIVE_LEARNING']
+ * @param {string} [inferredFrom='']
+ * @returns {Promise<'inserted'|'updated'|'duplicate'|'error'>}
+ */
+async function deduplicateAndSaveSelfFact(newFact, layer, source = 'PASSIVE_LEARNING', inferredFrom = '') {
+  if (!newFact || typeof newFact !== 'string' || newFact.trim().length < 5) return 'error';
+
+  const lockKey = `SELF_MODEL::${layer}::${newFact}`;
+  if (_dedupInFlight.has(lockKey)) {
+    console.log(`[SELF-MODEL] Dedup: In-flight skip - ${newFact.substring(0, 60)}`);
+    return 'duplicate';
+  }
+  _dedupInFlight.add(lockKey);
+
+  try {
+    const supabaseMem = require('../infrastructure/Supabase_Memories');
+
+    // Ambil semua baris di layer yang sama untuk dibandingkan
+    const existing = await supabaseMem.getSelfModelByLayer(layer);
+
+    // Jika belum ada baris → langsung insert
+    if (!existing || existing.length === 0) {
+      const newKey = newFact.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
+      const result = await supabaseMem.upsertSelfModelTrait(layer, newKey, newFact, source, inferredFrom);
+      return result === 'error' ? 'error' : 'inserted';
+    }
+
+    // Bangun prompt untuk AI dedup check
+    const existingList = existing.map((r, i) => `[${r.trait_key}] ${r.trait_value}`).join('\n');
+    const prompt = `EXISTING SELF-KNOWLEDGE FACTS (layer: ${layer}):\n${existingList}\n\nNEW FACT: "${newFact}"\n\nTASK: Compare NEW FACT against EXISTING facts. Consider these reasons to UPDATE:\n1. NEW FACT is MORE DETAILED or more complete than an existing fact.\n2. NEW FACT CONTRADICTS or REVERSES an existing fact.\n3. NEW FACT represents a STATUS CHANGE of something recorded.\n4. NEW FACT is a CORRECTION or revision of a prior belief.\n\nReply ONLY with:\n- "NEW": Totally new, no related existing fact.\n- "UPDATE [trait_key]": Replace the fact with that exact trait_key (e.g. UPDATE avoid_bullet_format).\n- "DUPLICATE": Same meaning, skip it.`;
+
+    const result = await executeWithFallback(prompt, 'Reply strictly in the requested format.', 0.1, false);
+    const decision = String(result || '').trim();
+    const decisionUp = decision.toUpperCase();
+
+    if (decisionUp.startsWith('DUPLICATE')) {
+      console.log(`[SELF-MODEL] Dedup: DUPLICATE skip - ${newFact.substring(0, 60)}`);
+      return 'duplicate';
+    } else if (decisionUp.startsWith('UPDATE')) {
+      // Extract trait_key dari response (bisa uppercase atau lowercase)
+      const keyMatch = decision.match(/UPDATE\s+([a-zA-Z0-9_]+)/i);
+      if (keyMatch) {
+        const oldKey = keyMatch[1].toLowerCase();
+        const updated = await supabaseMem.updateSelfModelTraitByKey(oldKey, newFact, source);
+        if (updated) {
+          console.log(`[SELF-MODEL] Dedup: UPDATED [${oldKey}] → "${newFact.substring(0, 60)}"`);
+          return 'updated';
+        }
+      }
+      // Fallback: UPDATE gagal parse trait_key → insert sebagai baru
+      console.warn(`[SELF-MODEL] Dedup: UPDATE key not found, inserting as NEW - ${newFact.substring(0, 60)}`);
+      const newKey = newFact.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
+      await supabaseMem.upsertSelfModelTrait(layer, newKey, newFact, source, inferredFrom);
+      return 'inserted';
+    } else {
+      // NEW
+      const newKey = newFact.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
+      const r = await supabaseMem.upsertSelfModelTrait(layer, newKey, newFact, source, inferredFrom);
+      console.log(`[SELF-MODEL] Dedup: NEW inserted - ${newFact.substring(0, 60)}`);
+      return r === 'error' ? 'error' : 'inserted';
+    }
+  } catch (err) {
+    console.error('[SELF-MODEL] deduplicateAndSaveSelfFact error:', err.message);
+    return 'error';
+  } finally {
+    _dedupInFlight.delete(lockKey);
+  }
+}
+
+/**
  * Analyzes the recent system logs for diagnostic purposes
  */
 async function analyzeSystemLogs(userQuestion, logText) {
@@ -1166,6 +1246,7 @@ module.exports = {
   invalidateIdentityModelCache,      // [PHASE 6] Dipanggil dari webhook.js setelah Approve
   // ── AI Utilities ─────────────────────────────────────────────
   deduplicateAndSaveFact,
+  deduplicateAndSaveSelfFact,        // [PHASE 8] Dedup engine untuk nexa_self_model
   callAI,
   classifyPendingTransactionIntent,
   classifyYesNo,

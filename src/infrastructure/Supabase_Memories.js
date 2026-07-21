@@ -1036,6 +1036,34 @@ async function upsertSelfModelTrait(layer, traitKey, traitValue, source = 'PASSI
 }
 
 /**
+ * Update trait_value secara in-place berdasarkan trait_key yang sudah ada.
+ * Digunakan oleh deduplication engine saat mendeteksi kontradiksi atau revisi.
+ *
+ * @param {string} oldTraitKey - trait_key baris lama yang akan diupdate
+ * @param {string} newTraitValue - nilai baru yang menggantikan
+ * @param {string} [source='PASSIVE_LEARNING']
+ * @returns {Promise<boolean>} true jika berhasil
+ */
+async function updateSelfModelTraitByKey(oldTraitKey, newTraitValue, source = 'PASSIVE_LEARNING') {
+  if (!supabase || !oldTraitKey) return false;
+  const { error } = await supabase
+    .from('nexa_self_model')
+    .update({
+      trait_value: String(newTraitValue || '').trim(),
+      source: ['PASSIVE_LEARNING', 'WEEKLY_REFLECTION', 'MANUAL'].includes(source) ? source : 'PASSIVE_LEARNING',
+      updated_at: new Date().toISOString()
+    })
+    .eq('trait_key', String(oldTraitKey).trim().toLowerCase());
+
+  if (error) {
+    console.error('[SELF-MODEL] updateSelfModelTraitByKey error:', error.message);
+    return false;
+  }
+  console.log(`[SELF-MODEL] ✅ Updated in-place [${oldTraitKey}]: "${String(newTraitValue).substring(0, 60)}"`);
+  return true;
+}
+
+/**
  * Ambil top N fakta dari nexa_self_model, diurutkan berdasarkan updated_at DESC.
  * Digunakan oleh AI_Router.js untuk menyuntikkan max 5 fakta ke prompt.
  *
@@ -1053,6 +1081,28 @@ async function getSelfModel(limit = 5) {
 
   if (error) {
     console.error('[SELF-MODEL] getSelfModel error:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Ambil SEMUA fakta dari nexa_self_model berdasarkan layer tertentu.
+ * Digunakan oleh deduplicateAndSaveSelfFact untuk membandingkan fakta baru.
+ *
+ * @param {string} layer - 'CAPABILITIES'|'LIMITATIONS'|'OPERATIONAL_RULES'|'CORRECTIONS'|'COMMUNICATION_STYLE'
+ * @returns {Promise<Array<{id, layer, trait_key, trait_value, updated_at}>>}
+ */
+async function getSelfModelByLayer(layer) {
+  if (!supabase || !layer) return [];
+  const { data, error } = await supabase
+    .from('nexa_self_model')
+    .select('id, layer, trait_key, trait_value, updated_at')
+    .eq('layer', String(layer).toUpperCase())
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[SELF-MODEL] getSelfModelByLayer error:', error.message);
     return [];
   }
   return data || [];
@@ -1107,7 +1157,9 @@ module.exports = {
   getIdentityProposalById,
   // ── [PHASE 8] Self-Learning Engine ────────────────────────
   upsertSelfModelTrait,
+  updateSelfModelTraitByKey,
   getSelfModel,
+  getSelfModelByLayer,
   deleteFromSelfModel
 };
 

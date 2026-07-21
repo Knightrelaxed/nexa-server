@@ -2161,11 +2161,10 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         if (typeof fact === 'string' && fact.trim().length > 0) {
           // Safety guard: use smart scorer instead of rigid regex
           if (isFactAboutNexa(fact)) {
-            // [PHASE 8] Reroute ke nexa_self_model (senyap, tanpa Telegram notification)
+            // [PHASE 8] Reroute ke nexa_self_model — dengan DEDUPLICATION cerdas
             console.log('[SELF-MODEL] Passive Learning → Self-Model (rerouted from user_facts):', fact.substring(0, 80));
-            const selfKey = fact.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
             const selfLayer = _classifySelfModelLayer(fact);
-            supabaseMem.upsertSelfModelTrait(selfLayer, selfKey, fact, 'PASSIVE_LEARNING', fact).catch(() => {});
+            aiRouter.deduplicateAndSaveSelfFact(fact, selfLayer, 'PASSIVE_LEARNING', fact).catch(() => {});
           } else {
             console.log('[ROUTER] Passive Learning - User Fact:', fact);
             await aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE');
@@ -2183,9 +2182,9 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       for (const fact of routingData.learned_core_identities) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
           console.log('[SELF-MODEL] Passive Learning → Self-Model (from learned_core_identities):', fact.substring(0, 80));
-          const selfKey = fact.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
           const selfLayer = _classifySelfModelLayer(fact);
-          supabaseMem.upsertSelfModelTrait(selfLayer, selfKey, fact, 'PASSIVE_LEARNING', fact).catch(() => {});
+          const aiRouter = require("../../core/AI_Router");
+          aiRouter.deduplicateAndSaveSelfFact(fact, selfLayer, 'PASSIVE_LEARNING', fact).catch(() => {});
         }
       }
       // invalidatePersonalFactsCache() tidak diperlukan karena self_model tidak di-cache dengan personalFacts
