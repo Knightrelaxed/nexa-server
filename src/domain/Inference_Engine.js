@@ -1271,6 +1271,165 @@ async function getPersonalityEvolutionNarrative(daysBack = 30) {
 }
 
 // ============================================================
+// [PHASE 8 — SELF-LEARNING] WEEKLY SELF-REFLECTION PASS
+// Dijadwalkan: Minggu sore 16:00 WIB (0 16 * * 0) — TERPISAH dari Weekly Cognitive Pass
+// ============================================================
+
+/**
+ * Membaca riwayat obrolan 7 hari, lalu meminta AI untuk menganalisis:
+ *   1. Koreksi & anjuran dari Tuan Faqih
+ *   2. Kapabilitas baru / keterbatasan yang terobservasi
+ *   3. Revisi terhadap fakta self-model lama yang tidak akurat
+ * Hasilnya langsung di-upsert ke tabel nexa_self_model (senyap, tanpa Telegram approval).
+ *
+ * @returns {Promise<{success: boolean, upserted: number, skipped: number, errors: number}>}
+ */
+async function runWeeklySelfReflectionPass() {
+  console.log('[SELF-REFLECTION] ► Starting Weekly N.E.X.A Self-Reflection Pass...');
+
+  const sb = _getSupabase();
+  if (!sb) {
+    console.warn('[SELF-REFLECTION] Supabase not available. Skipped.');
+    return { success: false, upserted: 0, skipped: 0, errors: 0 };
+  }
+
+  let upserted = 0, skipped = 0, errors = 0;
+
+  // ── STEP 1: Ambil chat 7 hari terakhir ─────────────────────────────────────
+  const memories = await _getChatMemories7Days();
+  if (!memories || memories.length < 5) {
+    console.log('[SELF-REFLECTION] Tidak cukup data chat (< 5 pesan). Skipped.');
+    return { success: true, upserted: 0, skipped: 0, errors: 0 };
+  }
+
+  // ── STEP 2: Ambil snapshot nexa_self_model saat ini untuk konteks revisi ───
+  let currentSelfModel = [];
+  try {
+    const { data } = await sb
+      .from('nexa_self_model')
+      .select('layer, trait_key, trait_value')
+      .order('updated_at', { ascending: false })
+      .limit(30);
+    currentSelfModel = data || [];
+  } catch (e) {
+    console.warn('[SELF-REFLECTION] Gagal baca nexa_self_model saat ini:', e.message);
+  }
+
+  const currentSelfModelStr = currentSelfModel.length > 0
+    ? currentSelfModel.map((t, i) => `[${i}] [${t.layer}] ${t.trait_key}: "${t.trait_value}"`).join('\n')
+    : '(Belum ada fakta tersimpan)';
+
+  // Hanya ambil pesan user (bukan nexa) untuk analisis
+  const userMessages = memories
+    .filter(m => m.role === 'user')
+    .map(m => String(m.content || '').substring(0, 300).trim())
+    .filter(m => m.length > 5);
+
+  const chatSample = userMessages.length <= 40
+    ? userMessages
+    : [...userMessages.slice(0, 15), ...userMessages.slice(Math.floor(userMessages.length / 2) - 5, Math.floor(userMessages.length / 2) + 5), ...userMessages.slice(-15)];
+
+  // ── STEP 3: Panggil AI dengan prompt self-reflection khusus ────────────────
+  const systemPrompt = `Anda adalah N.E.X.A Self-Reflection Engine — sistem yang bertugas menganalisis percakapan antara N.E.X.A (AI asisten) dan Tuan Faqih (pengguna), lalu mengidentifikasi fakta baru tentang N.E.X.A itu sendiri.
+
+TUGAS ANDA:
+Analisis pesan-pesan di bawah ini dan identifikasi:
+1. Koreksi yang diberikan Tuan Faqih kepada N.E.X.A (gaya jawaban, format, kesalahan)
+2. Kapabilitas baru N.E.X.A yang terbukti berfungsi atau diakui pengguna
+3. Keterbatasan N.E.X.A yang terungkap dari keluhan atau kegagalan
+4. Aturan operasional baru yang dipelajari N.E.X.A dari instruksi pengguna
+5. Fakta LAMA di Self-Model yang perlu DIREVISI karena bertentangan dengan bukti baru
+
+LAYER YANG VALID:
+- CAPABILITIES       : kemampuan yang terbukti dimiliki N.E.X.A
+- LIMITATIONS        : keterbatasan atau kelemahan yang terobservasi
+- OPERATIONAL_RULES  : aturan operasional yang dipelajari dari instruksi pengguna
+- CORRECTIONS        : koreksi spesifik tentang cara N.E.X.A merespons
+- COMMUNICATION_STYLE: preferensi gaya komunikasi yang diobservasi
+
+ATURAN KETAT:
+1. Hanya buat entri yang didukung BUKTI NYATA dari chat. JANGAN mengarang.
+2. Jika trait_key sudah ada di Self-Model saat ini dengan nilai BERBEDA → buat entri REVISI dengan trait_key SAMA (akan di-upsert/menimpa lama).
+3. trait_key HARUS snake_case pendek dan unik (max 50 karakter), mis: "prefers_short_answers", "cannot_access_realtime_web".
+4. trait_value HARUS kalimat lengkap yang menjelaskan fakta tersebut.
+5. Kembalikan [] jika tidak ada fakta baru atau revisi yang cukup didukung bukti.
+
+FORMAT OUTPUT (JSON MURNI, tanpa markdown):
+[
+  {
+    "layer": "CORRECTIONS",
+    "trait_key": "prefers_no_bullet_points",
+    "trait_value": "Tuan Faqih lebih suka respons dalam paragraf langsung tanpa poin-poin, terutama untuk ringkasan"
+  }
+]`;
+
+  const userPrompt = `=== RIWAYAT OBROLAN 7 HARI (PESAN USER) ===\n${chatSample.map((m, i) => `${i + 1}. "${m}"`).join('\n')}\n\n=== SELF-MODEL N.E.X.A SAAT INI (UNTUK KONTEKS REVISI) ===\n${currentSelfModelStr}\n\nAnalisis dan hasilkan fakta baru atau revisi. Kembalikan [] jika tidak ada yang cukup didukung bukti.`;
+
+  let rawResult;
+  try {
+    rawResult = await executeWithFallback(userPrompt, systemPrompt, 0.2, true);
+  } catch (aiErr) {
+    console.error('[SELF-REFLECTION] AI call failed:', aiErr.message);
+    return { success: false, upserted: 0, skipped: 0, errors: 1 };
+  }
+
+  // ── STEP 4: Parse output AI ─────────────────────────────────────────────────
+  let cleanStr = String(rawResult || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+  const firstBracket = cleanStr.indexOf('[');
+  const lastBracket = cleanStr.lastIndexOf(']');
+  if (firstBracket === -1 || lastBracket <= firstBracket) {
+    console.log('[SELF-REFLECTION] AI returned no JSON array — no new insights this week.');
+    return { success: true, upserted: 0, skipped: 0, errors: 0 };
+  }
+  cleanStr = cleanStr.substring(firstBracket, lastBracket + 1);
+
+  let proposals;
+  try {
+    proposals = JSON.parse(cleanStr);
+    if (!Array.isArray(proposals)) proposals = [];
+  } catch (parseErr) {
+    console.warn('[SELF-REFLECTION] JSON parse failed:', parseErr.message);
+    return { success: false, upserted: 0, skipped: 0, errors: 1 };
+  }
+
+  console.log(`[SELF-REFLECTION] AI generated ${proposals.length} proposals.`);
+
+  // ── STEP 5: Upsert setiap proposal ke nexa_self_model ──────────────────────
+  const VALID_SELF_LAYERS = new Set(['CAPABILITIES', 'LIMITATIONS', 'OPERATIONAL_RULES', 'CORRECTIONS', 'COMMUNICATION_STYLE']);
+  const supabaseMemories = require('../infrastructure/Supabase_Memories');
+
+  for (const p of proposals) {
+    try {
+      const layer = String(p.layer || '').toUpperCase();
+      const traitKey = String(p.trait_key || '').trim();
+      const traitValue = String(p.trait_value || '').trim();
+
+      if (!VALID_SELF_LAYERS.has(layer) || !traitKey || traitKey.length < 3 || !traitValue || traitValue.length < 10) {
+        console.warn('[SELF-REFLECTION] Proposal tidak valid, dilewati:', JSON.stringify(p).substring(0, 100));
+        skipped++;
+        continue;
+      }
+
+      const result = await supabaseMemories.upsertSelfModelTrait(
+        layer,
+        traitKey,
+        traitValue,
+        'WEEKLY_REFLECTION',
+        `Weekly Self-Reflection Pass ${new Date().toISOString().substring(0, 10)}`
+      );
+
+      if (result === 'error') { errors++; } else { upserted++; }
+    } catch (loopErr) {
+      console.error('[SELF-REFLECTION] Error upserting proposal:', loopErr.message);
+      errors++;
+    }
+  }
+
+  console.log(`[SELF-REFLECTION] ✔ Pass complete: upserted=${upserted} skipped=${skipped} errors=${errors}`);
+  return { success: true, upserted, skipped, errors };
+}
+
+// ============================================================
 // EXPORTS
 // ============================================================
 module.exports = {
@@ -1278,6 +1437,7 @@ module.exports = {
   runDailyDecayPass,
   runTier2SoftApprovePass,
   getPersonalityEvolutionNarrative,  // [PHASE 7 — M3]
+  runWeeklySelfReflectionPass,       // [PHASE 8 — Self-Learning]
 
   // Expose internal helpers untuk unit testing
   _synthesizeBehaviorSummary,

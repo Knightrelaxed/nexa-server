@@ -152,9 +152,9 @@ function formatVaultMetadata(meta = {}) {
  */
 function isFactAboutNexa(fact) {
   const f = fact.toLowerCase().trim();
-  let score = 0; // positive = leaning CORE_IDENTITY
+  let score = 0; // positive = leaning CORE_IDENTITY / SELF_MODEL
 
-  // ── STRONG USER signals (subtract) ──────────────────────────────────────
+  // ── STRONG USER signals (subtract) ──────────────────────────────────────────────
   // Fact uses first-person pronouns that refer to the human
   if (/\b(aku|saya|gue|gw)\b/.test(f)) score -= 2;
   // Explicitly about Tuan / Faqih / user by name — but NOT when they appear
@@ -166,25 +166,53 @@ function isFactAboutNexa(fact) {
   // Possessive: "ku" suffix strongly implies user's own attribute
   if (/\w+ku\b/.test(f) && !/\b(namaku|diriku sebagai)\b/.test(f)) score -= 1;
 
-  // ── STRONG N.E.X.A signals (add) ────────────────────────────────────────
+  // ── STRONG N.E.X.A signals (add) ──────────────────────────────────────────────
   // Explicitly names the AI
   if (/\b(nexa|n\.e\.x\.a)\b/.test(f)) score += 3;
   // 2nd person pronoun as the SUBJECT of the sentence (typically refers to AI)
   if (/^(kamu|anda|kau)\b/.test(f)) score += 2;
-  if (/\b(kamu|anda|kau)\s+(adalah|itu|merupakan|diciptakan|dibuat|diluncurkan|punya|memiliki|bernama|disebut|bisa|dapat|mampu)\b/.test(f)) score += 2;
+  if (/\b(kamu|anda|kau)\s+(adalah|itu|merupakan|diciptakan|dibuat|diluncurkan|punya|memiliki|bernama|disebut|bisa|dapat|mampu|tidak bisa|tidak mampu|sering|selalu|harus|jangan)\b/.test(f)) score += 2;
   // Creation / origin / identity
   if (/\b(diciptakan|dibuat|diluncurkan|lahir|dirancang|diprogram|dibangun)\b/.test(f)) score += 1;
   // Name / version / capability
   if (/\b(namamu|nama kamu|nama asisten|versimu|versi kamu|kemampuanmu|kemampuan kamu|identitasmu)\b/.test(f)) score += 2;
-  // "kamu bisa/dapat/mampu" → capability statement about N.E.X.A
-  if (/\b(kamu|anda|kau)\s+(bisa|dapat|mampu)\b/.test(f)) score += 1;
+  // "kamu bisa/dapat/mampu/tidak bisa" → capability/limitation statement about N.E.X.A
+  if (/\b(kamu|anda|kau)\s+(bisa|dapat|mampu|tidak bisa|tidak mampu|belum bisa)\b/.test(f)) score += 1;
   // AI-domain subject terms — bot/asisten/ai at start or followed by verb
   if (/^(bot|asisten|ai)\b/.test(f)) score += 2;
   if (/\b(bot|asisten ai|model ai|sistem ai|ai asisten|kecerdasan buatan)\b/.test(f)) score += 1;
   // "dirimu" or "diri kamu" unambiguously refers to N.E.X.A
   if (/\b(dirimu|diri kamu|diri anda)\b/.test(f)) score += 2;
 
+  // [PHASE 8] Implicit correction/instruction patterns toward N.E.X.A (relaxed detection)
+  // e.g.: "ingat ya, jangan pakai poin", "tolong jangan terlalu panjang", "sebaiknya kamu..."
+  if (/\b(ingat ya|catat ini|harap|tolong jangan|jangan terlalu|sebaiknya kamu|kamu seharusnya|kamu perlu|kamu harus|kamu sebaiknya)\b/.test(f)) score += 1;
+  // Correction signals: "ternyata kamu", "kamu ternyata", "sebenarnya kamu"
+  if (/\b(ternyata kamu|kamu ternyata|sebenarnya kamu|rupanya kamu)\b/.test(f)) score += 2;
+  // Format/style instructions implied to the AI
+  if (/\b(format (jawaban|balasan|respons)|gaya (bahasa|bicara|komunikasi)|responsmu|balasanmu|jawabanmu)\b/.test(f)) score += 1;
+
   return score > 0;
+}
+
+/**
+ * [PHASE 8] Klasifikasikan sebuah fakta tentang N.E.X.A ke layer nexa_self_model yang tepat.
+ * Menggunakan heuristic berbasis kata kunci.
+ * @param {string} fact
+ * @returns {'CAPABILITIES'|'LIMITATIONS'|'CORRECTIONS'|'OPERATIONAL_RULES'|'COMMUNICATION_STYLE'}
+ */
+function _classifySelfModelLayer(fact) {
+  const f = fact.toLowerCase();
+  // Keterbatasan / kelemahan sistem
+  if (/\b(tidak bisa|tidak mampu|belum bisa|gagal|lupa|terbatas|kendala|kesulitan|error|bug|lambat|keterbatasan|kelemahan)\b/.test(f)) return 'LIMITATIONS';
+  // Koreksi eksplisit dari Tuan
+  if (/\b(ingat ya|catat ini|jangan|tolong jangan|sebaiknya|seharusnya|harap|perbaiki|salah|keliru|koreksi|ralat|ternyata|rupanya)\b/.test(f)) return 'CORRECTIONS';
+  // Preferensi format / komunikasi
+  if (/\b(format|gaya bahasa|gaya bicara|singkat|panjang|poin|paragraf|bahasa|nada|respons|balasan|jawaban|komunikasi)\b/.test(f)) return 'COMMUNICATION_STYLE';
+  // Kapabilitas / kemampuan
+  if (/\b(bisa|dapat|mampu|berhasil|fitur|fungsi|kemampuan|kapabilitas|dukungan|mendukung|otomatis|sinkronisasi)\b/.test(f)) return 'CAPABILITIES';
+  // Default: aturan operasional
+  return 'OPERATIONAL_RULES';
 }
 
 function _triggerConversationalSynthesis(textInput, resultMessage, action) {
@@ -2119,15 +2147,21 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       behaviorEngine.logMood(routingData.mood, textInput).catch(() => {});
     }
 
-    // Passive Background Learning (Auto-Extraction)
+    // [PHASE 8] Passive Background Learning (Auto-Extraction) — USER FACTS
+    // Fakta tentang Tuan Faqih → disimpan ke nexa_user_profile (legacy) seperti biasa
+    // Fakta tentang N.E.X.A    → DIALIHKAN senyap ke nexa_self_model (PHASE 8)
     if (routingData.learned_user_facts && Array.isArray(routingData.learned_user_facts) && routingData.learned_user_facts.length > 0) {
       const aiRouter = require("../../core/AI_Router");
+      const supabaseMem = require("../../infrastructure/Supabase_Memories");
       for (const fact of routingData.learned_user_facts) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
           // Safety guard: use smart scorer instead of rigid regex
           if (isFactAboutNexa(fact)) {
-            console.log('[ROUTER] Passive Learning - Rerouted to Core Identity:', fact);
-            await aiRouter.deduplicateAndSaveFact(fact, 'CORE_IDENTITY');
+            // [PHASE 8] Reroute ke nexa_self_model (senyap, tanpa Telegram notification)
+            console.log('[SELF-MODEL] Passive Learning → Self-Model (rerouted from user_facts):', fact.substring(0, 80));
+            const selfKey = fact.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
+            const selfLayer = _classifySelfModelLayer(fact);
+            supabaseMem.upsertSelfModelTrait(selfLayer, selfKey, fact, 'PASSIVE_LEARNING', fact).catch(() => {});
           } else {
             console.log('[ROUTER] Passive Learning - User Fact:', fact);
             await aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE');
@@ -2138,15 +2172,19 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
       invalidatePersonalFactsCache();
     }
 
+    // [PHASE 8] Passive Background Learning — CORE IDENTITY (dari AI Router explicit extraction)
+    // Semua learned_core_identities dialihkan ke nexa_self_model (senyap)
     if (routingData.learned_core_identities && Array.isArray(routingData.learned_core_identities) && routingData.learned_core_identities.length > 0) {
-      const aiRouter = require("../../core/AI_Router");
+      const supabaseMem = require("../../infrastructure/Supabase_Memories");
       for (const fact of routingData.learned_core_identities) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
-          console.log('[ROUTER] Passive Learning - Core Identity:', fact);
-          await aiRouter.deduplicateAndSaveFact(fact, 'CORE_IDENTITY');
+          console.log('[SELF-MODEL] Passive Learning → Self-Model (from learned_core_identities):', fact.substring(0, 80));
+          const selfKey = fact.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 50);
+          const selfLayer = _classifySelfModelLayer(fact);
+          supabaseMem.upsertSelfModelTrait(selfLayer, selfKey, fact, 'PASSIVE_LEARNING', fact).catch(() => {});
         }
       }
-      invalidatePersonalFactsCache();
+      // invalidatePersonalFactsCache() tidak diperlukan karena self_model tidak di-cache dengan personalFacts
     }
 
     // [PHASE 7 — M2] Stated-vs-Revealed Reconciler + Decision Journal

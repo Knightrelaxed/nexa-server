@@ -268,7 +268,13 @@ CRITICAL ROUTING RULES:
 4. DATABASE: STRICTLY for Supabase tables. NEVER use for "Buku kas"/"Tabel keuangan" (Use FINANCE). DO NOT invent actions (No "DELETE_ROWS").
 5. PASSIVE LEARNING — CRITICAL SEPARATION:
    - "learned_user_facts": ONLY facts about TUAN FAQIH (the human user). e.g. his hobbies, habits, goals, preferences, daily life, health. Empty [] if nothing new.
-   - "learned_core_identities": ONLY facts about N.E.X.A ITSELF (the AI). e.g. when N.E.X.A was created, N.E.X.A's capabilities, N.E.X.A's personality rules, N.E.X.A's name. Empty [] if nothing new.
+   - "learned_core_identities": ONLY facts about N.E.X.A ITSELF (the AI). Capture ALL of the following types:
+       * Explicit capabilities:  "kamu bisa baca PDF", "N.E.X.A sudah bisa analisis emosi"
+       * Explicit limitations:   "kamu sering lupa konteks panjang", "kamu belum bisa akses internet langsung"
+       * Corrections from Tuan:  "ingat ya, jangan pakai poin", "tolong jangan terlalu panjang", "kamu salah tadi soal format"
+       * Operational rules:      "kamu harus konfirmasi dulu sebelum hapus data", "sebaiknya kamu ringkas jawaban"
+       * Style observations:     "responsmu terlalu formal", "gaya bahasamu sudah enak", "kamu sudah lebih singkat"
+     Empty [] if nothing new about N.E.X.A.
    - NEVER mix them. "Kamu diciptakan pada X" → learned_core_identities. "Aku suka kopi" → learned_user_facts.
 6. ISO DATES: 'start' & 'end' MUST be ISO 8601 +07:00 (e.g., "2026-05-07T19:00:00+07:00").
 7. LANGUAGE: Output JSON keys/values in English, EXCEPT "reply_message" MUST be in natural, elegant Indonesian based on NEXA_PERSONALITY. CRITICAL: If greeting, STRICTLY match the time of day provided in [WAKTU SERVER SAAT INI].
@@ -642,6 +648,18 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   if (personalFacts.coreIdentity && personalFacts.coreIdentity.length > 0) {
     const _selectedIdentity = _selectCoreIdentityFacts(personalFacts.coreIdentity, textInput);
     factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${_selectedIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+  }
+
+  // [PHASE 8] Inject top 5 N.E.X.A Self-Model facts dari nexa_self_model
+  try {
+    const _supabaseMem = require('../infrastructure/Supabase_Memories');
+    const _selfModelFacts = await _supabaseMem.getSelfModel(5);
+    if (_selfModelFacts && _selfModelFacts.length > 0) {
+      const _selfLines = _selfModelFacts.map((f, i) => `${i + 1}. [${f.layer}] ${f.trait_value}`);
+      factsContext += `\n[PEMAHAMAN DIRI N.E.X.A (TOP 5 — DIPELAJARI DARI PENGALAMAN)]\n${_selfLines.join('\n')}\n`;
+    }
+  } catch (_selfErr) {
+    // Non-critical — jangan crash routing jika tabel belum ada
   }
   if (personalFacts.vaultItems && personalFacts.vaultItems.length > 0) {
     const _selectedVault = _selectVaultFacts(personalFacts.vaultItems, textInput);

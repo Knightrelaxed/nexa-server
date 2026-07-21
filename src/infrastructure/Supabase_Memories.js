@@ -16,7 +16,8 @@ const SUPABASE_TABLES = [
   'nexa_pending_transactions',
   'nexa_behavior_log',         // [PHASE 6 — Pilar 8.2]
   'nexa_identity_model',       // [PHASE 6 — Cognitive Identity Layer]
-  'nexa_identity_proposals'    // [PHASE 6 — Git-Style Proposal Staging]
+  'nexa_identity_proposals',   // [PHASE 6 — Git-Style Proposal Staging]
+  'nexa_self_model'            // [PHASE 8 — Self-Learning Engine]
 ];
 
 function resolveAllowedTableName(tableName) {
@@ -967,6 +968,83 @@ async function getIdentityProposalById(proposalId) {
   return data || null;
 }
 
+// ============================================================
+// [PHASE 8 — SELF-LEARNING ENGINE] nexa_self_model
+// ============================================================
+
+/**
+ * Simpan atau perbarui fakta tentang N.E.X.A ke tabel nexa_self_model.
+ * Menggunakan UPSERT pada kolom UNIQUE (trait_key) sehingga:
+ *   - Jika trait_key BARU  → INSERT baris baru
+ *   - Jika trait_key SUDAH ADA → UPDATE in-place (anti-kontradiksi)
+ *
+ * @param {string} layer - 'CAPABILITIES'|'LIMITATIONS'|'OPERATIONAL_RULES'|'CORRECTIONS'|'COMMUNICATION_STYLE'
+ * @param {string} traitKey - Kunci unik snake_case (mis: 'context_window_limit')
+ * @param {string} traitValue - Teks fakta yang diobservasi
+ * @param {string} [source='PASSIVE_LEARNING'] - 'PASSIVE_LEARNING'|'WEEKLY_REFLECTION'|'MANUAL'
+ * @param {string} [inferredFrom=''] - Kalimat asli yang memicu pembelajaran ini
+ * @returns {Promise<'inserted'|'updated'|'error'>}
+ */
+async function upsertSelfModelTrait(layer, traitKey, traitValue, source = 'PASSIVE_LEARNING', inferredFrom = '') {
+  if (!supabase) return 'error';
+
+  const VALID_LAYERS = new Set(['CAPABILITIES', 'LIMITATIONS', 'OPERATIONAL_RULES', 'CORRECTIONS', 'COMMUNICATION_STYLE']);
+  if (!VALID_LAYERS.has(String(layer || '').toUpperCase())) {
+    console.warn(`[SELF-MODEL] Invalid layer: "${layer}". Skipped.`);
+    return 'error';
+  }
+
+  const normalizedKey = String(traitKey || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+  if (!normalizedKey || normalizedKey.length < 3) {
+    console.warn(`[SELF-MODEL] trait_key terlalu pendek atau kosong: "${traitKey}". Skipped.`);
+    return 'error';
+  }
+
+  const payload = {
+    layer:         String(layer).toUpperCase(),
+    trait_key:     normalizedKey,
+    trait_value:   String(traitValue || '').trim(),
+    source:        ['PASSIVE_LEARNING', 'WEEKLY_REFLECTION', 'MANUAL'].includes(source) ? source : 'PASSIVE_LEARNING',
+    inferred_from: String(inferredFrom || '').substring(0, 300),
+    updated_at:    new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from('nexa_self_model')
+    .upsert(payload, { onConflict: 'trait_key', returning: 'minimal' });
+
+  if (error) {
+    console.error('[SELF-MODEL] upsertSelfModelTrait error:', error.message);
+    return 'error';
+  }
+
+  console.log(`[SELF-MODEL] ✅ Upserted [${payload.layer}] ${normalizedKey}: "${String(traitValue).substring(0, 60)}" (source: ${payload.source})`);
+  return 'inserted'; // Supabase upsert tidak membedakan insert vs update tanpa returning count
+}
+
+/**
+ * Ambil top N fakta dari nexa_self_model, diurutkan berdasarkan updated_at DESC.
+ * Digunakan oleh AI_Router.js untuk menyuntikkan max 5 fakta ke prompt.
+ *
+ * @param {number} [limit=5] - Jumlah fakta yang diambil
+ * @returns {Promise<Array<{layer, trait_key, trait_value, confidence, source, updated_at}>>}
+ */
+async function getSelfModel(limit = 5) {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('nexa_self_model')
+    .select('layer, trait_key, trait_value, confidence, source, updated_at')
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('[SELF-MODEL] getSelfModel error:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
 module.exports = {
   supabase,
   // ── Chat & Memory ──────────────────────────────────────────
@@ -1013,7 +1091,10 @@ module.exports = {
   setProposalTelegramMessageId,
   approveIdentityProposal,
   rejectIdentityProposal,
-  getIdentityProposalById
+  getIdentityProposalById,
+  // ── [PHASE 8] Self-Learning Engine ────────────────────────
+  upsertSelfModelTrait,
+  getSelfModel
 };
 
 /**

@@ -121,6 +121,36 @@ function initCronJobs() {
     console.log('[CRON] ── Weekly Cognitive Sunday Pass complete.');
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
+  // [PHASE 8 — SELF-LEARNING] Weekly N.E.X.A Self-Reflection Pass (Minggu 16:00 WIB)
+  // TERPISAH dari Weekly Cognitive Sunday Pass (21:00 WIB).
+  // Fokus: menganalisis koreksi, anjuran, kapabilitas baru, dan keterbatasan N.E.X.A
+  // berdasarkan obrolan 7 hari. Hasil langsung di-upsert ke nexa_self_model (senyap).
+  cron.schedule('0 16 * * 0', async () => {
+    console.log('[CRON] ── Weekly N.E.X.A Self-Reflection Pass starting (Minggu 16:00 WIB)...');
+    try {
+      const inferenceEngine = require('../domain/Inference_Engine');
+      const { sendTelegramOutbound } = require('./webhook');
+
+      const result = await inferenceEngine.runWeeklySelfReflectionPass();
+      console.log(`[CRON] Self-Reflection done: upserted=${result.upserted} skipped=${result.skipped} errors=${result.errors}`);
+
+      if (result.success && result.upserted > 0) {
+        const msg = [
+          `🪞 <b>Weekly N.E.X.A Self-Reflection Selesai</b>`,
+          `<i>(Pemahaman Diri N.E.X.A — Minggu Sore)</i>`,
+          ``,
+          `🧩 Fakta baru / direvisi : <b>${result.upserted}</b>`,
+          `⏭ Dilewati (tidak valid) : <b>${result.skipped}</b>`,
+          ``,
+          `N.E.X.A telah memperbarui pemahamannya tentang dirinya sendiri berdasarkan obrolan minggu ini.`
+        ].join('\n');
+        await sendTelegramOutbound(msg, true);
+      }
+    } catch (e) {
+      console.error('[CRON] Weekly Self-Reflection Pass failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   // [PHASE 7 — M1+M3] Daily Evening Pass (setiap hari 23:30 WIB)
   // Menjalankan dua operasi kognitif malam berurutan:
   //   1. Mood Time-Series: hitung dan simpan tren emosional 24h/7d ke behavior_log
