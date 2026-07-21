@@ -787,6 +787,13 @@ async function approveIdentityProposal(proposalId) {
     return { success: false, error: fetchError?.message || 'Proposal tidak ditemukan.' };
   }
 
+  // [IDEMPOTENCY GUARD] Jika proposal sudah APPROVED sebelumnya, jangan proses ulang
+  // Ini mencegah duplikat di nexa_identity_history jika approval dipanggil dua kali
+  if (proposalData.status === 'APPROVED') {
+    console.warn(`[IDENTITY] Proposal #${proposalId} sudah berstatus APPROVED. Idempotency guard aktif — proses dihentikan.`);
+    return { success: true, alreadyApproved: true };
+  }
+
   // 2. Update status proposal jadi APPROVED
   const { error: updateError } = await supabase
     .from('nexa_identity_proposals')

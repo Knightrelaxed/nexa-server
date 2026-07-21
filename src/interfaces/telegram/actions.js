@@ -104,12 +104,15 @@ async function sendIdentityProposalToTelegram(proposal) {
       } catch (_) {}
     }
 
+    // Hanya update status ke PENDING jika proposal masih STAGED
+    // Jangan timpa status APPROVED dengan PENDING (bug duplikasi approval)
     const { supabase } = supabaseMemories;
-    if (supabase) {
+    if (supabase && proposal.status === 'STAGED') {
       try {
         await supabase.from('nexa_identity_proposals')
           .update({ status: 'PENDING' })
-          .eq('id', proposal.id);
+          .eq('id', proposal.id)
+          .eq('status', 'STAGED'); // Double guard: hanya jika masih STAGED di DB
       } catch (_) {}
     }
 

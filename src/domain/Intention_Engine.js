@@ -88,10 +88,25 @@ const DECISION_PATTERNS = [
 
 // Intent yang dianggap bisa mengandung keputusan penting
 const DECISION_TRIGGERING_INTENTS = new Set([
-  'FINANCE', 'DISCIPLINE', 'CALENDAR', 'ADVICE', 'NORMAL_CHAT'
+  'DISCIPLINE', 'CALENDAR', 'ADVICE', 'NORMAL_CHAT'
+  // CATATAN: FINANCE sengaja dihapus dari sini.
+  // Transaksi keuangan biasa ("catat beli X", "bayar Y") terlalu banyak false positive.
+  // Keputusan finansial signifikan (investasi, langganan, kontrak) tetap terdeteksi
+  // melalui DECISION_PATTERNS[0] dan [3] yang lebih ketat lewat intent NORMAL_CHAT.
 ]);
 
-// ── Stopwords untuk membersihkan niat yang terdeteksi ────────────
+// ── Kata/pola yang menandakan pesan adalah pencatatan transaksi biasa, BUKAN keputusan ────
+// Digunakan di detectAndSaveDecision untuk menghindari false positive keuangan
+const FINANCE_TRANSACTION_EXCLUSIONS = [
+  /\bcatat\b/i,           // "catat aku beli..."
+  /\bstruk\b/i,           // "lihat struk ini"
+  /\bnota\b/i,            // "nota belanja"
+  /\btransfer\b/i,        // "transfer 50rb ke..."
+  /\blivin\b/i,           // Notifikasi Livin Mandiri
+  /^split\b/i,            // "split ini"
+  /\bgofood\b|\bshopee\b|\btokopedia\b|\bqris\b/i, // Platform pembayaran digital
+];
+
 const STOPWORDS_ID = new Set([
   'yang', 'dan', 'di', 'ke', 'dari', 'ini', 'itu', 'ada', 'tidak',
   'dengan', 'untuk', 'atau', 'pada', 'dalam', 'juga', 'sudah', 'lagi',
@@ -227,6 +242,16 @@ async function detectAndSaveDecision(text, routingData = {}, emotionalState = 'N
   // Hanya proses intent yang relevan
   const intent = String(routingData.intent || 'NORMAL_CHAT').toUpperCase();
   if (!DECISION_TRIGGERING_INTENTS.has(intent)) return false;
+
+  // Terapkan INTENTION_EXCLUSIONS (kata perintah, bukan keputusan pribadi)
+  for (const excludePattern of INTENTION_EXCLUSIONS) {
+    if (excludePattern.test(text)) return false;
+  }
+
+  // Terapkan FINANCE_TRANSACTION_EXCLUSIONS — hindari mencatat transaksi biasa sebagai keputusan
+  for (const excludePattern of FINANCE_TRANSACTION_EXCLUSIONS) {
+    if (excludePattern.test(text)) return false;
+  }
 
   // Cari pola keputusan
   let decisionText = null;
