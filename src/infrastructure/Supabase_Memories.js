@@ -132,6 +132,40 @@ async function logTransactionKey(compositeKey, transactionTime, source) {
 }
 
 /**
+ * [AUTOMATIC CLEANUP] Hapus rekaman dedup yang sudah kadaluwarsa (> 7 hari)
+ * Karena isDuplicateTransaction hanya mengecek jendela waktu 60 menit,
+ * data lama di nexa_finance_dedup sudah tidak diperlukan lagi dan aman dibersihkan.
+ * @param {number} daysOld - Batas hari kadaluwarsa (default 7 hari)
+ * @returns {Promise<{success: boolean, deletedCount?: number, error?: string}>}
+ */
+async function cleanupOldFinanceDedup(daysOld = 7) {
+  if (!supabase) return { success: false, error: 'Supabase belum dikonfigurasi.' };
+  const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    const { data, error } = await supabase
+      .from('nexa_finance_dedup')
+      .delete()
+      .lt('transaction_time', cutoffDate)
+      .select('id');
+
+    if (error) {
+      console.error('[SUPABASE] Error cleaning up old finance dedup rows:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    const count = data?.length || 0;
+    if (count > 0) {
+      console.log(`[SUPABASE] 🧹 Bersih-bersih: Berhasil menghapus ${count} baris kadaluwarsa dari nexa_finance_dedup (> ${daysOld} hari).`);
+    }
+    return { success: true, deletedCount: count };
+  } catch (err) {
+    console.error('[SUPABASE] Unexpected error cleaning up finance dedup:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Save idea to 2nd Brain Vault (Syncs with Docs)
  * @param {string} ideaContent
  */
@@ -942,6 +976,7 @@ module.exports = {
   // ── Finance & Dedup ────────────────────────────────────────
   isDuplicateTransaction,
   logTransactionKey,
+  cleanupOldFinanceDedup,
   // ── 2nd Brain Vault ────────────────────────────────────────
   saveIdeaToVault,
   deleteIdeaFromVault,

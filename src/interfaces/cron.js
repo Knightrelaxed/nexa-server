@@ -191,6 +191,14 @@ function initCronJobs() {
       console.error('[CRON] Outcome Check Pass failed:', e.message);
     }
 
+    // 4. Finance Dedup Table Cleanup (> 7 hari)
+    try {
+      const supabaseMemories = require('../infrastructure/Supabase_Memories');
+      await supabaseMemories.cleanupOldFinanceDedup(7);
+    } catch (e) {
+      console.error('[CRON] Finance Dedup Cleanup failed:', e.message);
+    }
+
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   cron.schedule('0 8 * * 0', async () => {
