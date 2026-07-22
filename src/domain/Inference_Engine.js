@@ -445,7 +445,8 @@ Analisis data di atas dan hasilkan hipotesis identitas. Ingat: kembalikan [] jik
       userPrompt,
       systemPrompt,
       0.2, // Temperature rendah untuk konsistensi analitik
-      true  // expectJson = true
+      true, // expectJson = true
+      { forceHeavy: true } // [SACR] Kategori A — Selalu Gemini 3.6 Flash (Weekly Identity Inference)
     );
 
     // Bersihkan output AI dari markdown jika ada
@@ -1367,7 +1368,13 @@ FORMAT OUTPUT (JSON MURNI, tanpa markdown):
 
   let rawResult;
   try {
-    rawResult = await executeWithFallback(userPrompt, systemPrompt, 0.2, true);
+    rawResult = await executeWithFallback(
+      userPrompt,
+      systemPrompt,
+      0.2,
+      true,
+      { forceHeavy: true } // [SACR] Kategori A — Selalu Gemini 3.6 Flash (N.E.X.A Self-Reflection Pass)
+    );
   } catch (aiErr) {
     console.error('[SELF-REFLECTION] AI call failed:', aiErr.message);
     return { success: false, upserted: 0, skipped: 0, errors: 1 };

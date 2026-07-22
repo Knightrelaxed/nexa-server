@@ -588,7 +588,8 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
         prompt,
         "Anda adalah AI Pengekstrak Fakta Anti-Duplikasi. Output WAJIB JSON Array of Strings murni. Kembalikan [] jika tidak ada fakta baru yang genuinely belum tersimpan.",
         0.15,
-        true
+        true,
+        { forceHeavy: true } // [SACR] Kategori A — Selalu Gemini 3.6 Flash (Daily Memory Consolidation)
       );
 
       try {

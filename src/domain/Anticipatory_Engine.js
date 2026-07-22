@@ -261,7 +261,8 @@ Kembalikan [] jika tidak ada relasi baru yang bisa disimpulkan dengan confidence
       userPrompt,
       systemPrompt,
       0.15, // Temperature sangat rendah untuk analisis kausal
-      true  // expectJson
+      true,  // expectJson
+      { forceHeavy: true } // [SACR] Kategori A — Selalu Gemini 3.6 Flash (Causal Knowledge Graph)
     );
 
     // 6. Parse hasil AI
