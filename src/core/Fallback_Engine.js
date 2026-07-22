@@ -87,31 +87,28 @@ const SACR_HEAVY_KEYWORDS = [
  * @returns {boolean} true = HEAVY mode, false = LIGHT mode
  */
 function isHeavyContext(prompt, systemInstruction, options = {}) {
-  // 1. Jika ada override eksplisit (misal forceHeavy dari Cron Job)
+  // [SACR] 1. Cek override eksplisit (misal forceHeavy: true dari Cron Job Kategori A)
   if (options && typeof options.forceHeavy === 'boolean') {
     return options.forceHeavy;
   }
 
-  // 2. Ekstrak teks chat MURNI Tuan Faqih (bukan total prompt router dengan histori/fakta)
-  let rawUserChat = options?.userText || '';
-  if (!rawUserChat && prompt) {
-    const match = prompt.match(/\[PESAN TERBARU TUAN FAQIH\]\s*([\s\S]*?)(?=\n\n[A-Z0-9_]|\n\nTentukan intent|$)/i);
-    if (match && match[1]) {
-      rawUserChat = match[1].trim();
-    } else {
-      rawUserChat = prompt; // Fallback jika tidak menggunakan format router
-    }
+  // [SACR] 2. Ambil pesan MURNI Tuan Faqih — dikirim eksplisit via options.userText dari AI_Router.
+  // Evaluasi threshold karakter & kata kunci HANYA pada teks ini,
+  // bukan pada total prompt router (yang berisi 30K+ karakter histori + fakta profil).
+  const rawUserChat = (options?.userText || '').trim();
+
+  // Cek 1: Pesan murni > 1.000 karakter → HEAVY
+  if (rawUserChat.length > SACR_HEAVY_CHAR_THRESHOLD) return true;
+
+  // Cek 2: Mengandung kata kunci kognitif berat → HEAVY
+  if (rawUserChat) {
+    return SACR_HEAVY_KEYWORDS.some(kw => rawUserChat.toLowerCase().includes(kw));
   }
 
-  // 3. Evaluasi Threshold 1.000 Karakter HANYA pada chat murni Tuan Faqih
-  if (rawUserChat.length > SACR_HEAVY_CHAR_THRESHOLD) {
-    return true;
-  }
-
-  // 4. Evaluasi Kata Kunci Kognitif Berat di seluruh gabungan prompt & system instruction
-  const combined = ((prompt || '') + ' ' + (systemInstruction || '')).toLowerCase();
-  return SACR_HEAVY_KEYWORDS.some(kw => combined.includes(kw));
+  // Tidak ada teks murni (dipanggil tanpa userText, misal dari cron non-forceHeavy) → LIGHT
+  return false;
 }
+
 
 /**
  * Execute AI Prompt with Smart Adaptive Context Routing (SACR) + 15-Layer Fallback

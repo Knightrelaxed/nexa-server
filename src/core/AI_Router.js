@@ -836,7 +836,8 @@ Tentukan intent dan ekstrak data!
 `;
 
   // 4. Execute Cognitive Routing (Medium Temperature = 0.3)
-  let resultJsonStr = await executeWithFallback(prompt, ROUTER_SYSTEM_PROMPT, 0.3);
+  let resultJsonStr = await executeWithFallback(prompt, ROUTER_SYSTEM_PROMPT, 0.3, true, { userText: textInput });
+
 
   // Clean markdown block if GenAI decides to return it despite instructions
   let cleanStr = resultJsonStr.replace(/```json/gi, '').replace(/```/g, '').trim();
