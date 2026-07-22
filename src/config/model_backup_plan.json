@@ -24,9 +24,9 @@
         {
           "tier": "Tier 9-12",
           "provider": "Google Gemini",
-          "model_id": "gemini-2.5-flash",
+          "model_id": "gemini-3.6-flash",
           "status": "ACTIVE_ROCK_SOLID",
-          "notes": "Kuota besar dan pemahaman konteks panjang."
+          "notes": "Upgrade 22 Juli 2026. Kuota besar, pemahaman konteks panjang, 10-20% lebih cerdas dari 2.5-flash."
         },
         {
           "tier": "Tier 14",
@@ -93,8 +93,9 @@
         {
           "tier": "Tier 5-8",
           "provider": "Google Gemini",
-          "model_id": "gemini-2.5-flash",
-          "status": "ACTIVE_PRIMARY_QUALITY"
+          "model_id": "gemini-3.6-flash",
+          "status": "ACTIVE_PRIMARY_QUALITY",
+          "notes": "Upgrade 22 Juli 2026. Multimodal vision terbaik Google, kemampuan analisis gambar & kode meningkat 10-20%."
         },
         {
           "tier": "Tier 9-12",
@@ -143,9 +144,10 @@
         {
           "tier": "Tier 5-8",
           "provider": "Google Gemini",
-          "model_id": "gemini-2.5-flash (Native Audio)",
+          "model_id": "gemini-3.6-flash (Native Audio)",
           "status": "ACTIVE_ROCK_SOLID",
-          "auth_env": "GEMINI_API_KEY_1..4"
+          "auth_env": "GEMINI_API_KEY_1..4",
+          "notes": "Upgrade 22 Juli 2026. Model audio native terbaik Google untuk transkripsi dan pemahaman suara."
         },
         {
           "tier": "Tier 9-12",

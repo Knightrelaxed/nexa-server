@@ -430,10 +430,10 @@ async function processTelegramImage(fileId, caption = '', systemPromptOverride =
       name: `Tier${i + 1} (Cerebras Gemma 4 Vision Key ${i + 1})`,
       fn: () => callCerebrasVision(key, imageData, caption, 2, systemPromptOverride)
     })),
-    // Tier 5-8: Gemini 2.5 Flash (Premium Quality, 4 Keys)
+    // Tier 5-8: Gemini 3.6 Flash (Premium Quality, 4 Keys)
     ...GEMINI_25_KEYS.map((key, i) => ({
-      name: `Tier${CEREBRAS_VISION_KEYS.length + i + 1} (Gemini 2.5 Flash Key ${i + 1})`,
-      fn: () => callGeminiVision(key, 'gemini-2.5-flash', imageData, caption, 3, systemPromptOverride)
+      name: `Tier${CEREBRAS_VISION_KEYS.length + i + 1} (Gemini 3.6 Flash Key ${i + 1})`,
+      fn: () => callGeminiVision(key, 'gemini-3.6-flash', imageData, caption, 3, systemPromptOverride)
     })),
     // Tier 9-12: Groq Vision (Balanced, 4 Keys)
     ...GROQ_KEYS.map((key, i) => ({

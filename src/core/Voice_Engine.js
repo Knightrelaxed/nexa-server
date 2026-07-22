@@ -158,7 +158,7 @@ async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
   const audioBuffer = fs.readFileSync(tmpFilePath);
   const base64Audio = audioBuffer.toString('base64');
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
   const payload = {
     contents: [{
       parts: [

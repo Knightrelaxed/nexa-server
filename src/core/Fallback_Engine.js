@@ -31,7 +31,7 @@ const cerebrasKeys = [
  *
  * Tier 1-4 : Cerebras Gemma 4 31B Key 1-4     (The Ultra-Fast WSE-3 Sprinters — ABCD order)
  * Tier 5-8 : Groq Llama 3.3 70B Versatile Key 1-4 (The Secondary Sprinters)
- * Tier 9-12: Gemini 2.5 Flash Key 1-4           (The Deep Thinkers)
+ * Tier 9-12: Gemini 3.6 Flash Key 1-4           (The Deep Thinkers)
  * Tier 13  : Hugging Face Gemma 4 31B IT        (The Free Safety Net)
  * Tier 14  : Mistral Pixtral 12B                (The Reliable European Closer — 937.5K TPM)
  * Tier 15  : OpenRouter Multi-Model Free        (The Indestructible Last Resort)
@@ -86,10 +86,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       name: `Tier ${i + 5} (Groq Key ${i + 1})`,
       fn: () => callGroq(key, prompt, systemInstruction, temperature, jsonMode)
     })),
-    // Tier 9-12: Gemini 2.5 Flash
+    // Tier 9-12: Gemini 3.6 Flash
     ...geminiClients.map((client, i) => ({
-      name: `Tier ${i + 9} (Gemini 2.5 Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(client, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode)
+      name: `Tier ${i + 9} (Gemini 3.6 Key ${i + 1})`,
+      fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode)
     })),
     // Tier 13: Hugging Face Gemma 4 31B
     ...(env.HF_INFERENCE_TOKEN ? [{
