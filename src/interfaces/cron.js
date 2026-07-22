@@ -564,10 +564,10 @@ function initCronJobs() {
       const prompt = `Anda adalah Subsistem Memori N.E.X.A. Tugas Anda adalah membaca transkrip obrolan hari ini antara Tuan Faqih dan N.E.X.A, lalu MENGEKSTRAK HANYA FAKTA PERMANEN JANGKA PANJANG (Personality, Core Preferences, Rules of Engagement) yang belum ada dalam memori yang sudah tersimpan.
 
 === MEMORI YANG SUDAH TERSIMPAN (JANGAN DUPLIKASI INI) ===
-${existingFactsText.substring(0, 4000)}
+${existingFactsText.substring(0, 35000)}
 
 === TRANSKRIP OBROLAN HARI INI ===
-${chatLog.substring(0, 6000)}
+${chatLog.substring(0, 60000)}
 
 === ATURAN EKSTRAKSI KETAT (CRITICAL) ===
 1. HANYA ekstrak SIFAT/KEPRIBADIAN PERMANEN, NILAI HIDUP, KEBIASAAN KONSISTEN, atau ATURAN INTERAKSI (misal: "Tuan tidak suka dipanggil dengan formal", "Tuan alergi kacang", "Tuan selalu bangun jam 4 pagi").

@@ -296,8 +296,8 @@ Kembalikan [] jika tidak ada relasi baru yang bisa disimpulkan dengan confidence
           !VALID_LAYERS.has(edge.to_layer) ||
           !VALID_CAUSAL_DIRECTIONS.has(edge.causal_direction) ||
           !edge.from_trait_key || !edge.to_trait_key ||
-          // Cegah self-loop
-          (edge.from_layer === edge.to_layer && edge.from_trait_key === edge.to_trait_key)
+          // Cegah self-loop dengan normalisasi case
+          (edge.from_layer === edge.to_layer && String(edge.from_trait_key).toLowerCase().trim() === String(edge.to_trait_key).toLowerCase().trim())
         ) {
           console.warn(`[CAUSAL] Invalid edge skipped: ${JSON.stringify(edge).substring(0, 100)}`);
           stats.errors++;
@@ -305,13 +305,15 @@ Kembalikan [] jika tidak ada relasi baru yang bisa disimpulkan dengan confidence
         }
 
         const strength = Math.min(1.0, Math.max(0.0, parseFloat(edge.strength) || 0.50));
+        const normFromKey = String(edge.from_trait_key).toLowerCase().trim();
+        const normToKey = String(edge.to_trait_key).toLowerCase().trim();
 
-        // Cek apakah edge sudah ada
+        // Cek apakah edge sudah ada dengan key yang ternormalisasi
         const existingEdge = (existingEdges || []).find(e =>
           e.from_layer === edge.from_layer &&
-          e.from_trait_key === edge.from_trait_key &&
+          e.from_trait_key === normFromKey &&
           e.to_layer === edge.to_layer &&
-          e.to_trait_key === edge.to_trait_key
+          e.to_trait_key === normToKey
         );
 
         if (existingEdge) {
@@ -330,12 +332,12 @@ Kembalikan [] jika tidak ada relasi baru yang bisa disimpulkan dengan confidence
               last_observed_at: new Date().toISOString()
             })
             .eq('from_layer', edge.from_layer)
-            .eq('from_trait_key', edge.from_trait_key)
+            .eq('from_trait_key', normFromKey)
             .eq('to_layer', edge.to_layer)
-            .eq('to_trait_key', edge.to_trait_key);
+            .eq('to_trait_key', normToKey);
 
           stats.updatedEdges++;
-          console.log(`[CAUSAL] Updated edge: ${edge.from_layer}.${edge.from_trait_key} →[${edge.causal_direction}]→ ${edge.to_layer}.${edge.to_trait_key} (strength=${newStrength})`);
+          console.log(`[CAUSAL] Updated edge: ${edge.from_layer}.${normFromKey} →[${edge.causal_direction}]→ ${edge.to_layer}.${normToKey} (strength=${newStrength})`);
 
         } else {
           // Simpan edge baru
@@ -343,9 +345,9 @@ Kembalikan [] jika tidak ada relasi baru yang bisa disimpulkan dengan confidence
             .from('nexa_causal_graph')
             .insert([{
               from_layer:       edge.from_layer,
-              from_trait_key:   String(edge.from_trait_key).toLowerCase().trim(),
+              from_trait_key:   normFromKey,
               to_layer:         edge.to_layer,
-              to_trait_key:     String(edge.to_trait_key).toLowerCase().trim(),
+              to_trait_key:     normToKey,
               causal_direction: edge.causal_direction,
               strength,
               evidence_count:   1,
@@ -355,7 +357,7 @@ Kembalikan [] jika tidak ada relasi baru yang bisa disimpulkan dengan confidence
             }]);
 
           stats.newEdges++;
-          console.log(`[CAUSAL] New edge: ${edge.from_layer}.${edge.from_trait_key} →[${edge.causal_direction}]→ ${edge.to_layer}.${edge.to_trait_key} (strength=${strength})`);
+          console.log(`[CAUSAL] New edge: ${edge.from_layer}.${normFromKey} →[${edge.causal_direction}]→ ${edge.to_layer}.${normToKey} (strength=${strength})`);
         }
 
       } catch (edgeErr) {
