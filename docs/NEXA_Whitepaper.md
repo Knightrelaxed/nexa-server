@@ -308,8 +308,8 @@ N.E.X.A mengirim *hanya* `file_path` ke Vercel Relay melalui `postToRelay('/api/
 **Tier 1–4 — Hugging Face Whisper Large v3 Turbo (4 Attempts / Slots):**
 Jika Worker gagal, sistem mendownload file audio `.ogg` ke file sementara (`tmpFilePath`) di RAM HF, lalu menjalankan transkripsi kilat dengan model Whisper Large v3 Turbo.
 
-**Tier 5–8 — Gemini 2.5 Flash Native Audio (4 Kunci Rotasi):**
-Jika Hugging Face gagal, file `.ogg` dibaca sebagai `Buffer`, di-encode ke Base64, lalu dikirim langsung ke Gemini 2.5 Flash sebagai `inlineData` dengan `mimeType: 'audio/ogg'`.
+**Tier 5–8 — Gemini 3.6 Flash Native Audio (4 Kunci Rotasi):**
+Jika Hugging Face gagal, file `.ogg` dibaca sebagai `Buffer`, di-encode ke Base64, lalu dikirim langsung ke Gemini 3.6 Flash sebagai `inlineData` dengan `mimeType: 'audio/ogg'`.
 
 **Tier 9–12 — Groq Whisper Large v3 (4 Kunci Rotasi sebagai Backup):**
 Jika seluruh tier di atas gagal, sistem beralih ke 4 kunci Groq Whisper Large v3 secara berurutan dengan *smart retry* internal.
@@ -326,8 +326,8 @@ N.E.X.A mengirim `file_path` + `gemini_key` ke Vercel Relay melalui `postToRelay
 **Tier 1–4 — Cerebras Gemma 4 31B Vision (4 Kunci WSE-3 Ultra-Fast):**
 Gambar diunduh sebagai Base64 dan diproses dengan kecepatan kilat chip Cerebras WSE-3.
 
-**Tier 5–8 — Gemini 2.5 Flash Vision (4 Kunci Rotasi, Premium Quality):**
-Analisis visual mendalam menggunakan model multimodal Google Gemini 2.5 Flash terbaru.
+**Tier 5–8 — Gemini 3.6 Flash Vision (4 Kunci Rotasi, Premium Quality):**
+Analisis visual mendalam menggunakan model multimodal Google Gemini 3.6 Flash terbaru.
 
 **Tier 9–12 — Groq Vision Llama 3.2 90B/11B Vision (4 Kunci Rotasi):**
 Penalaran visual berkecepatan tinggi menggunakan Llama 3.2 Vision di infrastruktur Groq Cloud.
@@ -388,7 +388,7 @@ Sistem tidak lagi menyuntikkan seluruh memori Tuan Faqih atau seluruh identitas 
    - **Fakta tambahan**: Hanya diinjeksi jika kata kunci pesan mencakup `SYSTEM_KEYWORD_GROUPS` (seperti arsitektur, server, database, webhook, versi).
    - Maksimal 5 fakta tambahan ditarik dari sisa database (`IDENTITY_KW_LIMIT = 5`).
 
-Hasilnya: prompt AI tetap fokus dan tidak *overloaded* dengan fakta yang tidak relevan, secara drastis memotong beban token (terutama saat menggunakan model besar seperti Llama 70B atau Gemini 2.5) tanpa mengurangi kecerdasan maupun kesadaran diri N.E.X.A.
+Hasilnya: prompt AI tetap fokus dan tidak *overloaded* dengan fakta yang tidak relevan, secara drastis memotong beban token (terutama saat menggunakan model besar seperti Llama 70B atau Gemini 3.6) tanpa mengurangi kecerdasan maupun kesadaran diri N.E.X.A.
 
 #### 3.3.4 Cross-Domain Context Fusion — Prompt Multi-Dimensi
 
@@ -473,7 +473,7 @@ Jika validasi gagal, N.E.X.A mengirim pertanyaan klarifikasi spesifik dan menghe
 |---|---|---|---|
 | 1–4 | Gemma 4 31B | Cerebras WSE-3 (4 Kunci Rotasi) | Natural, empatik, kecepatan kilat ~0 milidetik |
 | 5–8 | Llama 3.3 70B Versatile | Groq Cloud (4 Kunci Rotasi) | Enterprise logic & structured output |
-| 9–12 | Gemini 2.5 Flash | Google AI (4 Kunci Rotasi) | High context limit & deep reasoning |
+| 9–12 | Gemini 3.6 Flash | Google AI (4 Kunci Rotasi) | High context limit & deep reasoning |
 | 13 | Gemma 4 31B IT | Hugging Face Router | Open-weight dedicated safety net |
 | 14 | Pixtral 12B | Mistral AI API | Reliable European API close |
 | 15 | Multi-Model Free Pool | OpenRouter | Indestructible last resort |
