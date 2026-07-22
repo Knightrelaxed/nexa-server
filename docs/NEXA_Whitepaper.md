@@ -491,6 +491,17 @@ Setiap API wrapper (`callCerebras`, `callGroq`, `callGemini`, dll.) juga dilengk
 }
 ```
 
+#### 3.5.1 Smart Adaptive Context Routing (SACR)
+
+Sejak implementasi SACR, hierarki *Fallback Engine* tidak lagi sepenuhnya statis. SACR adalah mekanisme *load-balancing* kognitif yang menukar posisi model secara *on-the-fly* berdasarkan beban tugas.
+
+Secara *default*, Cerebras Gemma 4 31B berada di **Tier 1 (Light Mode)** untuk latensi ultra-cepat (~0.6 detik). Namun, fungsi `isHeavyContext()` akan otomatis membalik urutan, menaikkan Google Gemini 3.6 Flash ke Tier 1 (**Heavy Mode**), jika salah satu dari 3 kondisi ini terpenuhi:
+1. **Panjang Konteks Ekstrem**: Teks input melebih 1.000 karakter.
+2. **Kata Kunci Kognitif Berat**: Prompt mengandung instruksi analitis seperti *analisis, evaluasi, rekap, laporan, komparasi, debug, hipotesis*.
+3. **Hardware Force-Flag (`forceHeavy: true`)**: Beberapa *Cron Job* Kategori A (seperti *Daily Memory Consolidation*, *Weekly Identity Inference*, dan *Causal Graph Build*) di-*hardcode* untuk selalu menembak Gemini 3.6 Flash. Tugas-tugas ini memerlukan sintesis lintas domain yang ekstensif, kepatuhan kendala JSON yang ketat tanpa halusinasi duplikasi, dan penalaran psikologis (1.000.000 context window).
+
+Mekanisme ini memastikan N.E.X.A merespons obrolan santai seketika, namun mengalokasikan "deep thinking" secara otomatis untuk analisis strategis (berdasarkan prinsip *Dual-Process Theory*: *System 1 Fast* vs *System 2 Slow*).
+
 ---
 
 ### 3.6 Classifier Spesialisasi — Fungsi AI Ringan Non-Routing
