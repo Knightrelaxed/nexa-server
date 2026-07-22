@@ -257,10 +257,10 @@ async function saveMemoryWithMeta(content, categoryType, type = 'USER_PROFILE') 
 
   const { data, error } = await supabase.from(table).insert([payload]).select('id');
   if (error) {
-    console.error(`[PHASE9-MEM] Error saving memory with meta to ${table}:`, error.message);
+    console.error(`[LIVING-MEMORY] Error saving memory with meta to ${table}:`, error.message);
     return { success: false, id: null };
   }
-  console.log(`[PHASE9-MEM] ✅ Saved [${validCat}] to ${table}: "${String(content).substring(0, 60)}"`);
+  console.log(`[LIVING-MEMORY] ✅ Saved [${validCat}] to ${table}: "${String(content).substring(0, 60)}"`);
   return { success: true, id: data?.[0]?.id ?? null };
 }
 
@@ -282,7 +282,7 @@ async function getAllActiveMemories(type = 'USER_PROFILE') {
     .order('created_at', { ascending: true });
 
   if (error) {
-    console.error(`[PHASE9-MEM] Error fetching all active memories from ${table}:`, error.message);
+    console.error(`[LIVING-MEMORY] Error fetching all active memories from ${table}:`, error.message);
     return [];
   }
   return data || [];
@@ -306,10 +306,10 @@ async function archiveMemoryById(id, type = 'USER_PROFILE') {
     .eq('id', id);
 
   if (error) {
-    console.error(`[PHASE9-MEM] Error archiving memory ID ${id} in ${table}:`, error.message);
+    console.error(`[LIVING-MEMORY] Error archiving memory ID ${id} in ${table}:`, error.message);
     return false;
   }
-  console.log(`[PHASE9-MEM] 📦 Archived memory ID ${id} in ${table}.`);
+  console.log(`[LIVING-MEMORY] 📦 Archived memory ID ${id} in ${table}.`);
   return true;
 }
 
@@ -331,10 +331,10 @@ async function bulkArchiveMemories(ids, type = 'USER_PROFILE') {
     .in('id', ids);
 
   if (error) {
-    console.error(`[PHASE9-MEM] Error bulk archiving in ${table}:`, error.message);
+    console.error(`[LIVING-MEMORY] Error bulk archiving in ${table}:`, error.message);
     return { success: false, archived: 0 };
   }
-  console.log(`[PHASE9-MEM] 📦 Bulk archived ${ids.length} memories in ${table}.`);
+  console.log(`[LIVING-MEMORY] 📦 Bulk archived ${ids.length} memories in ${table}.`);
   return { success: true, archived: ids.length };
 }
 
@@ -363,10 +363,10 @@ async function reinforceMemoryById(id, type = 'USER_PROFILE') {
     .eq('id', id);
 
   if (error) {
-    console.error(`[PHASE9-MEM] Error reinforcing memory ID ${id} in ${table}:`, error.message);
+    console.error(`[LIVING-MEMORY] Error reinforcing memory ID ${id} in ${table}:`, error.message);
     return false;
   }
-  console.log(`[PHASE9-MEM] ⚡ Reinforced memory ID ${id} in ${table} (evidence: ${newCount}).`);
+  console.log(`[LIVING-MEMORY] ⚡ Reinforced memory ID ${id} in ${table} (evidence: ${newCount}).`);
   return true;
 }
 
