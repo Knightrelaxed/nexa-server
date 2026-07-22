@@ -295,10 +295,14 @@ async function callGeminiWithRetry(client, modelName, prompt, systemInstruction,
 }
 
 async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
+  const safeSysInst = (jsonMode && !/json/i.test(systemInstruction + prompt))
+    ? `${systemInstruction}\nRespond in valid json format.`
+    : systemInstruction;
+
   const requestBody = {
     model: 'llama-3.3-70b-versatile',
     messages: [
-      { role: 'system', content: systemInstruction },
+      { role: 'system', content: safeSysInst },
       { role: 'user', content: prompt }
     ],
     temperature,
