@@ -26,15 +26,101 @@ const cerebrasKeys = [
   env.CEREBRAS_API_KEY_4
 ];
 
+// ============================================================
+// SMART ADAPTIVE CONTEXT ROUTING (SACR) — v1.0
+// Memilah beban konteks secara otomatis:
+//   MODE LIGHT ⚡ : Cerebras Gemma 4 31B di Tier 1 (chat biasa, perintah rutin, ~1.6 detik)
+//   MODE HEAVY 🧠 : Google Gemini 3.6 Flash di Tier 1 (analisis, rekap, dokumen, penalaran berat)
+// ============================================================
+
+/** Batas panjang karakter (prompt + systemInstruction) untuk trigger MODE HEAVY */
+const SACR_HEAVY_CHAR_THRESHOLD = 1000;
+
 /**
- * Execute AI Prompt with Multi-Tier Fallback (15 Layers)
+ * Kata kunci pemicu MODE HEAVY — mencakup tugas analitik, keuangan mendalam,
+ * pengelolaan kode, pemrosesan dokumen, riset, dan instruksi multi-langkah.
+ */
+const SACR_HEAVY_KEYWORDS = [
+  // --- Keuangan & Akuntansi Berat ---
+  'rekap', 'rekapitulasi', 'laporan bulanan', 'laporan tahunan', 'laporan mingguan',
+  'laporan keuangan', 'audit keuangan', 'audit pengeluaran', 'audit pemasukan',
+  'analisis keuangan', 'analisis pengeluaran', 'analisis pemasukan', 'analisis transaksi',
+  'perbandingan bulan', 'perbandingan keuangan', 'evaluasi keuangan', 'evaluasi budget',
+  'budget bulanan', 'alokasi budget', 'rekomendasi hemat', 'rencana keuangan',
+  'cashflow', 'cash flow', 'neraca', 'saldo akhir bulan', 'ringkasan keuangan',
+  'tren pengeluaran', 'tren pemasukan', 'grafik keuangan', 'kategori terbesar',
+  // --- Dokumen & Berkas ---
+  'ringkasan dokumen', 'ringkas dokumen', 'baca dokumen', 'baca pdf', 'baca file',
+  'analisis dokumen', 'ekstrak dokumen', 'isi dokumen', 'konten file', 'resume dokumen',
+  'transkrip', 'transkripsi', 'poin penting', 'kesimpulan dari', 'rangkum',
+  'rangkuman panjang', 'summary panjang', 'summary dokumen', 'uraikan',
+  // --- Penalaran & Riset Mendalam ---
+  'analisis mendalam', 'penjelasan rinci', 'jelaskan secara detail', 'jelaskan panjang',
+  'riset', 'penelitian', 'investigasi', 'kajian', 'telaah', 'telaah mendalam',
+  'bandingkan', 'perbandingan antara', 'perbedaan antara', 'keunggulan dan kelemahan',
+  'pro dan kontra', 'pros and cons', 'kelebihan kekurangan', 'evaluasi mendalam',
+  'strategi', 'rekomendasi strategis', 'rencana jangka panjang', 'plan mendalam',
+  // --- Kode & Teknis ---
+  'refactor', 'refactoring', 'perbaiki kode', 'perbaiki fungsi', 'debug panjang',
+  'codebase', 'arsitektur sistem', 'arsitektur kode', 'rancang ulang', 'desain sistem',
+  'dokumentasi kode', 'buat dokumentasi', 'review kode', 'code review',
+  'optimalkan', 'optimasi sistem', 'migrasi database', 'skema database',
+  // --- Kalender & Tugas Kompleks ---
+  'jadwal minggu ini', 'jadwal bulan ini', 'agenda bulanan', 'rencana minggu',
+  'daftar tugas panjang', 'semua tugas', 'seluruh task', 'list lengkap',
+  'prioritaskan semua', 'susun ulang jadwal', 'review minggu', 'weekly review',
+  // --- Memori & Profil ---
+  'semua yang aku', 'semua yang saya', 'seluruh riwayat', 'semua fakta',
+  'profil lengkap', 'rekap percakapan', 'ringkasan obrolan', 'apa saja yang sudah',
+  // --- Instruksi Multi-Langkah / Kompleks ---
+  'langkah demi langkah', 'step by step', 'panduan lengkap', 'tutorial lengkap',
+  'buatkan laporan', 'buat analisis', 'susunkan', 'formulasikan', 'rancangkan',
+  'berikan rekomendasi lengkap', 'beri penjelasan komprehensif'
+];
+
+/**
+ * Menentukan apakah konteks pesan termasuk HEAVY (butuh Gemini 3.6 Flash)
+ * atau LIGHT (Cerebras WSE-3 super kilat sudah cukup).
  *
- * Tier 1-4 : Cerebras Gemma 4 31B Key 1-4     (The Ultra-Fast WSE-3 Sprinters — ABCD order)
- * Tier 5-8 : Groq Llama 3.3 70B Versatile Key 1-4 (The Secondary Sprinters)
- * Tier 9-12: Gemini 3.6 Flash Key 1-4           (The Deep Thinkers)
- * Tier 13  : Hugging Face Gemma 4 31B IT        (The Free Safety Net)
- * Tier 14  : Mistral Pixtral 12B                (The Reliable European Closer — 937.5K TPM)
- * Tier 15  : OpenRouter Multi-Model Free        (The Indestructible Last Resort)
+ * Logika:
+ *   1. Jika total panjang karakter (prompt + systemInstruction) > SACR_HEAVY_CHAR_THRESHOLD → HEAVY
+ *   2. Jika mengandung salah satu kata kunci di SACR_HEAVY_KEYWORDS → HEAVY
+ *   3. Selainnya → LIGHT
+ *
+ * @param {string} prompt - Full prompt termasuk konteks memori dan riwayat obrolan
+ * @param {string} systemInstruction - System prompt yang dikirim ke model
+ * @returns {boolean} true = HEAVY mode, false = LIGHT mode
+ */
+function isHeavyContext(prompt, systemInstruction) {
+  const totalLength = (prompt?.length || 0) + (systemInstruction?.length || 0);
+  if (totalLength > SACR_HEAVY_CHAR_THRESHOLD) return true;
+
+  const combined = ((prompt || '') + ' ' + (systemInstruction || '')).toLowerCase();
+  return SACR_HEAVY_KEYWORDS.some(kw => combined.includes(kw));
+}
+
+/**
+ * Execute AI Prompt with Smart Adaptive Context Routing (SACR) + 15-Layer Fallback
+ *
+ * MODE LIGHT ⚡ (Konteks Normal — default):
+ *   Tier 1-4  : Cerebras Gemma 4 31B Key 1-4    (The Ultra-Fast WSE-3 Sprinters)
+ *   Tier 5-8  : Groq Llama 3.3 70B Versatile Key 1-4 (The Secondary Sprinters)
+ *   Tier 9-12 : Gemini 3.6 Flash Key 1-4         (The Deep Thinkers — Fallback)
+ *
+ * MODE HEAVY 🧠 (Konteks Berat — otomatis jika threshold/keyword terpenuhi):
+ *   Tier 1-4  : Gemini 3.6 Flash Key 1-4         (1 Juta Token Window, Deep Reasoning)
+ *   Tier 5-8  : Groq Llama 3.3 70B Versatile Key 1-4 (The Secondary Sprinters)
+ *   Tier 9-12 : Cerebras Gemma 4 31B Key 1-4    (The Ultra-Fast WSE-3 — Fallback)
+ *
+ * Tier 13 : Hugging Face Gemma 4 31B IT          (The Free Safety Net)
+ * Tier 14 : Mistral Pixtral 12B                  (The Reliable European Closer — 937.5K TPM)
+ * Tier 15 : OpenRouter Multi-Model Free          (The Indestructible Last Resort)
+ *
+ * Trigger HEAVY otomatis:
+ *   a) prompt + systemInstruction > 1.000 karakter
+ *   b) Mengandung kata kunci: rekap, audit, analisis, dokumen, refactor, dll.
+ *
+ * Override manual: options.forceHeavy = true | false
  */
 const getErrDetails = (e) => {
   const status = e.status || e.response?.status || 'NET';
@@ -74,23 +160,50 @@ function validateResponseJson(str, jsonMode) {
 }
 
 
-async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true) {
-  const tiers = [
-    // Tier 1-4: Cerebras Gemma 4 31B (ABCD order)
-    ...cerebrasKeys.map((key, i) => ({
-      name: `Tier ${i + 1} (Cerebras Key ${i + 1})`,
+async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true, options = {}) {
+  // --- SMART ADAPTIVE CONTEXT ROUTING (SACR) ---
+  // options.forceHeavy = true  → paksa HEAVY mode
+  // options.forceHeavy = false → paksa LIGHT mode
+  // options.forceHeavy = undefined → deteksi otomatis via isHeavyContext()
+  const heavy = options.forceHeavy === true
+    ? true
+    : options.forceHeavy === false
+      ? false
+      : isHeavyContext(prompt, systemInstruction);
+
+  const sacrMode = heavy ? 'HEAVY 🧠 [Gemini 3.6 Flash Priority]' : 'LIGHT ⚡ [Cerebras Priority]';
+  console.log(`[SACR] Mode: ${sacrMode} | Total chars: ${(prompt?.length || 0) + (systemInstruction?.length || 0)}`);
+
+  // --- Bangun blok tier Cerebras dan Gemini secara terpisah ---
+  const cerebrasBlock = cerebrasKeys
+    .filter(Boolean)
+    .map((key, i) => ({
+      name: `Tier X (Cerebras Key ${i + 1})`,
       fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
-    })),
-    // Tier 5-8: Groq Llama 3.3 70B Versatile
-    ...groqKeys.map((key, i) => ({
+    }));
+
+  const geminiBlock = geminiClients
+    .filter(Boolean)
+    .map((client, i) => ({
+      name: `Tier X (Gemini 3.6 Key ${i + 1})`,
+      fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode)
+    }));
+
+  // Primary  = Tier 1-4  (Cerebras jika LIGHT, Gemini 3.6 jika HEAVY)
+  // Secondary = Tier 9-12 (Gemini 3.6 jika LIGHT, Cerebras jika HEAVY)
+  const primaryBlock   = (heavy ? geminiBlock   : cerebrasBlock);
+  const secondaryBlock = (heavy ? cerebrasBlock  : geminiBlock);
+
+  const tiers = [
+    // Tier 1-4: Primary AI (dibalik berdasarkan SACR mode)
+    ...primaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
+    // Tier 5-8: Groq Llama 3.3 70B Versatile (selalu di tengah sebagai Secondary Sprinter)
+    ...groqKeys.filter(Boolean).map((key, i) => ({
       name: `Tier ${i + 5} (Groq Key ${i + 1})`,
       fn: () => callGroq(key, prompt, systemInstruction, temperature, jsonMode)
     })),
-    // Tier 9-12: Gemini 3.6 Flash
-    ...geminiClients.map((client, i) => ({
-      name: `Tier ${i + 9} (Gemini 3.6 Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode)
-    })),
+    // Tier 9-12: Secondary AI (kebalikan dari primary)
+    ...secondaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 9}`) })),
     // Tier 13: Hugging Face Gemma 4 31B
     ...(env.HF_INFERENCE_TOKEN ? [{
       name: 'Tier 13 (Hugging Face Gemma 4 31B)',
@@ -101,7 +214,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       name: 'Tier 14 (Mistral Pixtral 12B)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
     }] : []),
-    // Tier 15: OpenRouter
+    // Tier 15: OpenRouter Multi-Model Free Pool
     ...(env.OPENROUTER_API_KEY ? [{
       name: 'Tier 15 (OpenRouter)',
       fn: () => callOpenRouter(prompt, systemInstruction, temperature, jsonMode)
