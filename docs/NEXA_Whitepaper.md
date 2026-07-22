@@ -1115,3 +1115,64 @@ Dengan menaati protokol ini, fitur baru bisa disuntikkan dalam hitungan menit ta
 ---
 **~ TAMAT ~**
 *Mahakarya arsitektur The Chief of Staff, secara eksklusif dikembangkan untuk memperluas kognisi dan otonomi penggunanya, Tuan Faqih Hidayatulloh.*
+
+---
+
+## BAB 6: THE LIVING MEMORY ENGINE (SISTEM MEMORI ORGANIS)
+
+Bab ini mendokumentasikan pembaruan revolusioner **Phase 9**, di mana N.E.X.A berevolusi dari sekadar pengingat pasif menjadi sistem yang memiliki ingatan organik—layaknya otak manusia yang dapat belajar, menegaskan kembali (reinforce), melupakan hal yang tak lagi relevan (decay), dan menyembuhkan dirinya dari kontradiksi.
+
+---
+
+### 6.1 Progressive Fact Injection: Resolusi Beban Kognitif
+Masalah sistem memori konvensional adalah penumpukan konteks: jika pengguna memiliki 250 baris memori (fakta dan preferensi), memuat seluruhnya ke dalam prompt akan menghancurkan kuota token dan membingungkan AI.
+
+N.E.X.A menyelesaikan ini dengan **Progressive Fact Injection & Dynamic Word Resonance** di AI_Router.js:
+- **Core Limit**: Hanya 10 fakta paling krusial (PROFILE_CORE_COUNT) dari \
+exa_user_profile\ dan 10 identitas pokok dari \
+exa_core_identity\ yang di-injeksi secara paksa.
+- **Dynamic Resonance**: Maksimal 10 fakta tambahan di-injeksi **hanya jika** terdapat kecocokan kata kunci minimum 4 huruf (mengabaikan stop words) antara pesan pengguna dan fakta di database. 
+- **Self-Model Injection**: Selalu mengambil 5 fakta terbaru (*Top 5*) dari tabel \
+exa_self_model\ agar N.E.X.A menyadari kapabilitas terbarunya tanpa membanjiri konteks.
+- **Efisiensi**: Memangkas penggunaan token hingga 85% untuk chat sehari-hari dengan mempertahankan 100% kesadaran kontekstual yang relevan.
+
+---
+
+### 6.2 Supersede Engine v2: Resolusi Ingatan Baru
+Ketika Tuan Faqih memberitahu informasi baru, fungsi \deduplicateAndSaveFact\ dipanggil. Ini bukan sekadar insert data, melainkan logika 4 arah:
+1. **NEW**: Fakta benar-benar baru → Simpan dengan status \ACTIVE\.
+2. **REINFORCE**: Fakta sudah ada → Naikkan \evidence_count\ +1, perbarui \last_reinforced_at\ ke waktu sekarang.
+3. **SUPERSEDE**: Fakta berlawanan atau menggantikan yang lama (Misal: "Dulu suka kopi, sekarang suka teh") → Fakta lama di-\ARCHIVED\, fakta baru disimpan, kategori diwarisi dari fakta lama.
+4. **DUPLICATE**: Sama persis tanpa detail baru → Abaikan sepenuhnya.
+
+**Concurrency Protection**: Dilengkapi dengan mutex \_dedupInFlight\ untuk mencegah *race condition* jika Tuan Faqih mengirim pesan bertubi-tubi yang memicu ekstraksi fakta ganda di waktu bersamaan.
+
+---
+
+### 6.3 Memory Hygiene Pipeline: Pembersihan Memori 4-Tahap
+Agar ingatan tetap segar dan tidak menjadi tempat sampah informasi usang, N.E.X.A menjalankan siklus \unFullHygienePipeline\ setiap hari Minggu pukul 02:00 WIB.
+
+#### Step 1: Ephemeral Sweep (Penyapuan Fakta Sementara)
+Memori dengan \category_type = 'EPHEMERAL'\ (seperti mood sesaat atau fokus mingguan) dipindai secara matematis murni. Jika umurnya melebihi 30 hari tanpa penegasan (\last_reinforced_at\), statusnya diubah dari \ACTIVE\ menjadi \ARCHIVED\. 
+
+#### Step 2: Ebbinghaus Decay Score (Peluruhan Ingatan)
+Meniru kelupaan alami manusia. Kurva Ebbinghaus ( = e^{-\lambda \cdot t}$) diterapkan pada fakta \PREFERENCE\.
+- \PERMANENT_FACT\ dan \RULE\ dikecualikan secara absolut.
+- Jika skor kepercayaan ($) turun di bawah **60%**, fakta dikelompokkan ke \STAGED_FOR_PRUNING\ (Memudar).
+- Jika skor anjlok di bawah **30%**, fakta langsung dipindahkan ke \ARCHIVED\.
+- **Zero Token Cost**: Eksekusi ini 100% matematis tanpa memanggil API LLM.
+
+#### Step 3: Contradiction Batch Audit (Penalaran AI Tingkat Tinggi)
+Satu-satunya tahap yang menggunakan penalaran AI secara berat. Seluruh sisa memori aktif dimasukkan ke dalam prompt.
+- Memaksa penggunaan **Gemini 3.6 Flash** melalui \orceHeavy: true\ (me-bypass SACR).
+- AI ditugaskan khusus mencari fakta yang berkontradiksi atau berlebihan. 
+- Fakta berbenturan diarsipkan, dan AI menghasilkan kalimat *merger* tunggal yang komprehensif, ditulis dengan prespektif orang ketiga yang netral ("Tuan Faqih suka...").
+- *Output constraint*: Dipaksa murni menggunakan JSON array (tanpa markdown).
+
+#### Step 4: Laporan Interaktif Telegram
+Sistem menjunjung tinggi kontrol pengguna. Fakta yang berada di ambang batas pemudaran (di Step 2) dilaporkan ke Telegram Tuan Faqih dengan *Inline Keyboard*:
+- **[ ✅ Arsipkan Semua ]**: Eksekusi penghapusan (status \ARCHIVED\).
+- **[ ❌ Tahan Semua ]**: Membatalkan penghapusan (mengembalikan ke \ACTIVE\).
+- **[ 🔍 Pilih Manual ]**: Memungkinkan Tuan Faqih mengatur secara manual baris demi baris via chat teks.
+
+Keseluruhan sistem ini menjadikan N.E.X.A asisten pertama yang memiliki kognisi organik—mengingat sekuat komputer, namun memilah serelevan manusia.
