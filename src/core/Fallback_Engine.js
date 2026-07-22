@@ -79,22 +79,36 @@ const SACR_HEAVY_KEYWORDS = [
 ];
 
 /**
- * Menentukan apakah konteks pesan termasuk HEAVY (butuh Gemini 3.6 Flash)
- * atau LIGHT (Cerebras WSE-3 super kilat sudah cukup).
- *
- * Logika:
- *   1. Jika total panjang karakter (prompt + systemInstruction) > SACR_HEAVY_CHAR_THRESHOLD → HEAVY
- *   2. Jika mengandung salah satu kata kunci di SACR_HEAVY_KEYWORDS → HEAVY
- *   3. Selainnya → LIGHT
+ * Evaluasi apakah konteks tergolong HEAVY Mode.
  *
  * @param {string} prompt - Full prompt termasuk konteks memori dan riwayat obrolan
  * @param {string} systemInstruction - System prompt yang dikirim ke model
+ * @param {object} [options] - Opsi tambahan termasuk forceHeavy dan userText
  * @returns {boolean} true = HEAVY mode, false = LIGHT mode
  */
-function isHeavyContext(prompt, systemInstruction) {
-  const totalLength = (prompt?.length || 0) + (systemInstruction?.length || 0);
-  if (totalLength > SACR_HEAVY_CHAR_THRESHOLD) return true;
+function isHeavyContext(prompt, systemInstruction, options = {}) {
+  // 1. Jika ada override eksplisit (misal forceHeavy dari Cron Job)
+  if (options && typeof options.forceHeavy === 'boolean') {
+    return options.forceHeavy;
+  }
 
+  // 2. Ekstrak teks chat MURNI Tuan Faqih (bukan total prompt router dengan histori/fakta)
+  let rawUserChat = options?.userText || '';
+  if (!rawUserChat && prompt) {
+    const match = prompt.match(/\[PESAN TERBARU TUAN FAQIH\]\s*([\s\S]*?)(?=\n\n[A-Z0-9_]|\n\nTentukan intent|$)/i);
+    if (match && match[1]) {
+      rawUserChat = match[1].trim();
+    } else {
+      rawUserChat = prompt; // Fallback jika tidak menggunakan format router
+    }
+  }
+
+  // 3. Evaluasi Threshold 1.000 Karakter HANYA pada chat murni Tuan Faqih
+  if (rawUserChat.length > SACR_HEAVY_CHAR_THRESHOLD) {
+    return true;
+  }
+
+  // 4. Evaluasi Kata Kunci Kognitif Berat di seluruh gabungan prompt & system instruction
   const combined = ((prompt || '') + ' ' + (systemInstruction || '')).toLowerCase();
   return SACR_HEAVY_KEYWORDS.some(kw => combined.includes(kw));
 }
@@ -117,7 +131,7 @@ function isHeavyContext(prompt, systemInstruction) {
  * Tier 15 : OpenRouter Multi-Model Free          (The Indestructible Last Resort)
  *
  * Trigger HEAVY otomatis:
- *   a) prompt + systemInstruction > 1.000 karakter
+ *   a) Pesan MURNI Tuan Faqih > 1.000 karakter
  *   b) Mengandung kata kunci: rekap, audit, analisis, dokumen, refactor, dll.
  *
  * Override manual: options.forceHeavy = true | false
@@ -169,7 +183,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     ? true
     : options.forceHeavy === false
       ? false
-      : isHeavyContext(prompt, systemInstruction);
+      : isHeavyContext(prompt, systemInstruction, options);
 
   const sacrMode = heavy ? 'HEAVY 🧠 [Gemini 3.6 Flash Priority]' : 'LIGHT ⚡ [Cerebras Priority]';
   console.log(`[SACR] Mode: ${sacrMode} | Total chars: ${(prompt?.length || 0) + (systemInstruction?.length || 0)}`);
