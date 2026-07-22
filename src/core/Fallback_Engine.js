@@ -130,13 +130,13 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
  *
  * MODE LIGHT ⚡ (Konteks Normal — default):
  *   Tier 1-4  : Cerebras Gemma 4 31B Key 1-4    (The Ultra-Fast WSE-3 Sprinters)
- *   Tier 5-8  : Groq Llama 3.3 70B Versatile Key 1-4 (The Secondary Sprinters)
- *   Tier 9-12 : Gemini 3.6 Flash Key 1-4         (The Deep Thinkers — Fallback)
+ *   Tier 5-8  : Gemini 3.6 Flash Key 1-4         (The Deep Thinkers & Fast Secondary)
+ *   Tier 9-12 : Groq Llama 3.3 70B Versatile Key 1-4 (The Tertiary Fallback)
  *
  * MODE HEAVY 🧠 (Konteks Berat — otomatis jika threshold/keyword terpenuhi):
  *   Tier 1-4  : Gemini 3.6 Flash Key 1-4         (1 Juta Token Window, Deep Reasoning)
- *   Tier 5-8  : Groq Llama 3.3 70B Versatile Key 1-4 (The Secondary Sprinters)
- *   Tier 9-12 : Cerebras Gemma 4 31B Key 1-4    (The Ultra-Fast WSE-3 — Fallback)
+ *   Tier 5-8  : Cerebras Gemma 4 31B Key 1-4    (The Ultra-Fast WSE-3 Secondary)
+ *   Tier 9-12 : Groq Llama 3.3 70B Versatile Key 1-4 (The Tertiary Fallback)
  *
  * Tier 13 : Hugging Face Gemma 4 31B IT          (The Free Safety Net)
  * Tier 14 : Mistral Pixtral 12B                  (The Reliable European Closer — 937.5K TPM)
@@ -215,21 +215,21 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  // Primary  = Tier 1-4  (Cerebras jika LIGHT, Gemini 3.6 jika HEAVY)
-  // Secondary = Tier 9-12 (Gemini 3.6 jika LIGHT, Cerebras jika HEAVY)
+  // Primary   = Tier 1-4 (Cerebras jika LIGHT, Gemini 3.6 jika HEAVY)
+  // Secondary = Tier 5-8 (Gemini 3.6 jika LIGHT, Cerebras jika HEAVY)
   const primaryBlock   = (heavy ? geminiBlock   : cerebrasBlock);
   const secondaryBlock = (heavy ? cerebrasBlock  : geminiBlock);
 
   const tiers = [
-    // Tier 1-4: Primary AI (dibalik berdasarkan SACR mode)
+    // Tier 1-4: Primary AI (Cerebras di LIGHT, Gemini di HEAVY)
     ...primaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
-    // Tier 5-8: Groq Llama 3.3 70B Versatile (selalu di tengah sebagai Secondary Sprinter)
+    // Tier 5-8: Secondary AI (Gemini di LIGHT, Cerebras di HEAVY) — Gemini dipindah ke Tier 5-8
+    ...secondaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 5}`) })),
+    // Tier 9-12: Groq Llama 3.3 70B Versatile — Groq dipindah ke Tier 9-12
     ...groqKeys.filter(Boolean).map((key, i) => ({
-      name: `Tier ${i + 5} (Groq Key ${i + 1})`,
+      name: `Tier ${i + 9} (Groq Key ${i + 1})`,
       fn: () => callGroq(key, prompt, systemInstruction, temperature, jsonMode)
     })),
-    // Tier 9-12: Secondary AI (kebalikan dari primary)
-    ...secondaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 9}`) })),
     // Tier 13: Hugging Face Gemma 4 31B
     ...(env.HF_INFERENCE_TOKEN ? [{
       name: 'Tier 13 (Hugging Face Gemma 4 31B)',
