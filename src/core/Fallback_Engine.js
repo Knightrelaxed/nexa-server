@@ -3,6 +3,21 @@ const axios = require('axios');
 const env = require('../config/env');
 
 // ============================================================
+// NON-BLOCKING ASYNCHRONOUS LOGGING WRAPPERS
+// Memastikan pencetakan log ke stdout tidak menahan Event Loop
+// saat eksekusi panggilan jaringan AI atau alur routing berlangsung.
+// ============================================================
+function asyncLog(...args) {
+  setImmediate(() => console.log(...args));
+}
+function asyncWarn(...args) {
+  setImmediate(() => console.warn(...args));
+}
+function asyncError(...args) {
+  setImmediate(() => console.error(...args));
+}
+
+// ============================================================
 // MULTI-KEY AI INITIALIZATION
 // ============================================================
 const geminiClients = [
@@ -183,7 +198,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       : isHeavyContext(prompt, systemInstruction, options);
 
   const sacrMode = heavy ? 'HEAVY 🧠 [Gemini 3.6 Flash Priority]' : 'LIGHT ⚡ [Cerebras Priority]';
-  console.log(`[SACR] Mode: ${sacrMode} | Total chars: ${(prompt?.length || 0) + (systemInstruction?.length || 0)}`);
+  asyncLog(`[SACR] Mode: ${sacrMode} | Total chars: ${(prompt?.length || 0) + (systemInstruction?.length || 0)}`);
 
   // --- Bangun blok tier Cerebras dan Gemini secara terpisah ---
   const cerebrasBlock = cerebrasKeys
@@ -234,16 +249,16 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 
   for (const tier of tiers) {
     try {
-      console.log(`[FALLBACK] Trying ${tier.name}...`);
+      asyncLog(`[FALLBACK] Trying ${tier.name}...`);
       const rawRes = await tier.fn();
       return validateResponseJson(rawRes, jsonMode);
     } catch (e) {
-      console.warn(`[FALLBACK] ${tier.name} failed:`, getErrDetails(e));
+      asyncWarn(`[FALLBACK] ${tier.name} failed:`, getErrDetails(e));
     }
   }
 
   // Fallback Final
-  console.error('[FALLBACK] ⚠️ All 15 AI layers exhausted. Entering Dumb Mode.');
+  asyncError('[FALLBACK] ⚠️ All 15 AI layers exhausted. Entering Dumb Mode.');
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,
@@ -263,7 +278,10 @@ async function callGeminiWithRetry(client, modelName, prompt, systemInstruction,
   const model = client.getGenerativeModel({
     model: modelName,
     systemInstruction: systemInstruction,
-    generationConfig
+    generationConfig,
+    // Gemini berjalan di arsitektur Google TPU dengan penalaran mendalam & konteks 1M token.
+    // Diberi batas waktu 12.000ms (12 detik) agar cukup waktu untuk memproses beban berat.
+    requestOptions: { timeout: 12000 }
   });
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -292,7 +310,9 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
     try {
       const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', requestBody, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 8000
+        // Groq berjalan di arsitektur LPU (Language Processing Unit) super cepat.
+        // Timeout dibatas 4000ms (4 detik) agar cepat pindah jika terjadi antrean.
+        timeout: 4000
       });
       return response.data.choices[0].message.content;
     } catch (e) {
@@ -318,9 +338,9 @@ async function callCerebras(apiKey, prompt, systemInstruction, temperature, json
     try {
       const response = await axios.post('https://api.cerebras.ai/v1/chat/completions', requestBody, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        // Cerebras WSE-3 seharusnya ultrafast (<2s). Jika >5s = server sedang overload/down.
-        // Diturunkan dari 8000ms → 5000ms untuk mempersingkat waktu tunggu saat server tidak responsif.
-        timeout: 5000
+        // Cerebras berjalan di arsitektur WSE-3 ultrafast (~1000 token/detik).
+        // Jika dalam 2.500ms (2,5 detik) tidak respons, berarti antrean penuh/overload. Pindah tier kilat!
+        timeout: 2500
       });
       return response.data.choices[0].message.content;
     } catch (e) {
@@ -349,7 +369,7 @@ async function callHuggingFaceInference(prompt, systemInstruction, temperature, 
     try {
       const response = await axios.post('https://router.huggingface.co/v1/chat/completions', requestBody, {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        timeout: 15000
+        timeout: 8000
       });
       return response.data.choices[0].message.content;
     } catch (e) {
@@ -378,7 +398,7 @@ async function callMistral(prompt, systemInstruction, temperature, jsonMode = tr
     try {
       const response = await axios.post('https://api.mistral.ai/v1/chat/completions', requestBody, {
         headers: { 'Authorization': `Bearer ${env.MISTRAL_API_KEY}`, 'Content-Type': 'application/json' },
-        timeout: 15000
+        timeout: 8000
       });
       return response.data.choices[0].message.content;
     } catch (e) {
@@ -421,7 +441,7 @@ async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode =
             'HTTP-Referer': 'https://nexa.ai',
             'X-Title': 'NEXA Assistant'
           },
-          timeout: 15000
+          timeout: 7000
         });
         return response.data.choices[0].message.content;
       } catch (e) {
@@ -429,7 +449,7 @@ async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode =
           await new Promise(r => setTimeout(r, attempt * 2000));
           continue;
         }
-        console.warn(`[FALLBACK] OpenRouter model ${model} failed:`, getErrDetails(e));
+        asyncWarn(`[FALLBACK] OpenRouter model ${model} failed:`, getErrDetails(e));
         break; // Stop retrying this specific model and jump to the next free model in the list
       }
     }
