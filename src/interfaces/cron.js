@@ -335,48 +335,46 @@ function initCronJobs() {
   // [PHASE 6 — Pilar 8.1] PROACTIVE CRON EXPANSION
   // ================================================================
 
-  // 6. [P6] Event Proximity Alert (every 30 minutes)
-  // Sends a notification 30 minutes BEFORE a calendar event starts.
-  // Uses a session-level Set to prevent double-notifications for the same event.
+  // 6. [P6] Event Proximity Alert (setiap 10 menit)
+  // Memeriksa event kalender yang akan dimulai dalam 15-30 menit ke depan.
   const _notifiedEventIds = new Set();
-  cron.schedule('*/30 * * * *', async () => {
-    console.log('[CRON-P6] Executing Proximity Alert check...');
+  cron.schedule('*/10 * * * *', async () => {
     try {
       const googleWorkspace = require('../infrastructure/Google_Workspace');
       const { sendTelegramOutbound } = require('./webhook');
 
-      const events = await googleWorkspace.getUpcomingEvents(30, 3);
+      // Ambil event yang dimulai dalam 45 menit ke depan
+      const events = await googleWorkspace.getUpcomingEvents(45, 5);
       if (!events || events.length === 0) return;
 
       for (const e of events) {
-        // Skip events already notified this session
         if (_notifiedEventIds.has(e.id)) continue;
 
         const startTime = new Date(e.start.dateTime);
         const minutesLeft = Math.round((startTime - Date.now()) / 60000);
 
-        // Only notify if within the 25–35 minute window to avoid repeat-fire edge cases
-        if (minutesLeft < 25 || minutesLeft > 35) continue;
+        // Kirim pengingat jika event dimulai dalam rentang 5–30 menit lagi
+        if (minutesLeft <= 30 && minutesLeft >= 5) {
+          const timeLabel = startTime.toLocaleTimeString('id-ID', {
+            hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta'
+          });
+          const locationPart = e.location ? `\n📍 ${e.location}` : '';
+          const msg = `⏰ <b>Pengingat ${minutesLeft} Menit!</b>\n\n` +
+            `<b>${e.summary || '(Tanpa Judul)'}</b> dimulai pukul <b>${timeLabel} WIB</b>.${locationPart}\n\nSudah siap, Tuan?`;
 
-        const timeLabel = startTime.toLocaleTimeString('id-ID', {
-          hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta'
-        });
-        const locationPart = e.location ? `\n📍 ${e.location}` : '';
-        const msg = `⏰ <b>Pengingat 30 Menit!</b>\n\n` +
-          `<b>${e.summary || '(Tanpa Judul)'}</b> dimulai pukul <b>${timeLabel} WIB</b>.\n` +
-          `${locationPart}\n\nSudah siap, Tuan?`;
+          await sendTelegramOutbound(msg);
+          _notifiedEventIds.add(e.id);
 
-        await sendTelegramOutbound(msg);
-        _notifiedEventIds.add(e.id);
-
-        // Auto-evict from set after 2 hours to prevent unbounded memory growth
-        setTimeout(() => _notifiedEventIds.delete(e.id), 2 * 60 * 60 * 1000);
-        console.log(`[CRON-P6] Proximity alert sent for event: "${e.summary}"`);
+          // Hapus dari cache setelah 2 jam
+          setTimeout(() => _notifiedEventIds.delete(e.id), 2 * 60 * 60 * 1000);
+          console.log(`[CRON-P6] ✅ Proximity alert sent for event: "${e.summary}" (${minutesLeft}m left)`);
+        }
       }
     } catch (e) {
       console.error('[CRON-P6] Proximity Alert failed:', e.message);
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
 
   // 7. [P6] Midday Pulse (12:00 WIB)
   // A brief proactive check-in: pending tasks + spending summary for today.
