@@ -184,12 +184,12 @@ async function saveIdeaToVault(ideaContent) {
 }
 
 /**
- * Save fact to User Profile
+ * Save fact to User Profile (Legacy — dipertahankan untuk kompatibilitas).
+ * Untuk penyimpanan baru yang lebih cerdas, gunakan saveMemoryWithMeta().
  */
 async function saveUserProfile(content) {
   if (!supabase) return;
-  const { error } = await supabase.from('nexa_user_profile').insert([{ content }]);
-  if (error) console.error('[SUPABASE] Error saving user profile:', error.message);
+  return await saveMemoryWithMeta(content, 'PREFERENCE', 'USER_PROFILE');
 }
 
 /**
@@ -206,12 +206,12 @@ async function deleteFromUserProfile(searchKeyword) {
 }
 
 /**
- * Save fact to Core Identity
+ * Save fact to Core Identity (Legacy — dipertahankan untuk kompatibilitas).
+ * Untuk penyimpanan baru yang lebih cerdas, gunakan saveMemoryWithMeta().
  */
 async function saveCoreIdentity(content) {
   if (!supabase) return;
-  const { error } = await supabase.from('nexa_core_identity').insert([{ content }]);
-  if (error) console.error('[SUPABASE] Error saving core identity:', error.message);
+  return await saveMemoryWithMeta(content, 'RULE', 'CORE_IDENTITY');
 }
 
 /**
@@ -225,6 +225,177 @@ async function deleteFromCoreIdentity(searchKeyword) {
   if (targetIds.length === 0) return false;
   const { error } = await supabase.from('nexa_core_identity').delete().in('id', targetIds);
   return !error;
+}
+
+// ============================================================
+// [PHASE 9] LIVING MEMORY — Fungsi-Fungsi Lifecycle Baru
+// ============================================================
+
+/**
+ * [PHASE 9] Simpan fakta memori BARU dengan metadata lifecycle lengkap.
+ * Menggantikan saveUserProfile/saveCoreIdentity untuk penyimpanan cerdas.
+ *
+ * @param {string} content - Konten fakta yang akan disimpan
+ * @param {string} categoryType - 'PERMANENT_FACT'|'PREFERENCE'|'EPHEMERAL'|'RULE'
+ * @param {'USER_PROFILE'|'CORE_IDENTITY'} type - Tabel tujuan
+ * @returns {Promise<{success: boolean, id: number|null}>}
+ */
+async function saveMemoryWithMeta(content, categoryType, type = 'USER_PROFILE') {
+  if (!supabase || !content) return { success: false, id: null };
+
+  const VALID_CATEGORIES = new Set(['PERMANENT_FACT', 'PREFERENCE', 'EPHEMERAL', 'RULE']);
+  const validCat = VALID_CATEGORIES.has(categoryType) ? categoryType : 'PREFERENCE';
+  const table = type === 'CORE_IDENTITY' ? 'nexa_core_identity' : 'nexa_user_profile';
+
+  const payload = {
+    content: String(content).trim(),
+    category_type: validCat,
+    last_reinforced_at: new Date().toISOString(),
+    evidence_count: 1,
+    status: 'ACTIVE'
+  };
+
+  const { data, error } = await supabase.from(table).insert([payload]).select('id');
+  if (error) {
+    console.error(`[PHASE9-MEM] Error saving memory with meta to ${table}:`, error.message);
+    return { success: false, id: null };
+  }
+  console.log(`[PHASE9-MEM] ✅ Saved [${validCat}] to ${table}: "${String(content).substring(0, 60)}"`);
+  return { success: true, id: data?.[0]?.id ?? null };
+}
+
+/**
+ * [PHASE 9] Ambil SEMUA fakta ACTIVE dari tabel (tanpa batasan limit).
+ * Digunakan oleh Supersede Engine v2 untuk perbandingan komprehensif.
+ *
+ * @param {'USER_PROFILE'|'CORE_IDENTITY'} type - Tabel sumber
+ * @returns {Promise<Array<{id, content, category_type, evidence_count, last_reinforced_at}>>}
+ */
+async function getAllActiveMemories(type = 'USER_PROFILE') {
+  if (!supabase) return [];
+  const table = type === 'CORE_IDENTITY' ? 'nexa_core_identity' : 'nexa_user_profile';
+
+  const { data, error } = await supabase
+    .from(table)
+    .select('id, content, category_type, evidence_count, last_reinforced_at')
+    .eq('status', 'ACTIVE')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error(`[PHASE9-MEM] Error fetching all active memories from ${table}:`, error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * [PHASE 9] Soft-archive fakta berdasarkan ID (ubah status → 'ARCHIVED').
+ * TIDAK melakukan hard DELETE — data tetap aman untuk audit & pemulihan.
+ *
+ * @param {number} id - ID fakta yang akan diarsipkan
+ * @param {'USER_PROFILE'|'CORE_IDENTITY'} type - Tabel sumber
+ * @returns {Promise<boolean>}
+ */
+async function archiveMemoryById(id, type = 'USER_PROFILE') {
+  if (!supabase || !id) return false;
+  const table = type === 'CORE_IDENTITY' ? 'nexa_core_identity' : 'nexa_user_profile';
+
+  const { error } = await supabase
+    .from(table)
+    .update({ status: 'ARCHIVED' })
+    .eq('id', id);
+
+  if (error) {
+    console.error(`[PHASE9-MEM] Error archiving memory ID ${id} in ${table}:`, error.message);
+    return false;
+  }
+  console.log(`[PHASE9-MEM] 📦 Archived memory ID ${id} in ${table}.`);
+  return true;
+}
+
+/**
+ * [PHASE 9] Batch soft-archive banyak fakta sekaligus berdasarkan array of IDs.
+ * Dipanggil setelah Tuan menekan tombol [Arsipkan Semua] di Telegram.
+ *
+ * @param {number[]} ids - Array ID fakta yang akan diarsipkan
+ * @param {'USER_PROFILE'|'CORE_IDENTITY'} type - Tabel sumber
+ * @returns {Promise<{success: boolean, archived: number}>}
+ */
+async function bulkArchiveMemories(ids, type = 'USER_PROFILE') {
+  if (!supabase || !ids || ids.length === 0) return { success: false, archived: 0 };
+  const table = type === 'CORE_IDENTITY' ? 'nexa_core_identity' : 'nexa_user_profile';
+
+  const { error } = await supabase
+    .from(table)
+    .update({ status: 'ARCHIVED' })
+    .in('id', ids);
+
+  if (error) {
+    console.error(`[PHASE9-MEM] Error bulk archiving in ${table}:`, error.message);
+    return { success: false, archived: 0 };
+  }
+  console.log(`[PHASE9-MEM] 📦 Bulk archived ${ids.length} memories in ${table}.`);
+  return { success: true, archived: ids.length };
+}
+
+/**
+ * [PHASE 9] Naikkan evidence_count dan perbarui last_reinforced_at untuk fakta yang ditegaskan ulang.
+ * Dipanggil oleh Supersede Engine v2 saat keputusan AI adalah 'REINFORCE'.
+ *
+ * @param {number} id - ID fakta yang akan di-reinforce
+ * @param {'USER_PROFILE'|'CORE_IDENTITY'} type - Tabel sumber
+ * @returns {Promise<boolean>}
+ */
+async function reinforceMemoryById(id, type = 'USER_PROFILE') {
+  if (!supabase || !id) return false;
+  const table = type === 'CORE_IDENTITY' ? 'nexa_core_identity' : 'nexa_user_profile';
+
+  // Ambil evidence_count saat ini untuk di-increment (Supabase tidak punya atomic increment via update)
+  const { data: current } = await supabase.from(table).select('evidence_count').eq('id', id).single();
+  const newCount = (current?.evidence_count || 1) + 1;
+
+  const { error } = await supabase
+    .from(table)
+    .update({
+      evidence_count: newCount,
+      last_reinforced_at: new Date().toISOString()
+    })
+    .eq('id', id);
+
+  if (error) {
+    console.error(`[PHASE9-MEM] Error reinforcing memory ID ${id} in ${table}:`, error.message);
+    return false;
+  }
+  console.log(`[PHASE9-MEM] ⚡ Reinforced memory ID ${id} in ${table} (evidence: ${newCount}).`);
+  return true;
+}
+
+/**
+ * [PHASE 9] Ambil semua fakta berstatus STAGED_FOR_PRUNING dari kedua tabel.
+ * Digunakan oleh Memory Hygiene Engine untuk menyusun laporan review ke Telegram.
+ *
+ * @returns {Promise<{userProfile: Array, coreIdentity: Array}>}
+ */
+async function getStagedForPruning() {
+  if (!supabase) return { userProfile: [], coreIdentity: [] };
+
+  const [profileRes, identityRes] = await Promise.all([
+    supabase
+      .from('nexa_user_profile')
+      .select('id, content, category_type, evidence_count, last_reinforced_at')
+      .eq('status', 'STAGED_FOR_PRUNING')
+      .order('last_reinforced_at', { ascending: true }),
+    supabase
+      .from('nexa_core_identity')
+      .select('id, content, category_type, evidence_count, last_reinforced_at')
+      .eq('status', 'STAGED_FOR_PRUNING')
+      .order('last_reinforced_at', { ascending: true })
+  ]);
+
+  return {
+    userProfile: profileRes.data || [],
+    coreIdentity: identityRes.data || []
+  };
 }
 
 /**
@@ -358,11 +529,22 @@ function findMatchingIds(rows, searchKeyword) {
  */
 async function getPersonalFacts() {
   if (!supabase) return { userProfile: [], coreIdentity: [], vaultItems: [] };
-  
+
+  // [PHASE 9] Filter: hanya ambil fakta ACTIVE agar fakta ARCHIVED/STAGED tidak
+  // mengotori system prompt AI. Ini adalah pintu gerbang utama Living Memory.
   const [profileRes, identityRes, vaultRes] = await Promise.all([
-    supabase.from('nexa_user_profile').select('content').order('created_at', { ascending: true }),
-    supabase.from('nexa_core_identity').select('content').order('created_at', { ascending: true }),
-    supabase.from('nexa_vault_items').select('file_name, category, metadata_json, drive_web_view_link, status').order('created_at', { ascending: false }).limit(30)
+    supabase.from('nexa_user_profile')
+      .select('content')
+      .eq('status', 'ACTIVE')                           // [PHASE 9] Filter ACTIVE only
+      .order('created_at', { ascending: true }),
+    supabase.from('nexa_core_identity')
+      .select('content')
+      .eq('status', 'ACTIVE')                           // [PHASE 9] Filter ACTIVE only
+      .order('created_at', { ascending: true }),
+    supabase.from('nexa_vault_items')
+      .select('file_name, category, metadata_json, drive_web_view_link, status')
+      .order('created_at', { ascending: false })
+      .limit(30)
   ]);
 
   const vaultItems = (vaultRes.data || []).map(item => {
@@ -1137,6 +1319,13 @@ module.exports = {
   saveCoreIdentity,
   deleteFromCoreIdentity,
   getPersonalFacts,
+  // ── [PHASE 9] Living Memory ────────────────────────────────
+  saveMemoryWithMeta,
+  getAllActiveMemories,
+  archiveMemoryById,
+  bulkArchiveMemories,
+  reinforceMemoryById,
+  getStagedForPruning,
   // ── Generic Database Operations ────────────────────────────
   getDatabaseOverview,
   readDatabaseTable,

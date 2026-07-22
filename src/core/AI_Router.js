@@ -1015,78 +1015,134 @@ BALAS HANYA dengan satu kata: YES, NO, atau AMBIGUOUS. Tanpa penjelasan apapun.`
 const _dedupInFlight = new Set();
 
 /**
- * Smart Deduplication System
- * Compares newFact with existing facts.
+ * [PHASE 9] Supersede Engine v2 — Smart 4-Way Memory Deduplication
+ *
+ * Menggantikan sistem 2-way lama (NEW/DUPLICATE) dengan 4-way decision:
+ *   NEW       → Fakta belum ada. INSERT dengan category_type hasil klasifikasi AI.
+ *   REINFORCE → Fakta sudah ada & ditegaskan ulang. Naikkan evidence_count saja.
+ *   SUPERSEDE → Fakta baru menggantikan yang lama. Soft-archive lama, INSERT baru.
+ *   DUPLICATE → Makna sama persis. No-op (abaikan).
+ *
+ * Menghapus batasan slice(-40) — kini membaca SEMUA fakta aktif (Gemini 1M token).
  * Dilindungi oleh in-flight mutex untuk mencegah race condition double-insert.
  */
 async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
-  // ── Guard: tolak jika fact yang identik sedang diproses oleh call lain ──
   const lockKey = `${type}::${newFact}`;
   if (_dedupInFlight.has(lockKey)) {
-    console.log(`[ROUTER] Deduplication: Skipped in-flight duplicate - ${newFact}`);
+    console.log(`[SUPERSEDE] In-flight skip - ${newFact.substring(0, 60)}`);
     return false;
   }
   _dedupInFlight.add(lockKey);
 
   try {
-    const existingFactsObj = await loadPersonalFactsWithCache();
-    const existingFacts = type === 'USER_PROFILE' ? existingFactsObj.userProfile : existingFactsObj.coreIdentity;
+    // [PHASE 9] Ambil SEMUA fakta aktif — bukan lagi slice(-40)
+    const existingFacts = await supabaseMemories.getAllActiveMemories(type);
 
+    // Kasus pertama: belum ada fakta sama sekali → langsung INSERT
     if (!existingFacts || existingFacts.length === 0) {
-      if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
-      else await supabaseMemories.saveCoreIdentity(newFact);
+      const catType = await _classifyMemoryCategory(newFact);
+      await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
       invalidatePersonalFactsCache();
+      console.log(`[SUPERSEDE] FIRST FACT (${type}) saved [${catType}]: ${newFact.substring(0, 60)}`);
       return true;
     }
 
-    // Batasi existing facts yang dikirim ke AI agar prompt dedup tidak membengkak
-    // Ambil 40 fakta terbaru saja — cukup representatif tanpa token boros
-    const factsForCheck = existingFacts.slice(-40);
-    const prompt = `EXISTING FACTS:\n${factsForCheck.map((f, i) => `[${i}] ${f}`).join('\n')}\n\nNEW FACT: "${newFact}"\n\nTASK: Compare NEW FACT against EXISTING FACTS. Consider ALL of the following reasons to UPDATE:\n1. NEW FACT is MORE DETAILED or more complete than an existing fact.\n2. NEW FACT CONTRADICTS or REVERSES an existing fact (e.g. old: "user smokes", new: "user quit smoking and lives healthy" → this is UPDATE, not NEW).\n3. NEW FACT represents a STATUS CHANGE in something previously recorded (e.g. old: "studying at UGM", new: "graduated from UGM").\n4. NEW FACT is a CORRECTION or revision of a prior belief.\n\nReply ONLY with:\n- "NEW": If totally new information with no related existing fact.\n- "UPDATE [ID]": If NEW FACT should REPLACE fact [ID] for any of the above reasons.\n- "DUPLICATE": If exact match or essentially the same meaning.`;
+    // Susun prompt perbandingan dengan ID nyata dari database
+    const factsStr = existingFacts
+      .map(f => `[ID:${f.id}|${f.category_type || 'PREFERENCE'}] ${f.content}`)
+      .join('\n');
 
-    const result = await executeWithFallback(prompt, 'Reply strictly in requested format.', 0.1, false);
-    const decision = String(result).trim().toUpperCase();
+    const prompt = `EXISTING FACTS IN MEMORY (${type}):\n${factsStr}\n\nNEW FACT: "${newFact}"\n\nTASK: Compare NEW FACT against ALL existing facts above. Apply these rules strictly:\n1. "REINFORCE [ID]" — If NEW FACT essentially means the same thing as an existing fact (even if worded differently). This reinforces the existing memory.\n2. "SUPERSEDE [ID]" — If NEW FACT CONTRADICTS, REVERSES, UPDATES, or REFINES an existing fact. Old fact should be replaced.\n3. "DUPLICATE" — If NEW FACT is identical in content and no meaningful new information.\n4. "NEW" — Only if NEW FACT introduces information genuinely absent from all existing facts.\n\nReply ONLY with one of:\n- NEW\n- REINFORCE [ID]\n- SUPERSEDE [ID]\n- DUPLICATE`;
+
+    const result = await executeWithFallback(prompt, 'Reply strictly in the exact format shown. Do not add explanations.', 0.1, false);
+    const decision = String(result || '').trim().toUpperCase();
 
     if (decision.startsWith('NEW')) {
-      if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
-      else await supabaseMemories.saveCoreIdentity(newFact);
+      // INSERT fakta baru dengan kategori yang diklasifikasikan AI
+      const catType = await _classifyMemoryCategory(newFact);
+      await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
       invalidatePersonalFactsCache();
+      console.log(`[SUPERSEDE] NEW (${type}) [${catType}]: ${newFact.substring(0, 60)}`);
       return true;
-    } else if (decision.startsWith('UPDATE')) {
-      const match = decision.match(/UPDATE\s+(\d+)/);
+
+    } else if (decision.startsWith('REINFORCE')) {
+      // Naikkan evidence_count + perbarui last_reinforced_at, tidak INSERT baru
+      const match = decision.match(/REINFORCE\s+(\d+)/i);
       if (match) {
-        const idx = parseInt(match[1], 10);
-        const targetFact = factsForCheck[idx];
-        if (targetFact) {
-          // DELETE dulu, baru INSERT — tidak boleh INSERT dua kali
-          if (type === 'USER_PROFILE') {
-            await supabaseMemories.deleteFromUserProfile(targetFact);
-            await supabaseMemories.saveUserProfile(newFact);
-          } else {
-            await supabaseMemories.deleteFromCoreIdentity(targetFact);
-            await supabaseMemories.saveCoreIdentity(newFact);
-          }
-          invalidatePersonalFactsCache();
-          return true;
+        const id = parseInt(match[1], 10);
+        const reinforced = await supabaseMemories.reinforceMemoryById(id, type);
+        if (reinforced) {
+          console.log(`[SUPERSEDE] REINFORCE (${type}) ID:${id} — evidence naik.`);
+          return false; // Tidak ada record baru, cache tidak perlu di-invalidate
         }
       }
-      // Fallback HANYA jika regex UPDATE gagal: cek dulu apakah sudah ada yang mirip
-      // Jangan langsung INSERT — ini adalah akar dari duplicate key!
-      // Simpan sebagai NEW karena AI menyarankan update tapi ID tidak valid
-      console.warn(`[ROUTER] Deduplication: UPDATE id not found, saving as NEW - ${newFact}`);
-      if (type === 'USER_PROFILE') await supabaseMemories.saveUserProfile(newFact);
-      else await supabaseMemories.saveCoreIdentity(newFact);
+      // Fallback jika ID tidak valid: simpan sebagai NEW
+      console.warn(`[SUPERSEDE] REINFORCE id invalid, saving as NEW: ${newFact.substring(0, 60)}`);
+      const catType = await _classifyMemoryCategory(newFact);
+      await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
       invalidatePersonalFactsCache();
       return true;
+
+    } else if (decision.startsWith('SUPERSEDE')) {
+      // [PHASE 9] Soft-archive fakta lama, INSERT fakta baru
+      const match = decision.match(/SUPERSEDE\s+(\d+)/i);
+      if (match) {
+        const id = parseInt(match[1], 10);
+        const oldFact = existingFacts.find(f => f.id === id);
+
+        // Arsipkan yang lama (bukan hard delete!)
+        await supabaseMemories.archiveMemoryById(id, type);
+
+        // INSERT fakta baru dengan kategori yang sesuai
+        // Pertahankan category_type dari fakta lama jika ada, agar hierarki terjaga
+        const catType = oldFact?.category_type || await _classifyMemoryCategory(newFact);
+        await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
+        invalidatePersonalFactsCache();
+        console.log(`[SUPERSEDE] SUPERSEDED (${type}) ID:${id} → "${newFact.substring(0, 60)}" [${catType}]`);
+        return true;
+      }
+      // Fallback: ID tidak valid → simpan sebagai NEW
+      console.warn(`[SUPERSEDE] SUPERSEDE id invalid, saving as NEW: ${newFact.substring(0, 60)}`);
+      const catType = await _classifyMemoryCategory(newFact);
+      await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
+      invalidatePersonalFactsCache();
+      return true;
+
     } else {
-      console.log(`[ROUTER] Deduplication: Skipped duplicate fact - ${newFact}`);
+      // DUPLICATE — abaikan sepenuhnya
+      console.log(`[SUPERSEDE] DUPLICATE skip (${type}): ${newFact.substring(0, 60)}`);
       return false;
     }
+
+  } catch (err) {
+    console.error('[SUPERSEDE] deduplicateAndSaveFact error:', err.message);
+    return false;
   } finally {
-    // Selalu bebaskan kunci, bahkan jika terjadi error
     _dedupInFlight.delete(lockKey);
   }
 }
+
+/**
+ * [PHASE 9] Klasifikasi kategori fakta menggunakan AI.
+ * Menentukan apakah fakta bersifat PERMANENT_FACT, PREFERENCE, EPHEMERAL, atau RULE.
+ * Temperature 0.0 untuk hasil yang konsisten dan deterministik.
+ *
+ * @param {string} fact - Fakta yang akan diklasifikasikan
+ * @returns {Promise<'PERMANENT_FACT'|'PREFERENCE'|'EPHEMERAL'|'RULE'>}
+ */
+async function _classifyMemoryCategory(fact) {
+  const prompt = `Classify this personal fact into ONE category:\n\nFACT: "${fact}"\n\nCategories:\n- PERMANENT_FACT: Unchanging objective facts (birth date, blood type, allergies, religion, hometown)\n- PREFERENCE: Personal tastes and habits that may evolve over time (favorite food, preferred style, hobbies)\n- EPHEMERAL: Temporary states that will definitely change (current project, current illness, current mood, this week's focus)\n- RULE: Operational rules for how N.E.X.A should behave (response format rules, how to address the user, restrictions)\n\nReply ONLY with one word: PERMANENT_FACT, PREFERENCE, EPHEMERAL, or RULE`;
+
+  try {
+    const result = await executeWithFallback(prompt, 'Reply with exactly one word from the given options.', 0.0, false);
+    const clean = String(result || '').trim().toUpperCase().replace(/[^A-Z_]/g, '');
+    const VALID = new Set(['PERMANENT_FACT', 'PREFERENCE', 'EPHEMERAL', 'RULE']);
+    return VALID.has(clean) ? clean : 'PREFERENCE';
+  } catch (_) {
+    return 'PREFERENCE'; // Default aman jika AI gagal
+  }
+}
+
 
 /**
  * [PHASE 8] Deduplication engine untuk nexa_self_model.

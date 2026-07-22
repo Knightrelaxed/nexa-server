@@ -1,34 +1,4 @@
--- ============================================================
--- [PHASE 8 — SELF-LEARNING] nexa_self_model
--- N.E.X.A Self-Learning Engine: Schema Migration
--- ============================================================
--- Menyimpan pemahaman N.E.X.A tentang dirinya sendiri yang
--- dipelajari secara dinamis dari dua sumber:
---
---   Layer 1 (Passive):  obrolan sehari-hari (real-time, senyap)
---   Layer 2 (Weekly):   refleksi mingguan Minggu sore 16:00 WIB
---
--- TERPISAH TOTAL dari nexa_core_identity (System Seed):
---   - nexa_core_identity: Aturan & kepribadian dasar J.A.R.V.I.S
---                         (hanya developer yang isi, TIDAK PERNAH berubah otomatis)
---   - nexa_self_model:    Pemahaman diri yang N.E.X.A pelajari sendiri
---                         (evolusioner, dapat direvisi & diperbarui secara otomatis)
---
--- Layer yang valid:
---   CAPABILITIES         -- Hal yang N.E.X.A mampu lakukan
---   LIMITATIONS          -- Keterbatasan / kelemahan sistem
---   OPERATIONAL_RULES    -- Aturan operasional yang dipelajari dari Tuan
---   CORRECTIONS          -- Koreksi spesifik dari Tuan Faqih
---   COMMUNICATION_STYLE  -- Preferensi gaya komunikasi yang diobservasi
---
--- ANTI-KONTRADIKSI:
---   trait_key UNIQUE → setiap fakta diidentifikasi dengan kunci unik.
---   Jika fakta lama direvisi, baris yang sama di-UPDATE (tidak duplikat baru).
---
--- Cara pakai:
---   Jalankan script ini di SQL Editor Supabase (satu kali saja).
---   Setelah itu N.E.X.A mulai mengisi tabel ini secara otomatis.
--- ============================================================
+
 
 -- 1. Buat tabel utama
 CREATE TABLE IF NOT EXISTS nexa_self_model (

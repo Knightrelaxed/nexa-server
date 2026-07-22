@@ -662,6 +662,75 @@ async function handleTelegramWebhook(req, res) {
       return;
     }
 
+    // ── [PHASE 9] MEMORY HYGIENE: ARSIPKAN SEMUA ────────────────
+    if (cbData === 'HYGIENE_ARCHIVE_ALL') {
+      console.log('[HYGIENE-CB] Tuan menekan: Arsipkan Semua staged facts.');
+      try {
+        const staged = await supabaseMemories.getStagedForPruning();
+        const upIds = (staged.userProfile || []).map(r => r.id);
+        const ciIds = (staged.coreIdentity || []).map(r => r.id);
+        let totalArchived = 0;
+
+        if (upIds.length > 0) {
+          const res = await supabaseMemories.bulkArchiveMemories(upIds, 'USER_PROFILE');
+          totalArchived += res.archived;
+        }
+        if (ciIds.length > 0) {
+          const res = await supabaseMemories.bulkArchiveMemories(ciIds, 'CORE_IDENTITY');
+          totalArchived += res.archived;
+        }
+
+        // Invalidate cache agar AI Router tidak lagi menggunakan fakta yang diarsipkan
+        if (typeof aiRouter.invalidatePersonalFactsCache === 'function') {
+          aiRouter.invalidatePersonalFactsCache();
+        }
+
+        await editTelegramMessage(
+          `✅ <b>Selesai. ${totalArchived} fakta berhasil diarsipkan.</b>\n\n` +
+          `Memori N.E.X.A kini lebih bersih dan relevan.\n` +
+          `<i>(Fakta yang diarsipkan tidak dihapus permanen — masih tersimpan aman di database.)</i>`
+        );
+      } catch (e) {
+        console.error('[HYGIENE-CB] ARCHIVE_ALL error:', e.message);
+        await editTelegramMessage(`❌ <b>Gagal mengarsipkan.</b>\n<code>${e.message}</code>`);
+      }
+      return;
+    }
+
+    // ── [PHASE 9] MEMORY HYGIENE: TAHAN SEMUA ───────────────────
+    if (cbData === 'HYGIENE_HOLD_ALL') {
+      console.log('[HYGIENE-CB] Tuan menekan: Tahan Semua — reset staged ke ACTIVE.');
+      try {
+        // Kembalikan semua fakta STAGED_FOR_PRUNING ke status ACTIVE
+        const sb = supabaseMemories.supabase;
+        if (sb) {
+          await sb.from('nexa_user_profile').update({ status: 'ACTIVE' }).eq('status', 'STAGED_FOR_PRUNING');
+          await sb.from('nexa_core_identity').update({ status: 'ACTIVE' }).eq('status', 'STAGED_FOR_PRUNING');
+        }
+
+        await editTelegramMessage(
+          `❌ <b>Ditahan.</b> Semua fakta dikembalikan ke status Aktif.\n\n` +
+          `Saya tidak akan mengarsipkan apapun minggu ini.\n` +
+          `<i>Fakta-fakta tersebut akan dievaluasi kembali minggu depan.</i>`
+        );
+      } catch (e) {
+        console.error('[HYGIENE-CB] HOLD_ALL error:', e.message);
+        await editTelegramMessage(`❌ <b>Gagal mempertahankan fakta.</b>\n<code>${e.message}</code>`);
+      }
+      return;
+    }
+
+    // ── [PHASE 9] MEMORY HYGIENE: PILIH MANUAL ───────────────────
+    if (cbData === 'HYGIENE_SELECT_MANUAL') {
+      console.log('[HYGIENE-CB] Tuan menekan: Pilih Manual.');
+      await editTelegramMessage(
+        `🔍 <b>Pilih Manual (Tersedia Penuh di Phase 10)</b>\n\n` +
+        `Sistem UI pemilihan memori per baris sedang dalam tahap pengembangan akhir.\n\n` +
+        `💡 <i>Sementara itu, Anda dapat membalas pesan ini langsung dengan perintah seperti:\n"Hapus memori user profile ID 5"\natau gunakan tombol <b>Arsipkan Semua / Tahan Semua</b> untuk eksekusi kilat.</i>`
+      );
+      return;
+    }
+
     // Callback query lain yang tidak dikenal — abaikan saja
     console.log(`[WEBHOOK] Unknown callback_query data: ${cbData}`);
     return;

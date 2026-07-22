@@ -604,7 +604,7 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
           console.log(`[CRON-MEM] Extracted ${parsed.length} genuinely new facts (dedup-aware).`);
           for (const fact of parsed) {
             if (typeof fact === 'string' && fact.trim().length > 10) {
-              await supabaseMemories.saveUserProfile(fact.trim());
+              await aiRouter.deduplicateAndSaveFact(fact.trim(), 'USER_PROFILE');
             }
           }
           aiRouter.invalidatePersonalFactsCache();
@@ -715,11 +715,25 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
     }
   });
 
+  // [PHASE 9] Memory Hygiene: Minggu 02:00 WIB
+  // Berjalan sebelum Weekly Identity Inference (21:00 WIB) agar memori bersih
+  // sebelum AI membuat hipotesis identitas baru.
+  cron.schedule('0 2 * * 0', async () => {
+    console.log('[CRON-HYGIENE] Memory Hygiene Pipeline triggered (Minggu 02:00 WIB)...');
+    try {
+      const { runFullHygienePipeline } = require('../domain/Memory_Hygiene_Engine');
+      await runFullHygienePipeline();
+    } catch (e) {
+      console.error('[CRON-HYGIENE] Memory Hygiene Pipeline failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   console.log('[CRON] 🛡️ Telegram Alert Watchdog active (90s interval).');
   console.log('[CRON-P6] ✅ Phase 6 Proactive Crons active: Proximity, Midday, Evening, Tomorrow, Weekly Review.');
   console.log('[CRON-MEM] 🧠 Memory Consolidation active (23:59 WIB).');
   console.log('[CRON-BUDGET] 📊 Budget Recaps active (End of Week & Month).');
   console.log('[CRON-DISCIPLINE] ⚡ Discipline Auto-Escalation active (1m interval).');
+  console.log('[CRON-HYGIENE] 🧹 Memory Hygiene Pipeline active (Minggu 02:00 WIB).');
 }
 
 module.exports = { initCronJobs };
