@@ -97,34 +97,57 @@ async function generateMorningBriefing() {
     }
   } catch (_) { /* Jangan crash jika tabel belum ada */ }
 
-  // ── 5. Susun Pesan Mode Ringkas ────────────────────────────
-  const greeting = _getWibGreeting();
-  const parts = [`${greeting}, Tuan Faqih. ☀️`];
-
-  if (weatherStr) parts.push(weatherStr);
-
-  if (agendaStr) {
-    parts.push(agendaStr);
-  } else {
-    parts.push('📅 Tidak ada agenda terjadwal hari ini.');
+  // ── 4.5. Ambil Memori Kemarin ──────────────────────────────
+  let yesterdayLog = '';
+  try {
+    const mems = await supabaseMemories.getYesterdayMemories();
+    if (mems && mems.length > 0) {
+      yesterdayLog = mems.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n');
+    }
+  } catch (err) {
+    console.warn('[INTELLIGENCE] Failed to get yesterday memories:', err.message);
   }
 
-  if (taskWarning) parts.push(taskWarning);
+  // ── 5. Susun Pesan Mode Ringkas dengan AI ────────────────────────────
+  const greeting = _getWibGreeting();
+  
+  const prompt = `Anda adalah N.E.X.A, asisten pribadi eksklusif Tuan Faqih. Susun pesan Morning Briefing yang natural, elegan, dan proaktif.
+Sertakan komponen berikut dengan tata bahasa yang luwes (bukan list kaku):
+1. Sapaan: "${greeting}, Tuan Faqih. ☀️"
+2. Cuaca: ${weatherStr || 'Data cuaca tidak tersedia.'}
+3. Agenda Hari Ini: ${agendaStr ? agendaStr.replace(/\n/g, ' ') : 'Tidak ada agenda terjadwal hari ini.'}
+4. Tugas Prioritas: ${taskWarning ? taskWarning.replace(/\n/g, ' ') : 'Tidak ada tugas mendesak hari ini.'}
+5. Refleksi Kemarin: Berdasarkan transkrip percakapan kemarin, berikan SATU kalimat yang meresonansi kegiatan kemarin, menanyakan niat/rencana yang belum selesai, atau mem-follow up masalah/topik dari kemarin. Jika tidak ada yang relevan, berikan kalimat motivasi singkat.
+6. Check-In Pagi: Tutup dengan menanyakan kualitas tidur (skor 1-5 & cerita), tingkat energi (skor 1-5 & cerita), dan satu fokus utama hari ini. Beri contoh format jawabannya secara natural. (misal: "4 dan 3, tapi semalam tidur jam 2 karena nyamuk, fokus revisi makalah")
 
-  // ── 6. Check-In 3 Pertanyaan (Inti Phase 6 — AI Calibrated) ───────────────
-  // N.E.X.A menanyakan ini setiap pagi dan siap mengkalibrasi cerita alasan pengguna
-  parts.push([
-    '',
-    'Sebelum memulai hari, saya ingin mengenal kondisi Tuan:',
-    '😴 Kualitas tidur semalam? *(Skor 1-5 & ceritakan kondisinya)*',
-    '⚡ Tingkat energi sekarang? *(Skor 1-5 & ceritakan alasannya)*',
-    '🎯 Satu fokus utama hari ini?',
-    '',
-    '_Contoh: "4 dan 3, tapi semalam tidur jam 2 karena nyamuk, fokus revisi makalah"_',
-    '_N.E.X.A tidak mentah-mentah memasukkan angka, melainkan mengkalibrasi skor berdasarkan fakta cerita Anda._'
-  ].join('\n'));
+Transkrip Obrolan Kemarin:
+${yesterdayLog ? yesterdayLog.substring(0, 15000) : '(Tidak ada percakapan kemarin)'}
 
-  const finalMessage = parts.join('\n\n');
+Aturan:
+- Gunakan bahasa Indonesia baku namun hangat dan empatik.
+- Jangan gunakan format JSON. Langsung output berupa pesan Telegram.
+- Format teks yang rapi dan elegan.
+`;
+
+  let finalMessage = `${greeting}, Tuan Faqih. ☀️\n\n`;
+  try {
+    const aiResponse = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false, { forceHeavy: true });
+    finalMessage = aiResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+  } catch (err) {
+    console.warn('[INTELLIGENCE] Failed to generate AI Morning Briefing:', err.message);
+    const parts = [`${greeting}, Tuan Faqih. ☀️`];
+    if (weatherStr) parts.push(weatherStr);
+    if (agendaStr) parts.push(agendaStr);
+    else parts.push('📅 Tidak ada agenda terjadwal hari ini.');
+    if (taskWarning) parts.push(taskWarning);
+    parts.push([
+      'Sebelum memulai hari, saya ingin mengenal kondisi Tuan:',
+      '😴 Kualitas tidur semalam? *(Skor 1-5 & ceritakan kondisinya)*',
+      '⚡ Tingkat energi sekarang? *(Skor 1-5 & ceritakan alasannya)*',
+      '🎯 Satu fokus utama hari ini?'
+    ].join('\n'));
+    finalMessage = parts.join('\n\n');
+  }
 
   // Simpan ke behavior log bahwa morning briefing sudah dikirim
   try {

@@ -1305,6 +1305,7 @@ module.exports = {
   saveChatMemory,
   getRecentMemories,
   getTodayMemories,
+  getYesterdayMemories,
   // ── Finance & Dedup ────────────────────────────────────────
   isDuplicateTransaction,
   logTransactionKey,
@@ -1360,6 +1361,42 @@ module.exports = {
   getSelfModelByLayer,
   deleteFromSelfModel
 };
+
+/**
+ * Fetch all chat memories from yesterday (WIB timezone) for Morning Briefing context.
+ * Returns messages from 00:00 to 23:59 yesterday Asia/Jakarta.
+ */
+async function getYesterdayMemories() {
+  if (!supabase) return [];
+  const nowUtc = new Date();
+  const jakartaOffset = 7 * 60 * 60 * 1000;
+  const jakartaNow = new Date(nowUtc.getTime() + jakartaOffset);
+  
+  const midnightJakartaToday = new Date(
+    Date.UTC(jakartaNow.getUTCFullYear(), jakartaNow.getUTCMonth(), jakartaNow.getUTCDate())
+    - jakartaOffset
+  );
+  
+  const midnightJakartaYesterday = new Date(
+    midnightJakartaToday.getTime() - 24 * 60 * 60 * 1000
+  );
+
+  const { data, error } = await supabase
+    .from('nexa_chat_memories')
+    .select('role, content, created_at, platform')
+    .gte('created_at', midnightJakartaYesterday.toISOString())
+    .lt('created_at', midnightJakartaToday.toISOString())
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[SUPABASE] Error fetching yesterday memories:', error.message);
+    return [];
+  }
+  return (data || []).map(m => ({
+    ...m,
+    platform: m.platform || 'telegram'
+  }));
+}
 
 /**
  * Fetch all chat memories from today (WIB timezone) for Memory Consolidation cron.

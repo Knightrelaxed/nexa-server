@@ -377,34 +377,51 @@ function initCronJobs() {
 
 
   // 7. [P6] Midday Pulse (12:00 WIB)
-  // A brief proactive check-in: pending tasks + spending summary for today.
+  // A brief proactive check-in: pending tasks + spending summary + contextual check-in from morning chat.
   cron.schedule('0 12 * * *', async () => {
     console.log('[CRON-P6] Executing Midday Pulse...');
     try {
       const { sendTelegramOutbound } = require('./webhook');
       const googleTasks = require('../infrastructure/Google_Tasks');
       const financeEngine = require('../domain/Finance_Engine');
-      const aiRouter = require('../core/AI_Router');
+      const supabaseMemories = require('../infrastructure/Supabase_Memories');
+      const { executeWithFallback } = require('../core/Fallback_Engine');
 
-      // Gather data in parallel — Promise.allSettled ensures one failure can't kill the whole cron
-      const [todayTasks, recentFinance] = await Promise.allSettled([
+      // Gather data in parallel
+      const [todayTasks, recentFinance, todayMems] = await Promise.allSettled([
         googleTasks.getTasksDueToday(),
-        financeEngine.getRecentTransactions(3)
+        financeEngine.getRecentTransactions(3),
+        supabaseMemories.getTodayMemories()
       ]);
 
       const taskCount = todayTasks.status === 'fulfilled' ? (todayTasks.value || []).length : 0;
       const financeText = recentFinance.status === 'fulfilled' ? recentFinance.value : '(data keuangan tidak tersedia)';
+      
+      let morningLog = '';
+      if (todayMems.status === 'fulfilled' && todayMems.value && todayMems.value.length > 0) {
+        morningLog = todayMems.value.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n');
+      }
 
-      // Ask AI to synthesize a short midday pulse message
-      const prompt = `Tuan Faqih memiliki ${taskCount} tugas jatuh tempo hari ini. ` +
-        `Berikut ringkasan keuangan terkini (3 transaksi terakhir): ${typeof financeText === 'string' ? financeText.replace(/<[^>]+>/g, '') : '(kosong)'}. ` +
-        `Tulis pesan Midday Pulse singkat (2-3 kalimat) dalam bahasa Indonesia yang hangat dan proaktif. ` +
-        `Tanyakan progress tugas hari ini, dan sapa seperti seorang asisten yang peduli. ` +
-        `Jangan gunakan format JSON atau markdown **bold**.`;
+      const prompt = `Anda adalah N.E.X.A. Susun pesan Midday Pulse (sapaan siang) yang sangat natural, hangat, dan peka konteks untuk Tuan Faqih.
 
-      const pulseText = await aiRouter.callAI(prompt);
+Tugas Jatuh Tempo Hari Ini: ${taskCount} tugas.
+Ringkasan Keuangan (3 tx terakhir): ${typeof financeText === 'string' ? financeText.replace(/<[^>]+>/g, '') : '(kosong)'}.
+
+Transkrip Obrolan dari Pagi Tadi (Gunakan sebagai konteks utama):
+${morningLog ? morningLog.substring(0, 15000) : '(Belum ada percakapan hari ini)'}
+
+Instruksi:
+1. Sapa Tuan Faqih dengan hangat (misal "Selamat siang, Tuan Faqih").
+2. Berdasarkan transkrip pagi, tanyakan kelanjutan hal yang dibahas pagi tadi (misalnya apakah fokus hari ini berjalan lancar, atau menanyakan progres masalah spesifik yang sempat dibahas).
+3. Singgung tugas (jika ada) dan keuangan dengan luwes, BUKAN seperti robot pembaca laporan.
+4. Panjang pesan 3-4 kalimat saja.
+5. Jangan gunakan format JSON atau markdown **bold**. Output berupa teks pesan langsung.
+`;
+
+      const pulseText = await executeWithFallback(prompt, "Anda adalah N.E.X.A, asisten Tuan Faqih.", 0.7, false, { forceHeavy: true });
       if (pulseText) {
-        await sendTelegramOutbound(`🌤️ <b>Midday Pulse</b>\n\n${pulseText}`);
+        const cleanPulseText = pulseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        await sendTelegramOutbound(`🌤️ <b>Midday Pulse</b>\n\n${cleanPulseText}`);
       }
     } catch (e) {
       console.error('[CRON-P6] Midday Pulse failed:', e.message);
@@ -412,28 +429,43 @@ function initCronJobs() {
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // 8. [P6] Evening Debrief (17:00 WIB)
-  // Recap + open-ended question to capture notes from the user's day.
+  // Recap + open-ended question + contextual chat history.
   cron.schedule('0 17 * * *', async () => {
     console.log('[CRON-P6] Executing Evening Debrief...');
     try {
       const { sendTelegramOutbound } = require('./webhook');
-      const aiRouter = require('../core/AI_Router');
+      const { executeWithFallback } = require('../core/Fallback_Engine');
+      const supabaseMemories = require('../infrastructure/Supabase_Memories');
 
       const jakartaDate = new Date().toLocaleDateString('id-ID', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
         timeZone: 'Asia/Jakarta'
       });
 
-      const prompt = `Hari ini adalah ${jakartaDate}. ` +
-        `Tulis pesan Evening Debrief singkat (2-3 kalimat) dalam bahasa Indonesia yang hangat. ` +
-        `Ucapkan bahwa hari hampir selesai, tanyakan pencapaian apa yang sudah dilakukan hari ini, ` +
-        `dan apakah ada yang perlu dicatat atau diingat untuk besok. ` +
-        `Nada: hangat, suportif, seperti asisten yang benar-benar peduli dengan hari-hari Tuan Faqih. ` +
-        `Jangan gunakan format JSON atau markdown **bold**.`;
+      const mems = await supabaseMemories.getTodayMemories();
+      let dayLog = '';
+      if (mems && mems.length > 0) {
+        dayLog = mems.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n');
+      }
 
-      const debriefText = await aiRouter.callAI(prompt);
+      const prompt = `Hari ini adalah ${jakartaDate}. Anda adalah N.E.X.A, asisten Tuan Faqih.
+Susun pesan Evening Debrief (sapaan sore/penutup hari) yang sangat natural, hangat, dan peka konteks.
+
+Transkrip Obrolan Hari Ini (Gunakan sebagai konteks utama):
+${dayLog ? dayLog.substring(0, 15000) : '(Belum ada percakapan hari ini)'}
+
+Instruksi:
+1. Ucapkan bahwa hari hampir selesai dengan nada suportif.
+2. Berdasarkan transkrip hari ini, singgung progres atau masalah yang dibahas hari ini (terutama sejak siang/Midday Pulse). Jika Tuan Faqih sedang sibuk atau menyelesaikan sesuatu, berikan apresiasi.
+3. Tanyakan pencapaian hari ini atau tanyakan apakah ada hal yang perlu dicatat/diingat untuk besok.
+4. Panjang pesan 3-4 kalimat saja.
+5. Jangan gunakan format JSON atau markdown **bold**. Output berupa teks pesan langsung.
+`;
+
+      const debriefText = await executeWithFallback(prompt, "Anda adalah N.E.X.A, asisten Tuan Faqih.", 0.7, false, { forceHeavy: true });
       if (debriefText) {
-        await sendTelegramOutbound(`🌇 <b>Evening Debrief</b>\n\n${debriefText}`);
+        const cleanDebriefText = debriefText.replace(/```json/g, '').replace(/```/g, '').trim();
+        await sendTelegramOutbound(`🌇 <b>Evening Debrief</b>\n\n${cleanDebriefText}`);
       }
     } catch (e) {
       console.error('[CRON-P6] Evening Debrief failed:', e.message);
