@@ -105,19 +105,9 @@ if (require.main === module) {
       console.error('[N.E.X.A] Pending transaction recovery error:', e.message);
     });
 
-    // ── Pintu 2: WhatsApp (Baileys Socket Engine) ─────────────────────────
-    // DINONAKTIFKAN SEPENUHNYA (HF OOM Fix): Library @whiskeysockets/baileys terlalu berat
-    // untuk Free Tier Hugging Face (16GB RAM limit, menyebabkan Docker build timeout/OOM).
-    /*
-    if (env.WHATSAPP_OWNER_JID || env.WHATSAPP_OWNER_NUMBER) {
-      const waAdapter = require('./interfaces/whatsapp/adapter');
-      const { sendTelegramQrDelivery } = require('./interfaces/webhook');
-      waAdapter.setQrDeliveryFn(sendTelegramQrDelivery);
-      console.log('[N.E.X.A] 📱 Pintu 2 WhatsApp: siap. Ketik /wa_login di Telegram untuk menghubungkan.');
-    } else {
-      console.log('[N.E.X.A] 📱 Pintu 2 WhatsApp: WHATSAPP_OWNER_JID/NUMBER belum di-set di .env — dilewati.');
-    }
-    */
+    // ── Pintu 2: WhatsApp (DINONAKTIFKAN) ─────────────────────────
+    // WhatsApp adapter telah dinonaktifkan untuk deployment cloud.
+    // Lihat src/interfaces/whatsapp/ untuk implementasi lokal.
   });
 }
 

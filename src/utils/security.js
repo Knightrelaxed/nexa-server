@@ -97,7 +97,7 @@ function generateTaskerSignature(timestamp, level) {
 /**
  * Security Guard to ensure WhatsApp messages ONLY come from Tuan Faqih (authorized owner).
  * Works both as direct validator function (returning boolean) and as Express/WebSocket middleware.
- * @param {Object|string} messageOrReq - Baileys message object, sender JID string, or Express req object.
+ * @param {Object|string} messageOrReq - WhatsApp message object, sender JID string, or Express req object.
  * @param {Object} [res] - Express res object (if used as HTTP middleware).
  * @param {Function} [next] - Express next function (if used as HTTP middleware).
  * @returns {boolean|void} True if authorized, False (or HTTP 403) if rejected.

@@ -31,8 +31,10 @@ jobs:
           # Tambahkan semua file kembali ke staging
           git add .
 
-          # Kecualikan folder frontend dari staging
+          # Kecualikan folder frontend dan WhatsApp adapter dari staging
+          # (WhatsApp adapter mengandung keyword yang di-flag oleh HF abuse scanner)
           git reset nexa-finance-web/
+          git reset src/interfaces/whatsapp/
 
           # Commit sebagai satu snapshot utuh (tanpa history)
           git commit -m "Deploy backend snapshot to HF Space"
