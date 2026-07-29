@@ -49,7 +49,7 @@ app.use(express.json({ limit: '1mb' }));
 // ROOT ENDPOINT — Basic identity check
 // ============================================================
 app.get('/', (req, res) => {
-  res.status(200).json({ status: 'N.E.X.A Cloud Core Online', version: '2.7.0' });
+  res.status(200).json({ status: 'N.E.X.A Cloud Core Online', version: '2.8.0' });
 });
 
 // ============================================================
