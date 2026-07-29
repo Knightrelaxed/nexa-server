@@ -719,25 +719,32 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     console.log(`[ROUTER] [Phase 6] Identity injection: context=${_topicContext}, layers=${Object.keys(_identityModel).filter(l => _identityContextBlock.includes(l)).join(',')}`);
   }
 
-  // 3.5. Inject Current Jakarta Time — manually built to be runtime-safe on any Node/Bun version
+  // 3.5. Inject Current Jakarta Time — 100% pure UTC+7 math (immune to OS/HuggingFace timezone bugs)
   const _now = new Date();
-  // Offset UTC→WIB (+7h) using en-US locale (guaranteed to work everywhere)
-  const _jkt = new Date(_now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  const _jkt = new Date(_now.getTime() + 7 * 60 * 60 * 1000); // Shift to WIB
   const _DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   const _MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  
+  const _jktYear = _jkt.getUTCFullYear();
+  const _jktMonth = _jkt.getUTCMonth();
+  const _jktDate = _jkt.getUTCDate();
+  const _jktDay = _jkt.getUTCDay();
+  const _jktHour = _jkt.getUTCHours();
+  const _jktMin = _jkt.getUTCMinutes();
+
   const currentJakartaTime =
-    `${_DAYS[_jkt.getDay()]}, ${_jkt.getDate()} ${_MONTHS[_jkt.getMonth()]} ${_jkt.getFullYear()} ` +
-    `pukul ${String(_jkt.getHours()).padStart(2, '0')}:${String(_jkt.getMinutes()).padStart(2, '0')} WIB`;
+    `${_DAYS[_jktDay]}, ${_jktDate} ${_MONTHS[_jktMonth]} ${_jktYear} ` +
+    `pukul ${String(_jktHour).padStart(2, '0')}:${String(_jktMin).padStart(2, '0')} WIB`;
   // ISO date string in Jakarta (for AI date arithmetic in TASK/CALENDAR intents)
-  const currentJakartaISO = `${_jkt.getFullYear()}-${String(_jkt.getMonth() + 1).padStart(2, '0')}-${String(_jkt.getDate()).padStart(2, '0')}`;
+  const currentJakartaISO = `${_jktYear}-${String(_jktMonth + 1).padStart(2, '0')}-${String(_jktDate).padStart(2, '0')}`;
 
   // Build mini-calendar — conditionally gated by pre-flight classifier (Step 2)
   const _calDays = hasCal ? 7 : (hasTime ? 3 : 0);
   const _miniCal = [];
   for (let i = 0; i <= _calDays; i++) {
     const d = new Date(_jkt.getTime() + i * 86400000);
-    const ds = `${_jkt.getFullYear() === d.getFullYear() ? '' : d.getFullYear() + '-'}${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const dayFull = `${_DAYS[d.getDay()]}, ${d.getDate()} ${_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    const ds = `${_jktYear === d.getUTCFullYear() ? '' : d.getUTCFullYear() + '-'}${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    const dayFull = `${_DAYS[d.getUTCDay()]}, ${d.getUTCDate()} ${_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
     _miniCal.push(`  +${i} hari: ${dayFull} (ISO: ${ds})`);
   }
   const miniCalStr = _miniCal.join('\n');
