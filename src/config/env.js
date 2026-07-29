@@ -25,6 +25,7 @@ module.exports = {
   MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
   HF_TOKEN: process.env.HF_TOKEN, // Khusus untuk repo write/sync GitHub Actions
   HF_INFERENCE_TOKEN: process.env.HF_INFERENCE_TOKEN, // Khusus untuk AI Inference Providers
+  PUTER_AUTH_TOKEN: process.env.PUTER_AUTH_TOKEN, // Auth token untuk Puter AI API
   WEATHER_API_KEY: process.env.WEATHER_API_KEY,
   NEWS_API_KEY: process.env.NEWS_API_KEY,
   NEXA_GODMODE_SECRET: process.env.NEXA_GODMODE_SECRET,

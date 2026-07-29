@@ -240,9 +240,14 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       name: 'Tier 14 (Mistral Pixtral 12B)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
     }] : []),
-    // Tier 15: OpenRouter Multi-Model Free Pool
+    // Tier 15: Puter AI (GPT-4o / Mistral-Large / Codestral)
+    ...(env.PUTER_AUTH_TOKEN ? [{
+      name: 'Tier 15 (Puter AI GPT-4o)',
+      fn: () => callPuter(prompt, systemInstruction, temperature, jsonMode, 'gpt-4o')
+    }] : []),
+    // Tier 16: OpenRouter Multi-Model Free Pool
     ...(env.OPENROUTER_API_KEY ? [{
-      name: 'Tier 15 (OpenRouter)',
+      name: 'Tier 16 (OpenRouter)',
       fn: () => callOpenRouter(prompt, systemInstruction, temperature, jsonMode)
     }] : [])
   ];
@@ -408,6 +413,44 @@ async function callMistral(prompt, systemInstruction, temperature, jsonMode = tr
     } catch (e) {
       if (e.response?.status === 503 && attempt < retries) {
         await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+async function callPuter(prompt, systemInstruction, temperature, jsonMode = true, modelId = 'gpt-4o', retries = 2) {
+  const token = env.PUTER_AUTH_TOKEN;
+  if (!token) throw new Error('No PUTER_AUTH_TOKEN configured');
+
+  const messages = [];
+  if (systemInstruction) {
+    messages.push({ role: 'system', content: systemInstruction });
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  const requestBody = {
+    model: modelId,
+    messages: messages,
+    temperature,
+    max_tokens: 1500
+  };
+  if (jsonMode) requestBody.response_format = { type: 'json_object' };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post('https://api.puter.com/puterai/openai/v1/chat/completions', requestBody, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 8000
+      });
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, attempt * 1500));
         continue;
       }
       throw e;
