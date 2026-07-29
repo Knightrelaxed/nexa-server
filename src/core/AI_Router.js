@@ -655,8 +655,29 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     console.log(`[ROUTER] History trimmed by char cap: ${_rawMemories.length}msg/${_totalHistChars}ch → ${_memories.length}msg/${_chars}ch`);
   }
 
+  // Helper untuk formatting waktu WIB
+  const formatTimeWIB = (isoStr) => {
+    if (!isoStr) return 'Unknown Time';
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return 'Unknown Time';
+      const tzDate = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+      const DD = String(tzDate.getUTCDate()).padStart(2, '0');
+      const MM = String(tzDate.getUTCMonth() + 1).padStart(2, '0');
+      const HH = String(tzDate.getUTCHours()).padStart(2, '0');
+      const MIN = String(tzDate.getUTCMinutes()).padStart(2, '0');
+      return `${DD}/${MM} ${HH}:${MIN} WIB`;
+    } catch(e) {
+      return 'Unknown Time';
+    }
+  };
+
   const contextStr = _memories.length > 0
-    ? _memories.map(m => `[${m.role.toUpperCase()}]: ${m.content}`).join('\n')
+    ? _memories.map(m => {
+        const timeStr = formatTimeWIB(m.created_at);
+        const platform = (m.platform || 'telegram').toUpperCase();
+        return `[${timeStr} | via ${platform}] [${m.role.toUpperCase()}]: ${m.content}`;
+      }).join('\n')
     : '[Tidak ada riwayat obrolan sebelumnya]';
 
   // 3. Build personal facts context block (Step 4: Progressive userProfile injection)
