@@ -1,42 +1,44 @@
 const axios = require('axios');
 const env = require('../config/env');
 
-/**
- * Expand common abbreviations and slang in search queries for better search engine indexing.
- * @param {string} query 
- * @returns {string}
- */
-function expandQuery(query) {
-  if (!query || typeof query !== 'string') return '';
-  let q = query;
-  q = q.replace(/\bhf\b/gi, 'Hugging Face');
-  q = q.replace(/\bopen ai\b/gi, 'OpenAI');
-  q = q.replace(/\bmsft\b/gi, 'Microsoft');
-  q = q.replace(/\bgcp\b/gi, 'Google Cloud');
-  q = q.replace(/\baws\b/gi, 'Amazon Web Services');
-  q = q.replace(/\byt\b/gi, 'YouTube');
-  q = q.replace(/\big\b/gi, 'Instagram');
-  q = q.replace(/\bwa\b/gi, 'WhatsApp');
-  return q.trim();
-}
+const { executeWithFallback } = require('../core/Fallback_Engine');
 
 /**
- * Convert Indonesian query terms to English keywords for global tech/international fallback searches.
+ * AI-powered query reformulation to extract optimal Local ID and Global English queries.
+ * Overcomes regex limitations by understanding slang, typos, and all tech entities naturally.
  * @param {string} query 
- * @returns {string}
+ * @returns {Promise<{local: string, global: string}>}
  */
-function toEnglishTechQuery(query) {
-  let q = expandQuery(query);
-  q = q.replace(/\bserangan\b/gi, 'attack security incident breach');
-  q = q.replace(/\bberita\b/gi, 'news');
-  q = q.replace(/\btentang\b/gi, 'about');
-  q = q.replace(/\bke\b/gi, 'vs');
-  q = q.replace(/\bdari\b/gi, 'from');
-  q = q.replace(/\bapakah\b/gi, '');
-  q = q.replace(/\btau\b/gi, '');
-  q = q.replace(/\bcoba cari tau\b/gi, '');
-  q = q.replace(/\bngga\b/gi, '');
-  return q.replace(/\s+/g, ' ').trim();
+async function reformulateQuery(query) {
+  const cleanInput = String(query || '').trim();
+  if (!cleanInput) return { local: '', global: '' };
+
+  const prompt = `You are an expert search query reformulator. The user wants to search the web based on the following input: "${cleanInput}"
+
+Output ONLY a JSON object with this exact structure:
+{
+  "local_query": "The highly optimized search query in Indonesian, expanding all abbreviations (e.g. hf -> Hugging Face, msft -> Microsoft, ds -> Data Science, etc.). Remove conversational fillers.",
+  "global_query": "The highly optimized search query translated to English, keeping entity names intact, removing conversation fillers, optimized for US Google Search."
+}
+No markdown formatting, no code blocks, just raw JSON.`;
+
+  const sys = 'You are a precise JSON-only outputter.';
+  try {
+    // 0.2 temp for consistency, God Mode (true) prioritizes lightning-fast Cerebras Tier 1 (~300ms)
+    const aiResp = await executeWithFallback(prompt, sys, 0.2, true);
+    
+    // Clean up potential markdown formatting
+    const jsonStr = aiResp.replace(/```json/i, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(jsonStr);
+    
+    return {
+      local: parsed.local_query || cleanInput,
+      global: parsed.global_query || cleanInput
+    };
+  } catch (err) {
+    console.warn(`[WEB_SEARCH] AI Reformulation failed: ${err.message}. Falling back to basic string.`);
+    return { local: cleanInput, global: cleanInput };
+  }
 }
 
 /**
@@ -70,8 +72,9 @@ async function searchWeb(query, type = 'search') {
   }
 
   const cleanInput = String(query || '').trim();
-  const expandedQ = expandQuery(cleanInput);
-  const englishQ = toEnglishTechQuery(cleanInput);
+  const reformulated = await reformulateQuery(cleanInput);
+  const expandedQ = reformulated.local;
+  const englishQ = reformulated.global;
 
   console.log(`[WEB_SEARCH] Query: "${cleanInput}" | Expanded: "${expandedQ}" | English: "${englishQ}" [type: ${type}]`);
 
@@ -147,4 +150,4 @@ async function searchWeb(query, type = 'search') {
   return result.trim() || '⚠️ Tidak ada hasil penelusuran yang relevan ditemukan.';
 }
 
-module.exports = { searchWeb, expandQuery, toEnglishTechQuery };
+module.exports = { searchWeb, reformulateQuery };
