@@ -2827,7 +2827,8 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         const searchType = searchData.type || 'search';
         let searchMode = searchData.mode || 'fast';
 
-        if (/mendalam|kronologi|detail|seluk beluk|lengkap|investigasi/i.test(textInput)) {
+        const isDeepTrigger = /mendalam|kronologi|detail|seluk[-\s]?beluk|lengkap|investigasi|komprehensif|analis|bedah|runtut|asal[-\s]?(usul|muasal)|latar[-\s]?belakang|secara utuh|secara luas|riset|studi kasus|deep|in[-\s]?depth|breakdown|root cause|full context/i.test(textInput);
+        if (isDeepTrigger) {
           searchMode = 'deep';
         }
 
