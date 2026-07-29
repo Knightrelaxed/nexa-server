@@ -15,6 +15,7 @@
 'use strict';
 
 const aiRouter = require('../../core/AI_Router');
+const supabaseMemories = require('../../infrastructure/Supabase_Memories');
 
 // ── In-Memory Session Store ──────────────────────────────────
 // Menyimpan conversationContext per session_id agar CLI punya
@@ -51,6 +52,11 @@ async function handleCliWebhook(req, res) {
   // Log ke container HF — inilah yang membuat CLI setara dengan Telegram
   console.log(`[CLI] Received message: ${textInput}`);
 
+  // ── Persist User Message to Supabase Chat Memories ──────────
+  await supabaseMemories.saveChatMemory('user', textInput, 'cli').catch((err) => {
+    console.error(`[CLI] Warning: Failed to save user chat memory: ${err.message}`);
+  });
+
   try {
     // ── Load Conversation Context ───────────────────────────────
     const conversationContext = cliSessions.get(session_id) || null;
@@ -75,6 +81,11 @@ async function handleCliWebhook(req, res) {
     }
 
     const intent = String(routingData?.intent || 'UNKNOWN');
+
+    // ── Persist Assistant Reply to Supabase Chat Memories ───────
+    await supabaseMemories.saveChatMemory('nexa', String(reply).substring(0, 4000), 'cli').catch((err) => {
+      console.error(`[CLI] Warning: Failed to save assistant chat memory: ${err.message}`);
+    });
 
     // ── Simpan Context untuk Pesan Berikutnya ──────────────────
     cliSessions.set(session_id, {
