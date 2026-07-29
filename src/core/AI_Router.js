@@ -293,7 +293,7 @@ CRITICAL ROUTING RULES:
     WAJIB evaluasi nada emosi dari pesan Tuan Faqih. Pilih 1 dari: "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD".
     - Jika Tuan Faqih mengeluh error/bug, protes, bingung, atau frustrasi ("argh", "ga sesuai", "kok gini", "looping", "perbaiki"), pilih STRESSED, ANGRY, atau NEGATIVE.
     - Jika sedang bekerja/coding/riset/deploy, pilih FOCUSED atau MOTIVATED.
-    - Jika lelah/ngantuk/minta istirahat, pilih TIRED.
+14. CHAT HISTORY QUERY RULE: If user asks about past conversations, previous chat times, or what was discussed earlier (e.g., "kapan terakhir aku chat di Telegram?", "kemarin kita bahas apa?", "kapan kita ngobrol"), STRICTLY use intent "NORMAL_CHAT". DO NOT use DIAGNOSE_SYSTEM. Answer directly by inspecting [RIWAYAT OBROLAN].
 
 OUTPUT JSON FORMAT:
 {
@@ -346,7 +346,7 @@ OUTPUT JSON FORMAT:
     //   - EXAMPLE CORRECT: User says "coba baca tentang apa yang terbaru" → query="berita terbaru", type="news"
     //   - EXAMPLE WRONG: query="analisis konten terbaru dari lampiran" (DO NOT add words not spoken by user)
     // DIAGNOSE_SYSTEM: { action: "READ_LOGS", search_keyword: string }
-    //   - Triggers: "cek log", "apa yang kamu lakukan tadi", "kenapa error", "baca log sistem"
+    //   - Triggers STRICTLY TECHNICAL LOGS ONLY: "cek log error", "kenapa server error", "baca log sistem". DO NOT use for chat history or past conversations!
   },
   "god_mode_trigger": false
 }
