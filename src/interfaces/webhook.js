@@ -13,7 +13,6 @@ const security = require('../utils/security');
 // Adapters
 const { handleTelegramWebhook } = require('./telegram/adapter');
 const { handleTaskerWebhook } = require('./tasker/adapter');
-const handleGithubWebhook = require('./github/webhook');
 const { handleCliWebhook, handleCliStream } = require('./cli/adapter');
 const { handleGmailWebhook } = require('./gmail/adapter');
 
