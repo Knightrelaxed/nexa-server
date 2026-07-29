@@ -38,8 +38,8 @@ router.post('/tasker', security.webhookAuth, handleTaskerWebhook);
 router.post('/gmail', handleGmailWebhook);
 
 // 4. CLI Remote Interface (Laptop manapun → N.E.X.A Server HF)
-// Dilindungi oleh Bearer + NEXA_GODMODE_SECRET (sama dengan Tasker)
-router.post('/cli', security.webhookAuth, handleCliWebhook);
+// Dilindungi oleh Bearer + NEXA_CLI_SECRET
+router.post('/cli', security.cliAuth, handleCliWebhook);
 
 // 5. WhatsApp Login & Logout Webhooks (Fase 4 Coupling)
 router.post('/wa-login', security.webhookAuth, async (req, res) => {
