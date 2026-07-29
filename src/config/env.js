@@ -50,8 +50,9 @@ module.exports = {
   // Google Tasks OAuth2 (uses same Client ID/Secret as Gmail)
   TASKS_REFRESH_TOKEN: process.env.TASKS_REFRESH_TOKEN,
 
-  // Serper.dev Web Search API
+  // Serper.dev & Tavily Web Search APIs
   SERPER_API_KEY: process.env.SERPER_API_KEY,
+  TAVILY_API_KEY: process.env.TAVILY_API_KEY,
 
   // Notion API
   NOTION_API_KEY: process.env.NOTION_API_KEY,

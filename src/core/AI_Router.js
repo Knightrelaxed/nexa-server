@@ -339,11 +339,12 @@ OUTPUT JSON FORMAT:
     //   - READ Triggers: "kamu itu siapa", "kamu diciptakan kapan", "apa kemampuanmu"
     //   - DELETE Triggers: "hapus aturan identitasmu tentang X"
     //   CRITICAL: If a message states a fact about N.E.X.A (uses "kamu"/"Nex"/"N.E.X.A" as the subject), it MUST be intent CORE_IDENTITY, NOT USER_PROFILE.
-    // WEB_SEARCH: { query, type: "search|news" }
+    // WEB_SEARCH: { query, type: "search|news", mode: "fast|deep" }
     //   - Triggers: "cari informasi tentang X", "googling X", "coba cari X", "berita terbaru X", "apa itu X", "baca tentang X", "info X", "terbaru dari X"
     //   - CRITICAL QUERY RULE: 'query' MUST be extracted STRICTLY from the user's own words. DO NOT add context words like "dari lampiran", "dari sistem", "analisis konten" unless the user explicitly mentioned them.
     //   - type: "news" jika user menyebut "berita"/"terbaru"/"hari ini". "search" untuk pertanyaan umum/riset.
-    //   - EXAMPLE CORRECT: User says "coba baca tentang apa yang terbaru" → query="berita terbaru", type="news"
+    //   - mode: "deep" jika user meminta "analisis mendalam", "kronologi lengkap", "riset detail", "seluk beluk", "baca lengkap", atau investigasi kompleks. "fast" untuk pertanyaan umum/singkat.
+    //   - EXAMPLE CORRECT: User says "coba baca tentang apa yang terbaru" → query="berita terbaru", type="news", mode="fast"
     //   - EXAMPLE WRONG: query="analisis konten terbaru dari lampiran" (DO NOT add words not spoken by user)
     // DIAGNOSE_SYSTEM: { action: "READ_LOGS", search_keyword: string }
     //   - Triggers STRICTLY TECHNICAL LOGS ONLY: "cek log error", "kenapa server error", "baca log sistem". DO NOT use for chat history or past conversations!

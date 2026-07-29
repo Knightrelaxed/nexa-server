@@ -448,10 +448,17 @@ async function _dispatchIntent(intent, routingData, textInput, sessionId) {
     case 'WEB_SEARCH': {
       const query = ed.query || textInput;
       const searchType = ed.type || 'search';
-      console.log(`[CLI-SEARCH] Searching web: "${query}" [type: ${searchType}]`);
-      const searchResult = await webSearch.searchWeb(query, searchType);
+      let searchMode = ed.mode || 'fast';
+      
+      // Auto-upgrade to DEEP search if user prompt requests deep analysis
+      if (/mendalam|kronologi|detail|seluk beluk|lengkap|investigasi/i.test(textInput)) {
+        searchMode = 'deep';
+      }
+
+      console.log(`[CLI-SEARCH] Searching web [Mode: ${searchMode.toUpperCase()}]: "${query}" [type: ${searchType}]`);
+      const searchResult = await webSearch.searchWeb(query, searchType, searchMode);
       console.log('[CLI-SEARCH] Synthesizing response with AI...');
-      const prompt = `Sebagai N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh, Anda baru saja melakukan penelusuran web untuk menjawab pernyataannya.\n        \nPernyataan/Pertanyaan Tuan Faqih: "${textInput}"\n\nHasil Penelusuran Web:\n${searchResult}\n\nTugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil penelusuran di atas. Berikan jawaban yang informatif seolah Anda sedang berdiskusi. Jangan sekadar menyalin ulang hasil pencariannya. Berikan kesimpulan atau opini jika relevan.`;
+      const prompt = `Sebagai N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh, Anda baru saja melakukan penelusuran web [Mode: ${searchMode.toUpperCase()}] untuk menjawab pernyataannya.\n        \nPernyataan/Pertanyaan Tuan Faqih: "${textInput}"\n\nHasil Penelusuran Web:\n${searchResult}\n\nTugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil penelusuran di atas. Berikan jawaban yang informatif seolah Anda sedang berdiskusi. Jangan sekadar menyalin ulang hasil pencariannya. Berikan kesimpulan atau opini jika relevan.`;
       domainReply = await aiRouter.callAI(prompt);
       break;
     }

@@ -2825,11 +2825,17 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
         const searchData = routingData.extracted_data || {};
         const query = searchData.query || textInput;
         const searchType = searchData.type || 'search';
-        console.log(`[SEARCH] Searching web: "${query}" [type: ${searchType}]`);
-        const searchResult = await webSearch.searchWeb(query, searchType);
+        let searchMode = searchData.mode || 'fast';
+
+        if (/mendalam|kronologi|detail|seluk beluk|lengkap|investigasi/i.test(textInput)) {
+          searchMode = 'deep';
+        }
+
+        console.log(`[SEARCH] Searching web [Mode: ${searchMode.toUpperCase()}]: "${query}" [type: ${searchType}]`);
+        const searchResult = await webSearch.searchWeb(query, searchType, searchMode);
 
         console.log('[SEARCH] Synthesizing response with AI...');
-        const prompt = `Sebagai N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh, Anda baru saja melakukan penelusuran web untuk menjawab pernyataannya.
+        const prompt = `Sebagai N.E.X.A, asisten AI pribadi Tuan Faqih Hidayatulloh, Anda baru saja melakukan penelusuran web [Mode: ${searchMode.toUpperCase()}] untuk menjawab pernyataannya.
         
 Pernyataan/Pertanyaan Tuan Faqih: "${textInput}"
 

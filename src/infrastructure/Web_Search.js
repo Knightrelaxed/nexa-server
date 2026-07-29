@@ -42,6 +42,46 @@ No markdown formatting, no code blocks, just raw JSON.`;
 }
 
 /**
+ * Tavily AI Deep Search Endpoint
+ */
+async function fetchTavilyDeep(query) {
+  if (!env.TAVILY_API_KEY) return null;
+  try {
+    const res = await axios.post('https://api.tavily.com/search', {
+      api_key: env.TAVILY_API_KEY,
+      query: query,
+      search_depth: 'advanced',
+      include_answer: true,
+      include_raw_content: false,
+      max_results: 4
+    }, { timeout: 12000 });
+
+    const data = res.data;
+    if (!data) return null;
+
+    let result = '';
+    if (data.answer) {
+      result += `📌 <b>Rangkuman Eksekutif Tavily AI:</b>\n${data.answer}\n\n`;
+    }
+
+    if (data.results && data.results.length > 0) {
+      result += `🔬 <b>Analisis Mendalam Artikel (Full Context):</b>\n`;
+      data.results.slice(0, 4).forEach((r, i) => {
+        result += `\n${i + 1}. <b>${r.title}</b>\n`;
+        const contentSnippet = (r.content || '').substring(0, 450);
+        if (contentSnippet) result += `   ${contentSnippet}...\n`;
+        result += `   🔗 ${r.url}\n`;
+      });
+    }
+
+    return result.trim() || null;
+  } catch (err) {
+    console.warn(`[WEB_SEARCH] Tavily fetch failed: ${err.message}`);
+    return null;
+  }
+}
+
+/**
  * Perform single Serper.dev API call
  */
 async function fetchSerper(endpoint, bodyParams) {
@@ -61,14 +101,15 @@ async function fetchSerper(endpoint, bodyParams) {
 }
 
 /**
- * Search the web using Serper.dev API with Smart Multi-Tier & Dual-Language Fallback
+ * Search the web using Serper.dev & Tavily AI APIs with Dual-Tier Mode (Fast vs Deep)
  * @param {string} query - Search query
  * @param {'search'|'news'|'scholar'} type - Search type
+ * @param {'fast'|'deep'} mode - Search depth mode ('fast' for quick snippets, 'deep' for full Tavily synthesis)
  * @returns {Promise<string>} - Formatted search results
  */
-async function searchWeb(query, type = 'search') {
-  if (!env.SERPER_API_KEY) {
-    return '❌ SERPER_API_KEY belum dikonfigurasi.';
+async function searchWeb(query, type = 'search', mode = 'fast') {
+  if (!env.SERPER_API_KEY && !env.TAVILY_API_KEY) {
+    return '❌ API Key Pencarian Web (SERPER_API_KEY / TAVILY_API_KEY) belum dikonfigurasi.';
   }
 
   const cleanInput = String(query || '').trim();
@@ -76,18 +117,39 @@ async function searchWeb(query, type = 'search') {
   const expandedQ = reformulated.local;
   const englishQ = reformulated.global;
 
-  console.log(`[WEB_SEARCH] Query: "${cleanInput}" | Expanded: "${expandedQ}" | English: "${englishQ}" [type: ${type}]`);
+  console.log(`[WEB_SEARCH] [Mode: ${mode.toUpperCase()}] Query: "${cleanInput}" | Expanded: "${expandedQ}" | English: "${englishQ}" [type: ${type}]`);
 
+  // DEEP MODE: Execute Tavily AI Advanced Search concurrently with Serper
+  if (mode === 'deep' && env.TAVILY_API_KEY) {
+    const [tavilyResult, localData, globalData] = await Promise.all([
+      fetchTavilyDeep(englishQ || expandedQ),
+      fetchSerper(`https://google.serper.dev/${type}`, { q: expandedQ, gl: 'id', hl: 'id', num: 4 }),
+      fetchSerper(`https://google.serper.dev/search`, { q: englishQ, gl: 'us', hl: 'en', num: 4 })
+    ]);
+
+    if (tavilyResult) {
+      let combined = `${tavilyResult}\n\n`;
+      // Append additional local news links if available
+      const localNews = (localData?.news || []).slice(0, 3);
+      if (localNews.length > 0) {
+        combined += `📰 <b>Referensi Media Lokal Tambahan:</b>\n`;
+        localNews.forEach((n, i) => {
+          combined += `${i + 1}. <b>${n.title}</b> — 🔗 ${n.link}\n`;
+        });
+      }
+      return combined.trim();
+    }
+  }
+
+  // FAST MODE or FALLBACK: Execute parallel Serper Local ID + Global US
   const primaryEndpoint = `https://google.serper.dev/${type}`;
   const searchEndpoint = `https://google.serper.dev/search`;
 
-  // Run local Indonesian search AND global US search in parallel for maximum coverage
   const [localData, globalData] = await Promise.all([
     fetchSerper(primaryEndpoint, { q: expandedQ, gl: 'id', hl: 'id', num: 5 }),
     fetchSerper(searchEndpoint, { q: englishQ, gl: 'us', hl: 'en', num: 5 })
   ]);
 
-  // If local search with type='news' yielded no news, retry local with type='search'
   let fallbackLocalData = null;
   const localNewsCount = localData?.news?.length || 0;
   const localOrgCount = localData?.organic?.length || 0;
@@ -98,7 +160,7 @@ async function searchWeb(query, type = 'search') {
   const primaryData = localData || fallbackLocalData;
   let result = '';
 
-  // 1. Direct Answer Box (if available)
+  // 1. Direct Answer Box
   const answerBox = primaryData?.answerBox || globalData?.answerBox;
   if (answerBox) {
     result += `📌 <b>Jawaban Langsung:</b>\n`;
@@ -106,7 +168,7 @@ async function searchWeb(query, type = 'search') {
     else if (answerBox.snippet) result += `${answerBox.snippet}\n\n`;
   }
 
-  // 2. Knowledge Graph (if available)
+  // 2. Knowledge Graph
   const kg = primaryData?.knowledgeGraph || globalData?.knowledgeGraph;
   if (kg && kg.title) {
     result += `🧠 <b>${kg.title}</b>${kg.type ? ` — ${kg.type}` : ''}\n`;
@@ -129,11 +191,8 @@ async function searchWeb(query, type = 'search') {
     });
   };
 
-  // Add Local Organic / News
   (primaryData?.news || []).forEach(n => addResultItem(n, 'Berita Lokal'));
   (primaryData?.organic || []).forEach(o => addResultItem(o, 'Hasil Pencarian'));
-
-  // Add Global US Organic / News (essential for tech news like OpenAI vs HuggingFace)
   (globalData?.organic || []).forEach(o => addResultItem(o, 'Global/International'));
   (globalData?.news || []).forEach(n => addResultItem(n, 'Global News'));
 
@@ -150,4 +209,4 @@ async function searchWeb(query, type = 'search') {
   return result.trim() || '⚠️ Tidak ada hasil penelusuran yang relevan ditemukan.';
 }
 
-module.exports = { searchWeb, reformulateQuery };
+module.exports = { searchWeb, reformulateQuery, fetchTavilyDeep };
