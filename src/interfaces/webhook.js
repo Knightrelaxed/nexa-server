@@ -36,7 +36,11 @@ router.post('/tasker', security.webhookAuth, handleTaskerWebhook);
 // 3. Gmail Webhook (Google Cloud Pub/Sub -> N.E.X.A Server)
 router.post('/gmail', handleGmailWebhook);
 
-// 4. WhatsApp Login & Logout Webhooks (Fase 4 Coupling)
+// 4. CLI Remote Interface (Laptop -> N.E.X.A Server HF)
+const { handleCliWebhook } = require('./cli/adapter');
+router.post('/cli', security.webhookAuth, handleCliWebhook);
+
+// 5. WhatsApp Login & Logout Webhooks (Fase 4 Coupling)
 router.post('/wa-login', security.webhookAuth, async (req, res) => {
   try {
     const waAdapter = require('./whatsapp/adapter');
