@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Extension Assistant for Intelligence — v2.7 "Cognitive Resonance & Anticipatory Intelligence")*
+*(Neural Extension Assistant for Intelligence — v2.8 "Cognitive Resonance & Universal Real-Time CLI Stream")*
 
 ---
 
@@ -198,6 +198,12 @@ Saat sebuah *task* dibuat, N.E.X.A melakukan **dual-write**: tugas disimpan ke G
 
 Fitur `moveTaskToList()` mengimplementasikan operasi "pindah" via 3 langkah (baca → tulis ke list baru → hapus dari list lama) karena Google Tasks API tidak menyediakan *native move operation*.
 
+#### Node 6: Universal Remote CLI Client (`nexa-cli`) & SSE Real-Time Push
+
+`nexa-cli` beroperasi sebagai antarmuka terminal portabel yang dapat dijalankan secara instan dari laptop manapun di dunia via `npx github:Knightrelaxed/nexa-cli`. Node ini terhubung ke N.E.X.A Server melalui dua saluran:
+- **`POST /webhook/cli`**: Mengirim instruksi interaktif yang dilindungi header `Authorization: Bearer <NEXA_CLI_SECRET>`.
+- **`GET /webhook/cli/stream`**: Koneksi HTTP *keep-alive* berbasis *Server-Sent Events* (SSE). Server menyimpan objek koneksi di memori (`activeCliStreams`), memungkinkan penyiaran notifikasi proaktif (*Morning Briefing*, *Cron Alerts*, *Discipline Godmode*) langsung ke layar terminal pengguna secara *real-time*.
+
 ---
 
 ### 2.3 Anatomi Biologis N.E.X.A (Metafora Arsitektural)
@@ -270,6 +276,32 @@ N.E.X.A beroperasi di lingkungan yang penuh hambatan. Berikut setiap ancaman dan
 #### Ancaman 7 — Gmail OAuth Token Kadaluarsa
 **Problem:** Refresh token Gmail bisa dicabut atau kadaluarsa, menghentikan Finance Auto-Sync tanpa peringatan.
 **Solusi:** `Gmail_Client.js` mendeteksi error `invalid_grant`, mereset klien, dan mengirim **satu alert Telegram** (tidak berulang) yang menginstruksikan cara regenerasi token.
+
+---
+
+### 2.5 Arsitektur Universal Remote CLI (`nexa-cli`) & Real-Time Push Stream (SSE)
+
+N.E.X.A v2.8 menghadirkan antarmuka remote terminal tanpa dependensi eksternal (*Zero External Dependencies*), memungkinkan Tuan Faqih mengakses seluruh daya kognitif N.E.X.A langsung dari terminal laptop manapun di dunia menggunakan perintah `npx github:Knightrelaxed/nexa-cli`.
+
+#### 1. Arsitektur Dual-Channel Komunikasi (POST + SSE)
+CLI beroperasi dengan arsitektur dua saluran independen namun saling melengkapi:
+- **Outbound Request-Response (CLI → Server):** Setiap instruksi atau pesan dari Tuan dikirim via `POST /webhook/cli` yang dilindungi oleh middleware `security.cliAuth` menggunakan `NEXA_CLI_SECRET` (`cLiNeXa17`).
+- **Inbound Real-Time Push Stream (Server → CLI):** Saat CLI diinisialisasi, klien membuat koneksi HTTP `GET /webhook/cli/stream` yang ditahan oleh server (`text/event-stream`). Server menampung *connection object* di memori RAM (`activeCliStreams` Set).
+
+#### 2. Mekanisme Penyiaran Proaktif (`pushToCli`)
+Setiap kali fungsi `sendTelegramOutbound()` di `telegram/actions.js` dipanggil (oleh Cron Jobs seperti Morning Briefing, Alert Watchdog, atau Anticipatory Godmode), sistem secara otomatis menduplikasi pesan tersebut dan menyiarkannya via `pushToCli(cleanText)`. Jika ada koneksi CLI yang aktif, notifikasi akan langsung terdorong ke layar terminal pengguna secara *real-time*.
+
+#### 3. Penyelarasan Memori Lintas Platform (Omnipresent Awareness)
+Setiap interaksi CLI secara otomatis disimpan ke tabel `nexa_chat_memories` di Supabase dengan parameter `platform: 'cli'`. Saat `AI_Router.js` membaca memori percakapan, timestamps dikonversi ke **WIB (`Asia/Jakarta`)** dengan format `[DD/MM HH:mm WIB | via PLATFORM]` sehingga N.E.X.A memiliki kesadaran temporal dan spasial penuh lintas Telegram, WhatsApp, dan CLI.
+
+#### 4. Anti-Overthinking Tracker (`_trackAdviceSession`)
+Adapter CLI (`cli/adapter.js`) mengintegrasikan pelacak sesi keluhan (`_trackAdviceSession`). Jika pengguna mengajukan pertanyaan berulang berkategori `ADVICE` dalam jendela 1 jam, sistem memicu `Anticipatory_Engine.runAnticipationPass()` untuk mengintervensi *overthinking* secara proaktif lewat protokol Godmode.
+
+#### 5. Sistem Rendering Cyberpunk HUD v2.8 (Pixel-Perfect ASCII & Accent Bar)
+Untuk mengatasi bug perbedaan render kolom karakter emoji (`🤖` / `●`) di Windows PowerShell, `nexa-cli` mengimplementasikan:
+- Rumus penghitung panjang teks bebas warna menggunakan regex ANSI komprehensif (`/\x1b\[[0-9;]*[a-zA-Z]/g`).
+- Desain **Left Accent Bar (`│`) Minimalis** yang responsif terhadap semua resolusi dan lebar jendela terminal tanpa risiko pemotongan teks.
+- Pembersihan tag HTML mentah (`<br>`) menjadi *newline* organik (`\n`).
 
 ---
 
