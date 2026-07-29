@@ -92,6 +92,8 @@ if (require.main === module) {
   app.listen(port, '0.0.0.0', () => {
     console.log(`[N.E.X.A] ✅ Server running on port ${port} (${process.env.NODE_ENV || 'development'} mode)`);
     console.log(`[N.E.X.A] 🏥 Health endpoint: http://0.0.0.0:${port}/health`);
+    console.log(`[N.E.X.A] 💻 CLI Local URL  : http://127.0.0.1:${port}`);
+    console.log(`[N.E.X.A] 🌐 CLI Cloud Space: https://nexa-asistant-nexa-core-server.hf.space`);
     // Initialize cron jobs AFTER server is listening
     // node-cron will run Morning Briefing at 05:30 WIB
     cronInterface.initCronJobs();
