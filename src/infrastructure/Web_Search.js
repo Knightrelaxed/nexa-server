@@ -119,36 +119,38 @@ async function searchWeb(query, type = 'search', mode = 'fast') {
 
   console.log(`[WEB_SEARCH] [Mode: ${mode.toUpperCase()}] Query: "${cleanInput}" | Expanded: "${expandedQ}" | English: "${englishQ}" [type: ${type}]`);
 
-  // DEEP MODE: Execute Tavily AI Advanced Search concurrently with Serper
-  if (mode === 'deep' && env.TAVILY_API_KEY) {
-    const [tavilyResult, localData, globalData] = await Promise.all([
-      fetchTavilyDeep(englishQ || expandedQ),
-      fetchSerper(`https://google.serper.dev/${type}`, { q: expandedQ, gl: 'id', hl: 'id', num: 4 }),
-      fetchSerper(`https://google.serper.dev/search`, { q: englishQ, gl: 'us', hl: 'en', num: 4 })
-    ]);
-
-    if (tavilyResult) {
-      let combined = `${tavilyResult}\n\n`;
-      // Append additional local news links if available
-      const localNews = (localData?.news || []).slice(0, 3);
-      if (localNews.length > 0) {
-        combined += `📰 <b>Referensi Media Lokal Tambahan:</b>\n`;
-        localNews.forEach((n, i) => {
-          combined += `${i + 1}. <b>${n.title}</b> — 🔗 ${n.link}\n`;
-        });
-      }
-      return combined.trim();
-    }
-  }
-
-  // FAST MODE or FALLBACK: Execute parallel Serper Local ID + Global US
+  // Parallel execution of all required APIs
   const primaryEndpoint = `https://google.serper.dev/${type}`;
   const searchEndpoint = `https://google.serper.dev/search`;
 
-  const [localData, globalData] = await Promise.all([
+  let promises = [
     fetchSerper(primaryEndpoint, { q: expandedQ, gl: 'id', hl: 'id', num: 5 }),
     fetchSerper(searchEndpoint, { q: englishQ, gl: 'us', hl: 'en', num: 5 })
-  ]);
+  ];
+
+  if (mode === 'deep' && env.TAVILY_API_KEY) {
+    promises.push(fetchTavilyDeep(englishQ || expandedQ));
+  }
+
+  const apiResults = await Promise.all(promises);
+  const localData = apiResults[0];
+  const globalData = apiResults[1];
+  const tavilyResult = apiResults[2] || null;
+
+  // DEEP MODE: If Tavily returned results, format and return immediately
+  if (tavilyResult) {
+    let combined = `${tavilyResult}\n\n`;
+    const localNews = (localData?.news || []).slice(0, 3);
+    if (localNews.length > 0) {
+      combined += `📰 <b>Referensi Media Lokal Tambahan:</b>\n`;
+      localNews.forEach((n, i) => {
+        combined += `${i + 1}. <b>${n.title}</b> — 🔗 ${n.link}\n`;
+      });
+    }
+    return combined.trim();
+  }
+
+  // FAST MODE or FALLBACK: (Tavily is null, or mode is fast)
 
   let fallbackLocalData = null;
   const localNewsCount = localData?.news?.length || 0;
