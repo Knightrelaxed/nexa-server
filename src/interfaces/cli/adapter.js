@@ -1,72 +1,101 @@
-// ============================================================
-// N.E.X.A — CLI REMOTE ADAPTER
-// Menangani request dari Universal Remote CLI (nexa-cli)
-// Berjalan di Server HF, memproses pesan, dan mengembalikan teks.
+﻿// ============================================================
+// N.E.X.A — CLI INTERFACE ADAPTER
+// Menangani request dari Remote CLI client (laptop manapun)
+// via endpoint POST /webhook/cli
+//
+// Arsitektur: Bagian dari Multi-Interface N.E.X.A
+//   [TELEGRAM] → telegram/adapter.js → AI_Router → Supabase
+//   [TASKER]   → tasker/adapter.js   → AI_Router → Supabase
+//   [CLI]      → cli/adapter.js      → AI_Router → Supabase  ← (ini)
+//
+// Log yang muncul di HF Container:
+//   [CLI] Received message: halo nexa
+//   [CLI] Replying with intent: GREETING (881ms)
 // ============================================================
 'use strict';
 
 const aiRouter = require('../../core/AI_Router');
-const behaviorEngine = require('../../domain/Behavior_Engine');
-const intentionEngine = require('../../domain/Intention_Engine');
+
+// ── In-Memory Session Store ──────────────────────────────────
+// Menyimpan conversationContext per session_id agar CLI punya
+// memori percakapan selama server berjalan (per container uptime).
+const cliSessions = new Map();
 
 /**
- * Endpoint handler untuk POST /webhook/cli
- * Body yang diharapkan: { "message": "halo", "session_id": "cli-default" }
+ * Handler utama untuk endpoint POST /webhook/cli
+ * Dipanggil dari: src/interfaces/webhook.js
+ * Dilindungi oleh: security.webhookAuth (Bearer + NEXA_GODMODE_SECRET)
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
  */
 async function handleCliWebhook(req, res) {
+  const { message, session_id = 'cli-default' } = req.body || {};
+
+  // ── Input Validation ────────────────────────────────────────
+  if (!message || typeof message !== 'string' || message.trim().length === 0) {
+    return res.status(400).json({ ok: false, error: 'Field "message" wajib diisi dan tidak boleh kosong.' });
+  }
+
+  const textInput = message.trim();
+  const startTime = Date.now();
+
+  // Log ke container HF — inilah yang membuat CLI setara dengan Telegram
+  console.log(`[CLI] Received message: ${textInput}`);
+
   try {
-    const textInput = req.body?.message || req.body?.text || '';
-    const sessionId = req.body?.session_id || 'cli-default';
+    // ── Load Conversation Context ───────────────────────────────
+    const conversationContext = cliSessions.get(session_id) || null;
 
-    if (!textInput || textInput.trim().length === 0) {
-      return res.status(400).json({ error: 'Pesan kosong.' });
-    }
-
-    console.log(`\n[CLI] 📥 Received message from Remote Terminal: "${textInput}"`);
-
-    // 1. Eksekusi ke Universal Router
-    const startTime = Date.now();
+    // ── Route ke AI Router (Otak Utama N.E.X.A) ────────────────
     const routingData = await aiRouter.routeUserMessage(textInput, {
-      source: 'remote_cli',
-      sessionId: sessionId
+      conversationContext,
+      source: 'cli'
     });
-    const elapsedMs = Date.now() - startTime;
 
-    // 2. Logging Perilaku (Sama seperti Telegram)
-    if (routingData.intent) {
-      console.log(`[CLI] 🤖 Replying with intent: ${routingData.intent} (${elapsedMs}ms)`);
-      behaviorEngine.logUserInteraction(routingData.intent, textInput, routingData.mood || 'NEUTRAL').catch(() => {});
-      
-      const DECISION_INTENTS = new Set(['FINANCE', 'DISCIPLINE', 'CALENDAR', 'ADVICE', 'NORMAL_CHAT']);
-      if (DECISION_INTENTS.has(String(routingData.intent).toUpperCase())) {
-         intentionEngine.detectAndSaveIntention(textInput, routingData).catch(() => {});
-      }
+    const elapsed = Date.now() - startTime;
+
+    // ── Ekstrak Balasan dari routingData ────────────────────────
+    let reply = routingData?.reply_message;
+
+    if (reply && typeof reply === 'object') {
+      reply = reply.text || reply.message || JSON.stringify(reply);
     }
 
-    // 3. Format Balasan
-    let replyText = routingData.reply_message || routingData.text || '';
-    if (typeof replyText === 'object') {
-      replyText = replyText.text || JSON.stringify(replyText);
+    if (!reply || String(reply).trim().length === 0) {
+      reply = '(N.E.X.A tidak menghasilkan balasan untuk pesan ini.)';
     }
 
-    // 4. Kirim Balasan ke Remote CLI Client
+    const intent = String(routingData?.intent || 'UNKNOWN');
+
+    // ── Simpan Context untuk Pesan Berikutnya ──────────────────
+    cliSessions.set(session_id, {
+      intent,
+      extractedData: routingData?.extracted_data || null,
+      lastUserText: textInput,
+      lastAssistantReply: reply,
+      askedAt: Date.now()
+    });
+
+    console.log(`[CLI] Replying with intent: ${intent} (${elapsed}ms)`);
+
     return res.status(200).json({
       ok: true,
-      reply: replyText,
-      intent: routingData.intent || 'UNKNOWN',
-      elapsed_ms: elapsedMs
+      reply,
+      intent,
+      elapsed_ms: elapsed
     });
 
   } catch (error) {
-    console.error('[CLI-ADAPTER] Error processing message:', error.message);
+    const elapsed = Date.now() - startTime;
+    console.error(`[CLI] Error processing message: ${error.message}`);
+
     return res.status(500).json({
       ok: false,
-      error: error.message,
-      reply: `⚠️ [N.E.X.A SYSTEM FAULT]\nInternal Error: ${error.message}`
+      error: `N.E.X.A mengalami gangguan internal: ${error.message}`,
+      elapsed_ms: elapsed
     });
   }
 }
 
-module.exports = {
-  handleCliWebhook
-};
+module.exports = { handleCliWebhook };
