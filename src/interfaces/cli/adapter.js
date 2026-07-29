@@ -59,6 +59,23 @@ function _stripHtml(str) {
   return String(str || '').replace(/<[^>]*>/g, '').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"');
 }
 
+// ── Helper: _classifySelfModelLayer (Port dari telegram/adapter.js) ────
+// [PHASE 8] Klasifikasikan fakta tentang N.E.X.A ke layer nexa_self_model yang tepat
+function _classifySelfModelLayer(fact) {
+  const f = fact.toLowerCase();
+  // 1. LIMITATIONS — dicek paling awal karena "belum mampu/tidak mampu" harus menang
+  if (/\b(tidak bisa|tidak mampu|belum bisa|belum mampu|gagal|lupa|terbatas|kendala|kesulitan|error|bug|lambat|keterbatasan|kelemahan)\b/.test(f)) return 'LIMITATIONS';
+  // 2. CORRECTIONS — sinyal kuat koreksi dari user
+  if (/\b(ingat ya|catat ini|jangan|tolong jangan|seharusnya|harap|perbaiki|salah|keliru|koreksi|ralat)\b/.test(f)) return 'CORRECTIONS';
+  if (/\b(ternyata kamu|kamu ternyata)\b/.test(f) && !/\b(bisa|mampu|dapat|berhasil)\b/.test(f)) return 'CORRECTIONS';
+  // 3. COMMUNICATION_STYLE — preferensi format/gaya
+  if (/\b(format (jawaban|balasan|respons)|gaya bahasa|gaya bicara|gaya komunikasi|nada (bicara|respons)|responsmu|balasanmu|jawabanmu)\b/.test(f)) return 'COMMUNICATION_STYLE';
+  // 4. CAPABILITIES — kemampuan positif
+  if (/\b(bisa|dapat|mampu|berhasil|fitur|fungsi|kemampuan|kapabilitas|dukungan|mendukung|otomatis|sinkronisasi)\b/.test(f)) return 'CAPABILITIES';
+  // 5. Default: aturan operasional
+  return 'OPERATIONAL_RULES';
+}
+
 // ── Helper: isFactAboutNexa (copy dari telegram/adapter.js) ───
 function _isFactAboutNexa(fact) {
   const f = fact.toLowerCase().trim();
@@ -769,14 +786,29 @@ async function _dispatchIntent(intent, routingData, textInput, sessionId) {
 function _extractFinanceTxFromEmails(emails) {
   const rows = [];
   for (const email of emails || []) {
-    const body = String(email.snippet || email.body || '');
-    const nominalMatch = body.match(/Rp\.?\s*([\d.,]+)/i);
+    const body = `${email.subject || ''}\n${email.body || ''}\n${email.snippet || ''}`;
+    const nominalMatch = body.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp?\s*([0-9][0-9\.\,]+)/i)
+      || body.match(/Rp\.?\s*([\d.,]+)/i);
     if (!nominalMatch) continue;
-    const nominal = parseInt(nominalMatch[1].replace(/[^0-9]/g, ''), 10);
+    // Gunakan parser yang lebih cerdas (IDR-aware): coba Finance_Engine._parseFlexibleCurrency
+    let nominal = 0;
+    try {
+      const { _parseFlexibleCurrency } = require('../../domain/Finance_Engine');
+      nominal = _parseFlexibleCurrency(nominalMatch[1]);
+    } catch (_) {
+      nominal = parseInt(nominalMatch[1].replace(/[^0-9]/g, ''), 10);
+    }
     if (!nominal || nominal < 100) continue;
+
+    let destination = 'Auto-Sync Transaction';
+    const merchantMatch = body.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
+    if (merchantMatch?.[1]) {
+      destination = merchantMatch[1].split('\n')[0].replace(/\s+/g, ' ').trim().substring(0, 80);
+    }
+
     rows.push({
       nominal, type: 'EXPENSE',
-      destination: email.from || 'Email Import',
+      destination,
       category: 'Import Email',
       description: (email.subject || '').substring(0, 80),
       time: email.date || new Date().toISOString(),
@@ -815,13 +847,270 @@ async function handleCliWebhook(req, res) {
     // ── Load Conversation Context ────────────────────────────
     const conversationContext = cliSessions.get(session_id) || null;
 
+    // ============================================================
+    // [PARITY] PENDING DELETION REPLY INTERCEPTOR (AI-Powered)
+    // Jika ada pending deletion, klasifikasi apakah user konfirmasi
+    // ============================================================
+    const pendingDelCtx = financeEngine.getPendingDeletionsContext ? financeEngine.getPendingDeletionsContext() : null;
+    if (pendingDelCtx) {
+      let delContext = 'hapus transaksi keuangan';
+      try {
+        const [firstEntry] = pendingDelCtx.values();
+        if (firstEntry?.rowData) {
+          const r = firstEntry.rowData;
+          delContext = `hapus transaksi "${r[6] || r[4] || '-'}" senilai Rp${Math.abs(r[7] || 0).toLocaleString('id-ID')}`;
+        }
+      } catch (_) {}
+      const { classifyYesNo } = require('../../core/AI_Router');
+      const verdict = await classifyYesNo(textInput, delContext);
+      console.log(`[CLI FINANCE INTERCEPTOR] AI deletion verdict: "${verdict}"`);
+      if (verdict === 'YES') {
+        const reply = _stripHtml(await financeEngine.confirmDeleteTransaction(true) || '✅ Transaksi telah dihapus.');
+        await supabaseMemories.saveChatMemory('nexa', reply.substring(0, 4000), 'cli').catch(() => {});
+        return res.status(200).json({ ok: true, reply, intent: 'FINANCE', elapsed_ms: Date.now() - startTime });
+      } else if (verdict === 'NO') {
+        const reply = _stripHtml(await financeEngine.confirmDeleteTransaction(false) || '✅ Penghapusan dibatalkan.');
+        await supabaseMemories.saveChatMemory('nexa', reply.substring(0, 4000), 'cli').catch(() => {});
+        return res.status(200).json({ ok: true, reply, intent: 'FINANCE', elapsed_ms: Date.now() - startTime });
+      }
+      // AMBIGUOUS → fall through ke routing normal
+    }
+
+    // ============================================================
+    // [PARITY] PENDING FINANCE REPLY INTERCEPTOR (AI-Powered)
+    // Jika ada pending confirmation transaksi, intercept sebelum routing
+    // ============================================================
+    const pendingFinanceCtx = await financeEngine.getPendingConfirmationsContext();
+    if (pendingFinanceCtx) {
+      const { classifyPendingTransactionIntent } = require('../../core/AI_Router');
+      let pendingTxContext = {};
+      try {
+        const pendingRows = await supabaseMemories.getPendingTransactions();
+        if (pendingRows?.length > 0) {
+          const rowData = pendingRows[0].tx_data || {};
+          pendingTxContext = { nominal: rowData.nominal, destination: rowData.destination, type: rowData.type };
+        }
+      } catch (_) {}
+      const parsedData = await classifyPendingTransactionIntent(textInput, pendingTxContext);
+      const pIntent = parsedData.intent;
+      console.log(`[CLI FINANCE INTERCEPTOR] AI pending intent: "${pIntent}"`);
+      if (pIntent === 'CONFIRM') {
+        const confirmReply = _stripHtml(await financeEngine.confirmPendingTransactions(true, null, null, null, null, null) || '✅ Transaksi telah dicatat.');
+        await supabaseMemories.saveChatMemory('nexa', confirmReply.substring(0, 4000), 'cli').catch(() => {});
+        return res.status(200).json({ ok: true, reply: confirmReply, intent: 'FINANCE', elapsed_ms: Date.now() - startTime });
+      } else if (pIntent === 'CANCEL') {
+        const cancelReply = _stripHtml(await financeEngine.confirmPendingTransactions(false, null, null, null, null, null) || '❌ Transaksi dibatalkan.');
+        await supabaseMemories.saveChatMemory('nexa', cancelReply.substring(0, 4000), 'cli').catch(() => {});
+        return res.status(200).json({ ok: true, reply: cancelReply, intent: 'FINANCE', elapsed_ms: Date.now() - startTime });
+      } else if (pIntent === 'UPDATE') {
+        const up = parsedData.updates || {};
+        const updMsg = _stripHtml(await financeEngine.updatePendingTransaction(
+          up.description || null, up.category || null, null, up.account || null, up.payment_method || null, null
+        ) || '');
+        if (updMsg) {
+          await supabaseMemories.saveChatMemory('nexa', updMsg.substring(0, 4000), 'cli').catch(() => {});
+          return res.status(200).json({ ok: true, reply: updMsg, intent: 'FINANCE', elapsed_ms: Date.now() - startTime });
+        }
+        // null → sudah auto-saved, fall through ke routing normal
+      } else if (pIntent === 'AMBIGUOUS') {
+        const ambigReply = '❓ Masih ada transaksi yang menunggu konfirmasi Tuan. Balas:\n• ya / masukkan → simpan\n• batal → batalkan\n• Deskripsi teks → ubah catatan transaksi';
+        await supabaseMemories.saveChatMemory('nexa', ambigReply, 'cli').catch(() => {});
+        return res.status(200).json({ ok: true, reply: ambigReply, intent: 'FINANCE', elapsed_ms: Date.now() - startTime });
+      }
+      // fall through ke routing normal
+    }
+
+    // ============================================================
+    // [PARITY] PENDING CALENDAR RESOLUTION
+    // Intercept follow-up untuk melengkapi jadwal (waktu selesai, dll.)
+    // ============================================================
+    const pendingCal = cliPendingCalendar.get(session_id);
+    if (pendingCal && (Date.now() - (pendingCal.askedAt || 0)) < 15 * 60 * 1000) {
+      const agendaManager = require('../../domain/Agenda_Manager');
+      const resolved = await agendaManager.tryResolvePending(textInput, pendingCal).catch(() => null);
+      if (resolved) {
+        agendaManager.cancelPending(pendingCal.summary);
+        cliPendingCalendar.delete(session_id);
+        if (resolved.status === 'CONFLICT_DETECTED') {
+          cliPendingConflict.set(session_id, { ...resolved.pendingEvent, askedAt: Date.now() });
+        }
+        const calReply = _stripHtml(resolved.message || '');
+        if (resolved.status === 'SUCCESS') {
+          _triggerConversationalSynthesis(textInput, resolved.message, 'PENDING_RESOLVED', session_id);
+        }
+        await supabaseMemories.saveChatMemory('nexa', calReply.substring(0, 4000), 'cli').catch(() => {});
+        return res.status(200).json({ ok: true, reply: calReply, intent: 'CALENDAR', elapsed_ms: Date.now() - startTime });
+      }
+    }
+
+    // ============================================================
+    // [PARITY] PENDING TASK CATEGORY INTERCEPTOR
+    // Intercept konfirmasi list, durasi, atau sinkronisasi kalender
+    // ============================================================
+    if (taskManager.pendingTaskCategories?.has(session_id)) {
+      const pendingTask = taskManager.pendingTaskCategories.get(session_id);
+      const normalizedInput = textInput.toLowerCase().trim();
+
+      if (normalizedInput === 'batal' || normalizedInput === 'batalkan' || normalizedInput === 'cancel') {
+        if (taskManager.cancelPendingTask) taskManager.cancelPendingTask(session_id);
+        else taskManager.pendingTaskCategories.delete(session_id);
+        const cancelMsg = '🚫 Penambahan tugas dibatalkan.';
+        await supabaseMemories.saveChatMemory('nexa', cancelMsg, 'cli').catch(() => {});
+        return res.status(200).json({ ok: true, reply: cancelMsg, intent: 'TASK', elapsed_ms: Date.now() - startTime });
+      }
+
+      if (pendingTask.type === 'CONFIRM_SYNC') {
+        const { classifyYesNo, callAI } = require('../../core/AI_Router');
+        const verdict = await classifyYesNo(textInput, `sinkronisasi tugas "${pendingTask.title}" ke kalender`);
+        if (verdict === 'NO') {
+          if (pendingTask.timerId) clearTimeout(pendingTask.timerId);
+          taskManager.pendingTaskCategories.delete(session_id);
+          const floatRes = await taskManager.handleTaskIntent({ action: 'CREATE', title: pendingTask.title, notes: pendingTask.notes, due_date: pendingTask.dueDate, list_name: pendingTask.listName, duration_minutes: pendingTask.durationMins, sync_calendar: false, calendar_start_time: null }, null);
+          const taskReply = _stripHtml(floatRes?.message || '✅ Tugas disimpan tanpa sinkronisasi kalender.');
+          await supabaseMemories.saveChatMemory('nexa', taskReply, 'cli').catch(() => {});
+          return res.status(200).json({ ok: true, reply: taskReply, intent: 'TASK', elapsed_ms: Date.now() - startTime });
+        }
+        if (verdict === 'YES') {
+          if (pendingTask.timerId) clearTimeout(pendingTask.timerId);
+          taskManager.pendingTaskCategories.delete(session_id);
+          const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+          let calStartTime = null;
+          try {
+            const aiResp = await callAI(`Extract START time ISO8601+07:00 from user text. Today: ${todayIso}. Reply ONLY ISO or ONLY_TIME_BLOCKING.\nUser: "${textInput}"`);
+            if (!aiResp.includes('ONLY_TIME_BLOCKING') && aiResp.includes('T')) calStartTime = aiResp.trim();
+          } catch (_) {}
+          const syncRes = await taskManager.handleTaskIntent({ action: 'CREATE', title: pendingTask.title, notes: pendingTask.notes, due_date: pendingTask.dueDate, list_name: pendingTask.listName, duration_minutes: pendingTask.durationMins || 60, sync_calendar: true, calendar_start_time: calStartTime }, null);
+          const taskReply = _stripHtml(syncRes?.message || '✅ Tugas & jadwal berhasil dibuat.');
+          await supabaseMemories.saveChatMemory('nexa', taskReply, 'cli').catch(() => {});
+          return res.status(200).json({ ok: true, reply: taskReply, intent: 'TASK', elapsed_ms: Date.now() - startTime });
+        }
+        // AMBIGUOUS → tanya ulang
+        const ambigMsg = `🤔 Apakah tugas '${pendingTask.title}' ingin dijadwalkan di Kalender?\n• Ya, besok jam 8 malam\n• Tidak`;
+        await supabaseMemories.saveChatMemory('nexa', ambigMsg, 'cli').catch(() => {});
+        return res.status(200).json({ ok: true, reply: ambigMsg, intent: 'TASK', elapsed_ms: Date.now() - startTime });
+      }
+
+      if (pendingTask.type === 'CONFIRM_DURATION') {
+        const { callAI } = require('../../core/AI_Router');
+        const aiResp = await callAI(`User replies: "${textInput}". Extract duration in minutes. Reply ONLY integer. If none, reply 0.`).catch(() => '0');
+        const parsed = parseInt(aiResp.trim());
+        pendingTask.durationMins = (!isNaN(parsed) && parsed > 0) ? parsed : 30;
+        const resTask = await taskManager.executePendingTask(session_id, pendingTask.listName);
+        const taskReply = _stripHtml(resTask?.message || '✅ Tugas berhasil dibuat.');
+        await supabaseMemories.saveChatMemory('nexa', taskReply, 'cli').catch(() => {});
+        return res.status(200).json({ ok: true, reply: taskReply, intent: 'TASK', elapsed_ms: Date.now() - startTime });
+      }
+
+      // CONFIRM_LIST — default
+      const { classifyYesNo } = require('../../core/AI_Router');
+      const verdict = await classifyYesNo(textInput, `konfirmasi task "${pendingTask.title}" ke list "${pendingTask.listName}"`);
+      let overrideList = null;
+      if (verdict === 'NO') overrideList = 'Tugas Saya';
+      else if (verdict === 'AMBIGUOUS') overrideList = textInput.trim();
+      const resTask = await taskManager.executePendingTask(session_id, overrideList);
+      const taskReply = _stripHtml(resTask?.message || '✅ Tugas berhasil dibuat.');
+      await supabaseMemories.saveChatMemory('nexa', taskReply, 'cli').catch(() => {});
+      return res.status(200).json({ ok: true, reply: taskReply, intent: 'TASK', elapsed_ms: Date.now() - startTime });
+    }
+
+    // ============================================================
+    // [PARITY] GLOBAL FOLLOW-UP ROUTER (Ambiguous context resolution)
+    // "hapus itu", "lanjut", "ubah itu" → resolve ke intent sebelumnya
+    // ============================================================
+    const _isAmbiguousFollowUp = (text) =>
+      /^(lanjut|teruskan|yang tadi|yang itu|itu|itu aja|itu saja|sebelumnya|sebelum itu|lagi|next|berikutnya|lanjutkan|hapus itu|ubah itu|edit itu)$/.test(text.toLowerCase().trim());
+    const _hasStrongNewIntentCue = (text) =>
+      /(email|gmail|database|supabase|kalender|agenda|jadwal|task|tugas|keuangan|pengeluaran|pemasukan|search|cari|berita|dokumen|2nd brain|profil|identitas)/.test(text.toLowerCase());
+
+    let earlyRoutingData = null;
+    if (conversationContext && _isAmbiguousFollowUp(textInput) && !_hasStrongNewIntentCue(textInput)) {
+      const ctx = conversationContext;
+      const ctxAgeMs = Date.now() - (ctx.askedAt || 0);
+      if (ctxAgeMs < 10 * 60 * 1000) {
+        const norm = textInput.toLowerCase().trim();
+        const kw = norm.replace(/^(hapus|delete|ubah|edit|update|ganti|selesaikan|complete)\s*/g, '').replace(/^(itu|yang itu|yang tadi)\s*/g, '').trim();
+        const fbKw = ctx.extractedData?.search_keyword || ctx.extractedData?.summary || ctx.extractedData?.title || ctx.extractedData?.destination || '';
+        const mergedKw = kw || fbKw;
+
+        if (ctx.intent === 'FINANCE') {
+          if (/(hapus|delete)/.test(norm)) earlyRoutingData = { intent: 'FINANCE', extracted_data: { action: 'DELETE', search_keyword: mergedKw }, reply_message: '', god_mode_trigger: false };
+          else if (/(ubah|edit|update|ganti)/.test(norm)) earlyRoutingData = { intent: 'FINANCE', extracted_data: { action: 'EDIT', search_keyword: mergedKw }, reply_message: '', god_mode_trigger: false };
+          else earlyRoutingData = { intent: 'FINANCE', extracted_data: { action: 'READ_LATEST' }, reply_message: '', god_mode_trigger: false };
+        } else if (ctx.intent === 'TASK') {
+          if (/(hapus|delete)/.test(norm)) earlyRoutingData = { intent: 'TASK', extracted_data: { action: 'DELETE', search_keyword: mergedKw }, reply_message: '', god_mode_trigger: false };
+          else if (/(selesai|complete|done)/.test(norm)) earlyRoutingData = { intent: 'TASK', extracted_data: { action: 'COMPLETE', search_keyword: mergedKw }, reply_message: '', god_mode_trigger: false };
+          else if (/(ubah|edit|update|ganti)/.test(norm)) earlyRoutingData = { intent: 'TASK', extracted_data: { action: 'EDIT', search_keyword: mergedKw }, reply_message: '', god_mode_trigger: false };
+          else earlyRoutingData = { intent: 'TASK', extracted_data: { action: 'READ' }, reply_message: '', god_mode_trigger: false };
+        } else if (ctx.intent === 'CALENDAR') {
+          if (/(hapus|delete)/.test(norm)) earlyRoutingData = { intent: 'CALENDAR', extracted_data: { action: 'DELETE', summary: mergedKw || ctx.extractedData?.summary }, reply_message: '', god_mode_trigger: false };
+          else if (/(ubah|edit|update|ganti)/.test(norm)) earlyRoutingData = { intent: 'CALENDAR', extracted_data: { action: 'UPDATE', summary: mergedKw || ctx.extractedData?.summary }, reply_message: '', god_mode_trigger: false };
+          else earlyRoutingData = { intent: 'CALENDAR', extracted_data: { action: 'READ' }, reply_message: '', god_mode_trigger: false };
+        } else if (['2ND_BRAIN', 'USER_PROFILE', 'CORE_IDENTITY'].includes(ctx.intent)) {
+          if (/(hapus|delete)/.test(norm)) earlyRoutingData = { intent: ctx.intent, extracted_data: { action: 'DELETE', search_keyword: mergedKw }, reply_message: '', god_mode_trigger: false };
+        } else if (ctx.intent === 'WEB_SEARCH') {
+          earlyRoutingData = { intent: 'WEB_SEARCH', extracted_data: { query: ctx.extractedData?.query || ctx.lastUserText || '', type: ctx.extractedData?.type || 'search' }, reply_message: '', god_mode_trigger: false };
+        }
+        if (earlyRoutingData) console.log(`[CLI FOLLOW-UP] Ambiguous follow-up resolved to: ${earlyRoutingData.intent} (${earlyRoutingData.extracted_data?.action || ''})`);
+      }
+    }
+
     // ── Route ke AI Router ───────────────────────────────────
-    const routingData = await aiRouter.routeUserMessage(textInput, {
+    const routingData = earlyRoutingData || await aiRouter.routeUserMessage(textInput, {
       conversationContext,
       source: 'cli'
     });
 
     const intent = String(routingData?.intent || 'UNKNOWN').toUpperCase();
+
+    // ============================================================
+    // [PARITY] INTENT CLARIFICATION VALIDATOR
+    // Validasi kelengkapan data sebelum execute (seperti Telegram getClarificationMessage)
+    // ============================================================
+    const _getClarificationMessage = (rd, text) => {
+      const data = rd?.extracted_data || {};
+      const it = String(rd?.intent || '').toUpperCase();
+      if (it === 'INCOMPLETE_INFO') return rd.reply_message || '❓ Instruksi belum lengkap, Tuan. Mohon tambahkan detailnya.';
+      if (it === 'FINANCE') {
+        if ((data.action === 'RECORD') && (isNaN(parseFloat(data.nominal)) || parseFloat(data.nominal) <= 0)) {
+          return '❓ Nominal transaksi belum valid. Mohon sebutkan angka positifnya, Tuan.';
+        }
+      }
+      if (it === 'CALENDAR' && data.action === 'CREATE') {
+        if (!data.summary) return '❓ Nama agendanya apa, Tuan?';
+        if (!data.start) return `❓ Jadwal "${data.summary}" dimulai kapan, Tuan?`;
+      }
+      if (it === 'TASK') {
+        if (data.action === 'CREATE' && !data.title) return '❓ Nama tugas yang ingin dibuat apa, Tuan?';
+        if (['DELETE','COMPLETE','EDIT'].includes(data.action) && !data.search_keyword && !data.title)
+          return '❓ Tugas mana yang dimaksud, Tuan? Sebutkan kata kunci judulnya.';
+      }
+      if (it === 'EMAIL') {
+        if (data.action === 'SEND' && (!data.to || !data.subject || !data.content))
+          return '❓ Untuk kirim email, mohon lengkapi penerima, subjek, dan isi emailnya, Tuan.';
+        if (data.action === 'DELETE' && !data.search_keyword)
+          return '❓ Email mana yang ingin dihapus, Tuan? Beri kata kunci subjek/pengirim.';
+      }
+      if (it === '2ND_BRAIN') {
+        const action = data.action || 'READ';
+        if (['EDIT','DELETE'].includes(action) && !data.search_keyword)
+          return '❓ Arsip mana yang dimaksud, Tuan? Mohon beri kata kunci.';
+        if (['APPEND','EDIT'].includes(action) && !data.content)
+          return '❓ Konten arsip yang ingin disimpan/diubah belum ada, Tuan.';
+      }
+      if (['USER_PROFILE','CORE_IDENTITY'].includes(it)) {
+        const action = data.action || (data.content ? 'APPEND' : 'READ');
+        if (action === 'APPEND' && !data.content) return '❓ Fakta/aturan yang ingin ditambahkan apa, Tuan?';
+        if (action === 'DELETE' && !data.search_keyword) return '❓ Item mana yang ingin dihapus dari memori, Tuan?';
+      }
+      return null;
+    };
+
+    const clarificationMsg = !earlyRoutingData ? _getClarificationMessage(routingData, textInput) : null;
+    if (clarificationMsg) {
+      console.log(`[CLI CLARIFICATION] Intent ${intent} needs more info.`);
+      await supabaseMemories.saveChatMemory('nexa', clarificationMsg.substring(0, 4000), 'cli').catch(() => {});
+      return res.status(200).json({ ok: true, reply: clarificationMsg, intent, elapsed_ms: Date.now() - startTime });
+    }
 
     // ── Intent Domain Dispatcher (Full Parity) ────────────────
     let reply = await _dispatchIntent(intent, routingData, textInput, session_id);
@@ -868,7 +1157,8 @@ async function handleCliWebhook(req, res) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
           if (_isFactAboutNexa(fact)) {
             console.log('[CLI SELF-MODEL] Passive Learning → Self-Model:', fact.substring(0, 80));
-            aiRouter.deduplicateAndSaveSelfFact(fact, 'IDENTITY_TRAITS', 'PASSIVE_LEARNING', fact).catch(() => {});
+            const selfLayer = _classifySelfModelLayer(fact);
+            aiRouter.deduplicateAndSaveSelfFact(fact, selfLayer, 'PASSIVE_LEARNING', fact).catch(() => {});
           } else {
             console.log('[CLI ROUTER] Passive Learning - User Fact:', fact);
             aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE').catch(() => {});
@@ -883,7 +1173,8 @@ async function handleCliWebhook(req, res) {
       for (const fact of routingData.learned_core_identities) {
         if (typeof fact === 'string' && fact.trim().length > 0) {
           console.log('[CLI SELF-MODEL] Passive Learning (core):', fact.substring(0, 80));
-          aiRouter.deduplicateAndSaveSelfFact(fact, 'IDENTITY_TRAITS', 'PASSIVE_LEARNING', fact).catch(() => {});
+          const coreLayer = _classifySelfModelLayer(fact);
+          aiRouter.deduplicateAndSaveSelfFact(fact, coreLayer, 'PASSIVE_LEARNING', fact).catch(() => {});
         }
       }
     }
