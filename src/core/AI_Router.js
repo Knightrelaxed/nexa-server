@@ -601,21 +601,20 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const { hasTime, hasCal } = _preflightClassify(textInput);
   const _hasContextRef = CONTEXTUAL_REF_WORDS.some(kw => textInput.toLowerCase().includes(kw));
 
-  // ── Log Analysis Intent Detection ─────────────────────────────────────────
-  const textLower = textInput.toLowerCase();
+  // ── Log Analysis Intent Detection (Universal — works on all interfaces) ───
   const isLogRequest = /(?:cek|analisis|lihat|baca|periksa|mana)\s*(?:log|logs|telemetri|kontainer|space|server)/i.test(textInput) ||
                        (/(?:log|logs)/i.test(textInput) && /(?:mana|analisis|cek|baca|periksa|lihat|kontainer|space)/i.test(textInput));
 
   if (isLogRequest) {
-    console.log('[ROUTER] 🔍 Log Analysis Intent Detected!');
+    console.log('[ROUTER] 🔍 Log Analysis Intent Detected (DIAGNOSE_SYSTEM)');
     const logger = require('../utils/logger');
     let recentLogs = logger.getRecentLogs();
     if (!recentLogs || recentLogs.trim().length === 0) {
-      recentLogs = `[SYSTEM] Log in-memory saat ini: Server running, fallback active. (Tidak ada error kritis di terminal lokal).`;
+      recentLogs = '[SYSTEM] Log in-memory saat ini: Server running, fallback active. (Tidak ada error kritis di terminal lokal).';
     }
     const logAnalysisText = await analyzeSystemLogs(textInput, recentLogs);
     return {
-      intent: 'SYSTEM_LOGS',
+      intent: 'DIAGNOSE_SYSTEM',
       reply_message: logAnalysisText,
       god_mode_trigger: false,
       extracted_data: { log_length: recentLogs.length }
