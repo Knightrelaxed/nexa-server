@@ -303,6 +303,46 @@ Untuk mengatasi bug perbedaan render kolom karakter emoji (`🤖` / `●`) di Wi
 - Desain **Left Accent Bar (`│`) Minimalis** yang responsif terhadap semua resolusi dan lebar jendela terminal tanpa risiko pemotongan teks.
 - Pembersihan tag HTML mentah (`<br>`) menjadi *newline* organik (`\n`).
 
+#### 6. Panduan Penggunaan & Operasional CLI (User & Administrator Guide)
+
+##### A. Cara Menjalankan CLI Tanpa Instalasi (Via NPX Global)
+Buka terminal (PowerShell, Command Prompt, atau Terminal Linux/macOS) di perangkat manapun, lalu ketik:
+```bash
+npx github:Knightrelaxed/nexa-cli
+```
+*(Atau gunakan flag `-y` untuk konfirmasi otomatis):*
+```bash
+npx -y github:Knightrelaxed/nexa-cli
+```
+
+##### B. Setup Konfigurasi Pertama Kali (First-Time Setup)
+Saat pertama kali dijalankan, CLI akan meminta dua input konfigurasi yang disimpan secara aman di file lokal `~/.nexa-config.json`:
+1. **NEXA Server URL:**
+   - **Mode Lokal (Development):** `http://127.0.0.1:3000`
+   - **Mode Cloud (HF Space 24/7):** `https://nexa-asistant-nexa-core-server.hf.space`
+2. **Secret Key (NEXA_CLI_SECRET):**
+   - Masukkan kunci rahasia: `cLiNeXa17`
+
+##### C. Beralih Antara Server Lokal dan Cloud HF Space
+Jika Tuan ingin mengganti endpoint server (misalnya dari server lokal ke cloud HF Space 24/7), hapus file konfigurasi lama di terminal:
+- **Windows PowerShell:**
+  ```powershell
+  Remove-Item ~/.nexa-config.json
+  ```
+- **Linux / macOS:**
+  ```bash
+  rm ~/.nexa-config.json
+  ```
+Setelah itu, jalankan `npx github:Knightrelaxed/nexa-cli` kembali dan masukkan URL server tujuan.
+
+##### D. Perintah Keluar (Session Disconnect)
+Untuk mengakhiri sesi interaktif dan menutup terminal dengan aman, ketik salah satu perintah berikut: `exit`, `keluar`, `q`, atau `quit`.
+```text
+❖ TUAN FAQIH ──❯ exit
+
+👋 N.E.X.A: Terima kasih Tuan Faqih. Terminal offline.
+```
+
 ---
 
 ## BAB 3: KOGNISI AI & UNIVERSAL STATE MACHINE
