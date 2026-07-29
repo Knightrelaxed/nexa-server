@@ -240,10 +240,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       name: 'Tier 14 (Mistral Pixtral 12B)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
     }] : []),
-    // Tier 15: Puter AI (GPT-4o / Mistral-Large / Codestral)
+    // Tier 15: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
     ...(env.PUTER_AUTH_TOKEN ? [{
-      name: 'Tier 15 (Puter AI GPT-4o)',
-      fn: () => callPuter(prompt, systemInstruction, temperature, jsonMode, 'gpt-4o')
+      name: 'Tier 15 (Puter AI Pool - Codestral & GPT-4o)',
+      fn: () => callPuter(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
     }] : []),
     // Tier 16: OpenRouter Multi-Model Free Pool
     ...(env.OPENROUTER_API_KEY ? [{
@@ -420,9 +420,17 @@ async function callMistral(prompt, systemInstruction, temperature, jsonMode = tr
   }
 }
 
-async function callPuter(prompt, systemInstruction, temperature, jsonMode = true, modelId = 'gpt-4o', retries = 2) {
+async function callPuter(prompt, systemInstruction, temperature, jsonMode = true, primaryModelId = 'codestral-latest', retries = 1) {
   const token = env.PUTER_AUTH_TOKEN;
   if (!token) throw new Error('No PUTER_AUTH_TOKEN configured');
+
+  // Pool model aktif terverifikasi di Puter AI (diurutkan berdasar kecepatan benchmark real-time)
+  const puterModels = [
+    primaryModelId,
+    'gpt-4o',
+    'mistral-large-latest',
+    'google/gemma-4-31b-it'
+  ].filter((v, i, a) => a.indexOf(v) === i); // deduplicate
 
   const messages = [];
   if (systemInstruction) {
@@ -430,32 +438,37 @@ async function callPuter(prompt, systemInstruction, temperature, jsonMode = true
   }
   messages.push({ role: 'user', content: prompt });
 
-  const requestBody = {
-    model: modelId,
-    messages: messages,
-    temperature,
-    max_tokens: 1500
-  };
-  if (jsonMode) requestBody.response_format = { type: 'json_object' };
+  for (const modelId of puterModels) {
+    const requestBody = {
+      model: modelId,
+      messages: messages,
+      temperature,
+      max_tokens: 1500
+    };
+    if (jsonMode) requestBody.response_format = { type: 'json_object' };
 
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await axios.post('https://api.puter.com/puterai/openai/v1/chat/completions', requestBody, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 8000
-      });
-      return response.data.choices[0].message.content;
-    } catch (e) {
-      if (attempt < retries) {
-        await new Promise(r => setTimeout(r, attempt * 1500));
-        continue;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await axios.post('https://api.puter.com/puterai/openai/v1/chat/completions', requestBody, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 6000
+        });
+        return response.data.choices[0].message.content;
+      } catch (e) {
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        asyncWarn(`[FALLBACK] Puter AI model ${modelId} failed:`, getErrDetails(e));
+        break; // Pindah ke model berikutnya dalam pool Puter AI
       }
-      throw e;
     }
   }
+
+  throw new Error('All Puter AI pool models exhausted.');
 }
 
 async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode = true, retries = 2) {
