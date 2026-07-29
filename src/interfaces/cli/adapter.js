@@ -853,6 +853,51 @@ async function handleCliWebhook(req, res) {
       askedAt: Date.now()
     });
 
+    // ── [PHASE 6] Log perilaku interaksi user & fakta ─────────
+    const behaviorEngine = require("../../domain/Behavior_Engine");
+    behaviorEngine.logUserInteraction(intent, textInput, routingData?.mood || 'NEUTRAL').catch(() => {});
+    if (routingData?.mood && routingData.mood !== 'NEUTRAL') {
+      behaviorEngine.logMood(routingData.mood, textInput).catch(() => {});
+    }
+
+    // ── [PHASE 8] Passive Background Learning (Auto-Extraction) 
+    // Fakta tentang Tuan Faqih → disimpan ke nexa_user_profile
+    // Fakta tentang N.E.X.A    → DIALIHKAN senyap ke nexa_self_model
+    if (routingData?.learned_user_facts && Array.isArray(routingData.learned_user_facts) && routingData.learned_user_facts.length > 0) {
+      for (const fact of routingData.learned_user_facts) {
+        if (typeof fact === 'string' && fact.trim().length > 0) {
+          if (_isFactAboutNexa(fact)) {
+            console.log('[CLI SELF-MODEL] Passive Learning → Self-Model:', fact.substring(0, 80));
+            aiRouter.deduplicateAndSaveSelfFact(fact, 'IDENTITY_TRAITS', 'PASSIVE_LEARNING', fact).catch(() => {});
+          } else {
+            console.log('[CLI ROUTER] Passive Learning - User Fact:', fact);
+            aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE').catch(() => {});
+            behaviorEngine.logPassiveLearning(fact, 'USER_PROFILE').catch(() => {});
+          }
+        }
+      }
+      invalidatePersonalFactsCache();
+    }
+
+    if (routingData?.learned_core_identities && Array.isArray(routingData.learned_core_identities) && routingData.learned_core_identities.length > 0) {
+      for (const fact of routingData.learned_core_identities) {
+        if (typeof fact === 'string' && fact.trim().length > 0) {
+          console.log('[CLI SELF-MODEL] Passive Learning (core):', fact.substring(0, 80));
+          aiRouter.deduplicateAndSaveSelfFact(fact, 'IDENTITY_TRAITS', 'PASSIVE_LEARNING', fact).catch(() => {});
+        }
+      }
+    }
+
+    // ── [PHASE 7 — M2] Intention Engine (Decision & Intention) ─
+    if (textInput && textInput.length >= 10) {
+      const intentionEngine = require("../../domain/Intention_Engine");
+      intentionEngine.detectAndSaveIntention(textInput, routingData).catch(() => {});
+      const DECISION_INTENTS = new Set(['FINANCE', 'DISCIPLINE', 'CALENDAR', 'ADVICE', 'NORMAL_CHAT']);
+      if (DECISION_INTENTS.has(intent)) {
+        intentionEngine.detectAndSaveDecision(textInput, routingData, routingData?.detected_mood || 'NEUTRAL').catch(() => {});
+      }
+    }
+
     // ── Anticipatory Engine ──────────────────────────────────
     const sessionAdviceCount = intent === 'ADVICE'
       ? _trackAdviceSession(session_id)
