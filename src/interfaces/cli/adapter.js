@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // N.E.X.A — CLI INTERFACE ADAPTER
 // Menangani request dari Remote CLI client (laptop manapun)
 // via endpoint POST /webhook/cli
@@ -39,6 +39,14 @@ async function handleCliWebhook(req, res) {
 
   const textInput = message.trim();
   const startTime = Date.now();
+
+  // ── Ping Check (setup verification dari CLI client) ─────────
+  // Saat pertama kali setup, CLI mengirim __ping__ untuk verifikasi koneksi.
+  // Langsung return tanpa memanggil AI Router agar tidak buang token.
+  if (textInput === '__ping__') {
+    console.log('[CLI] Ping check received — setup verification');
+    return res.status(200).json({ ok: true, reply: 'pong', intent: 'PING', elapsed_ms: 0 });
+  }
 
   // Log ke container HF — inilah yang membuat CLI setara dengan Telegram
   console.log(`[CLI] Received message: ${textInput}`);
