@@ -36,6 +36,14 @@ async function sendTelegramOutbound(text, skipMemory = false, platform = 'telegr
       await supabaseMemories.saveChatMemory('nexa', cleanText.substring(0, 4000), platform).catch(() => { });
     }
 
+    // [CLI SSE PUSH] Cek apakah CLI sedang aktif dan lempar notifikasi
+    try {
+      const { pushToCli } = require('../cli/adapter');
+      pushToCli(cleanText);
+    } catch (err) {
+      // Abaikan error jika CLI adapter belum di-load atau terjadi masalah
+    }
+
     if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
     const botToken = env.TELEGRAM_BOT_TOKEN.trim();
     const chatId = env.TELEGRAM_CHAT_ID.trim();

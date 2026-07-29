@@ -13,8 +13,9 @@ const security = require('../utils/security');
 // Adapters
 const { handleTelegramWebhook } = require('./telegram/adapter');
 const { handleTaskerWebhook } = require('./tasker/adapter');
+const handleGithubWebhook = require('./github/webhook');
+const { handleCliWebhook, handleCliStream } = require('./cli/adapter');
 const { handleGmailWebhook } = require('./gmail/adapter');
-const { handleCliWebhook } = require('./cli/adapter');
 
 // Outbound Actions (di-export ulang demi backward compatibility)
 const {
@@ -40,6 +41,7 @@ router.post('/gmail', handleGmailWebhook);
 // 4. CLI Remote Interface (Laptop manapun → N.E.X.A Server HF)
 // Dilindungi oleh Bearer + NEXA_CLI_SECRET
 router.post('/cli', security.cliAuth, handleCliWebhook);
+router.get('/cli/stream', security.cliAuth, handleCliStream); // SSE Push Channel
 
 // 5. WhatsApp Login & Logout Webhooks (Fase 4 Coupling)
 router.post('/wa-login', security.webhookAuth, async (req, res) => {
