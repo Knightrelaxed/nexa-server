@@ -223,8 +223,8 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const tiers = [
     // Tier 1: Mistral AI (TEMPORARY FOR TESTING)
     ...(env.MISTRAL_API_KEY ? [{
-      name: 'Tier 1 (Mistral - ministral-3b-latest)',
-      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'ministral-3b-latest')
+      name: 'Tier 1 (Mistral - codestral-latest)',
+      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
     }] : []),
     // Tier 2-5: Primary AI (Cerebras di LIGHT, Gemini di HEAVY)
     ...primaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 2}`) })),
