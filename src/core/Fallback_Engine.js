@@ -221,24 +221,24 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const secondaryBlock = (heavy ? cerebrasBlock  : geminiBlock);
 
   const tiers = [
-    // Tier 1: Mistral AI (TEMPORARY FOR TESTING)
-    ...(env.MISTRAL_API_KEY ? [{
-      name: 'Tier 1 (Mistral - open-mistral-nemo)',
-      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'open-mistral-nemo')
-    }] : []),
-    // Tier 2-5: Primary AI (Cerebras di LIGHT, Gemini di HEAVY)
-    ...primaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 2}`) })),
-    // Tier 6-9: Secondary AI (Gemini di LIGHT, Cerebras di HEAVY)
-    ...secondaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 6}`) })),
-    // Tier 10-13: Groq Llama 3.3 70B Versatile
+    // Tier 1-4: Primary AI (Cerebras di LIGHT, Gemini di HEAVY)
+    ...primaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
+    // Tier 5-8: Secondary AI (Gemini di LIGHT, Cerebras di HEAVY) — Gemini dipindah ke Tier 5-8
+    ...secondaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 5}`) })),
+    // Tier 9-12: Groq Llama 3.3 70B Versatile — Groq dipindah ke Tier 9-12
     ...groqKeys.filter(Boolean).map((key, i) => ({
-      name: `Tier ${i + 10} (Groq Key ${i + 1})`,
+      name: `Tier ${i + 9} (Groq Key ${i + 1})`,
       fn: () => callGroq(key, prompt, systemInstruction, temperature, jsonMode)
     })),
-    // Tier 14: Hugging Face Gemma 4 31B
+    // Tier 13: Hugging Face Gemma 4 31B
     ...(env.HF_INFERENCE_TOKEN ? [{
-      name: 'Tier 14 (Hugging Face Gemma 4 31B)',
+      name: 'Tier 13 (Hugging Face Gemma 4 31B)',
       fn: () => callHuggingFaceInference(prompt, systemInstruction, temperature, jsonMode)
+    }] : []),
+    // Tier 14: Mistral Pixtral 12B
+    ...(env.MISTRAL_API_KEY ? [{
+      name: 'Tier 14 (Mistral Pixtral 12B)',
+      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
     }] : []),
     // Tier 15: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
     ...(env.PUTER_AUTH_TOKEN ? [{
