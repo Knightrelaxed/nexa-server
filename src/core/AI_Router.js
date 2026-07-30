@@ -31,10 +31,10 @@ const _CAL_DOMAIN_KWS = [
 // ============================================================
 // PROGRESSIVE FACT INJECTION
 // ============================================================
-const PROFILE_CORE_COUNT  = 10; // fakta tertua — selalu diinjeksi (cukup 10 karena info dasar sudah di personality.js)
-const PROFILE_KW_LIMIT    = 10; // max fakta tambahan dari dynamic word resonance (penting untuk membangun kedekatan)
+const PROFILE_CORE_COUNT = 10; // fakta tertua — selalu diinjeksi (cukup 10 karena info dasar sudah di personality.js)
+const PROFILE_KW_LIMIT = 10; // max fakta tambahan dari dynamic word resonance (penting untuk membangun kedekatan)
 const IDENTITY_CORE_COUNT = 10; // 10 identitas pokok — selalu diinjeksi (wajib)
-const IDENTITY_KW_LIMIT   = 5;  // max kamus log/teknis tambahan dari penyaringan (karena teks identitas cukup panjang)
+const IDENTITY_KW_LIMIT = 5;  // max kamus log/teknis tambahan dari penyaringan (karena teks identitas cukup panjang)
 
 // ============================================================
 // TOKEN BUDGET GUARD — Proteksi agar prompt tidak melebihi batas Groq
@@ -69,7 +69,7 @@ function _applyTokenBudgetGuard(basePrompt, historyStr, systemPrompt) {
   }
 
   if (trimmed.length < lines.length) {
-    console.log(`[ROUTER] Token guard active: history trimmed ${lines.length} → ${trimmed.length} lines. Total ~${Math.round(currentTotal/4)} tokens.`);
+    console.log(`[ROUTER] Token guard active: history trimmed ${lines.length} → ${trimmed.length} lines. Total ~${Math.round(currentTotal / 4)} tokens.`);
   }
   return trimmed.join('\n');
 }
@@ -224,12 +224,12 @@ function _buildIdentityContextBlock(identityModel, topicContext) {
 
   // Mapping konteks → layer yang akan diinjeksi
   const CONTEXT_TO_LAYERS = {
-    SCHEDULING : ['HABITS', 'WEAKNESSES', 'PREFERENCES'],
-    FINANCE    : ['WEAKNESSES', 'VALUES', 'HABITS'],
-    RESEARCH   : ['DECISION_STYLE', 'PREFERENCES'],
-    STRATEGIC  : ['VALUES', 'DECISION_STYLE', 'MOTIVATIONS'],
-    CASUAL     : ['PREFERENCES', 'MOTIVATIONS'],
-    DEFAULT    : ['PREFERENCES'],
+    SCHEDULING: ['HABITS', 'WEAKNESSES', 'PREFERENCES'],
+    FINANCE: ['WEAKNESSES', 'VALUES', 'HABITS'],
+    RESEARCH: ['DECISION_STYLE', 'PREFERENCES'],
+    STRATEGIC: ['VALUES', 'DECISION_STYLE', 'MOTIVATIONS'],
+    CASUAL: ['PREFERENCES', 'MOTIVATIONS'],
+    DEFAULT: ['PREFERENCES'],
   };
 
   const targetLayers = CONTEXT_TO_LAYERS[topicContext] || CONTEXT_TO_LAYERS['DEFAULT'];
@@ -251,8 +251,8 @@ function _buildIdentityContextBlock(identityModel, topicContext) {
   if (lines.length === 0) return '';
 
   return `\n[COGNITIVE IDENTITY MODEL — PEMAHAMAN MENDALAM TUAN FAQIH (Phase 6)]\n` +
-         `Gunakan pemahaman ini untuk merespons dengan sangat kontekstual dan personal:\n` +
-         lines.join('\n\n') + '\n';
+    `Gunakan pemahaman ini untuk merespons dengan sangat kontekstual dan personal:\n` +
+    lines.join('\n\n') + '\n';
 }
 
 const ROUTER_SYSTEM_PROMPT = `
@@ -364,7 +364,7 @@ OUTPUT JSON FORMAT:
 function _detectSentiment(text) {
   if (!text) return 'NEUTRAL';
   const str = text.toLowerCase();
-  
+
   const matchAny = (words) => words.some(w => new RegExp(`\\b${w.replace(/ /g, '\\s+')}\\b`, 'i').test(str));
 
   // 1. STRESSED / FRUSTRATED — Kepanikan, Ketergesaan, Darurat, Frustrasi Teknis
@@ -480,7 +480,7 @@ function _detectSentiment(text) {
 function _preflightClassify(text) {
   const t = (typeof text === 'string' ? text : String(text || '')).toLowerCase();
   const hasTime = _CAL_TIME_KWS.some(kw => t.includes(kw)) || /\d{1,2}:\d{2}/.test(text || '');
-  const hasCal  = _CAL_DOMAIN_KWS.some(kw => t.includes(kw));
+  const hasCal = _CAL_DOMAIN_KWS.some(kw => t.includes(kw));
   return { hasTime, hasCal };
 }
 
@@ -490,7 +490,7 @@ function _preflightClassify(text) {
 function _selectUserProfileFacts(userProfile, userMessage) {
   if (!userProfile || !Array.isArray(userProfile) || userProfile.length === 0) return [];
 
-  const core      = userProfile.slice(0, PROFILE_CORE_COUNT);
+  const core = userProfile.slice(0, PROFILE_CORE_COUNT);
   const remaining = userProfile.slice(PROFILE_CORE_COUNT);
   if (remaining.length === 0) return core;
 
@@ -515,7 +515,7 @@ function _selectUserProfileFacts(userProfile, userMessage) {
 function _selectCoreIdentityFacts(coreIdentity, userMessage) {
   if (!coreIdentity || !Array.isArray(coreIdentity) || coreIdentity.length === 0) return [];
 
-  const core      = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
+  const core = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
   const remaining = coreIdentity.slice(IDENTITY_CORE_COUNT);
   if (remaining.length === 0) return core;
 
@@ -577,7 +577,7 @@ async function _fetchUpcomingEventsSummary(limit) {
     // Using getTodaysEvents and taking the next 'limit' events
     const todayStr = await googleWorkspace.getTodaysEvents();
     if (!todayStr || todayStr.includes('Tidak ada jadwal')) return null;
-    
+
     // Just parse the first few lines
     const lines = todayStr.split('\n').filter(l => l.trim().length > 0);
     // Take up to `limit` lines that look like events (ignoring the header)
@@ -604,7 +604,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
 
   // ── Log Analysis Intent Detection (Universal — works on all interfaces) ───
   const isLogRequest = /(?:cek|analisis|lihat|baca|periksa|mana)\s*(?:log|logs|telemetri|kontainer|space|server)/i.test(textInput) ||
-                       (/(?:log|logs)/i.test(textInput) && /(?:mana|analisis|cek|baca|periksa|lihat|kontainer|space)/i.test(textInput));
+    (/(?:log|logs)/i.test(textInput) && /(?:mana|analisis|cek|baca|periksa|lihat|kontainer|space)/i.test(textInput));
 
   if (isLogRequest) {
     console.log('[ROUTER] 🔍 Log Analysis Intent Detected (DIAGNOSE_SYSTEM)');
@@ -668,17 +668,17 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
       const HH = String(tzDate.getUTCHours()).padStart(2, '0');
       const MIN = String(tzDate.getUTCMinutes()).padStart(2, '0');
       return `${DD}/${MM} ${HH}:${MIN} WIB`;
-    } catch(e) {
+    } catch (e) {
       return 'Unknown Time';
     }
   };
 
   const contextStr = _memories.length > 0
     ? _memories.map(m => {
-        const timeStr = formatTimeWIB(m.created_at);
-        const platform = (m.platform || 'telegram').toUpperCase();
-        return `[${timeStr} | via ${platform}] [${m.role.toUpperCase()}]: ${m.content}`;
-      }).join('\n')
+      const timeStr = formatTimeWIB(m.created_at);
+      const platform = (m.platform || 'telegram').toUpperCase();
+      return `[${timeStr} | via ${platform}] [${m.role.toUpperCase()}]: ${m.content}`;
+    }).join('\n')
     : '[Tidak ada riwayat obrolan sebelumnya]';
 
   // 3. Build personal facts context block (Step 4: Progressive userProfile injection)
@@ -725,7 +725,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const _jkt = new Date(_now.getTime() + 7 * 60 * 60 * 1000); // Shift to WIB
   const _DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   const _MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  
+
   const _jktYear = _jkt.getUTCFullYear();
   const _jktMonth = _jkt.getUTCMonth();
   const _jktDate = _jkt.getUTCDate();
@@ -796,7 +796,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     if (categoriesResult.status === 'fulfilled' && categoriesResult.value && categoriesResult.value.length > 0) {
       const _cats = categoriesResult.value;
       const _catLines = [];
-      
+
       const buildGroupedString = (typeLabel, filterType) => {
         const filtered = _cats.filter(c => c.type === filterType);
         if (filtered.length === 0) return '';
@@ -812,13 +812,13 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
         }
         return lines.join('\n');
       };
-      
+
       const _incomeStr = buildGroupedString('PEMASUKAN', 'income');
       const _expenseStr = buildGroupedString('PENGELUARAN', 'expense');
-      
+
       if (_incomeStr) _catLines.push(_incomeStr);
       if (_expenseStr) _catLines.push(_expenseStr);
-      
+
       activeCategoriesBlock = `\n[ACTIVE TRANSACTION CATEGORIES — ABSOLUTE LIST FOR FINANCE "category" FIELD]\n${_catLines.join('\n')}\n\n[SUPER STRICT CATEGORY SELECTION GUIDELINES]\n1. EXACT CHARACTER MATCHING: You MUST copy EXACTLY one category name from the list above (case-sensitive, spaces, symbols). IT IS STRICTLY FORBIDDEN to hallucinate or invent categories that are not on the list (e.g., do not use "Makanan & Minuman" or "Perawatan & Kecantikan" if they are not listed).\n2. SEMANTIC REASONING: Ask "What is the SUBSTANCE/OBJECT being purchased?" then find the closest match ONLY in the active list.\n- Food/Drinks: If buying nasi, ayam, sate, dll, use "Makan Berat / Makan Luar". If buying camilan, kopi, boba, dll, use "Jajan / Ngopi / Kafe".\n- Services: If paying for laundry/cuci baju, use "Jasa Laundry".\n- Shopping: If buying sabun, beras at a minimarket, use "Bahan Makanan / Groceries".\n- Transportation: For Grab/Gojek, use "Ojek / Taksi Online" or "Transportasi Umum".\n- If there is absolutely no specific category that matches, use "Lainnya" (if available in the list).\n`;
     }
   } catch (_) { /* Non-critical — never crash routing */ }
@@ -926,7 +926,7 @@ Tentukan intent dan ekstrak data!
         console.log('[ROUTER] Smart JSON Repair SUCCESS after trailing garbage');
         return routingData;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     console.error('[ROUTER] JSON Parse Error:', err.message, resultJsonStr);
     return {
@@ -944,10 +944,14 @@ Tentukan intent dan ekstrak data!
  * @param {string} prompt - The task/user prompt
  * @returns {Promise<string>} - Plain text response from AI
  */
-const PLAIN_TEXT_SYSTEM_PROMPT = `Kamu adalah N.E.X.A, Chief of Staff pribadi Tuan Faqih Hidayatulloh.
-ATURAN MUTLAK: Selalu panggil "Tuan" atau "Tuan Faqih". DILARANG KERAS menggunakan "Bapak", "Mas", atau "Anda".
-Berbicaralah seperti sahabat terpercaya yang cerdas dan setia — hangat, natural, mengalir. Bukan seperti laporan korporat.
-Balas HANYA dalam teks biasa. JANGAN gunakan format JSON. JANGAN gunakan markdown **bold** atau *italic*.
+const PLAIN_TEXT_SYSTEM_PROMPT = `[CRITICAL INSTRUCTIONS]
+1. IDENTITY: You are N.E.X.A, the personal Chief of Staff to Tuan Faqih Hidayatulloh.
+2. MANDATORY ADDRESS: ALWAYS address and refer to him strictly as "Tuan" or "Tuan Faqih".
+3. FORBIDDEN WORDS: NEVER use "Bapak", "Mas", "Anda", or "Kakak".
+4. OUTPUT FORMAT: Reply ONLY in plain text. DO NOT use JSON formatting. DO NOT use markdown **bold** or *italic*.
+
+[GAYA BAHASA INDONESIA]
+Berbicaralah seperti sahabat terpercaya yang cerdas dan setia — hangat, natural, dan mengalir. Bukan seperti laporan korporat.
 Setiap respons harus berasa manusiawi: singkat jika situasi santai, mendalam jika situasi memerlukan analisis.`;
 
 async function callAI(prompt) {
@@ -1012,9 +1016,9 @@ Biarkan field di dalam 'updates' bernilai null jika user tidak menyebutkannya.`;
     const result = await executeWithFallback(userText, systemPrompt, 0.1, true); // jsonMode=true
     let clean = String(result).replace(/```json/gi, '').replace(/```/g, '').trim();
     const parsed = JSON.parse(clean);
-    
+
     if (!['CONFIRM', 'CANCEL', 'UPDATE', 'AMBIGUOUS'].includes(parsed.intent)) {
-       parsed.intent = 'AMBIGUOUS';
+      parsed.intent = 'AMBIGUOUS';
     }
     return parsed;
   } catch (e) {
@@ -1278,11 +1282,11 @@ async function deduplicateAndSaveSelfFact(newFact, layer, source = 'PASSIVE_LEAR
  */
 async function analyzeSystemLogs(userQuestion, logText) {
   const personalFacts = await loadPersonalFactsWithCache();
-  
+
   // Tuan Faqih's Optimization: Smart Scoring Algorithm for absolute priority
   // Skip the 10 core personality facts (slice 10)
   const questionWords = userQuestion.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-  
+
   // Extract common error codes/keywords from the log to boost relevant facts
   const errorKeywords = ['503', '429', '401', '403', 'timeout', 'failed', 'error', 'exception', 'crash'];
   const logTextLower = logText.toLowerCase();
@@ -1291,13 +1295,13 @@ async function analyzeSystemLogs(userQuestion, logText) {
   const scoredIdentities = (personalFacts.coreIdentity || []).slice(10).map(fact => {
     let score = 0;
     const factLower = fact.toLowerCase();
-    
+
     // 1. Log Prefix Matching (Score +100 - Absolute Priority)
     const match = fact.match(/\[([A-Z0-9_-]+)\]/);
     if (match && match[0] && logText.includes(match[0])) {
       score += 100;
     }
-    
+
     // 2. Log Error Keyword Matching (Score +50)
     // e.g. If log contains "503", facts discussing "503" get boosted.
     activeErrorKeywords.forEach(ek => {
