@@ -6,6 +6,7 @@
 
 const aiRouter          = require('../../core/AI_Router');
 const { invalidatePersonalFactsCache } = aiRouter;
+const { resetTokenAccumulator, getAccumulatedTokenUsage } = require('../../core/Fallback_Engine');
 const supabaseMemories  = require('../../infrastructure/Supabase_Memories');
 const anticipatoryEngine = require('../../domain/Anticipatory_Engine');
 const financeEngine     = require('../../domain/Finance_Engine');
@@ -829,6 +830,15 @@ function _extractFinanceTxFromEmails(emails) {
 // ── HANDLER UTAMA POST /webhook/cli ──────────────────────────
 // ============================================================
 async function handleCliWebhook(req, res) {
+  resetTokenAccumulator();
+  const _origJson = res.json.bind(res);
+  res.json = function(data) {
+    if (data && data.ok && !data.tokens) {
+      data.tokens = getAccumulatedTokenUsage();
+    }
+    return _origJson(data);
+  };
+
   const { message, session_id = 'cli-default' } = req.body || {};
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {

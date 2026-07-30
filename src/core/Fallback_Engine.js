@@ -186,6 +186,19 @@ function validateResponseJson(str, jsonMode) {
 }
 
 
+// ============================================================
+// TOKEN USAGE ACCUMULATOR
+// ============================================================
+let currentSessionTokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+
+function resetTokenAccumulator() {
+  currentSessionTokenUsage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+}
+
+function getAccumulatedTokenUsage() {
+  return { ...currentSessionTokenUsage };
+}
+
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true, options = {}) {
   // --- SMART ADAPTIVE CONTEXT ROUTING (SACR) ---
   // options.forceHeavy = true  → paksa HEAVY mode
@@ -198,7 +211,8 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       : isHeavyContext(prompt, systemInstruction, options);
 
   const sacrMode = heavy ? 'HEAVY 🧠 [Gemini 3.6 Flash Priority]' : 'LIGHT ⚡ [Cerebras Priority]';
-  asyncLog(`[SACR] Mode: ${sacrMode} | Total chars: ${(prompt?.length || 0) + (systemInstruction?.length || 0)}`);
+  const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
+  asyncLog(`[SACR] Mode: ${sacrMode} | Total chars: ${inputChars}`);
 
   // --- Bangun blok tier Cerebras dan Gemini secara terpisah ---
   const cerebrasBlock = cerebrasKeys
@@ -256,7 +270,17 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     try {
       asyncLog(`[FALLBACK] Trying ${tier.name}...`);
       const rawRes = await tier.fn();
-      return validateResponseJson(rawRes, jsonMode);
+      const validated = validateResponseJson(rawRes, jsonMode);
+
+      // Accumulate token usage (1 token ≈ 3.8 chars in Indonesian/English mix)
+      const outputChars = validated?.length || 0;
+      const inTok = Math.ceil(inputChars / 3.8);
+      const outTok = Math.ceil(outputChars / 3.8);
+      currentSessionTokenUsage.input_tokens += inTok;
+      currentSessionTokenUsage.output_tokens += outTok;
+      currentSessionTokenUsage.total_tokens += (inTok + outTok);
+
+      return validated;
     } catch (e) {
       asyncWarn(`[FALLBACK] ${tier.name} failed:`, getErrDetails(e));
     }
@@ -517,4 +541,4 @@ async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode =
   throw new Error('All OpenRouter fallback models exhausted.');
 }
 
-module.exports = { executeWithFallback };
+module.exports = { executeWithFallback, resetTokenAccumulator, getAccumulatedTokenUsage };
