@@ -357,7 +357,7 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
 async function callCerebras(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
   if (!apiKey) throw new Error('No Cerebras API key provided');
   const requestBody = {
-    model: 'zai-glm-4.7',  // Switched to ZAI GLM 4.7 ($2.25/$2.75) per user request (Deprecation: Aug 17, 2026)
+    model: 'gemma-4-31b',  // Restored: Gemma 4 31B (128k context window, unlike ZAI GLM 4.7's 8k limit)
     messages: [
       { role: 'system', content: systemInstruction },
       { role: 'user', content: prompt }
