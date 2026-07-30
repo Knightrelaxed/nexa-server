@@ -133,7 +133,9 @@ async function getLatestEmails(query = '', maxResults = 5) {
 
       retries--;
       if (retries === 0) return [];
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+      const delayMs = (3 - retries) * 3000; // 3s for retry 1, 6s for retry 2
+      console.log(`[GMAIL] ⏳ Jaringan RTO/DNS glitch. Menunggu ${delayMs / 1000}s sebelum retry...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
   return [];
