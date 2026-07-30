@@ -215,10 +215,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  // Primary   = Tier 1-4 (Cerebras jika LIGHT, Gemini 3.6 jika HEAVY)
-  // Secondary = Tier 5-8 (Gemini 3.6 jika LIGHT, Cerebras jika HEAVY)
-  const primaryBlock   = (heavy ? geminiBlock   : cerebrasBlock);
-  const secondaryBlock = (heavy ? cerebrasBlock  : geminiBlock);
+  // Primary   = Tier 1-4 (Gemini 3.6 - TEMPORARY FOR TESTING)
+  // Secondary = Tier 5-8 (Cerebras - TEMPORARY FOR TESTING)
+  const primaryBlock   = geminiBlock;
+  const secondaryBlock = cerebrasBlock;
 
   const tiers = [
     // Tier 1-4: Primary AI (Cerebras di LIGHT, Gemini di HEAVY)
