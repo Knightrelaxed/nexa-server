@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "N.E.X.A Model Backup & Contingency Plan Blueprint",
-  "last_updated": "2026-07-17",
-  "description": "Blueprint konfigurasi pencadangan model AI dan rute transisi untuk AI Router (Teks), Vision Engine, dan Voice Engine N.E.X.A. File ini menjadi acuan cepat saat model utama mengalami penghentian (deprecation) atau perubahan skema gratis.",
+  "last_updated": "2026-07-30",
+  "description": "Blueprint konfigurasi pencadangan model AI dan rute transisi untuk AI Router (Teks), Vision Engine, Voice Engine, dan Cloudflare Workers AI N.E.X.A.",
   "engines": {
     "text_engine": {
       "target_file": "src/core/Fallback_Engine.js",

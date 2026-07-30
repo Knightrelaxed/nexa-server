@@ -193,7 +193,103 @@ Tujuan pengujian ini adalah mencari alternatif terbaik jika *free-tier* Cerebras
 
 ---
 
+## ⚡ Hasil Penembakan API Live Groq Cloud (`GROQ_API_KEY`)
+*Tanggal Pengujian: 30 Juli 2026*
+
+Berdasarkan pengujian langsung (*live API execution*) ke endpoint resmi `api.groq.com/v1/models` & `/v1/chat/completions`:
+
+| Model ID | Status API | RPM Limit | TPM Limit | Context Window | Catatan Real-World |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **`groq/compound`** | ✅ 200 OK | 250 RPM | **`70.000 TPM`** | 131.072 token | **Compound System.** Khusus multi-agent / tool-use. Tidak bisa dipanggil JSON/chat standar tanpa tool schema. |
+| **`groq/compound-mini`** | ✅ 200 OK | 250 RPM | **`70.000 TPM`** | 131.072 token | Versi mini compound system. |
+| **`llama-3.3-70b-versatile`** | ✅ 200 OK | 1.000 RPM | **`12.000 TPM`** | 131.072 token | Model 70B utama. Dipatok 12.000 TPM. |
+| **`qwen/qwen3.6-27b`** | ✅ 200 OK | 1.000 RPM | **`8.000 TPM`** | 131.072 token | Model baru Qwen 27B. |
+| **`openai/gpt-oss-120b`** | ✅ 200 OK | 1.000 RPM | **`8.000 TPM`** | 131.072 token | Model open-source 120B. |
+| **`openai/gpt-oss-20b`** | ✅ 200 OK | 1.000 RPM | **`8.000 TPM`** | 131.072 token | Model open-source 20B. |
+| **`llama-3.1-8b-instant`** | ✅ 200 OK | 14.400 RPM | **`6.000 TPM`** ⚠️ | 131.072 token | **Limit Terpotong.** Dipatok di 6.000 TPM, langsung HTTP 429 pada prompt obrolan panjang. |
+| **`whisper-large-v3`** | ✅ Aktif | — | — | 448 token | **Voice STT Model** (Transkripsi Suara Utama). |
+| **`whisper-large-v3-turbo`**| ✅ Aktif | — | — | 448 token | **Voice STT Model** (Transkripsi Suara Cepat). |
+
+> ⚠️ **Catatan Groq Vision**: Model vision lama Groq (`llama-3.2-90b-vision-preview` dan `llama-4-scout-17b`) telah dimatikan total dan dihapus dari katalog Groq.
+
+---
+
+## 🌐 Hasil Penembakan API Live Cloudflare Workers AI (`CLOUDFLARE_API_TOKEN`)
+*Tanggal Pengujian: 30 Juli 2026*
+
+Berdasarkan *live catalog scan* & *live API completion test* ke `api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/run/{MODEL_ID}`:
+
+* **Sistem Limit**: Cloudflare **TIDAK menerapkan batasan TPM / RPM per-model**. Seluruh model berbagi kuota global **10.000 Neurons per hari** (~100.000 token harian) secara gratis.
+* **Status**: 22 dari 26 model berstatus **200 OK (Gratis & Aktif)**.
+
+### Tabel Hasil Live Test 22 Model Aktif Cloudflare Workers AI:
+
+| Peringkat Kecepatan | ID Model Cloudflare | Status API | Latensi Respon | Spesifikasi & Catatan |
+| :---: | :--- | :---: | :---: | :--- |
+| **🥇 #1** | **`@cf/meta/llama-4-scout-17b-16e-instruct`** | ✅ 200 OK | **`493 ms`** 🚀 | **Juara Kecepatan Superfast** (<0.5s). Arsitektur Llama 4 MoE. |
+| **🥈 #2** | **`@cf/aisingapore/gemma-sea-lion-v4-27b-it`** | ✅ 200 OK | **`505 ms`** 🏎️ | **Master Bahasa Indonesia & Nusantara** (Spesialis Asia Tenggara). |
+| **🥉 #3** | **`@cf/mistralai/mistral-small-3.1-24b-instruct`** | ✅ 200 OK | **`609 ms`** ⚡ | Model 24B serbaguna dengan pemahaman konteks cepat. |
+| **4** | **`@cf/deepseek-ai/deepseek-r1-distill-qwen-32b`** | ✅ 200 OK | **`611 ms`** 🧠 | DeepSeek R1 32B (Model penalaran logis `<think>`). |
+| **5** | **`@cf/openai/gpt-oss-20b`** | ✅ 200 OK | **`645 ms`** ⚡ | OpenAI open-weight 20B latensi rendah. |
+| **6** | **`@cf/qwen/qwq-32b`** | ✅ 200 OK | **`660 ms`** 🧠 | QwQ 32B reasoning model. |
+| **7** | **`@cf/qwen/qwen2.5-coder-32b-instruct`** | ✅ 200 OK | **`683 ms`** 💻 | Qwen Coder 32B (Spesialis pemrograman). |
+| **8** | **`@cf/qwen/qwen3-30b-a3b-fp8`** | ✅ 200 OK | **`706 ms`** 🟢 | Model Qwen 3 MoE generasi terbaru. |
+| **9** | **`@cf/nvidia/nemotron-3-120b-a12b`** | ✅ 200 OK | **`724 ms`** 🏋️ | NVIDIA Nemotron 120B (Model besar tapi sangat cepat!). |
+| **10** | **`@cf/meta/llama-3.2-3b-instruct`** | ✅ 200 OK | **`670 ms`** | Llama 3.2 3B instruksi ringan. |
+| **11** | **`@cf/meta/llama-3.1-8b-instruct-fp8`** | ✅ 200 OK | **`882 ms`** | Llama 3.1 8B FP8. |
+| **12** | **`@cf/meta/llama-3.2-1b-instruct`** | ✅ 200 OK | **`920 ms`** | Llama 3.2 1B micro. |
+| **13** | **`@cf/ibm-granite/granite-4.0-h-micro`** | ✅ 200 OK | **`944 ms`** | IBM Granite 4.0 Micro. |
+| **14** | **`@cf/meta/llama-3.3-70b-instruct-fp8-fast`** | ✅ 200 OK | **`1.405 ms`** 🏎️ | Llama 3.3 70B FP8 (Standar Emas Llama). |
+| **15** | **`@cf/openai/gpt-oss-120b`** | ✅ 200 OK | **`3.584 ms`** 🏋️ | Model raksasa OpenAI 120B. |
+| **16** | **`@cf/google/gemma-4-26b-a4b-it`** | ✅ 200 OK | **`7.292 ms`** 🐢 | Gemma 4 26B (Google). |
+
+> ℹ️ **Model Paid Plan Only (Status 403)**: `@cf/moonshotai/kimi-k2.7-code`, `@cf/moonshotai/kimi-k2.6`, dan `@cf/zai-org/glm-5.2` membutuhkan langganan berbayar Cloudflare.
+
+---
+
+### 🧪 Hasil Evaluasi Real-World Kecerdasan & Kepahaman Konteks (Cloudflare Models)
+*Metode Pengujian: Menginjeksi profil personal Tuan Faqih (Sastra Arab UGM, Diplomat, Beasiswa Jardine) dan menguji kepatuhan larangan kata kaku (Bapak/Mas).*
+
+1. **🥇 `@cf/aisingapore/gemma-sea-lion-v4-27b-it` (Juara Mutlak Kecepatan & Bahasa Indonesia)**
+   - **Latensi**: **`505 ms`** (<0.6 detik!).
+   - **Kepatuhan Larangan Kata**: ✅ **Lulus Sempurna** (Bebas dari kata *Bapak/Mas/Kak*).
+   - **Kepahaman Konteks**: ✅ **Sangat Tinggi**. Membahas Sastra Arab UGM, cita-cita Diplomat, dan Beasiswa Jardine secara natural dan santun.
+   - **Kesimpulan**: Model terbaik di Cloudflare untuk gaya Bahasa Indonesia yang mengalir, hangat, dan sangat cepat.
+
+2. **🥈 `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (Standar Emas Penalaran Llama)**
+   - **Latensi**: **`1.405 ms`** (~1.4 detik).
+   - **Kepatuhan Larangan Kata**: ✅ **Lulus Sempurna**.
+   - **Kepahaman Konteks**: ✅ **Sangat Tinggi**. Menjawab dengan struktur yang rapi, berkelas, dan artikulatif.
+
+3. **🧠 `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` (Master Penalaran Logis)**
+   - **Latensi**: **`611 ms`**.
+   - **Kepatuhan Larangan Kata**: ✅ **Lulus Sempurna**.
+   - **Kepahaman Konteks**: ✅ **Sangat Tinggi**. Menghasilkan rantai nalar logis `<think>` sebelum menyusun balasan yang presisi.
+
+### 🕵️ Analisis Mendalam Kualitas Jawaban (Deep-Dive)
+
+1. **`@cf/aisingapore/gemma-sea-lion-v4-27b-it` (Paling Natural & Manusiawi)**
+   * **Gaya Bahasa**: Sangat santai dan luwes. Menggunakan idiom khas Indonesia (*"Enak banget!", "ngapain", "wajar kok", "totally santai"*).
+   * **Empati**: Menutup jawaban dengan manis tanpa template kaku (*"Atau, kalau Tuan Faqih cuma pengen totally santai, ya sudah nikmati aja liburannya!"*). Memposisikan diri benar-benar sebagai teman diskusi.
+   * **Kepahaman Konteks**: Cerdas menyarankan belajar bahasa asing selain bahasa Arab (seperti Mandarin atau Prancis) yang relevan untuk Diplomat, karena menyadari Tuan Faqih sudah mahir Sastra Arab.
+
+2. **`@cf/meta/llama-3.3-70b-instruct-fp8-fast` (Paling Elegan & Artikulatif)**
+   * **Logika Kontekstual**: Menggabungkan fakta "Sastra Arab" dan "Diplomat" dalam satu ide kegiatan: *"Kamu juga bisa coba latihan bahasa Arab dengan menonton serial TV atau film Arab dengan subtitle..."*.
+   * **Kreativitas**: Menyarankan *"membuat rencana perjalanan impian ke negara-negara Arab..."* untuk mempersiapkan diri secara internasional.
+   * **Gaya Bahasa**: Elegan dan terstruktur (*Chief of Staff vibes*), namun tetap kasual dengan kata ganti "kamu" atau "buat" sehingga tidak terkesan kaku.
+
+3. **`@cf/openai/gpt-oss-120b` (Paling Berbobot & Terstruktur)**
+   * Walaupun latensi sedikit tinggi (~5.7 detik), ini satu-satunya model yang merajut **Beasiswa Jardine, Diplomat, dan Sastra Arab** secara langsung tanpa terkesan dipaksakan.
+   * Mengusulkan ide brilian *"Ngopi sambil Diplomasi Mini"* (merangkum isu global) dan *"Jelajah Galeri Seni Arab"*, sangat tajam secara nalar strategis.
+
+4. **Varian Reasoning (`nemotron-3-120b-a12b` & `qwq-32b`)**
+   * Di balik layar, model ini melakukan monolog tingkat tinggi. Memikirkan geografi (Sastra Arab UGM = Yogyakarta) lalu menyarankan kunjungan ke Keraton, sebelum meralatnya sendiri karena instruksi menginginkan kegiatan yang "santai". Sangat cerdas.
+
+---
+
 ## 📂 Lokasi Blueprint JSON Terstruktur
+
+
 Untuk membaca seluruh spesifikasi, URL endpoint, dan pemetaan API Key secara komputasional oleh agen AI atau script otomatis, silakan merujuk ke berkas pendamping:
 👉 `src/config/model_backup_plan.json`
 

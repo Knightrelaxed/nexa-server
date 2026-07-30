@@ -49,6 +49,8 @@ module.exports = {
   HF_TOKEN: process.env.HF_TOKEN, // GitHub Actions & Repo sync token
   HF_INFERENCE_TOKEN: process.env.HF_INFERENCE_TOKEN, // Hugging Face AI Inference token
   PUTER_AUTH_TOKEN: process.env.PUTER_AUTH_TOKEN, // Puter AI Auth token
+  CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+  CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN,
 
   // ============================================================
   // 5. GOOGLE WORKSPACE & OAUTH2 CREDENTIALS
