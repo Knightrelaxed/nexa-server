@@ -17,6 +17,7 @@ const visionEngine = require("../../core/Vision_Engine");
 const supabaseMemories = require("../../infrastructure/Supabase_Memories");
 const taskManager = require("../../domain/Task_Manager");
 const webSearch = require("../../infrastructure/Web_Search");
+const locationOrchestrator = require("../../domain/Location_Orchestrator");
 const googleWorkspace = require("../../infrastructure/Google_Workspace");
 
 // Pending Calendar Context: holds an incomplete calendar CREATE until user provides missing info
@@ -2847,6 +2848,13 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
 
         const synthesizedReply = await aiRouter.callAI(prompt);
         domainReply = synthesizedReply;
+        break;
+      }
+
+      case 'LOCATION': {
+        console.log(`[LOCATION] Processing location/navigation query: "${textInput}"`);
+        const locData = routingData.extracted_data || {};
+        domainReply = await locationOrchestrator.handleLocationQuery(textInput, locData);
         break;
       }
 

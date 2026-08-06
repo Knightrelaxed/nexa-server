@@ -51,6 +51,7 @@ module.exports = {
   PUTER_AUTH_TOKEN: process.env.PUTER_AUTH_TOKEN, // Puter AI Auth token
   CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
   CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN,
+  NVIDIA_API_KEY: process.env.NVIDIA_API_KEY,
 
   // ============================================================
   // 5. GOOGLE WORKSPACE & OAUTH2 CREDENTIALS
@@ -80,6 +81,8 @@ module.exports = {
   // ============================================================
   SERPER_API_KEY: process.env.SERPER_API_KEY, // Serper.dev Google Search API
   TAVILY_API_KEY: process.env.TAVILY_API_KEY, // Tavily AI Advanced Search API
+  BRAVE_API_KEY: process.env.BRAVE_API_KEY, // Brave Place Search API
+  MAPBOX_ACCESS_TOKEN: process.env.MAPBOX_ACCESS_TOKEN, // Mapbox Location & Routing API
   WEATHER_API_KEY: process.env.WEATHER_API_KEY,
   NEWS_API_KEY: process.env.NEWS_API_KEY,
   NOTION_API_KEY: process.env.NOTION_API_KEY,

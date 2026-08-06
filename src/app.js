@@ -84,12 +84,18 @@ app.use('/webhook', webhookRouter);
 // SERVER BOOT
 // ============================================================
 const cronInterface = require('./interfaces/cron');
+const http = require('http');
+const mobileBridgeWs = require('./interfaces/mobile_bridge/MobileBridge_WS');
 
 if (require.main === module) {
   // PORT defaults to 7860 for Hugging Face Spaces compatibility
   // Falls back to env.PORT which defaults to 3000 for local dev
   const port = process.env.PORT || env.PORT || 7860;
-  app.listen(port, '0.0.0.0', () => {
+  
+  const server = http.createServer(app);
+  mobileBridgeWs.initWebSocket(server);
+
+  server.listen(port, '0.0.0.0', () => {
     console.log(`[N.E.X.A] ✅ Server running on port ${port} (${process.env.NODE_ENV || 'development'} mode)`);
     console.log(`[N.E.X.A] 🏥 Health endpoint: http://0.0.0.0:${port}/health`);
     console.log(`[N.E.X.A] 💻 CLI Local URL  : http://127.0.0.1:${port}`);

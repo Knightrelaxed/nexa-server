@@ -1,6 +1,6 @@
 # N.E.X.A Mobile Bridge — Architecture & Technical Documentation
 
-**Document Version:** 2.0 (Super Complete / Production Edition)  
+**Document Version:** 1.0 (Super Complete / Production Edition)  
 **Target Device Hardware:** Samsung Galaxy A33 5G (Android 16 / One UI 8)  
 **Package Name:** `com.nexa.mobilebridge`  
 **Project Path:** `d:\nexa-mobile-bridge`
@@ -154,28 +154,40 @@ Menggantikan aplikasi pihak ketiga seperti Tasker dengan menangkap event sistem 
 
 ---
 
-### 3.3. Command Dispatcher & Handlers (16 Perintah Hardware)
+### 3.3. Command Dispatcher & Handlers (28 Perintah Hardware & Aksesibilitas Terimplementasi)
 
-`DeviceCommandDispatcher` menerima `NexaCommand` dari WebSocket dan merutekannya ke 11 modul handler eksekusi:
+`DeviceCommandDispatcher` menerima `NexaCommand` dari WebSocket dan merutekannya secara otomatis ke modul handler eksekusi yang sesuai:
 
-| Action Name | Handler | Deskripsi & API Android | Return Data |
-|---|---|---|---|
-| `TOGGLE_FLASHLIGHT` | `FlashlightHandler` | Mengontrol lampu kilat via `CameraManager.setTorchMode()`. | `enabled: Boolean` |
-| `SET_VOLUME` | `VolumeHandler` | Mengubah volume audio (`STREAM_MUSIC`, `STREAM_RING`, `STREAM_ALARM`, `STREAM_NOTIFICATION`, `STREAM_SYSTEM`). | `targetVolume`, `maxVolume` |
-| `FORCE_DND` | `VolumeHandler` | Mengubah mode Do Not Disturb via `NotificationManager.setInterruptionFilter()`. | Status `ENABLED` / `DISABLED` |
-| `GET_BATTERY_STATUS` | `BatteryHandler` | Membaca status baterai, persentase, dan mode pengisian via `ACTION_BATTERY_CHANGED`. | `battery_level`, `charging` |
-| `GO_HOME_SCREEN` | `ScreenHandler` | Mengirim Intent `ACTION_MAIN` dengan kategori `CATEGORY_HOME`. | Success Message |
-| `GO_BACK` | `ScreenHandler` | Menavigasi kembali via `AccessibilityService.GLOBAL_ACTION_BACK`. | Success Message |
-| `SHOW_RECENTS` | `ScreenHandler` | Membuka app switcher via `AccessibilityService.GLOBAL_ACTION_RECENTS`. | Success Message |
-| `LOCK_SCREEN` | `ScreenHandler` | Placeholder perintah kunci layar (memerlukan Device Admin). | Error Info |
-| `LAUNCH_APP` | `AppLauncherHandler` | Membuka aplikasi Android berdasarkan `package_name` via `PackageManager.getLaunchIntentForPackage()`. | Success Message |
-| `TOGGLE_WIFI` | `NetworkHandler` | Membaca status Wi-Fi (Toggling diuji via Network API). | Status Info |
-| `GET_NETWORK_INFO` | `NetworkHandler` | Membaca status koneksi data/Wi-Fi aktif via `ConnectivityManager`. | `type`, `connected` |
-| `GET_LOCATION` | `LocationHandler` | Membaca koordinat GPS/Network via `LocationManager` + Resolusi alamat via `Geocoder`. | `latitude`, `longitude`, `accuracy`, `provider`, `address` |
-| `SPEAK_TEXT` | `TtsHandler` | Membaca suara via Android `TextToSpeech` (Locale `id-ID` / Fallback `en-US`), otomatis memastikan volume terdengar. | Status `SUCCESS` / `FAILURE` |
-| `TAKE_PHOTO` | `CameraHandler` | Membuka `TransparentCameraActivity` (CameraX) tanpa animasi UI, mengambil foto dari kamera depan/belakang, me-resize ke max 1280px, dan mengompres ke JPEG. | `image_base64` |
-| `TAKE_SCREENSHOT` | `ScreenshotHandler` | Mengambil tangkapan layar penuh via `NexaAccessibilityService.takeScreenshot()`, me-resize ke max 1280px, mengompres ke JPEG 60%. | `image_base64` |
-| `SHOW_OVERLAY_MSG` | `OverlayHandler` | Meluncurkan `OverlayActivity` di atas semua aplikasi dengan dialog Compose bermaterial gelap dan tombol pilihan dinamis dari server. | User Selected Action (`action`) |
+| No | Action Name | Handler / Service | Deskripsi & API Android | Return Data |
+|:---:|---|---|---|---|
+| 1 | `TOGGLE_FLASHLIGHT` | `FlashlightHandler` | Mengontrol lampu kilat (LED Kamera) via `CameraManager.setTorchMode()`. | `enabled: Boolean` |
+| 2 | `SET_VOLUME` | `VolumeHandler` | Mengubah volume audio (`STREAM_MUSIC`, `STREAM_RING`, `STREAM_ALARM`, `STREAM_NOTIFICATION`, `STREAM_SYSTEM`). | `targetVolume`, `maxVolume` |
+| 3 | `FORCE_DND` | `VolumeHandler` | Mengubah mode Do Not Disturb via `NotificationManager.setInterruptionFilter()`. | Status `ENABLED` / `DISABLED` |
+| 4 | `GET_BATTERY_STATUS` | `BatteryHandler` | Membaca status baterai, persentase, dan mode pengisian via `ACTION_BATTERY_CHANGED`. | `battery_level`, `charging` |
+| 5 | `GO_HOME_SCREEN` | `ScreenHandler` | Mengirim Intent `ACTION_MAIN` dengan kategori `CATEGORY_HOME`. | Success Message |
+| 6 | `GO_BACK` | `ScreenHandler` | Menavigasi kembali via `AccessibilityService.GLOBAL_ACTION_BACK`. | Success Message |
+| 7 | `SHOW_RECENTS` | `ScreenHandler` | Membuka app switcher via `AccessibilityService.GLOBAL_ACTION_RECENTS`. | Success Message |
+| 8 | `LOCK_SCREEN` | `ScreenHandler` | Perintah kunci layar (Device Admin). | Status Info |
+| 9 | `LAUNCH_APP` | `AppLauncherHandler` | Membuka aplikasi Android berdasarkan `package_name` via `PackageManager.getLaunchIntentForPackage()`. | Success Message |
+| 10 | `TOGGLE_WIFI` | `NetworkHandler` | Mengontrol/membaca status Wi-Fi via `WifiManager`. | Status Info |
+| 11 | `GET_NETWORK_INFO` | `NetworkHandler` | Membaca status koneksi data/Wi-Fi aktif via `ConnectivityManager` (SSID, RSSI dBm). | `type`, `connected`, `ssid`, `rssi` |
+| 12 | `GET_LOCATION` | `LocationHandler` | Membaca koordinat GPS/Network via `LocationManager` + Resolusi alamat via `Geocoder`. | `latitude`, `longitude`, `accuracy`, `provider`, `address` |
+| 13 | `SPEAK_TEXT` | `TtsHandler` | Membaca suara via Android `TextToSpeech` (Locale `id-ID` / Fallback `en-US`), otomatis memastikan volume terdengar. | Status `SUCCESS` / `FAILURE` |
+| 14 | `TAKE_PHOTO` | `CameraHandler` | Membuka `TransparentCameraActivity` (CameraX) tanpa animasi UI, mengambil foto kamera depan/belakang, resize max 1280px. | `image_base64` |
+| 15 | `TAKE_SCREENSHOT` | `ScreenshotHandler` | Mengambil tangkapan layar penuh via `NexaAccessibilityService.takeScreenshot()`, resize max 1280px, kompres JPEG 60%. | `image_base64` |
+| 16 | `SHOW_OVERLAY_MSG` | `OverlayHandler` | Meluncurkan `OverlayActivity` di atas semua aplikasi dengan dialog Compose bermaterial gelap dan tombol pilihan dinamis server. | Selected Action (`action`) |
+| 17 | `GET_CLIPBOARD` | `ClipboardHandler` | Membaca teks papan klip (*clipboard*) sistem HP. | `text: String` |
+| 18 | `SET_CLIPBOARD` | `ClipboardHandler` | Menuliskan teks ke papan klip (*clipboard*) sistem HP. | Success Message |
+| 19 | `OPEN_INTENT` | `IntentHandler` | Membuka URL di browser, koordinat Google Maps (`geo:`), atau bagikan teks. | Success Message |
+| 20 | `DUMP_UI_HIERARCHY` | `NexaAccessibilityService` | **Mata (UI Inspector):** Memindai seluruh struktur elemen UI layar HP menjadi hierarki JSON (Bounds, ID, Text, Class). | `data.nodes: Array<UiNode>` |
+| 21 | `ACCESSIBILITY_CLICK` | `NexaAccessibilityService` | **Tangan (Click Controller):** Mengeklik elemen berdasarkan ID/Text atau koordinat piksel `(x, y)` via `dispatchGesture`. | Success Message |
+| 22 | `ACCESSIBILITY_INPUT_TEXT` | `NexaAccessibilityService` | **Input Teks Automasi:** Memasukkan teks otomatis ke form input yang sedang aktif atau difokuskan. | Success Message |
+| 23 | `ACCESSIBILITY_SCROLL` | `NexaAccessibilityService` | **Usap Layar (Scroll Controller):** Memutar/menggeser layar ke atas atau bawah (`FORWARD` / `BACKWARD`). | Success Message |
+| 24 | `PLAY_RINGTONE` | `AudioPlayerHandler` | Memutar ringtone darurat alarm sistem dengan volume max 100%. | Status `SUCCESS` |
+| 25 | `PLAY_MEDIA` | `AudioPlayerHandler` | Memutar file audio media via MediaPlayer. | Status `SUCCESS` |
+| 26 | `STOP_MEDIA` | `AudioPlayerHandler` | Menghentikan pemutaran audio/ringtone darurat. | Status `SUCCESS` |
+| 27 | `SIMULATE_INCOMING_CALL` | `FakeCallHandler` / `FakeCallActivity` | Memunculkan layar panggilan interaktif 6-state (Ringing, Speaking, 10s Voice Recording, Waiting, Reply). | Event `CALL_ACCEPTED` / `REJECTED` / `AUDIO_REPLY` |
+| 28 | `PLAY_AUDIO_STREAM` | `AudioPlayerHandler` | Memutar stream balasan audio PCM dari server atau sinyal penutupan panggilan interaktif. | Status `SUCCESS` / Event `CALL_REPLY_COMPLETE` |
 
 ---
 
@@ -344,6 +356,168 @@ ContextEngine melakukan kombinasi multi-signal secara real-time:
   4. *Sensor Hysteresis & Debounce:* Teruji via `test_context_engine_server.js` — fluktuasi cahaya sekitar 4-10 lux terisolasi tanpa event spam/jitter.
   5. *Pickup Gesture Samsung One UI:* Teruji mendeteksi gerakan angkat HP (`PHONE_PICKUP`) dengan fallback Hardware Sensor ID 25 secara presisi.
   6. *GPS Geofencing Integration:* Teruji via `GeofenceManager` & `GeofenceBroadcastReceiver` terkompilasi bersih dan aman dari background service crash di Android 8+ (One UI 8).
+
+---
+
+## 7. Ekstensi "Hands & Eyes" (UI Inspector, Accessibility Controller & Agentic Loop)
+
+### 7.1. Konsep Utama: "Bridge adalah Tangan & Mata Nexa"
+Sesuai filosofi arsitektur *Thin-Client Executive Bridge*, Android Bridge diperluas dengan kemampuan persepsi UI (*Mata*) dan eksekusi aksi manusia (*Tangan*) tanpa membengkakkan aplikasi Android dengan AI.
+
+```
+[ SERVER N.E.X.A (Agentic LLM Loop) ]
+       │                               ▲
+       │ 1. EXECUTE_COMMAND            │ 2. COMMAND_RESULT / UI JSON
+       ▼                               │
+┌─────────────────────────────────────────────┐
+│ NEXA MOBILE BRIDGE (Android Accessibility)  │
+│  ├── 👁️ Mata: DUMP_UI_HIERARCHY             │
+│  ├── 🖐️ Tangan: ACCESSIBILITY_CLICK (x, y)  │
+│  ├── ⌨️ Ketik: ACCESSIBILITY_INPUT_TEXT      │
+│  ├── 📋 Klip: GET / SET_CLIPBOARD           │
+│  └── 🚀 Intent: OPEN_INTENT (URL/Geo/Share) │
+└─────────────────────────────────────────────┘
+```
+
+### 7.2. Perintah Baru "Hands & Eyes"
+| Action Name | Handler / Service | Deskripsi & Kemampuan Hardware | Parameter Input / Output |
+|---|---|---|---|
+| `DUMP_UI_HIERARCHY` | `NexaAccessibilityService` | **Mata (UI Inspector):** Memindai seluruh struktur elemen UI di layar aktif HP menjadi hierarki JSON (Node, Bounds, ID, Text, Class, Clickable, Editable). | `data.nodes: Array<UiNode>` |
+| `ACCESSIBILITY_CLICK` | `NexaAccessibilityService` | **Tangan (Click Controller):** Mengeklik elemen layar berdasarkan target ID/Text atau koordinat piksel presisi `(x, y)` via `dispatchGesture`. | `type: "coordinate"\|"node"`, `x`, `y`, `target` |
+| `ACCESSIBILITY_INPUT_TEXT` | `NexaAccessibilityService` | **Ketukan Teks (Input Engine):** Memasukkan teks secara otomatis ke form input yang sedang aktif atau berdasarkan target Node (`ACTION_SET_TEXT`). | `text: String`, `target: String?` |
+| `ACCESSIBILITY_SCROLL` | `NexaAccessibilityService` | **Usap Layar (Scroll Controller):** Melakukan gulir layar ke atas atau ke bawah (`ACTION_SCROLL_FORWARD` / `BACKWARD`). | `direction: "FORWARD"\|"BACKWARD"` |
+| `GET_CLIPBOARD` / `SET_CLIPBOARD` | `DeviceCommandDispatcher` | **Clipboard Engine:** Membaca atau menulis teks papan klip (*clipboard*) sistem Android. | `text: String` |
+| `OPEN_INTENT` | `AppLauncherHandler` | **Intent Engine:** Membuka URL web (e.g. `google.com`), Google Maps (`geo:lat,lng`), atau Share Text. | `type: "OPEN_URL"\|"OPEN_MAPS"\|"SHARE_TEXT"`, `url`, `text` |
+
+### 7.3. Audit Kinerja & Hardening Keamanan Aksesibilitas
+1. **Pencegahan Memory Leak Native (`AccessibilityNodeInfo`):**
+   Pada traversal rekursif UI tree (`traverseNode`), setiap child `AccessibilityNodeInfo` dipastikan dipanggil `.recycle()` untuk mencegah kebocoran memori native OS.
+2. **Gesture Stroke Fixing (0-Length Path Protection):**
+   `clickCoordinates(x, y)` mematenkan path stroke minimal dengan `lineTo(x + 1f, y + 1f)` agar gesture click tidak pernah ditolak Android OS akibat koordinat awal dan akhir identik (length = 0).
+3. **Penyelarasan Izin XML Manifest:**
+   Konfigurasi `accessibility_service_config.xml` dilengkapi dengan `android:canPerformGestures="true"` agar izin gestur tingkat sistem diaktifkan penuh.
+4. **Resiliensi CountDownLatch Callback:**
+   Panggilan `dispatchGesture` menjamin penanganan status gagal (*resultCallback.onCancelled*) agar `CountDownLatch` tidak pernah dead-lock atau memicu timeout service.
+
+### 7.4. Pengujian Real-Time Agentic Loop (Cerebras Gemma 4 31B & Key Rotation)
+- **Integrasi LLM Terbaru:** Teruji menggunakan model ultra-cepat terbaru **Cerebras Gemma 4 31B (`gemma-4-31b`)** dalam arsitektur *ReAct Loop* (Reasoning + Acting).
+- **Mekanisme API Key Rotation (1-2-3-4):** Mengatasi pembatasan ketat Rate Limit (RPM / Requests Per Minute) pada API Cerebras gratis dengan memutar 4 buah API Key secara berurutan (`CEREBRAS_API_KEY_1` s/d `4`) pada setiap giliran berpikir LLM (`currentKeyIndex = (currentKeyIndex + 1) % 4`).
+- **Auto-Retry & Resiliensi Server Load:** Ditambahkan penanganan otomatis fallback saat server mengalami *high traffic / queue_exceeded* dengan jeda 2 detik tanpa memutuskan siklus agent.
+- **Analisis Kebutuhan Vision LLM:** Pengujian membuktikan bahwa LLM Teks mencoba menebak atribut ID HTML (seperti `q`, `google-search-input`) saat berada di dalam WebView. Untuk navigasi UI presisi 100%, sistem disiapkan untuk dipasangkan dengan Vision LLM untuk mengekstrak koordinat spasial `(x, y)`.
+
+---
+
+## 8. Fitur & Arsitektur Call Interaction v2.0 (Bidirectional Voice Interruption & VoiceRecorder Engine)
+
+### 8.1. Filosofi Penciptaan & Interupsi Keabaikan ("Good Distraction Interruption")
+Fitur **Panggilan Masuk Interaktif N.E.X.A (Jarvis-Level Call Flow)** diciptakan berdasarkan motivasi utama pengguna: menghadirkan asisten pribadi yang memiliki otoritas untuk memecah distraksi pengguna demi kebaikan (misalnya: memutus doom-scrolling, mengingatkan waktu fokus/ibadah, atau menegur secara lisan melalui antarmuka telepon penuh).
+
+### 8.2. Arsitektur 6-State Machine (`FakeCallActivity.kt`)
+Antarmuka panggilan dibangun menggunakan Jetpack Compose dengan arsitektur State Machine 6 tahap yang sangat tangguh:
+
+```
+┌───────────┐     Swipe Hijau     ┌───────────────────┐               ┌─────────────────┐
+│  RINGING  │ ──────────────────► │ ACCEPTED_SPEAKING │ ────────────► │    RECORDING    │
+└───────────┘                     └───────────────────┘  TTS Selesai  └─────────────────┘
+      │                                                                        │
+      │ Swipe Merah                                                            │ 10 Detik
+      ▼                                                                        ▼
+┌───────────────────┐                                                 ┌─────────────────┐
+│ REJECTED_SPEAKING │                                                 │  WAITING_REPLY  │
+└───────────────────┘                                                 └─────────────────┘
+      │                                                                        │
+      │ TTS Selesai                                                            │ PLAY_AUDIO_STREAM
+      └───────────────────────────► ┌───────────┐ ◄────────────────────────────┘
+                                    │ FINISHED  │ (Activity Finish)
+                                    └───────────┘
+```
+
+1. **`RINGING`:** Layar panggilan melayang bertema *Dark Navy / Neon Cyan* (`#0A0F24`) dengan getaran (*haptic feedback*) dan ringtone suara. Tombol swipe cyan (Angkat) & merah (Tolak).
+2. **`ACCEPTED_SPEAKING`:** Mengirim `CALL_ACCEPTED` ke server. Tombol hilang, N.E.X.A membacakan pesan pembuka lisan via `TtsHandler`.
+3. **`RECORDING`:** Mikrofon aktif merekam suara pengguna 10 detik (`VoiceRecorderHandler`) dengan timer `00:10` -> `00:00`.
+4. **`WAITING_REPLY`:** Tampilan memunculkan spinner "MENUNGGU BALASAN N.E.X.A" sembari mengkripsi suara Base64 (128.000 Bytes) lalu mengirimkannya via WebSocket (`CALL_AUDIO_REPLY`).
+5. **`REJECTED_SPEAKING`:** Mengirim `CALL_REJECTED` beserta `rejection_count`. N.E.X.A membaca kalimat perpisahan singkat. Server dapat menilai tingkat urgensi untuk memutuskan apakah akan menelpon ulang atau mentolerir penolakan.
+6. **`FINISHED`:** Layar ditutup secara bersih via `BroadcastReceiver` yang menerima sinyal internal `CALL_REPLY_COMPLETE` atau timeout.
+
+### 8.3. Komponen General-Purpose `VoiceRecorderHandler.kt`
+Modul perekam suara dirancang terpisah dan **100% Reusable** untuk seluruh kebutuhan perekaman audio N.E.X.A (Panggilan, Voice Command, Voice Memo, Ambient Capture):
+- **Spesifikasi Format:** Mono 16-bit PCM pada sampel rate 16kHz (`AudioFormat.ENCODING_PCM_16BIT`, `AudioFormat.CHANNEL_IN_MONO`). Ini adalah standar universal API STT (Whisper, Google STT, Azure).
+- **Parameter Fleksibel:** `record(durationMs = 10_000L, onTickMs = { elapsed -> ... })`.
+
+### 8.4. Pengerasan Sistem & Perbaikan Bug (Hardening)
+1. **Pencegahan Echo Gema TTS (700ms Silence Gap):**
+   - *Problem:* Saat N.E.X.A selesai bicara via TTS dan mikrofon langsung dibuka, sisa gema speaker HP terrekam oleh `AudioRecord` dan salah ditranskripsikan oleh Whisper menjadi kata "So".
+   - *Solusi:* Menambahkan `delay(700L)` antara akhir TTS dan pembukaan mikrofon di `FakeCallActivity.kt` agar sesi audio bersih dari gema.
+2. **Perbaikan Serialisasi JSON (`CallEvent.kt`):**
+   - *Problem:* Default value `val type: String = "CALL_EVENT"` membuat `kotlinx.serialization` menghilangkan field `type` dalam string JSON.
+   - *Solusi:* Menghapus default value agar field `"type": "CALL_EVENT"` dipaksa terkirim eksplisit dalam setiap payload WebSocket.
+
+### 8.5. Spesifikasi Lengkap Protokol JSON Call Interaction v2.0
+
+#### A. Inbound (Server ➔ Nexa Bridge HP)
+- **`SIMULATE_INCOMING_CALL`:**
+  ```json
+  {
+    "type": "EXECUTE_COMMAND",
+    "command_id": "cmd_call_1786003061219",
+    "action": "SIMULATE_INCOMING_CALL",
+    "params": {
+      "caller_name": "N.E.X.A Assistant",
+      "message": "Tuan Faqih, waktu fokus Anda telah tiba. Apakah ada tanggapan?",
+      "play_ringtone": true
+    }
+  }
+  ```
+- **`PLAY_AUDIO_STREAM`:**
+  ```json
+  {
+    "type": "EXECUTE_COMMAND",
+    "command_id": "cmd_reply_1786003065000",
+    "action": "PLAY_AUDIO_STREAM",
+    "params": {
+      "audio_base64": "",
+      "audio_format": "PCM_16BIT_16KHZ_MONO"
+    }
+  }
+  ```
+
+#### B. Outbound (Nexa Bridge HP ➔ Server)
+- **`CALL_ACCEPTED`:**
+  ```json
+  {
+    "type": "CALL_EVENT",
+    "event": "CALL_ACCEPTED",
+    "command_id": "cmd_call_1786003061219",
+    "caller_name": "N.E.X.A Assistant",
+    "device_name": "Samsung_A33_5G",
+    "timestamp": 1786003062000
+  }
+  ```
+- **`CALL_REJECTED`:**
+  ```json
+  {
+    "type": "CALL_EVENT",
+    "event": "CALL_REJECTED",
+    "command_id": "cmd_call_1786003061219",
+    "caller_name": "N.E.X.A Assistant",
+    "rejection_count": 1,
+    "device_name": "Samsung_A33_5G",
+    "timestamp": 1786003062500
+  }
+  ```
+- **`CALL_AUDIO_REPLY`:**
+  ```json
+  {
+    "type": "CALL_EVENT",
+    "event": "CALL_AUDIO_REPLY",
+    "command_id": "cmd_call_1786003061219",
+    "caller_name": "N.E.X.A Assistant",
+    "audio_base64": "UklGRi... (String Base64 PCM 16kHz 16-bit Mono 128.000 Bytes)",
+    "audio_format": "PCM_16BIT_16KHZ_MONO",
+    "device_name": "Samsung_A33_5G",
+    "timestamp": 1786003073000
+  }
+  ```
 
 ---
 *Dokumentasi Lengkap Ekosistem N.E.X.A Assistant (Update Terakhir: 2026).*

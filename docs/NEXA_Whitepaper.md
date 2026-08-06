@@ -279,9 +279,9 @@ N.E.X.A beroperasi di lingkungan yang penuh hambatan. Berikut setiap ancaman dan
 
 ---
 
-### 2.5 Arsitektur Universal Remote CLI (`nexa-cli`) & Real-Time Push Stream (SSE)
+### 2.5 Arsitektur Universal Remote CLI (`nexa-assistant-console`) & Real-Time Push Stream (SSE)
 
-N.E.X.A v2.8 menghadirkan antarmuka remote terminal tanpa dependensi eksternal (*Zero External Dependencies*), memungkinkan Tuan Faqih mengakses seluruh daya kognitif N.E.X.A langsung dari terminal laptop manapun di dunia menggunakan perintah `npx github:Knightrelaxed/nexa-cli`.
+N.E.X.A v2.8 menghadirkan antarmuka remote terminal tanpa dependensi eksternal (*Zero External Dependencies*), memungkinkan Tuan Faqih mengakses seluruh daya kognitif N.E.X.A langsung dari terminal laptop manapun di dunia secara resmi melalui NPM Registry (`nexa-assistant-console` v2.8.0) atau GitHub Repository (`Knightrelaxed/nexa-cli`).
 
 #### 1. Arsitektur Dual-Channel Komunikasi (POST + SSE)
 CLI beroperasi dengan arsitektur dua saluran independen namun saling melengkapi:
@@ -305,17 +305,29 @@ Untuk mengatasi bug perbedaan render kolom karakter emoji (`🤖` / `●`) di Wi
 
 #### 6. Panduan Penggunaan & Operasional CLI (User & Administrator Guide)
 
-##### A. Cara Menjalankan CLI Tanpa Instalasi (Via NPX Global)
-Buka terminal (PowerShell, Command Prompt, atau Terminal Linux/macOS) di perangkat manapun, lalu ketik:
+##### A. Cara Menjalankan CLI Publik via NPM Registry (Resmi & Universal)
+Buka terminal (PowerShell, Command Prompt, atau Terminal Linux/macOS) di perangkat manapun di dunia, lalu ketik:
 ```bash
-npx github:Knightrelaxed/nexa-cli
+npx nexa-assistant-console
 ```
-*(Atau gunakan flag `-y` untuk konfirmasi otomatis):*
+*(Atau gunakan perintah alias NPM resmi):*
+```bash
+npx nexa-cli
+```
+
+##### B. Cara Menjalankan CLI Langsung dari GitHub Source (Developer Mode)
 ```bash
 npx -y github:Knightrelaxed/nexa-cli
 ```
 
-##### B. Setup Konfigurasi Pertama Kali (First-Time Setup)
+##### C. Konfigurasi Shortcut Aman di PowerShell Laptop Utama (`nexa-cli`)
+Agar tidak perlu mengetik panjang setiap hari, shortcut aman telah terkonfigurasi di `Microsoft.PowerShell_profile.ps1`:
+```powershell
+if (!(Test-Path $PROFILE)) { New-Item -Type File -Force $PROFILE }; Add-Content $PROFILE "`nfunction nexa-cli { npx -y github:Knightrelaxed/nexa-cli }"
+```
+*Penggunaan:* Cukup buka PowerShell dan ketik **`nexa-cli`**!
+
+##### D. Setup Konfigurasi Pertama Kali (First-Time Setup)
 Saat pertama kali dijalankan, CLI akan meminta dua input konfigurasi yang disimpan secara aman di file lokal `~/.nexa-config.json`:
 1. **NEXA Server URL:**
    - **Mode Lokal (Development):** `http://127.0.0.1:3000`
@@ -323,7 +335,7 @@ Saat pertama kali dijalankan, CLI akan meminta dua input konfigurasi yang disimp
 2. **Secret Key (NEXA_CLI_SECRET):**
    - Masukkan kunci rahasia: `cLiNeXa17`
 
-##### C. Beralih Antara Server Lokal dan Cloud HF Space
+##### E. Beralih Antara Server Lokal dan Cloud HF Space
 Jika Tuan ingin mengganti endpoint server (misalnya dari server lokal ke cloud HF Space 24/7), hapus file konfigurasi lama di terminal:
 - **Windows PowerShell:**
   ```powershell
@@ -333,15 +345,35 @@ Jika Tuan ingin mengganti endpoint server (misalnya dari server lokal ke cloud H
   ```bash
   rm ~/.nexa-config.json
   ```
-Setelah itu, jalankan `npx github:Knightrelaxed/nexa-cli` kembali dan masukkan URL server tujuan.
+Setelah itu, jalankan `npx nexa-assistant-console` kembali dan masukkan URL server tujuan.
 
-##### D. Perintah Keluar (Session Disconnect)
+##### F. Perintah Keluar (Session Disconnect)
 Untuk mengakhiri sesi interaktif dan menutup terminal dengan aman, ketik salah satu perintah berikut: `exit`, `keluar`, `q`, atau `quit`.
 ```text
 ❖ TUAN FAQIH ──❯ exit
 
 👋 N.E.X.A: Terima kasih Tuan Faqih. Terminal offline.
 ```
+
+##### G. Prosedur Pembaruan & Publish Package NPM (Release & Maintenance Guide)
+Setiap kali Tuan Faqih melakukan perbaikan kode atau penambahan fitur pada CLI dan ingin mem-publish versi baru ke NPM Registry (`nexa-assistant-console`), jalankan perintah rilis berikut:
+
+1. **Commit & Push Perubahan ke GitHub**:
+   ```bash
+   git add .
+   git commit -m "feat: deskripsi perubahan fitur CLI"
+   git push origin main
+   ```
+
+2. **BUMP Nomor Versi di `package.json`**:
+   - Untuk perbaikan bug (Fix): `npm version patch` (`2.8.0` ➔ `2.8.1`)
+   - Untuk fitur baru (Update): `npm version minor` (`2.8.0` ➔ `2.9.0`)
+
+3. **Publish ke NPM Registry (Perintah 1 Baris)**:
+   ```powershell
+   cd "d:\N.E.X.A Asistant\scratch\nexa-cli-repo"; npm publish --access public
+   ```
+   *(Catatan: Karena `.npmrc` dengan token Bypass 2FA `npm_mWAMZupE2xsCX...` sudah terkonfigurasi di folder `d:\N.E.X.A Asistant\scratch\nexa-cli-repo`, eksekusi perintah publish di atas akan berjalan 100% otomatis tanpa meminta kode OTP manual).*
 
 ---
 
@@ -608,18 +640,15 @@ Ini memastikan memori N.E.X.A **tidak pernah berisi duplikasi** atau informasi y
 
 ---
 
-### 4.1 Arsitektur Input Omnichannel: 3 Jalur Masuk Transaksi
+### 4.1 Arsitektur Input Omnichannel: 2 Jalur Masuk Transaksi
 
-Tidak ada satu jalur tunggal untuk mencatat transaksi. N.E.X.A menerima data keuangan dari tiga sumber yang benar-benar berbeda, masing-masing dengan karakteristik uniknya:
+Tidak ada satu jalur tunggal untuk mencatat transaksi. N.E.X.A menerima data keuangan dari dua sumber yang benar-benar berbeda, masing-masing dengan karakteristik uniknya:
 
 #### Jalur 1 — `TELEGRAM_MANUAL` (Input Aktif Pengguna)
 Tuan Faqih mengetik pesan seperti *"beli kopi 25rb di starbucks"* atau mengirim voice note. AI Router mengekstrak `{ nominal, type, destination, category, description, account, payment_method }` lalu memanggil `processTransaction(data, 'TELEGRAM_MANUAL')`. Jalur ini **tidak melewati deduplication check** — asumsinya setiap input manual adalah unik dan disengaja.
 
 #### Jalur 2 — `GMAIL_POLLING` (Finance Auto-Sync)
 Setiap 3 menit, `pollFinanceEmails()` memindai kotak masuk Gmail mencari notifikasi mutasi bank (Mandiri, BCA, dll.). Email yang ditemukan diparsing untuk mengekstrak nominal, tipe transaksi, dan nama merchant. Jalur ini **wajib melewati Zero-Duplication Engine** sebelum disimpan. Akun default-nya adalah `'Bank Mandiri'` karena email notifikasi diasumsikan berasal dari rekening bank utama.
-
-#### Jalur 3 — `TASKER_FINANCE` (Webhook Otomasi Android)
-Jika Tuan Faqih menghubungkan Tasker di HP Android, transaksi masuk melalui webhook HTTP langsung ke N.E.X.A. Jalur ini juga melewati deduplication. Akun default-nya juga `'Bank Mandiri'`.
 
 ---
 

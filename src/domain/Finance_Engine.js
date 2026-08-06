@@ -240,10 +240,10 @@ async function recoverPendingTransactions() {
 
 /**
  * Handle a finance transaction (Deduplication & Recording)
- * Called either via Tasker Webhook (source='TASKER_FINANCE') or AI Router Intent (source='TELEGRAM_MANUAL')
+ * Called either via GMAIL_POLLING or AI Router Intent (source='TELEGRAM_MANUAL')
  *
  * @param {object} data - { nominal, type, destination, category, description, time }
- * @param {string} source - 'TASKER_FINANCE' | 'GMAIL_POLLING' | 'TELEGRAM_MANUAL'
+ * @param {string} source - 'GMAIL_POLLING' | 'TELEGRAM_MANUAL'
  */
 async function processTransaction(data, source) {
   // CRITICAL: nominal may arrive as string in various formats (IDR: "3.600.000", plain: 3600000).
@@ -264,7 +264,7 @@ async function processTransaction(data, source) {
   console.log(`[FINANCE] Evaluating transaction: ${compositeKey} from ${source}`);
 
   // Deduplication — only for passive (automated) inputs, not manual Telegram entries
-  if (source === 'TASKER_FINANCE' || source === 'GMAIL_POLLING') {
+  if (source === 'GMAIL_POLLING') {
     // Pass false to skip pending check if we are already processing it.
     const isDuplicate = await supabase.isDuplicateTransaction(compositeKey, transactionTime, false);
     if (isDuplicate) {
@@ -308,7 +308,7 @@ async function processTransaction(data, source) {
     // Jika manual dan kosong, ambil akun aktif pertama dari database.
     let akunName = data.account && String(data.account).trim() ? String(data.account).trim() : null;
     if (!akunName) {
-      if (source === 'TASKER_FINANCE' || source === 'GMAIL_POLLING') {
+      if (source === 'GMAIL_POLLING') {
         akunName = 'Bank Mandiri';
       } else {
         const accounts = await supabaseFinance.getAccountsList();

@@ -124,13 +124,31 @@ async function sendDirectCommand(commandPayload, metadata = {}, options = {}) {
 }
 
 /**
+ * Mengirimkan perintah via Mobile Bridge WebSocket (Kanal Primer)
+ * 
+ * @param {string} actionType - Nama aksi (misal: 'DISABLE_WIFI', 'SET_ALARM')
+ * @param {Object} [params={}] - Parameter aksi
+ * @param {number} [level=1] - Level eskalasi
+ * @returns {boolean} true jika terkirim via WebSocket, false jika offline
+ */
+function sendViaMobileBridge(actionType, params = {}, level = 1) {
+  try {
+    const mobileBridge = require('../interfaces/mobile_bridge/MobileBridge_WS');
+    return mobileBridge.sendCommand(actionType, params, level);
+  } catch (e) {
+    console.error('[TASKER CLIENT] Mobile Bridge error:', e.message);
+    return false;
+  }
+}
+
+/**
  * Mengirimkan tindakan sistem standar ke Tasker (misal: mematikan Wi-Fi, menyalakan alarm, dll.)
- * Menggunakan pushNtfy (Primer) dan sendDirectCommand (Tersier/Fallback).
+ * Menggunakan MobileBridge (Primer), ntfy.sh (Sekunder), dan sendDirectCommand (Tersier/Fallback).
  * 
  * @param {string} actionType - Nama aksi (misal: 'DISABLE_WIFI', 'SET_ALARM')
  * @param {Object} [params={}] - Parameter aksi
  * @param {Object} [options={}] - Opsi push
- * @returns {Promise<{ ntfySent: boolean, directSent: boolean }>} Status pengiriman
+ * @returns {Promise<{ wsSent: boolean, ntfySent: boolean, directSent: boolean }>} Status pengiriman
  */
 async function sendSystemAction(actionType, params = {}, options = {}) {
   const {
@@ -140,16 +158,28 @@ async function sendSystemAction(actionType, params = {}, options = {}) {
     level = 1
   } = options;
 
-  const ntfyMessage = `[ACTION] ${actionType}\n${JSON.stringify(params, null, 2)}`;
-  const ntfySent = await pushNtfy(ntfyMessage, { title, priority, tags });
+  // 1. Coba WebSocket (Kanal Primer - Paling Cepat & Senyap)
+  const wsSent = sendViaMobileBridge(actionType, params, level);
+  
+  let ntfySent = false;
+  let directSent = false;
 
-  const directSent = await sendDirectCommand({
-    type: 'SYSTEM_ACTION',
-    level: level,
-    actions: [{ action: actionType, params }]
-  }, {}, { level });
+  // 2. Jika WebSocket offline, gunakan Ntfy (Kanal Sekunder)
+  if (!wsSent) {
+    const ntfyMessage = `[ACTION] ${actionType}\n${JSON.stringify(params, null, 2)}`;
+    ntfySent = await pushNtfy(ntfyMessage, { title, priority, tags });
+  }
 
-  return { ntfySent, directSent };
+  // 3. Fallback Tasker Webhook (Kanal Tersier)
+  if (!wsSent) {
+    directSent = await sendDirectCommand({
+      type: 'SYSTEM_ACTION',
+      level: level,
+      actions: [{ action: actionType, params }]
+    }, {}, { level });
+  }
+
+  return { wsSent, ntfySent, directSent };
 }
 
 module.exports = {
@@ -158,5 +188,6 @@ module.exports = {
   isDirectWebhookConfigured,
   pushNtfy,
   sendDirectCommand,
-  sendSystemAction
+  sendSystemAction,
+  sendViaMobileBridge
 };

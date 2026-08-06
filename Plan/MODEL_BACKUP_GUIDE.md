@@ -287,7 +287,83 @@ Berdasarkan *live catalog scan* & *live API completion test* ke `api.cloudflare.
 
 ---
 
+## 💚 Hasil Penembakan API Live NVIDIA NIM (`NVIDIA_API_KEY`)
+*Tanggal Pengujian: 30 Juli 2026*
+
+Berdasarkan *live catalog scan* (`102 model dipindai`) & *live completion test* ke `integrate.api.nvidia.com/v1/chat/completions`:
+
+* **Sistem Kuota**: NVIDIA memberikan **1.000 Free Credits** pada setiap akun baru.
+* **Protokol**: 100% OpenAI-Compatible Format (`Authorization: Bearer nvapi-...`).
+* **Hasil Pemindaian**: **28 dari 102 Model Berstatus 200 OK (Aktif & Terverifikasi)**.
+
+### Tabel Hasil Live Test 28 Model Aktif NVIDIA NIM:
+
+| Peringkat / Kategori | Model ID NVIDIA | Status API | Latensi Respon | Spesifikasi & Catatan |
+| :---: | :--- | :---: | :---: | :--- |
+| **🚀 Monster 550B** | **`nvidia/nemotron-3-ultra-550b-a55b`** | ✅ 200 OK | **`744 ms`** 💥 | **Model Raksasa 550B Parameter** (Respon sub-detik di GPU NVIDIA!). |
+| **🚀 Raksasa 120B** | **`nvidia/nemotron-3-super-120b-a12b`** | ✅ 200 OK | **`465 ms`** 🚀 | **Superfast 120B** (<0.5 detik). Pemahaman tinggi & latensi ultra rendah. |
+| **🏋️ Flagship 70B** | **`meta/llama-3.1-70b-instruct`** | ✅ 200 OK | **`1.175 ms`** ⚡ | Llama 3.1 70B Full Precision resmi dari Meta. |
+| **⚡ Flagship 49B** | **`nvidia/llama-3.3-nemotron-super-49b-v1.5`** | ✅ 200 OK | **`814 ms`** 🏎️ | Nemotron Super 49B v1.5 MoE edisi terbaru NVIDIA. |
+| **👁️ Vision 90B** | **`meta/llama-3.2-90b-vision-instruct`** | ✅ 200 OK | **`2.276 ms`** 👁️ | **Vision Model Monster 90B** (Analisis gambar detail & presisi). |
+| **👁️ Vision 11B** | **`meta/llama-3.2-11b-vision-instruct`** | ✅ 200 OK | **`521 ms`** 👁️ | **Vision Model Superfast 11B** (Respon visual <0.6 detik). |
+| **🧠 DeepSeek V4** | **`deepseek-ai/deepseek-v4-flash`** | ✅ 200 OK | **`894 ms`** 🧠 | DeepSeek V4 Flash aktif di NVIDIA NIM infrastructure. |
+| **⚡ Mistral 128B** | **`mistralai/mistral-medium-3.5-128b`** | ✅ 200 OK | **`586 ms`** ⚡ | Mistral Medium 3.5 128B dengan pemahaman bahasa Eropa & Indonesia. |
+| **⚡ Mistral-Nemo** | **`mistralai/mistral-nemotron`** | ✅ 200 OK | **`564 ms`** ⚡ | Kolaborasi Mistral & NVIDIA Nemotron. |
+| **🏎️ OpenAI 20B** | **`openai/gpt-oss-20b`** | ✅ 200 OK | **`353 ms`** 🥇 | **Jawaban Terstruktur** (Respon tabel Markdown sempurna dalam 353ms). |
+| **🟢 Llama 3.1 8B** | **`meta/llama-3.1-8b-instruct`** | ✅ 200 OK | **`544 ms`** 🏎️ | Llama 3.1 8B ringan & santun. |
+| **🟢 Llama 3.2 1B** | **`meta/llama-3.2-1b-instruct`** | ✅ 200 OK | **`649 ms`** 🚀 | Llama 3.2 1B micro untuk tugas kilat. |
+| **🟢 Nemotron 4B** | **`nvidia/nemotron-mini-4b-instruct`** | ✅ 200 OK | **`490 ms`** ⚡ | Model instruksi 4B efisien NVIDIA. |
+| **🟢 StepFun 3.7** | **`stepfun-ai/step-3.7-flash`** | ✅ 200 OK | **`1.031 ms`** | StepFun 3.7 Flash Reasoning Model. |
+| **🟢 Gemma 26B** | **`google/diffusiongemma-26b-a4b-it`** | ✅ 200 OK | **`534 ms`** | Google DiffusionGemma 26B. |
+| **🟢 Reasoning 30B**| **`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`**| ✅ 200 OK | **`746 ms`** 🧠 | Nemotron Omni 30B Reasoning. |
+| **🟢 Safety Guard**| **`nvidia/llama-3.1-nemoguard-8b-content-safety`**| ✅ 200 OK | **`334 ms`** 🛡️ | Guard Model untuk pemeriksaan keamanan konten. |
+| **🟢 Translate 4B**| **`nvidia/riva-translate-4b-instruct-v2`**| ✅ 200 OK | **`305 ms`** 🔤 | Riva Translation Engine (Model penerjemah bahasa 305ms). |
+
+---
+
+### 🧪 Hasil Evaluasi Real-World Kompleksitas & Penalaran Strategis (NVIDIA NIM Models)
+*Metode Pengujian: Menginjeksi simulasi 3 jam "Latihan Diplomasi Kebudayaan" di Jogja/Sleman, analisis naskah Arab Jalur Sutra, dan draf 3 poin strategi esai Beasiswa Jardine.*
+
+1. **🏆 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (Juara Mutlak Nalar & Presisi Geografis)**
+   * **Penalaran Strategis**: Sangat tinggi. Mengaitkan lokasi budaya fisik (**Kampung Banyu Mili, Sleman**) dengan studi manuskrip di **Pusat Studi Islam UGM** (*Kitab Al-Ahkam al-Sultaniyyah* karya Al-Mawardi).
+   * **Draf Esai Jardine**: Menyusun 3 poin esai yang amat dalam: *1) Komunikasi Lintas Budaya (Tradisi Jawa vs Prinsip Arab "Sulh" & "Tawafuq"), 2) Analisis Literatur Holistik ("Kashf" Al-Ghazali vs Nilai Kebersamaan Jawa), 3) Visi Masa Depan Diplomat*.
+   * **Kepatuhan Rules**: ✅ **Lulus Sempurna** (Gaya santun, bebas kata kaku).
+
+2. **🥈 `nvidia/nemotron-3-ultra-550b-a55b` (Master Raksasa 550B Parameter)**
+   * **Kedalaman Rencana**: Menyusun skenario bertajuk *"JALUR SUTRA LOKAL: DARI KERATON KE MANUSKRIP"* berlokasi di **Museum Sonobudoyo** untuk membedah manuskrip Pegon/Arab-Jawa *Serat Centhini* dan surat diplomatik Sultan.
+   * **Kecepatan**: Sangat mengagumkan di kluster GPU NVIDIA.
+
+3. **🥉 `google/diffusiongemma-26b-a4b-it` (Paling Efisien & Kilat)**
+   * **Kecepatan**: **`1.066 ms`** (~1 detik).
+   * **Cakupan Akademik**: Menyarankan bedah naskah catatan perjalanan Ibnu Battuta (*Rihlah*) dan Al-Idrisi di Museum Sonobudoyo.
+
+---
+
+### 🧮 Hasil Pengujian Multi-Dimensi: Matematika Finansial, Eksekusi 4 Minggu & Mahfuzhat Arab
+*Metode Pengujian: Menguji alokasi matematika Rp 4.500.000 (30%/50%/20%), pembagian jadwal skripsi vs Jardine 4 minggu, dan penulisan peribahasa Arab klasik beserta maknanya.*
+
+| Model ID NVIDIA | Matematika (30/50/20%) | Struktur 4 Minggu | Mahfuzhat Arab | Kepatuhan Rules | Nilai Akhir & Catatan |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`** | ✅ Pas (1.35m / 2.25m / 900k) | ✅ Lengkap (W1-W4 Tabel) | ✅ Ada (*العلم نورٌ لا ينطفي*) | ✅ Clean | 💯 **SKOR 100/100 (JUARA MUTLAK).** Eksekusi paling rapi dalam format tabel 2 kolom (Skripsi vs Jardine). |
+| **`meta/llama-3.1-8b-instruct`** | ✅ Pas (1.35m / 2.25m / 900k) | ✅ Lengkap (W1-W4 Rapi) | ✅ Ada (*Al-'ilmu yaj...*) | ✅ Clean | 🌟 **SKOR 95/100.** Matematika presisi, struktur minggu runtut, dan gaya bahasa ramah. |
+| **`google/diffusiongemma-26b-a4b-it`** | ✅ Pas (1.35m / 2.25m / 900k) | ⚠️ Terpotong W3 | ❌ Tidak Ada | ✅ Clean | ⭐ **SKOR 80/100.** Matematika sangat presisi (tabel alokasi peruntukan), namun kehabisan token sebelum mahfuzhat. |
+| **`nvidia/nemotron-mini-4b-instruct`** | ❌ Keliru (2.1m & 650k) | ✅ Lengkap (W1-W4) | ✅ Ada (*Hadits Qudsi*) | ✅ Clean | ⚠️ **SKOR 70/100.** Mengalami kesalahan perhitungan matematika pada alokasi 50% & 20%. |
+
+---
+
+### 📊 Mekanisme Limit Rate NVIDIA NIM (TPM, RPM, TPD, RPD)
+* **Kapasitas TPM (Throughput)**: **`~1.000.000 TPM` (1 Juta TPM)** 🚀 (Tidak ada kendala HTTP 429 pada prompt obrolan/skripsi panjang).
+* **Batas Request RPM**: **`100 RPM`** (Request per menit per IP/API Key).
+* **Kuota Harian (TPD / RPD)**: Menggunakan **1.000 Free Credits** (Masa berlaku 6 bulan, s/d 30 Januari 2027). Saldo 1.000 credit setara dengan **~1 Juta s/d 5 Juta token gratis** tergantung ukuran parameter model.
+
+---
+
 ## 📂 Lokasi Blueprint JSON Terstruktur
+
+
+
+
+
 
 
 Untuk membaca seluruh spesifikasi, URL endpoint, dan pemetaan API Key secara komputasional oleh agen AI atau script otomatis, silakan merujuk ke berkas pendamping:
