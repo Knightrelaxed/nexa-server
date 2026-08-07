@@ -1,34 +1,32 @@
 // ============================================================
-// N.E.X.A — MOBILE BRIDGE WEBSOCKET SERVER
-// Menangani koneksi persisten 24/7 dengan aplikasi Android.
-// Digunakan untuk mengirim perintah GodMode, menerima telemetri,
-// serta menyerap real-time context updates dari ContextEngine.
+// N.E.X.A 3.0 — MOBILE BRIDGE WEBSOCKET SERVER
+// Clean, Production-Grade Realtime Device Gateway for Nexa Bridge Android App.
+// Protocol: Nexa Protocol v3.0 (Strict Zero-Dirty Code Standard)
 // ============================================================
 'use strict';
 
 const WebSocket = require('ws');
 const env = require('../../config/env');
-const security = require('../../utils/security'); // untuk generateTaskerSignature
 
 let wss = null;
-let activeClient = null; // Hanya ekspektasi 1 perangkat Android yang terhubung
+let activeClient = null; // Single-device connection (Samsung Galaxy A33 5G)
 let latestTelemetry = null;
 
-// Map untuk melacak async promise command execution
+// Map tracking active async command promises: commandId -> { resolve, timer }
 const pendingCommands = new Map();
-let contextUpdateListener = null;
+let telemetryListener = null;
 
 /**
- * Inisialisasi WebSocket server, menempel pada instance http.Server Express
+ * Initialize WebSocket Server, mounted directly on Express http.Server instance.
  * @param {import('http').Server} server 
  */
 function initWebSocket(server) {
   wss = new WebSocket.Server({ server, path: '/ws' });
 
   wss.on('connection', (ws, req) => {
-    // 1. Autentikasi via Header Authorization (Bearer Token)
+    // 1. Handshake Authentication (Bearer Token)
     const authHeader = req.headers.authorization;
-    const configuredSecret = String(env.NEXA_GODMODE_SECRET || '').trim();
+    const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_GODMODE_SECRET || '').trim();
 
     let isAuthorized = false;
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -39,165 +37,172 @@ function initWebSocket(server) {
     }
 
     if (!isAuthorized) {
-      console.warn('[MOBILE-BRIDGE-WS] ⚠️ Unauthorized connection attempt blocked.');
+      console.warn('[NEXA-BRIDGE-WS] ⚠️ Unauthorized handshake attempt rejected.');
       ws.close(4001, 'Unauthorized');
       return;
     }
 
-    console.log('[MOBILE-BRIDGE-WS] 📱 Mobile Bridge terhubung dengan aman.');
-    
-    // 2. Manajemen Koneksi Tunggal (Ganti koneksi lama jika ada)
+    console.log('[NEXA-BRIDGE-WS] 📱 Nexa Bridge Android connected successfully.');
+
+    // 2. Single-Device Connection Binding (Disconnect old socket if reconnected)
     if (activeClient && activeClient !== ws) {
-      console.log('[MOBILE-BRIDGE-WS] Menutup koneksi lama (digantikan oleh koneksi baru).');
-      try { activeClient.close(4009, 'Replaced by new connection'); } catch (e) {}
+      console.log('[NEXA-BRIDGE-WS] Replacing existing client connection.');
+      try { activeClient.close(4009, 'Replaced by new connection'); } catch (_) {}
     }
     activeClient = ws;
 
-    // 3. Listener Pesan dari Android
-    ws.on('message', (message) => {
+    // 3. Message Listener (Nexa Protocol 3.0)
+    ws.on('message', (rawMessage) => {
       try {
-        const data = JSON.parse(message);
-        
-        if (data.type === 'PING') {
-           ws.send(JSON.stringify({ type: 'PONG' }));
-           return;
+        const payload = JSON.parse(rawMessage);
+
+        // A. Heartbeat Ping / Pong
+        if (payload.type === 'PING' || payload.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
+          return;
         }
 
-        if (data.type === 'TELEMETRY_REPORT') {
-           latestTelemetry = data;
-        } else if (data.type === 'COMMAND_RESULT') {
-           const emoji = data.status === 'SUCCESS' ? '✅' : '❌';
-           console.log(`[MOBILE-BRIDGE-WS] ${emoji} Command Result [${data.command_id}]: ${data.status} - ${data.message}`);
-           
-           // Resolve pending command promise jika ada listener yang menunggu
-           if (pendingCommands.has(data.command_id)) {
-               const { resolve, timer } = pendingCommands.get(data.command_id);
-               clearTimeout(timer);
-               pendingCommands.delete(data.command_id);
-               resolve(data);
-           }
-        } else if (data.type === 'CONTEXT_UPDATE') {
-           console.log(`[MOBILE-BRIDGE-WS] ⚡ Context Update: ${data.event} - ${data.summary}`);
-           if (typeof contextUpdateListener === 'function') {
-               contextUpdateListener(data);
-           }
-        } else {
-           console.log('[MOBILE-BRIDGE-WS] Pesan tidak dikenal:', data.type);
+        // B. Telemetry Event Stream
+        if (payload.type === 'telemetry' || payload.type === 'TELEMETRY_REPORT') {
+          latestTelemetry = {
+            ...payload,
+            received_at: new Date().toISOString()
+          };
+          if (typeof telemetryListener === 'function') {
+            telemetryListener(latestTelemetry);
+          }
+          return;
         }
+
+        // C. Tool Call Result
+        if (payload.type === 'tool_result' || payload.type === 'COMMAND_RESULT') {
+          const cmdId = payload.id || payload.command_id;
+          const statusIcon = (payload.success || payload.status === 'SUCCESS') ? '✅' : '❌';
+          console.log(`[NEXA-BRIDGE-WS] ${statusIcon} Tool Result [${cmdId}]: ${payload.message || 'Done'}`);
+
+          if (cmdId && pendingCommands.has(cmdId)) {
+            const { resolve, timer } = pendingCommands.get(cmdId);
+            clearTimeout(timer);
+            pendingCommands.delete(cmdId);
+            resolve({
+              success: payload.success ?? payload.status === 'SUCCESS',
+              message: payload.message || '',
+              data: payload.data || payload.result || {}
+            });
+          }
+          return;
+        }
+
+        console.log('[NEXA-BRIDGE-WS] Unhandled payload type:', payload.type);
       } catch (err) {
-        console.error('[MOBILE-BRIDGE-WS] Gagal memparsing pesan:', err.message);
+        console.error('[NEXA-BRIDGE-WS] Failed to parse incoming JSON:', err.message);
       }
     });
 
+    // 4. Socket Disconnect & Safety Cleanup
     ws.on('close', (code, reason) => {
-      console.log(`[MOBILE-BRIDGE-WS] Koneksi terputus: ${code} - ${reason}`);
+      console.log(`[NEXA-BRIDGE-WS] Client disconnected: ${code} - ${reason}`);
       if (activeClient === ws) {
         activeClient = null;
       }
-      // Resolve semua pending commands yang belum selesai agar tidak ada Promise yang menggantung selamanya
+      // Purge all pending command promises so event loop never deadlocks
       if (pendingCommands.size > 0) {
-        console.warn(`[MOBILE-BRIDGE-WS] ⚠️ Membersihkan ${pendingCommands.size} pending command(s) akibat disconnect.`);
+        console.warn(`[NEXA-BRIDGE-WS] ⚠️ Clearing ${pendingCommands.size} pending command(s) on disconnect.`);
         for (const [cmdId, { resolve, timer }] of pendingCommands.entries()) {
           clearTimeout(timer);
-          resolve({ status: 'DISCONNECTED', message: 'Mobile Bridge disconnected before command completed' });
+          resolve({ success: false, status: 'DISCONNECTED', message: 'Nexa Bridge disconnected' });
         }
         pendingCommands.clear();
       }
     });
-    
+
     ws.on('error', (err) => {
-       console.error('[MOBILE-BRIDGE-WS] Error:', err.message);
+      console.error('[NEXA-BRIDGE-WS] Socket error:', err.message);
     });
   });
 }
 
 /**
- * Mengirim perintah ke perangkat Android yang terhubung.
- * Otomatis melampirkan HMAC-SHA256 signature sesuai format server.
- * Mengembalikan Promise yang resolve saat CommandResult dikembalikan oleh HP.
+ * Send a tool call command to the connected Nexa Bridge Android App.
+ * Returns a Promise that resolves when Nexa Bridge returns a tool_result or times out.
  * 
- * @param {string} action - Nama aksi (misal: 'TOGGLE_FLASHLIGHT', 'DUMP_UI_HIERARCHY', 'ACCESSIBILITY_CLICK')
- * @param {object} params - Parameter (misal: { x: 500, y: 1000 })
- * @param {number} level - Level eskalasi GodMode (1-4)
- * @param {number} timeoutMs - Batas waktu tunggu respon (default 10 detik)
- * @returns {Promise<object>} Objek CommandResult dari Android
+ * @param {string} tool - Tool name (e.g. 'flashlight.on', 'volume.set', 'notification.show')
+ * @param {object} args - Tool arguments object
+ * @param {object} options - Options: { timeoutMs: 5000 }
+ * @returns {Promise<{ success: boolean, message: string, data: object }>}
  */
-function sendCommand(action, params = {}, level = 1, timeoutMs = 10000) {
-    return new Promise((resolve) => {
-        if (!activeClient || activeClient.readyState !== WebSocket.OPEN) {
-            console.warn(`[MOBILE-BRIDGE-WS] Gagal mengirim ${action} — Mobile Bridge OFFLINE.`);
-            return resolve({ status: 'OFFLINE', message: 'Mobile Bridge is not connected' });
-        }
+function sendCommand(tool, args = {}, options = {}) {
+  const timeoutMs = options.timeoutMs || 5000;
 
-        const timestamp = Date.now();
-        const signature = security.generateTaskerSignature(timestamp, level);
-        const commandId = `cmd_${timestamp}_${Math.random().toString(36).substring(2, 9)}`;
+  return new Promise((resolve) => {
+    if (!activeClient || activeClient.readyState !== WebSocket.OPEN) {
+      console.warn(`[NEXA-BRIDGE-WS] Unable to send tool '${tool}' — Nexa Bridge OFFLINE.`);
+      return resolve({ success: false, status: 'OFFLINE', message: 'Nexa Bridge is offline' });
+    }
 
-        const payload = {
-            type: 'EXECUTE_COMMAND',
-            command_id: commandId,
-            action: action,
-            params: params,
-            signature: signature,
-            timestamp: timestamp
-        };
+    const timestamp = Date.now();
+    const commandId = `cmd_${timestamp}_${Math.random().toString(36).substring(2, 8)}`;
 
-        const timer = setTimeout(() => {
-            if (pendingCommands.has(commandId)) {
-                pendingCommands.delete(commandId);
-                resolve({ status: 'TIMEOUT', message: `Command ${action} timed out after ${timeoutMs}ms` });
-            }
-        }, timeoutMs);
+    const payload = {
+      id: commandId,
+      type: 'tool_call',
+      tool: tool,
+      args: args,
+      timestamp: timestamp
+    };
 
-        pendingCommands.set(commandId, { resolve, timer });
+    const timer = setTimeout(() => {
+      if (pendingCommands.has(commandId)) {
+        pendingCommands.delete(commandId);
+        resolve({ success: false, status: 'TIMEOUT', message: `Tool '${tool}' timed out after ${timeoutMs}ms` });
+      }
+    }, timeoutMs);
 
-        try {
-            activeClient.send(JSON.stringify(payload));
-            console.log(`[MOBILE-BRIDGE-WS] 🚀 Command ${action} terkirim [${commandId}].`);
-        } catch (e) {
-            clearTimeout(timer);
-            pendingCommands.delete(commandId);
-            console.error(`[MOBILE-BRIDGE-WS] Error mengirim perintah:`, e.message);
-            resolve({ status: 'ERROR', message: e.message });
-        }
-    });
+    pendingCommands.set(commandId, { resolve, timer });
+
+    try {
+      activeClient.send(JSON.stringify(payload));
+      console.log(`[NEXA-BRIDGE-WS] 🚀 Sent tool_call '${tool}' [${commandId}]`);
+    } catch (err) {
+      clearTimeout(timer);
+      pendingCommands.delete(commandId);
+      console.error(`[NEXA-BRIDGE-WS] Send error:`, err.message);
+      resolve({ success: false, status: 'ERROR', message: err.message });
+    }
+  });
 }
 
 /**
- * Mendaftarkan callbacklistener untuk event Context Engine (real-time events) dari Android
+ * Register a telemetry update listener callback.
  */
-function setOnContextUpdateListener(callback) {
-    contextUpdateListener = callback;
+function setOnTelemetryListener(callback) {
+  telemetryListener = callback;
 }
 
 /**
- * Mendapatkan data telemetri terakhir yang dilaporkan Android.
+ * Get the latest telemetry state reported by Nexa Bridge.
  */
 function getLatestTelemetry() {
-    return latestTelemetry;
+  return latestTelemetry;
 }
 
 /**
- * Meminta HP untuk memunculkan Pop-Up Overlay Interaktif.
- * @param {string} title 
- * @param {string} message 
- * @param {Array} buttons - Array objek tombol { id, text, color }
- * @param {number} timeoutMs - Lama popup bertahan (ms) sebelum tertutup otomatis
- * @returns {Promise<object>}
+ * Helper to request a System Overlay Screen or Heads-Up Notification Dialog.
  */
 function requestOverlay(title, message, buttons = [], timeoutMs = 15000) {
-    return sendCommand('SHOW_OVERLAY_MSG', {
-        title,
-        message,
-        timeout: timeoutMs,
-        buttons
-    }, 1, timeoutMs);
+  return sendCommand('notification.show', {
+    title,
+    message,
+    overlay: true,
+    buttons,
+    timeout: timeoutMs
+  }, { timeoutMs });
 }
 
 module.exports = {
-    initWebSocket,
-    sendCommand,
-    setOnContextUpdateListener,
-    getLatestTelemetry,
-    requestOverlay
+  initWebSocket,
+  sendCommand,
+  setOnTelemetryListener,
+  getLatestTelemetry,
+  requestOverlay
 };
