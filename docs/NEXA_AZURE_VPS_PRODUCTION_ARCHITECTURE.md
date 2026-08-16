@@ -157,7 +157,8 @@ sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -
 
 ## 7. Pemantauan Real-Time Web GUI (PM2 Plus)
 
-Server dihubungkan ke dashboard web **[PM2 Plus (app.pm2.io)](https://app.pm2.io)**:
+Server dihubungkan ke dashboard web **[PM2 Plus](https://app.pm2.io)** yang dapat dipantau langsung pada URL spesifik bucket Tuan:
+👉 **[N.E.X.A Server PM2 Dashboard](https://app.pm2.io/bucket/6a812fb0afc312b90dd6a671/backend/overview/servers)**:
 
 ```bash
 pm2 link d2uflwik6mh7tit n6r85u98vor6sly
