@@ -146,6 +146,11 @@ function sendCommand(action, params = {}, options = {}) {
     const timestamp = Date.now();
     const commandId = `cmd_${timestamp}_${Math.random().toString(36).substring(2, 8)}`;
 
+    // Phonetic Sanitization: Replace N.E.X.A with NEXA so Android TTS speaks "Nexa" naturally (not "en-e-ex-a")
+    if (action === 'SPEAK_TEXT' && params && typeof params.text === 'string') {
+      params = { ...params, text: params.text.replace(/N\.E\.X\.A\.?/gi, 'NEXA') };
+    }
+
     const payload = {
       type: 'EXECUTE_COMMAND',
       command_id: commandId,
