@@ -1006,29 +1006,31 @@ Aturan pembatasan aplikasi bersifat **100% dinamis** dan dapat diubah kapan saja
 | `escalation_level` | `INT` | Level eskalasi awal saat batas terlampaui (`1` - `4`). |
 | `is_active` | `BOOLEAN` | Status saklar pemantauan (`true` = dipantau, `false` = bebas). |
 
-##### B. Tutorial Mengedit Batas Waktu Aplikasi yang Sudah Ada
-Untuk melonggarkan atau memperketat batas waktu aplikasi (misal: mengubah batas sesi YouTube menjadi 45 menit):
+##### B. Cara Utama: Mengubah Batas Waktu Langsung Lewat Chat Telegram
+Tuan Faqih cukup mengirim pesan obrolan natural ke bot Telegram N.E.X.A seperti berbicara dengan asisten pribadi:
 
-* **Cara 1: Melalui Supabase SQL Editor:**
+* **Melihat Daftar Batas Aplikasi:**
+  > *"Nexa, cek batas aplikasi"* atau *"Nexa, tampilkan daftar screen time"*
+* **Mengedit Batas Durasi:**
+  > *"Nexa, ubah batas waktu YouTube jadi 45 menit"*
+  > *"Nexa, set limit Instagram maksimal 30 menit per sesi"*
+* **Menambahkan Aplikasi Baru:**
+  > *"Nexa, tambahkan Mobile Legends dengan batas 20 menit sesi dan 40 menit harian"*
+* **Menonaktifkan / Membebaskan Batas:**
+  > *"Nexa, matikan pemantauan TikTok"*
+  > *"Nexa, hapus batas waktu Instagram"*
+
+##### C. Metode Tingkat Lanjut: Melalui Supabase SQL Editor
+Selain melalui chat, modifikasi langsung via SQL database juga didukung penuh:
+
+* **Mengubah Batas Durasi:**
 ```sql
 UPDATE "public"."nexa_app_limits"
 SET "max_session_minutes" = 45, "max_daily_minutes" = 120, "updated_at" = NOW()
 WHERE "package_name" = 'com.google.android.youtube';
 ```
 
-* **Cara 2: Melalui Programmatic Helper / Script Server:**
-```javascript
-const appDiscipline = require('./src/domain/App_Discipline_Engine');
-await appDiscipline.updateAppLimit('com.google.android.youtube', {
-  max_session_minutes: 45,
-  max_daily_minutes: 120
-});
-```
-
-##### C. Tutorial Menambahkan Aplikasi Baru yang Ingin Dipantau
-Untuk membatasi aplikasi baru (misal: game *Mobile Legends* atau *Genshin Impact*):
-
-* **Melalui Supabase SQL Editor:**
+* **Menambahkan Aplikasi Baru:**
 ```sql
 INSERT INTO "public"."nexa_app_limits" 
   ("package_name", "app_label", "max_session_minutes", "max_daily_minutes", "escalation_level")
@@ -1040,20 +1042,13 @@ DO UPDATE SET
   "max_daily_minutes" = EXCLUDED.max_daily_minutes;
 ```
 
-##### D. Tutorial Menghapus atau Menonaktifkan Pemantauan
-Jika Tuan ingin membebaskan aplikasi tertentu agar tidak dibatasi sama sekali:
-
-* **Opsi 1: Nonaktifkan Sementara (`is_active = false`):**
+* **Menonaktifkan Sementara atau Menghapus:**
 ```sql
-UPDATE "public"."nexa_app_limits"
-SET "is_active" = false, "updated_at" = NOW()
-WHERE "package_name" = 'com.google.android.youtube';
-```
+-- Nonaktifkan sementara:
+UPDATE "public"."nexa_app_limits" SET "is_active" = false WHERE "package_name" = 'com.google.android.youtube';
 
-* **Opsi 2: Hapus Permanen dari Daftar Pantau:**
-```sql
-DELETE FROM "public"."nexa_app_limits"
-WHERE "package_name" = 'com.mobile.legends';
+-- Hapus permanen:
+DELETE FROM "public"."nexa_app_limits" WHERE "package_name" = 'com.mobile.legends';
 ```
 
 *Setiap kali operasi CRUD di atas dijalankan, fungsi `invalidateLimitsCache()` pada server akan otomatis membersihkan RAM cache, sehingga aturan baru langsung aktif dalam hitungan milidetik tanpa perlu me-restart server ataupun aplikasi HP.*

@@ -373,6 +373,141 @@ async function deleteAppLimit(packageName) {
   return { success: true, package_name: cleanPkg };
 }
 
+const APP_PACKAGE_MAP = {
+  'youtube': 'com.google.android.youtube',
+  'yt': 'com.google.android.youtube',
+  'instagram': 'com.instagram.android',
+  'ig': 'com.instagram.android',
+  'tiktok': 'com.zhiliaoapp.musically',
+  'tt': 'com.zhiliaoapp.musically',
+  'twitter': 'com.twitter.android',
+  'x': 'com.twitter.android',
+  'facebook': 'com.facebook.katana',
+  'fb': 'com.facebook.katana',
+  'netflix': 'com.netflix.mediaclient',
+  'mobile legends': 'com.mobile.legends',
+  'ml': 'com.mobile.legends',
+  'mlbb': 'com.mobile.legends',
+  'genshin': 'com.miHoYo.GenshinImpact',
+  'pubg': 'com.tencent.ig',
+  'free fire': 'com.dts.freefireth',
+  'ff': 'com.dts.freefireth',
+  'whatsapp': 'com.whatsapp',
+  'wa': 'com.whatsapp',
+  'telegram': 'org.telegram.messenger',
+  'chrome': 'com.android.chrome',
+  'shopee': 'com.shopee.id',
+  'tokopedia': 'com.tokopedia.tkpd',
+  'threads': 'com.instagram.barcelona'
+};
+
+/**
+ * Mencocokkan nama aplikasi kasual ke Package ID Android.
+ */
+function resolveAppPackage(nameOrPkg) {
+  if (!nameOrPkg || typeof nameOrPkg !== 'string') return null;
+  const str = nameOrPkg.trim().toLowerCase();
+  if (str.includes('.')) return nameOrPkg.trim();
+  return APP_PACKAGE_MAP[str] || null;
+}
+
+/**
+ * Handler pemrosesan intent DISCIPLINE langsung dari chat Telegram Tuan Faqih.
+ * Mendukung pembacaan, pengubahan batas waktu, penambahan, dan penghapusan batas.
+ * 
+ * @param {object} extractedData - Data hasil ekstraksi AI Router
+ * @param {string} [textInput] - Pesan teks asli pengguna
+ * @returns {Promise<string>} Pesan balasan siap kirim ke Telegram
+ */
+async function handleDisciplineChatIntent(extractedData = {}, textInput = '') {
+  const action = String(extractedData.action || 'READ_LIMITS').toUpperCase();
+  const rawTarget = String(extractedData.package_name || extractedData.app_name || extractedData.target_app || extractedData.app_label || '').trim();
+  const resolvedPkg = resolveAppPackage(rawTarget);
+
+  if (action === 'READ_LIMITS' || action === 'LIST_LIMITS' || action === 'READ' || (!rawTarget && !extractedData.max_session_minutes)) {
+    const all = await getAllAppLimits();
+    if (!all || all.length === 0) {
+      return '📱 <b>Daftar Batas Aplikasi N.E.X.A:</b>\nBelum ada aplikasi yang dikonfigurasi dalam daftar pantauan.';
+    }
+
+    const lines = all.map((app, idx) => {
+      const statusIcon = app.is_active !== false ? '🟢' : '⚪ (Nonaktif)';
+      return `${idx + 1}. ${statusIcon} <b>${app.app_label || app.package_name}</b>\n   • Maks Sekali Sesi: <b>${app.max_session_minutes || 30} menit</b>\n   • Total Kuota Harian: <b>${app.max_daily_minutes || 90} menit</b>\n   • Tingkat Eskalasi: <b>Level ${app.escalation_level || 2}</b>`;
+    });
+
+    return `📱 <b>Daftar Batas Aplikasi Aktif (Samsung A33 5G):</b>\n\n${lines.join('\n\n')}\n\n<i>💡 Tuan bisa mengubahnya kapan saja, misal: "Ubah batas YouTube jadi 45 menit" atau "Tambahkan game ML batas 25 menit".</i>`;
+  }
+
+  if (action === 'UPDATE_LIMIT' || action === 'EDIT' || (resolvedPkg && (extractedData.max_session_minutes || extractedData.max_daily_minutes))) {
+    const pkg = resolvedPkg || rawTarget;
+    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin diubah batasnya (misal: YouTube, Instagram, TikTok).';
+
+    const updates = {};
+    if (extractedData.max_session_minutes) updates.max_session_minutes = Number(extractedData.max_session_minutes);
+    if (extractedData.max_daily_minutes) updates.max_daily_minutes = Number(extractedData.max_daily_minutes);
+    if (extractedData.warning_threshold_pct) updates.warning_threshold_pct = Number(extractedData.warning_threshold_pct);
+    if (extractedData.escalation_level) updates.escalation_level = Number(extractedData.escalation_level);
+    if (extractedData.is_active !== undefined) updates.is_active = Boolean(extractedData.is_active);
+
+    const appLabel = extractedData.app_label || extractedData.app_name || rawTarget || pkg;
+    updates.app_label = appLabel;
+
+    const result = await upsertAppLimit({
+      package_name: pkg,
+      app_label: appLabel,
+      ...updates
+    });
+
+    return `✅ <b>Batas Aplikasi Berhasil Diperbarui!</b>\n• Aplikasi: <b>${result.data.app_label}</b>\n• Batas Sesi: <b>${result.data.max_session_minutes} menit</b>\n• Batas Harian: <b>${result.data.max_daily_minutes} menit</b>\n• Level Penegakan: <b>Level ${result.data.escalation_level}</b>\n• Status: <b>${result.data.is_active ? 'Aktif 🟢' : 'Nonaktif ⚪'}</b>\n\n<i>Aturan baru langsung aktif seketika di ponsel Tuan.</i>`;
+  }
+
+  if (action === 'ADD_LIMIT' || action === 'CREATE') {
+    const pkg = resolvedPkg || (rawTarget.includes('.') ? rawTarget : `com.${rawTarget.toLowerCase().replace(/\s+/g, '')}`);
+    const appLabel = extractedData.app_label || extractedData.app_name || rawTarget;
+    const sessionMins = Number(extractedData.max_session_minutes || 20);
+    const dailyMins = Number(extractedData.max_daily_minutes || (sessionMins * 2.5));
+    const level = Number(extractedData.escalation_level || 2);
+
+    const result = await upsertAppLimit({
+      package_name: pkg,
+      app_label: appLabel,
+      max_session_minutes: sessionMins,
+      max_daily_minutes: dailyMins,
+      warning_threshold_pct: 80,
+      escalation_level: level,
+      is_active: true
+    });
+
+    return `✅ <b>Aplikasi Baru Berhasil Ditambahkan ke Pantauan!</b>\n• Aplikasi: <b>${result.data.app_label}</b> (<code>${result.data.package_name}</code>)\n• Batas Sesi: <b>${result.data.max_session_minutes} menit</b>\n• Batas Harian: <b>${result.data.max_daily_minutes} menit</b>\n• Eskalasi: <b>Level ${result.data.escalation_level}</b>\n\n<i>Ponsel Samsung A33 5G Tuan sekarang memantau pemakaian aplikasi ini.</i>`;
+  }
+
+  if (action === 'DELETE_LIMIT' || action === 'DELETE' || action === 'REMOVE') {
+    const pkg = resolvedPkg || rawTarget;
+    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin dihapus batasnya.';
+
+    await deleteAppLimit(pkg);
+    return `🗑️ <b>Pemantauan Dihapus:</b>\nAplikasi <b>${rawTarget}</b> telah dihapus dari daftar batasan. Tuan sekarang bebas membukanya tanpa batasan waktu.`;
+  }
+
+  if (action === 'DISABLE_LIMIT' || action === 'DISABLE') {
+    const pkg = resolvedPkg || rawTarget;
+    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin dinonaktifkan.';
+
+    await updateAppLimit(pkg, { is_active: false });
+    return `⚪ <b>Pemantauan Dinonaktifkan Sementara:</b>\nBatas waktu untuk <b>${rawTarget}</b> telah dimatikan sementara tanpa menghapus datanya.`;
+  }
+
+  if (action === 'ENABLE_LIMIT' || action === 'ENABLE') {
+    const pkg = resolvedPkg || rawTarget;
+    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin diaktifkan kembali.';
+
+    await updateAppLimit(pkg, { is_active: true });
+    return `🟢 <b>Pemantauan Diaktifkan Kembali:</b>\nBatas waktu untuk <b>${rawTarget}</b> kini aktif kembali.`;
+  }
+
+  return '📱 Perintah batas aplikasi telah diproses.';
+}
+
 module.exports = {
   loadAppLimits,
   evaluateAppUsage,
@@ -380,5 +515,7 @@ module.exports = {
   upsertAppLimit,
   updateAppLimit,
   deleteAppLimit,
-  invalidateLimitsCache
+  invalidateLimitsCache,
+  resolveAppPackage,
+  handleDisciplineChatIntent
 };

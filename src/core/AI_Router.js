@@ -366,6 +366,8 @@ OUTPUT JSON FORMAT:
     // DATABASE: { action: "LIST_TABLES|READ_TABLE|INSERT_ROW|UPDATE_ROW|DELETE_ROW|DELETE_ALL_ROWS|DELETE_ALL_ROWS_CONFIRMED|CANCEL_ACTION", table_name, row_id, search_keyword, max_results, row_data: {}, update_data: {} }
     //   - DELETE_ALL_ROWS Triggers: "hapus riwayat chat" (table: nexa_chat_memories), "bersihkan vault" (table: nexa_vault_items)
     // 2ND_BRAIN: { action: "APPEND|READ|EDIT|DELETE", title, content, search_keyword }
+    // DISCIPLINE: { action: "READ_LIMITS|UPDATE_LIMIT|ADD_LIMIT|DELETE_LIMIT|DISABLE_LIMIT|ENABLE_LIMIT", app_name: string, package_name: string, max_session_minutes: number, max_daily_minutes: number, warning_threshold_pct: number, escalation_level: number, is_active: boolean }
+    //   - Triggers: "cek batas aplikasi", "daftar batas aplikasi", "ubah batas youtube jadi 45 menit", "set limit instagram 30 menit", "tambahkan batas game mobile legends 20 menit", "hapus batas youtube", "matikan limit tiktok", "aktifkan kembali batas youtube"
     // USER_PROFILE: Facts about TUAN FAQIH (the human user). { action: "APPEND|READ|DELETE", content, search_keyword }
     //   - APPEND Triggers: "ingat ya aku suka kopi", "aku punya kebiasaan X", "cita-citaku adalah..."
     //   - READ Triggers: "apa yang kamu ingat tentangku", "kamu tahu apa tentang diriku"

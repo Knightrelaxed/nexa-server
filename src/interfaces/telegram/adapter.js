@@ -3390,6 +3390,15 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         break;
       }
 
+      case 'DISCIPLINE': {
+        const appDiscipline = require('../../domain/App_Discipline_Engine');
+        domainReply = await appDiscipline.handleDisciplineChatIntent(
+          routingData.extracted_data || {},
+          textInput
+        );
+        break;
+      }
+
       case 'DIAGNOSE_SYSTEM': {
         const logger = require("../../utils/logger");
         const aiRouter = require("../../core/AI_Router");
