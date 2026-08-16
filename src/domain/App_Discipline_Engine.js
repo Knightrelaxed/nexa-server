@@ -19,12 +19,12 @@ function getSupabase() {
 
 // Fallback in-memory default limits if Supabase table is not yet migrated
 const DEFAULT_LIMITS = new Map([
-  ['com.google.android.youtube',   { app_label: 'YouTube',     max_session: 30, max_daily: 90,  warning_pct: 80, level: 2 }],
-  ['com.instagram.android',        { app_label: 'Instagram',   max_session: 20, max_daily: 60,  warning_pct: 80, level: 2 }],
-  ['com.zhiliaoapp.musically',     { app_label: 'TikTok',      max_session: 15, max_daily: 45,  warning_pct: 80, level: 3 }],
-  ['com.twitter.android',          { app_label: 'X (Twitter)', max_session: 20, max_daily: 60,  warning_pct: 80, level: 2 }],
-  ['com.facebook.katana',          { app_label: 'Facebook',    max_session: 20, max_daily: 45,  warning_pct: 80, level: 2 }],
-  ['com.netflix.mediaclient',      { app_label: 'Netflix',     max_session: 45, max_daily: 120, warning_pct: 80, level: 2 }]
+  ['com.google.android.youtube',   { app_label: 'YouTube',     max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
+  ['com.instagram.android',        { app_label: 'Instagram',   max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
+  ['com.zhiliaoapp.musically',     { app_label: 'TikTok',      max_session: 30, max_daily: 120, warning_pct: 80, level: 3 }],
+  ['com.twitter.android',          { app_label: 'X (Twitter)', max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
+  ['com.facebook.katana',          { app_label: 'Facebook',    max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
+  ['com.netflix.mediaclient',      { app_label: 'Netflix',     max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }]
 ]);
 
 // Anti-spam cooldown cache: Map<`${pkg}_${type}`, lastTriggerTimestamp>
@@ -451,8 +451,8 @@ async function handleDisciplineChatIntent(extractedData, textInput) {
   if (action === 'ADD_LIMIT' || action === 'CREATE') {
     const pkg = resolvedPkg || (rawTarget.includes('.') ? rawTarget : `com.${rawTarget.toLowerCase().replace(/\s+/g, '')}`);
     const appLabel    = ed.app_label || ed.app_name || rawTarget;
-    const sessionMins = Number(ed.max_session_minutes || 20);
-    const dailyMins   = Number(ed.max_daily_minutes   || Math.round(sessionMins * 2.5));
+    const sessionMins = Number(ed.max_session_minutes || 30);
+    const dailyMins   = Number(ed.max_daily_minutes   || 120);
     const level       = Number(ed.escalation_level    || 2);
 
     const result = await upsertAppLimit({
