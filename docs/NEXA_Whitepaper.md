@@ -968,27 +968,28 @@ Google Tasks hanya menyimpan tanggal (*Date-Only*) untuk jatuh tempo, tanpa jam.
 
 ---
 
-### 5.6 The Discipline God Mode & Surgical Physical Enforcement (Immortality Protocol v3.1)
+### 5.6 The Discipline God Mode & Native Android 16 Physical Enforcement (Nexa Bridge Protocol v3.0)
 
-Manajemen waktu N.E.X.A dilengkapi dengan **Discipline God Mode** (`Discipline_GodMode.js`), sebuah sistem penegakan kedisiplinan dua arah (*closed-loop bidirectional enforcement*) yang menghubungkan kognisi cloud langsung dengan perangkat fisik Tuan Faqih (Samsung Galaxy A33 5G / Android 14 One UI 6) melalui broker notifikasi `ntfy` dan otomasi `Tasker`.
+Manajemen waktu N.E.X.A dilengkapi dengan **Discipline God Mode** (`Discipline_GodMode.js`) dan **App Discipline Engine** (`App_Discipline_Engine.js`), sebuah sistem penegakan kedisiplinan dua arah (*closed-loop bidirectional enforcement*) yang menghubungkan kognisi cloud langsung dengan perangkat fisik Tuan Faqih (Samsung Galaxy A33 5G / Android 16 One UI 8) melalui **Nexa Mobile Bridge** (*Native Kotlin WebSocket Gateway* `MobileBridge_WS.js`).
 
-#### 1. Arsitektur Eskalasi Dinamis 4 Level (*Behavior-Aware Hierarchy*)
-Sistem mengukur tingkat toleransi secara dinamis berdasarkan *Behavior Engine* (analisis mood harian) sebelum memutuskan level penindakan fisik:
-- **Level 1 (*Cognitive Reminder*):** Saat batas waktu penggunaan aplikasi hiburan (`TikTok / Instagram / eFootball`) tercapai pertama kali, server meracik kalimat nasihat dinamis via `AI_Router` dan mengirimkannya melalui `ntfy` (`SPEAK_ONLY`). Tasker membacakannya lewat mesin TTS Google secara lisan tanpa melempar layar ponsel.
-- **Level 2 (*Interactive Friction*):** Jika aplikasi tetap dibuka, server mengirim perintah `GO_HOME`. Tasker membunyikan alarm `Beep` (8000Hz) dan seketika melempar layar ponsel ke *Home Screen*. Secara paralel, Bot Telegram mengirim **3 Tombol Konfirmasi (`Inline Keyboard`)** dengan masa tunggu (*Grace Period*) 3 menit:
-  - `[ ✅ Ini Riset Penting ]`: Mereset status eskalasi kembali ke Level 0.
-  - `[ ⏰ +10 Menit ]`: Memberikan perpanjangan waktu sementara (maks 2x/hari).
-  - `[ ❌ Saya Menunda ]`: Memicu eskalasi langsung ke Level 3.
-- **Level 3 (*Surgical Restriction - Grayscale Hitam Putih*):** Dipicu jika masa tunggu 3 menit diabaikan atau tombol menunda ditekan. Server mengirim `FORCE_STOP_APP`. Tasker mengeksekusi penutupan paksa aplikasi (`Kill App`) dan mengubah pengaturan `Secure` Android One UI 6 (`accessibility_display_daltonizer_enabled = 1`) yang **seketika mengubah layar ponsel menjadi Hitam Putih (*Grayscale*) tanpa Root**, mematikan rangsangan dopamin visual selama 30 menit.
-- **Level 4 (*Surgical God Mode Ultimate*):** Dipicu saat pelanggaran berulang melampaui batas toleransi mood hari itu. Server mengirim `LOCK_SCREEN`. Tasker mengaktifkan Mode Pesawat (`Airplane Mode: Set On`) memotong seluruh koneksi internet, sekaligus mengunci layar fisik ponsel (`System Lock`), memaksa pengguna kembali ke prioritas kerja.
+#### 1. Arsitektur Pelacakan Native Android 16 (`AppUsageTracker.kt`)
+Pelacakan waktu aplikasi tidak mengandalkan aplikasi pihak ketiga, melainkan memanfaatkan dua API native Android 16:
+- **`AccessibilityService.TYPE_WINDOW_STATE_CHANGED`**: Menangkap detik perpindahan aplikasi secara instan dan menghitung *Live Active Session Duration* (durasi sesi berjalan).
+- **`UsageStatsManager.queryUsageStats()`**: Membaca data historis akumulasi pemakaian harian (`totalTimeInForeground`) dari sistem operasi.
+- **`nexa_app_limits` (Supabase Central Policy Table)**: Pusat kendali batas waktu per sesi (`max_session_minutes`), batas harian (`max_daily_minutes`), dan level eskalasi yang dapat diedit secara dinamis kapan saja tanpa perlu mengompilasi ulang aplikasi HP.
 
-#### 2. Inovasi Proteksi Mutlak di Android 14 (`Double-Lock & Anti-Sleep`)
-Untuk menjamin tidak ada laporan palsu atau eksekusi gaib saat ponsel diam/tidur, protokol penegakan Tasker dibekali pengamanan berlapis:
-- **Pengaman Ganda (`Double-Lock %PACTIVE`):** Aksi pengiriman Webhook (`HTTP Request`) di Task `Send_Screen_Violation` dikunci dengan kondisi `If %PACTIVE ~ *Screen TimeApps Monitor*`. Jika pengguna keluar dari aplikasi sebelum batas waktu berakhir, Profile tidak lagi aktif di variabel global `%PACTIVE`, sehingga pengiriman Webhook otomatis dibatalkan total.
-- **Kunci Anti-HP Tidur (`Display State: On` & `Exit Task`):** Profile pemantauan diwajibkan memenuhi kondisi ganda (`Application di layar depan` DAN `Display State: On`). Begitu pengguna menekan tombol power atau aplikasi bergeser ke latar belakang (*Background*), Profile seketika menjadi *False*, memicu `Exit Task -> Stop -> Send_Screen_Violation` yang membunuh hitungan mundur di detik itu juga.
+#### 2. Arsitektur Eskalasi Dinamis 4 Level (*Multi-Stage Defiance Hierarchy*)
+Sistem mengukur durasi dan frekuensi pelanggaran untuk menentukan level penindakan fisik:
+- **Level 1 (*Cognitive Reminder & Gentle Nudge*):** Dipicu saat sesi mencapai **80% dari batas** (misal menit ke-24 pada sesi 30m). Server meracik kalimat nasihat lembut via LLM real-time, mengirim pengingat Telegram, dan membunyikan suara TTS di HP tanpa mengganggu tampilan layar.
+- **Level 2 (*Active Friction & Force Home*):** Dipicu saat batas sesi/harian mencapai **100%**. Server mengeksekusi `GO_HOME_SCREEN` via Accessibility Service yang seketika melempar pengguna ke *Home Screen*, memutar suara peringatan tegas J.A.R.V.I.S, mengirim laporan audit Telegram, dan memasukkan aplikasi ke dalam **Masa Lockout 30 Menit**.
+- **Level 3 (*Surgical Restriction & Instant Re-Bounce*):** Dipicu jika pengguna mencoba membuka kembali aplikasi (*Ngeyel Upaya #1*) selama masa lockout 30 menit. Sistem mengeksekusi *Re-Bounce Instan (<0.5 detik)*, menampilkan layar pelindung penuh (*Focus Shield Overlay* `OverlayActivity`), memperdengarkan suara dingin AI, dan mencatat pembangkangan ke tabel memori perilaku `nexa_behavior_log`.
+- **Level 4 (*God Mode Ultimate - Physical Screen Lockout*):** Dipicu jika terjadi pembangkangan berulang (*Ngeyel Upaya #2+*). Server mengeksekusi **Penguncian Layar Fisik Otomatis (`LOCK_SCREEN` via Global Accessibility Action)**, mengaktifkan mode senyap total (`FORCE_DND Priority Only`), memperdengarkan suara otoritatif AI, serta menyiarkan peringatan darurat (*Red Alert*) ke Telegram.
 
-#### 3. Infrastruktur Pengiriman Nol-Latensi (*Doze Mode Resilience*)
-Komunikasi fisik dari server cloud ke perangkat Samsung mengandalkan topik `ntfy` rahasia dengan pengaturan *Unrestricted Battery* dan *Instant Delivery in Doze Mode*. Ini memastikan perintah bedah paksa seperti `GO_HOME` atau `LOCK_SCREEN` dapat dieksekusi dengan latensi **< 0.5 detik**, bahkan ketika sistem penghemat baterai agresif One UI 6 sedang aktif.
+#### 3. Infrastruktur Nol-Latensi & Efisiensi Daya (*Battery-Optimized WebSocket*)
+Komunikasi fisik mengandalkan koneksi WebSocket aman (`wss://.../ws`) dengan mekanisme *Event-Driven*:
+- **Zero Handshake Overhead**: Satu soket TCP persisten dengan latensi eksekusi **< 100 ms**.
+- **Deep Sleep Immunity**: Saat layar ponsel mati atau pengguna berada di Launcher sistem, prosesor HP tidur total (*0% pemborosan baterai*).
+- **Graceful Failover**: Dilengkapi *in-memory policy cache* dan pemulihan otomatis jika koneksi jaringan terputus.
 
 ---
 
@@ -1151,7 +1152,7 @@ Semua lalu lintas HTTP masuk dijaga oleh *middleware* keamanan sebelum mencapai 
 
 1. **Telegram Identity Lock**: N.E.X.A membedah struktur Webhook Telegram (*message*, *callback_query*, *channel_post*). Jika *Chat ID* pengirim tidak sama persis dengan `TELEGRAM_CHAT_ID` Tuan Faqih, koneksi seketika digugurkan dengan respons *403 Forbidden*.
 2. **Anti-Spoofing Webhook**: Mencegah *hacker* mengirim *request* palsu ke *endpoint* N.E.X.A. Sistem memverifikasi *Header* `X-Telegram-Bot-Api-Secret-Token` murni dari *server* Telegram.
-3. **God Mode Authentication**: *Endpoint* yang terhubung ke otomasi Android (Tasker) dijaga dengan verifikasi *Header* `Authorization: Bearer`.
+3. **Mobile Bridge WebSocket Handshake Authentication**: Sambungan WebSocket dari ponsel Android Samsung Galaxy A33 5G (`wss://.../ws`) dijaga dengan verifikasi `Authorization: Bearer <NEXA_DEVICE_SECRET>` pada saat handshake koneksi awal.
 4. **Timing Attack Immunity**: Seluruh pencocokan *password/secret* di N.E.X.A menggunakan `crypto.timingSafeEqual()`, memastikan peretas tidak bisa menebak *password* berdasarkan waktu respons CPU.
 
 ### 8.3 Orkestrasi *Environment Variables* Terpusat (`env.js`)
@@ -1160,7 +1161,7 @@ Modul `env.js` mengelola lebih dari 30 *credential* rahasia untuk mengeksekusi i
 
 - **LLM Key Rotation & Multi-Modal Inference**: N.E.X.A siap menghadapi *Rate Limit* gratisan dengan menyiapkan slot rotasi untuk 4 Kunci Gemini (`GEMINI_API_KEY_1-4`), 4 Kunci Groq, Cerebras, Mistral, **Hugging Face Inference API** (`HF_TOKEN` untuk Vision OCR, Whisper Voice, dan model fallback), hingga *fallback* premium via OpenRouter.
 - **Dual Google Authentication**: Menggunakan JSON *Service Account* (`GOOGLE_PRIVATE_KEY`) untuk operasi Google Drive, namun menggunakan sistem kredensial manusia (OAuth2 `GMAIL_REFRESH_TOKEN` & `TASKS_REFRESH_TOKEN`) untuk mengakses *inbox* email dan daftar tugas Tuan Faqih secara mandiri.
-- **Node Fisik & Integrasi Eksternal**: Kunci akses untuk Supabase (Memori Permanen), Notion (Task Sync), Serper.dev (Pencarian Web), dan NTFY (Eksekutor God Mode Android).
+- **Node Fisik & Integrasi Eksternal**: Kunci akses untuk Supabase (Memori Permanen), Notion (Task Sync), Serper.dev (Pencarian Web), dan Nexa Mobile Bridge Secret (`NEXA_DEVICE_SECRET` untuk Eksekutor God Mode Android).
 
 ## BAB 9: PETA KODE (*CODEBASE MAPPING*) & PANDUAN PENGEMBANGAN
 
