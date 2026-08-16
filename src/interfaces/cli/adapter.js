@@ -766,6 +766,19 @@ async function _dispatchIntent(intent, routingData, textInput, sessionId) {
     }
 
     // ────────────────────────────────────────────────────────
+    // DEVICE_CONTROL — kontrol hardware HP Samsung Galaxy A33 5G
+    // ────────────────────────────────────────────────────────
+    case 'DEVICE_CONTROL': {
+      const deviceControlEngine = require('../../domain/Device_Control_Engine');
+      const devResult = await deviceControlEngine.executeDeviceAction(routingData, {
+        sessionId,
+        platform: 'cli'
+      });
+      domainReply = devResult.message;
+      break;
+    }
+
+    // ────────────────────────────────────────────────────────
     // DIAGNOSE_SYSTEM — analisis log via AI
     // ────────────────────────────────────────────────────────
     case 'DIAGNOSE_SYSTEM': {

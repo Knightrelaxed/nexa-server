@@ -298,12 +298,14 @@ CRITICAL ROUTING RULES:
 OUTPUT JSON FORMAT:
 {
   "reasoning": "1-2 sentences of logical analysis binding context and intent.",
-  "intent": "FINANCE|CALENDAR|TASK|EMAIL|DATABASE|WEB_SEARCH|LOCATION|DISCIPLINE|2ND_BRAIN|USER_PROFILE|CORE_IDENTITY|DIAGNOSE_SYSTEM|INCOMPLETE_INFO|NORMAL_CHAT",
+  "intent": "FINANCE|CALENDAR|TASK|EMAIL|DATABASE|WEB_SEARCH|LOCATION|DISCIPLINE|2ND_BRAIN|USER_PROFILE|CORE_IDENTITY|DEVICE_CONTROL|DIAGNOSE_SYSTEM|INCOMPLETE_INFO|NORMAL_CHAT",
   "mood": "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD",
-  "reply_message": "Natural, warm conversational Indonesian response addressing user as Tuan Faqih (MANDATORY for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE, USER_PROFILE, CORE_IDENTITY).",
+  "reply_message": "Natural, warm conversational Indonesian response addressing user as Tuan Faqih (MANDATORY for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE, USER_PROFILE, CORE_IDENTITY, DEVICE_CONTROL).",
   "learned_user_facts": ["New permanent facts ABOUT TUAN FAQIH (the human), or empty []"],
   "learned_core_identities": ["New permanent facts ABOUT N.E.X.A ITSELF (the AI), or empty []"],
   "extracted_data": {
+    // DEVICE_CONTROL: { action: "TOGGLE_FLASHLIGHT|LOCK_SCREEN|GO_HOME_SCREEN|GO_BACK|SHOW_RECENTS|SET_VOLUME|FORCE_DND|GET_BATTERY_STATUS|GET_NETWORK_INFO|TOGGLE_WIFI|GET_LOCATION|SPEAK_TEXT|TAKE_PHOTO|TAKE_SCREENSHOT|DUMP_UI_HIERARCHY|ACCESSIBILITY_CLICK|ACCESSIBILITY_INPUT_TEXT|ACCESSIBILITY_SCROLL|GET_CLIPBOARD|SET_CLIPBOARD|LAUNCH_APP|OPEN_INTENT|SHOW_OVERLAY_MSG|PLAY_RINGTONE|STOP_MEDIA|SIMULATE_INCOMING_CALL|SET_GEOFENCE|MARK_GEOFENCE_HERE", enabled: boolean, level: number, stream: "MUSIC|RING|ALARM|NOTIFICATION|SYSTEM", camera_facing: "front|back", text: string, package_name: string, url: string, target: string, x: number, y: number, direction: "FORWARD|BACKWARD", caller_name: string, message: string, options: [] }
+    //   - Triggers: "nyalakan senter", "matikan senter", "kunci HP", "ke home screen", "buka recent apps", "cek baterai HP", "cek wifi/sinyal HP", "di mana HP-ku", "ucapkan suara di HP", "foto kamera depan/belakang", "screenshot HP", "buka youtube/chrome di HP", "salin ke clipboard", "bunyikan alarm HP / cari HP", "munculkan pop up di HP", "telepon HP-ku"
     // FINANCE: { action: "RECORD|RECORD_MULTIPLE|READ_LATEST|READ_ANALYTICS|EDIT|DELETE|UNDO_DELETE|IMPORT_FROM_EMAIL|CONFIRM_TRANSACTION|UPDATE_PENDING|CANCEL_TRANSACTION|CATEGORY_BREAKDOWN|PERIOD_COMPARISON|TOP_EXPENSES|ACCOUNT_BALANCES|DAILY_TREND|SMART_SUMMARY|MONTHLY_SUMMARY|SAVING_RATE|BALANCE_TREND", nominal: number, type: "INCOME|EXPENSE", destination: string, category: string, description: string, time: "ISO+07:00", account: string, payment_method: string, search_keyword: string, date_text: string, limit: number, transactions: [],
     //   is_split: boolean (true jika pengeluaran mengandung BEBERAPA item dengan kategori berbeda),
     //   store_name: string (nama toko/merchant jika disebutkan, e.g. "Indomaret", "Alfamart"),

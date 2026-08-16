@@ -3347,6 +3347,47 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         break;
       }
 
+      case 'DEVICE_CONTROL': {
+        const deviceControlEngine = require('../../domain/Device_Control_Engine');
+        const devResult = await deviceControlEngine.executeDeviceAction(routingData, {
+          chatId: message.chat?.id,
+          platform: 'telegram'
+        });
+
+        if (devResult.photoBase64) {
+          try {
+            const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
+            const chatId = (message.chat?.id || env.TELEGRAM_CHAT_ID)?.toString().trim();
+            if (botToken && chatId) {
+              const buffer = Buffer.from(devResult.photoBase64, 'base64');
+              const formData = new FormData();
+              formData.append('chat_id', chatId);
+              formData.append('photo', new Blob([buffer], { type: 'image/jpeg' }), 'capture.jpg');
+              formData.append('caption', devResult.message || '📸 Tangkapan Kamera / Layar HP');
+              formData.append('parse_mode', 'HTML');
+
+              const directUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+              const resp = await fetch(directUrl, {
+                method: 'POST',
+                body: formData
+              });
+              const photoData = await resp.json().catch(() => ({}));
+              if (photoData.ok) {
+                console.log('[TELEGRAM] Direct photo send SUCCESS.');
+                return; // Return early because photo + caption sent directly
+              } else {
+                console.warn('[TELEGRAM] Photo send returned non-ok:', photoData);
+              }
+            }
+          } catch (photoErr) {
+            console.error('[TELEGRAM] Failed to send photo buffer:', photoErr.message);
+          }
+        }
+
+        domainReply = devResult.message;
+        break;
+      }
+
       case 'DIAGNOSE_SYSTEM': {
         const logger = require("../../utils/logger");
         const aiRouter = require("../../core/AI_Router");
