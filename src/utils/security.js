@@ -55,7 +55,7 @@ function telegramWebhookSecret(req, res, next) {
 }
 
 /**
- * Middleware to protect incoming webhooks (from Tasker → N.E.X.A HF Space)
+ * Middleware to protect incoming webhooks (from Tasker → N.E.X.A VPS)
  * Requires 'Authorization: Bearer <SECRET_TOKEN>' header
  */
 function webhookAuth(req, res, next) {

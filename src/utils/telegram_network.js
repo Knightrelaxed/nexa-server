@@ -1,15 +1,14 @@
 /**
- * telegram_network.js — Unified outbound HTTP for Hugging Face Spaces
+ * telegram_network.js — Unified outbound HTTP for VPS Deployment
  *
- * ROOT CAUSE (confirmed HF community + logs):
- * HF Docker intentionally RSTs/block TLS to api.telegram.org and *.workers.dev.
- * This is NOT an axios/keepAlive/SNI bug — Groq/Gmail/Supabase work fine.
+ * STRATEGY (VPS — Full Egress Access):
+ * 1. Direct — Langsung ke api.telegram.org (PRIORITAS UTAMA, latensi rendah dari Jakarta)
+ * 2. Vercel Relay — Fallback jika ada gangguan jaringan ke Telegram
+ * 3. AllOrigins CDN — Last resort fallback
  *
- * STRATEGY:
- * 1. User webhook replies → Telegram webhook response JSON (ZERO outbound) — see webhook.js
- * 2. Cron/Tasker/media → relay via Vercel (*.vercel.app) or AllOrigins fallback
- * 3. Serialize concurrent outbound to avoid NAT connection storms
- * 4. Use native fetch() (Node 20+) — fresh connection per request
+ * Note: Pada deployment HuggingFace Spaces sebelumnya, jalur Direct tidak bisa
+ * digunakan karena HF memblokir koneksi ke api.telegram.org. Di VPS ini
+ * tidak ada restriksi tersebut — koneksi Direct adalah yang paling cepat.
  */
 
 const dns = require('dns');
@@ -32,7 +31,7 @@ function getRelayBaseUrl() {
   const legacy = String(env.TELEGRAM_PROXY_URL || '').trim();
   if (legacy) {
     if (legacy.includes('.workers.dev')) {
-      console.warn('[NET] TELEGRAM_PROXY_URL points to workers.dev — HF blocks this. Set NEXA_VERCEL_RELAY_URL.');
+      console.warn('[NET] TELEGRAM_PROXY_URL points to workers.dev — tidak direkomendasikan. Gunakan NEXA_VERCEL_RELAY_URL atau biarkan kosong untuk mode Direct.');
     }
     return legacy.replace(/\?url=$/, '').replace(/\/+$/, '');
   }
@@ -44,6 +43,21 @@ function buildProxyChain(targetUrl) {
   const relayBase = getRelayBaseUrl();
   const secret = String(env.NEXA_RELAY_SECRET || '').trim();
 
+  // ================================================================
+  // TIER 1 (PRIORITAS): Direct ke api.telegram.org
+  // VPS Jakarta punya full egress — ini jalur tercepat & paling andal.
+  // Tidak perlu relay sama sekali untuk outbound biasa.
+  // ================================================================
+  chain.push({
+    name: 'Direct',
+    url: targetUrl,
+    headers: {},
+  });
+
+  // ================================================================
+  // TIER 2 (FALLBACK): Vercel Relay
+  // Digunakan jika Direct gagal (gangguan jaringan sementara, dll.)
+  // ================================================================
   if (relayBase) {
     const relayGetUrl = relayBase.includes('?url=')
       ? `${relayBase}${encodeURIComponent(targetUrl)}`
@@ -56,6 +70,9 @@ function buildProxyChain(targetUrl) {
     });
   }
 
+  // ================================================================
+  // TIER 3 (LAST RESORT): AllOrigins CDN
+  // ================================================================
   chain.push({
     name: 'AllOrigins',
     url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,

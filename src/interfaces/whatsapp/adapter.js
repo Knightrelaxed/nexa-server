@@ -310,7 +310,7 @@ function _scheduleReconnect() {
     console.error(`[WHATSAPP] ❌ Reconnect dihentikan setelah ${MAX_RECONNECT_ATTEMPTS} percobaan gagal.`);
     console.error('[WHATSAPP] ❌ Kemungkinan IP cloud diblokir oleh Meta. Gunakan /wa_login untuk mencoba ulang.');
     _notifyTelegramStatus(
-      `⚠️ *Pintu 2 WhatsApp Gagal Terhubung*\n\nN.E.X.A telah mencoba ${MAX_RECONNECT_ATTEMPTS}x namun koneksi selalu ditolak oleh server WhatsApp (SSL alert — IP cloud diblokir Meta).\n\nSolusi:\n1. Ketik */wa_login* untuk mencoba ulang manual\n2. Atau set secret *WA_SOCKS_PROXY* (format: \`socks5://user:pass@host:port\`) di Hugging Face untuk melewati blokir IP\n\nSemua fitur Telegram tetap aktif normal, Tuan Faqih.`
+      `⚠️ *Pintu 2 WhatsApp Gagal Terhubung*\n\nN.E.X.A telah mencoba ${MAX_RECONNECT_ATTEMPTS}x namun koneksi selalu ditolak oleh server WhatsApp (SSL alert — IP cloud diblokir Meta).\n\nSolusi:\n1. Ketik */wa_login* untuk mencoba ulang manual\n2. Atau set secret *WA_SOCKS_PROXY* (format: \`socks5://user:pass@host:port\`) di file *.env server VPS* untuk melewati blokir IP\n\nSemua fitur Telegram tetap aktif normal, Tuan Faqih.`
     );
     sock = null;
     isConnecting = false;

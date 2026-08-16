@@ -3361,7 +3361,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
 
     } catch (error) {
       console.error('[TELEGRAM] Error processing message:', error.message);
-      webhookReply = `⚠️ N.E.X.A mengalami gangguan internal:\n<code>${escapeHtml(error.message)}</code>\n\nSilakan cek log server di Hugging Face Space dashboard.`;
+      webhookReply = `⚠️ N.E.X.A mengalami gangguan internal:\n<code>${escapeHtml(error.message)}</code>\n\nSilakan cek log server di PM2 Dashboard (app.pm2.io) atau jalankan: <code>pm2 logs nexa-server</code>`;
     } finally {
       stopTyping();
       deliverWebhookReply();

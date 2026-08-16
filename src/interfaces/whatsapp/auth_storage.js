@@ -2,7 +2,7 @@
 // N.E.X.A — WHATSAPP SUPABASE PERSISTENT AUTH STORAGE
 // Menggantikan useMultiFileAuthState lokal dengan penyimpanan
 // ke tabel Supabase (nexa_wa_sessions) agar tahan restart/redeploy
-// di lingkungan serverless atau Hugging Face Space.
+// di lingkungan Azure VPS atau serverless.
 //
 // Skema tabel Supabase yang dibutuhkan (sudah dibuat oleh migration SQL Fase 2):
 //   nexa_wa_sessions (
@@ -20,7 +20,7 @@ const { supabase } = require('../../infrastructure/Supabase_Memories');
 /**
  * Adaptor penyimpanan status otentikasi Baileys ke Supabase.
  * Menggantikan `useMultiFileAuthState` bawaan Baileys agar sesi persisten
- * walaupun server di-restart atau di-redeploy di Hugging Face Space.
+ * walaupun server di-restart atau di-redeploy di Azure VPS.
  *
  * @param {string} sessionId - Identifier sesi unik (misal: 'nexa_wa_main')
  * @returns {Promise<{state: {creds: Object, keys: Object}, saveCreds: Function}>}

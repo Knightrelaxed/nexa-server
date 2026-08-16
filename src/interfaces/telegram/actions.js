@@ -25,9 +25,9 @@ const stripSurroundingQuotes = (str) => {
 
 // ============================================================
 // sendTelegramOutbound
-// Routes through Vercel Relay because HuggingFace
-// blocks ALL outbound connections to api.telegram.org.
-// Used when webhook response is already consumed (timeout, cron).
+// Mengirim pesan outbound ke Telegram.
+// Di VPS Jakarta: Direct ke api.telegram.org (prioritas utama).
+// Vercel Relay & AllOrigins sebagai fallback otomatis.
 // ============================================================
 async function sendTelegramOutbound(text, skipMemory = false, platform = 'telegram') {
   try {

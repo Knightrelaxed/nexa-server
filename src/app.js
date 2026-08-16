@@ -1,9 +1,8 @@
 // ============================================================
-// CRITICAL FIX — MUST BE FIRST LINE BEFORE ANY REQUIRE()
-// Node 20 on Hugging Face Docker prefers IPv6 DNS by default.
-// api.telegram.org IPv6 routes fail on HF free tier.
-// This line forces ALL DNS lookups in this process to return
-// IPv4 addresses first, fixing TLS socket disconnect errors.
+// IPv4-FIRST DNS — VPS Best Practice
+// Forces ALL DNS lookups to prefer IPv4 addresses.
+// Ensures stable connections to api.telegram.org,
+// Google APIs, and all 3rd-party providers.
 // ============================================================
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
@@ -18,8 +17,8 @@ const axios = require('axios');
 const https = require('https');
 
 // ============================================================
-// FIX: HUGGING FACE NETWORK TLS BUG
-// Force IPv4 for all Axios requests to prevent 'socket disconnected'
+// IPv4 AXIOS AGENT — VPS Best Practice
+// Force IPv4 for all Axios requests for stable outbound connections.
 // ============================================================
 axios.defaults.httpsAgent = new https.Agent({ family: 4 });
 
@@ -88,7 +87,7 @@ const http = require('http');
 const mobileBridgeWs = require('./interfaces/mobile_bridge/MobileBridge_WS');
 
 if (require.main === module) {
-  const port = process.env.PORT || env.PORT || 7860;
+  const port = process.env.PORT || env.PORT || 3000;
   
   const server = http.createServer(app);
   mobileBridgeWs.initWebSocket(server);
@@ -98,7 +97,7 @@ if (require.main === module) {
     console.log(`[N.E.X.A 3.0] 📱 Mobile Bridge WebSocket Endpoint: /ws`);
     console.log(`[N.E.X.A 3.0] 🏥 Health endpoint: http://0.0.0.0:${port}/health`);
     console.log(`[N.E.X.A 3.0] 💻 CLI Local URL  : http://127.0.0.1:${port}`);
-    console.log(`[N.E.X.A] 🌐 CLI Cloud Space: https://nexa-asistant-nexa-core-server.hf.space`);
+    console.log(`[N.E.X.A] 🌐 VPS Server: http://48.193.41.76:${port}`);
     // Initialize cron jobs AFTER server is listening
     // node-cron will run Morning Briefing at 05:30 WIB
     cronInterface.initCronJobs();
