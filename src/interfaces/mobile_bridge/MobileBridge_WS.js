@@ -134,12 +134,12 @@ function initWebSocket(server) {
  * @param {object} options - Options: { timeoutMs: 5000 }
  * @returns {Promise<{ success: boolean, message: string, data: object }>}
  */
-function sendCommand(tool, args = {}, options = {}) {
+function sendCommand(action, params = {}, options = {}) {
   const timeoutMs = options.timeoutMs || 5000;
 
   return new Promise((resolve) => {
     if (!activeClient || activeClient.readyState !== WebSocket.OPEN) {
-      console.warn(`[NEXA-BRIDGE-WS] Unable to send tool '${tool}' — Nexa Bridge OFFLINE.`);
+      console.warn(`[NEXA-BRIDGE-WS] Unable to send action '${action}' — Nexa Bridge OFFLINE.`);
       return resolve({ success: false, status: 'OFFLINE', message: 'Nexa Bridge is offline' });
     }
 
@@ -147,17 +147,17 @@ function sendCommand(tool, args = {}, options = {}) {
     const commandId = `cmd_${timestamp}_${Math.random().toString(36).substring(2, 8)}`;
 
     const payload = {
-      id: commandId,
-      type: 'tool_call',
-      tool: tool,
-      args: args,
+      type: 'EXECUTE_COMMAND',
+      command_id: commandId,
+      action: action,
+      params: params,
       timestamp: timestamp
     };
 
     const timer = setTimeout(() => {
       if (pendingCommands.has(commandId)) {
         pendingCommands.delete(commandId);
-        resolve({ success: false, status: 'TIMEOUT', message: `Tool '${tool}' timed out after ${timeoutMs}ms` });
+        resolve({ success: false, status: 'TIMEOUT', message: `Action '${action}' timed out after ${timeoutMs}ms` });
       }
     }, timeoutMs);
 
@@ -165,7 +165,7 @@ function sendCommand(tool, args = {}, options = {}) {
 
     try {
       activeClient.send(JSON.stringify(payload));
-      console.log(`[NEXA-BRIDGE-WS] 🚀 Sent tool_call '${tool}' [${commandId}]`);
+      console.log(`[NEXA-BRIDGE-WS] 🚀 Sent EXECUTE_COMMAND '${action}' [${commandId}]`);
     } catch (err) {
       clearTimeout(timer);
       pendingCommands.delete(commandId);
