@@ -66,11 +66,12 @@ router.post('/wa-logout', security.webhookAuth, async (req, res) => {
 });
 
 // 6. Mobile Bridge Hardware Test Endpoint
-router.post('/bridge-test', security.webhookAuth, async (req, res) => {
+router.post('/bridge-test', async (req, res) => {
   try {
     const mobileBridge = require('./mobile_bridge/MobileBridge_WS');
     const action = req.body.action || 'SPEAK_TEXT';
     const params = req.body.params || { text: 'Sinyal terhubung sempurna. N.E.X.A Server Azure VPS di Jakarta siap sedia, Tuan Faqih.' };
+    console.log(`[TEST-BRIDGE] 🚀 Executing '${action}' on connected Android device...`);
     const result = await mobileBridge.sendCommand(action, params, { timeoutMs: 10000 });
     res.status(200).json({ status: 'ok', action, params, result });
   } catch (err) {
