@@ -255,6 +255,33 @@ async function triggerGodMode(level = 1, metadata = {}) {
     }
   }
 
+  // Kirim perintah fisik ke Nexa Bridge Android App jika terhubung
+  try {
+    const mobileBridgeWs = require('../interfaces/mobile_bridge/MobileBridge_WS');
+    if (mobileBridgeWs && typeof mobileBridgeWs.sendCommand === 'function') {
+      // 1. Suara TTS AI (untuk semua level)
+      if (plan.speechMessage) {
+        mobileBridgeWs.sendCommand('SPEAK_TEXT', { text: plan.speechMessage }).catch(() => {});
+      }
+
+      // 2. Aksi Berdasarkan Level
+      if (Number(level) === 2) {
+        // Level 2: Kembalikan ke Home Screen
+        mobileBridgeWs.sendCommand('GO_HOME_SCREEN', {}).catch(() => {});
+      } else if (Number(level) === 3) {
+        // Level 3: Re-bounce ke Home Screen + Overlay
+        mobileBridgeWs.sendCommand('GO_HOME_SCREEN', {}).catch(() => {});
+        mobileBridgeWs.sendCommand('SHOW_OVERLAY_MSG', { message: 'SESI FOKUS DIAKTIFKAN: Waktu aplikasi telah habis.', duration_seconds: 10 }).catch(() => {});
+      } else if (Number(level) >= 4) {
+        // Level 4 (Ultimate God Mode): Kunci Layar Fisik + DND Total
+        mobileBridgeWs.sendCommand('FORCE_DND', { enabled: true }).catch(() => {});
+        mobileBridgeWs.sendCommand('LOCK_SCREEN', {}).catch(() => {});
+      }
+    }
+  } catch (bridgeErr) {
+    console.warn('[GODMODE] Mobile Bridge command dispatch error:', bridgeErr.message);
+  }
+
   return true;
 }
 
