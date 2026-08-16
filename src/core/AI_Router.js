@@ -169,6 +169,40 @@ function invalidateIdentityModelCache() {
 }
 
 // ============================================================
+// [PHASE 8] SELF MODEL CACHE
+// Cache untuk Top-5 Self Model traits dari nexa_self_model.
+// Menghilangkan live database query di setiap pesan masuk.
+// ============================================================
+let _selfModelCache = null;
+let _selfModelCacheTime = 0;
+const SELF_MODEL_CACHE_TTL_MS = 15 * 60 * 1000; // 15 menit
+
+async function loadSelfModelWithCache(limit = 5) {
+  const now = Date.now();
+  if (_selfModelCache !== null && (now - _selfModelCacheTime) < SELF_MODEL_CACHE_TTL_MS) {
+    return _selfModelCache;
+  }
+  try {
+    const supabaseMem = require('../infrastructure/Supabase_Memories');
+    const data = await supabaseMem.getSelfModel(limit);
+    _selfModelCache = data || [];
+    _selfModelCacheTime = now;
+    return _selfModelCache;
+  } catch (e) {
+    console.warn('[ROUTER] Failed to load Self Model cache:', e.message);
+    _selfModelCache = [];
+    _selfModelCacheTime = now;
+    return [];
+  }
+}
+
+function invalidateSelfModelCache() {
+  _selfModelCache = null;
+  _selfModelCacheTime = 0;
+  console.log('[ROUTER] Self Model cache invalidated. Will re-fetch on next message.');
+}
+
+// ============================================================
 // [PHASE 6] TARGETED IDENTITY LAYER INJECTOR
 // Memilih HANYA layer yang relevan berdasarkan konteks percakapan.
 // Prinsip: hemat token, tajam, tidak boros.
@@ -491,7 +525,7 @@ function _preflightClassify(text) {
 }
 
 /**
- * Progressive userProfile fact injection with Dynamic Word Resonance (No rigid regex)
+ * Progressive userProfile fact injection with Dynamic Word Resonance (Token-based Exact Word Match)
  */
 function _selectUserProfileFacts(userProfile, userMessage) {
   if (!userProfile || !Array.isArray(userProfile) || userProfile.length === 0) return [];
@@ -506,17 +540,18 @@ function _selectUserProfileFacts(userProfile, userMessage) {
 
   if (words.length === 0) return core;
 
+  const wordSet = new Set(words);
   const relevant = remaining.filter(fact => {
     if (typeof fact !== 'string' || !fact) return false;
-    const fLower = fact.toLowerCase();
-    return words.some(w => fLower.includes(w));
+    const fWords = fact.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/);
+    return fWords.some(fw => wordSet.has(fw));
   });
 
   return [...core, ...relevant.slice(0, PROFILE_KW_LIMIT)];
 }
 
 /**
- * Progressive coreIdentity fact injection with Dynamic Word Resonance
+ * Progressive coreIdentity fact injection with Dynamic Word Resonance (Token-based Exact Word Match)
  */
 function _selectCoreIdentityFacts(coreIdentity, userMessage) {
   if (!coreIdentity || !Array.isArray(coreIdentity) || coreIdentity.length === 0) return [];
@@ -531,39 +566,35 @@ function _selectCoreIdentityFacts(coreIdentity, userMessage) {
 
   if (words.length === 0) return core;
 
+  const wordSet = new Set(words);
   const relevant = remaining.filter(fact => {
     if (typeof fact !== 'string' || !fact) return false;
-    const fLower = fact.toLowerCase();
-    return words.some(w => fLower.includes(w));
+    const fWords = fact.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/);
+    return fWords.some(fw => wordSet.has(fw));
   });
 
   return [...core, ...relevant.slice(0, IDENTITY_KW_LIMIT)];
 }
 
 /**
- * Progressive vault item fact injection with Dynamic Keyword Matching
+ * Lightweight Vault Document Manifest Generator.
+ * Injects ONLY document titles and categories (~15 tokens) into AI Router prompt,
+ * rather than dumping full 2.790 chars of raw NIK/BPJS/address JSON on casual chats.
+ * Full content is retrieved on-demand by domain handlers when user queries documents.
  */
 function _selectVaultFacts(vaultItems, userMessage) {
   if (!vaultItems || !Array.isArray(vaultItems) || vaultItems.length === 0) return [];
 
-  // Always include top 3 latest vault items so N.E.X.A knows recent uploads/metadata immediately
-  const core = vaultItems.slice(0, 3);
-  const remaining = vaultItems.slice(3);
-  if (remaining.length === 0) return core;
-
-  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana', 'nexa', 'tuan', 'faqih', 'sistem', 'adalah', 'yaitu', 'merupakan', 'oleh', 'sebagai', 'harus', 'wajib', 'juga', 'lagi', 'saja', 'tadi', 'baru', 'banyak', 'berikan', 'tolong', 'bukakan', 'bacakan', 'nomor', 'apakah']);
-  const msgStr = typeof userMessage === 'string' ? userMessage : String(userMessage || '');
-  const words = msgStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 2 && !stopWords.has(w));
-
-  if (words.length === 0) return core;
-
-  const relevant = remaining.filter(fact => {
-    if (typeof fact !== 'string' || !fact) return false;
-    const fLower = fact.toLowerCase();
-    return words.some(w => fLower.includes(w));
+  // Generate lightweight manifest of stored files (title & category only)
+  const manifest = vaultItems.slice(0, 8).map(item => {
+    const match = String(item).match(/^\[([^\]]+)\]\s*([^\(\[]+)/);
+    if (match) {
+      return `[${match[1]}] ${match[2].trim()}`;
+    }
+    return String(item).replace(/\s*\(Metadata:.*?\)/i, '').substring(0, 60);
   });
 
-  return [...core, ...relevant.slice(0, 7)];
+  return manifest;
 }
 
 async function _fetchRecentFinanceSummary(limit) {
@@ -698,10 +729,9 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${_selectedIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
   }
 
-  // [PHASE 8] Inject top 5 N.E.X.A Self-Model facts dari nexa_self_model
+  // [PHASE 8] Inject top 5 N.E.X.A Self-Model facts dari RAM Cache (0 ms)
   try {
-    const _supabaseMem = require('../infrastructure/Supabase_Memories');
-    const _selfModelFacts = await _supabaseMem.getSelfModel(5);
+    const _selfModelFacts = await loadSelfModelWithCache(5);
     if (_selfModelFacts && _selfModelFacts.length > 0) {
       const _selfLines = _selfModelFacts.map((f, i) => `${i + 1}. [${f.layer}] ${f.trait_value}`);
       factsContext += `\n[PEMAHAMAN DIRI N.E.X.A (TOP 5 — DIPELAJARI DARI PENGALAMAN)]\n${_selfLines.join('\n')}\n`;
@@ -712,7 +742,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   if (personalFacts.vaultItems && personalFacts.vaultItems.length > 0) {
     const _selectedVault = _selectVaultFacts(personalFacts.vaultItems, textInput);
     if (_selectedVault.length > 0) {
-      factsContext += `\n[ARSIP & DOKUMEN VAULT TERSIMPAN TENTANG TUAN FAQIH (TERMASUK METADATA/NIK/DLL)]\n${_selectedVault.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+      factsContext += `\n[ARSIP DOKUMEN DIGITAL TERSIMPAN (KATALOG RINGKAS — DETAIL DIMUAT ON-DEMAND)]\n${_selectedVault.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
     }
   }
 
@@ -1359,6 +1389,7 @@ module.exports = {
   // ── Cache Management ─────────────────────────────────────────
   invalidatePersonalFactsCache,
   invalidateIdentityModelCache,      // [PHASE 6] Dipanggil dari webhook.js setelah Approve
+  invalidateSelfModelCache,          // [PHASE 8] Invalidate Self-Model RAM cache
   // ── AI Utilities ─────────────────────────────────────────────
   deduplicateAndSaveFact,
   deduplicateAndSaveSelfFact,        // [PHASE 8] Dedup engine untuk nexa_self_model

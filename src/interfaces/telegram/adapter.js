@@ -9,7 +9,7 @@ const os = require('os');
 const env = require("../../config/env");
 const security = require("../../utils/security");
 const aiRouter = require("../../core/AI_Router");
-const { invalidatePersonalFactsCache } = aiRouter;
+const { invalidatePersonalFactsCache, invalidateSelfModelCache } = aiRouter;
 const financeEngine = require("../../domain/Finance_Engine");
 const godMode = require("../../domain/Discipline_GodMode");
 const voiceEngine = require("../../core/Voice_Engine");
@@ -2257,7 +2257,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
           aiRouter.deduplicateAndSaveSelfFact(fact, selfLayer, 'PASSIVE_LEARNING', fact).catch(() => {});
         }
       }
-      // invalidatePersonalFactsCache() tidak diperlukan karena self_model tidak di-cache dengan personalFacts
+      if (typeof invalidateSelfModelCache === 'function') invalidateSelfModelCache();
     }
 
     // [PHASE 7 — M2] Stated-vs-Revealed Reconciler + Decision Journal
@@ -2961,6 +2961,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               deletedLayer = 'Inti N.E.X.A';
             } else if (typeof supabaseMemories.deleteFromSelfModel === 'function' && await supabaseMemories.deleteFromSelfModel(kw)) {
               deletedLayer = 'Self-Learning (Phase 8)';
+              if (typeof invalidateSelfModelCache === 'function') invalidateSelfModelCache();
             }
             invalidatePersonalFactsCache();
             domainReply = _formatMemoryReply(
@@ -3028,6 +3029,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               deletedLayer = 'Inti N.E.X.A';
             } else if (typeof supabaseMemories.deleteFromSelfModel === 'function' && await supabaseMemories.deleteFromSelfModel(kw)) {
               deletedLayer = 'Self-Learning (Phase 8)';
+              if (typeof invalidateSelfModelCache === 'function') invalidateSelfModelCache();
             } else if (await supabaseMemories.deleteFromUserProfile(kw)) {
               deletedLayer = 'Personal';
             }
