@@ -9,31 +9,31 @@ const locationEngine = require('../infrastructure/Location_Engine');
 const bridge = require('../interfaces/mobile_bridge/adapter');
 
 /**
- * Pemetaan kata percakapan Indonesia ke sinonim POI OpenStreetMap
+ * Pemetaan kata percakapan Indonesia ke sinonim POI OpenStreetMap yang optimal
  */
 const POI_SYNONYMS = {
-  'ngopi': ['kopi', 'warkop', 'cafe'],
-  'tempat ngopi': ['kopi', 'warkop', 'cafe'],
-  'kopi': ['kopi', 'warkop', 'cafe'],
-  'warkop': ['warkop', 'kopi', 'cafe'],
+  'ngopi': ['warkop', 'cafe', 'kopi'],
+  'tempat ngopi': ['warkop', 'cafe', 'kopi'],
+  'kopi': ['warkop', 'cafe', 'kopi'],
+  'warkop': ['warkop', 'cafe', 'kopi'],
   'makan': ['warung', 'restoran', 'kuliner'],
   'tempat makan': ['restoran', 'warung', 'kuliner'],
   'kuliner': ['kuliner', 'warung', 'restoran'],
-  'pom bensin': ['spbu', 'pertamina', 'bensin'],
-  'bensin': ['spbu', 'pertamina'],
-  'spbu': ['spbu', 'pertamina'],
-  'atm': ['atm', 'bank'],
-  'tarik tunai': ['atm', 'bank'],
-  'bank': ['bank', 'atm'],
-  'rumah sakit': ['rumah sakit', 'hospital', 'klinik'],
-  'dokter': ['klinik', 'rumah sakit'],
-  'apotek': ['apotek', 'pharmacy'],
-  'minimarket': ['indomaret', 'alfamart', 'supermarket'],
-  'supermarket': ['supermarket', 'indomaret', 'alfamart'],
-  'masjid': ['masjid', 'mosque'],
-  'mushola': ['mushola', 'masjid'],
-  'hotel': ['hotel', 'penginapan', 'homestay'],
-  'bengkel': ['bengkel', 'tambal ban']
+  'pom bensin': ['SPBU Pertamina', 'SPBU', 'Pertamina'],
+  'bensin': ['SPBU Pertamina', 'SPBU', 'Pertamina'],
+  'spbu': ['SPBU Pertamina', 'SPBU', 'Pertamina'],
+  'atm': ['ATM', 'Bank'],
+  'tarik tunai': ['ATM', 'Bank'],
+  'bank': ['Bank', 'ATM'],
+  'rumah sakit': ['Rumah Sakit', 'Hospital', 'Klinik'],
+  'dokter': ['Klinik', 'Rumah Sakit'],
+  'apotek': ['Apotek', 'Pharmacy'],
+  'minimarket': ['Indomaret', 'Alfamart', 'Superindo'],
+  'supermarket': ['Superindo', 'Supermarket', 'Indomaret'],
+  'masjid': ['Masjid', 'Mosque'],
+  'mushola': ['Mushola', 'Masjid'],
+  'hotel': ['Hotel', 'Penginapan', 'Homestay'],
+  'bengkel': ['Bengkel', 'Tambal Ban']
 };
 
 /**
@@ -81,11 +81,18 @@ async function _resolveUserCoordinates(context = {}) {
 function _cleanPlaceQuery(query) {
   let q = String(query || '').trim();
   // Hapus tanda baca
-  q = q.replace(/[?!,."']/g, '');
-  // Hapus kata tanya & pengantar di awal
-  q = q.replace(/^(?:nexa|tolong|coba|tolong carikan|carikan|cari|rekomendasi|rekomendasikan|info|daftar|adakah|apakah|ada|dimana|di mana|sebutkan)\s+/i, '');
-  // Hapus frasa lokasi di akhir
-  q = q.replace(/\s+(?:terdekat|dekat sini|di dekat sini|di sekitar sini|sekitar sini|di sekitar saya|sekitar saya|dari posisi saya sekarang|dari posisi saya|dari sini|posisi saya|sekarang|terbaik)$/i, '');
+  q = q.replace(/[?!,."':;()]/g, ' ');
+  
+  // Hapus kata tanya & pengantar di awal secara berulang hingga bersih
+  const fillerRegex = /^(?:nexa|hey nexa|halo nexa|tolong|coba|tolong carikan|carikan|cari|rekomendasi|rekomendasikan|info|informasi|daftar|adakah|apakah|ada|dimana|di mana|sebutkan|mau|pengen|butuh)\s+/i;
+  let prev;
+  do {
+    prev = q;
+    q = q.replace(fillerRegex, '').trim();
+  } while (q !== prev);
+
+  // Hapus frasa lokasi & proximity di akhir
+  q = q.replace(/\s+(?:terdekat|paling dekat|dekat sini|di dekat sini|di sekitar sini|sekitar sini|di sekitar saya|sekitar saya|dari posisi saya sekarang|dari posisi saya|dari sini|posisi saya|sekarang|terbaik)$/i, '');
   q = q.replace(/\s+(?:terdekat|dekat sini|di dekat sini|di sekitar sini|sekitar sini|di sekitar saya|dari posisi saya)\b/gi, '');
   return q.trim() || query;
 }
@@ -95,25 +102,28 @@ function _cleanPlaceQuery(query) {
  */
 function _expandSearchKeywords(cleanQuery) {
   const lower = cleanQuery.toLowerCase().trim();
-  const candidates = [cleanQuery];
+  const candidates = [];
 
-  // Cek sinonim langsung
+  // 1. Cek sinonim langsung (prioritaskan nama resmi OSM seperti 'SPBU Pertamina')
   for (const [key, syns] of Object.entries(POI_SYNONYMS)) {
     if (lower.includes(key)) {
       candidates.push(...syns);
     }
   }
 
-  // Pisahkan konjungsi "atau", "dan", "/"
+  // 2. Tambahkan kata kunci asli
+  candidates.push(cleanQuery);
+
+  // 3. Pisahkan konjungsi "atau", "dan", "/"
   if (lower.includes(' atau ') || lower.includes(' dan ') || lower.includes('/')) {
     const parts = lower.split(/\s+(?:atau|dan|\/)\s+/);
     for (const part of parts) {
       const pClean = part.replace(/^tempat\s+/i, '').trim();
       if (pClean) {
-        candidates.push(pClean);
         for (const [key, syns] of Object.entries(POI_SYNONYMS)) {
           if (pClean.includes(key)) candidates.push(...syns);
         }
+        candidates.push(pClean);
       }
     }
   }

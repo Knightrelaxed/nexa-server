@@ -53,9 +53,56 @@ async function searchNearbyPlaces(query, lat, lon, opts = {}) {
   const cleanQuery = String(query || '').trim();
   if (!cleanQuery) return [];
 
-  const limit = opts.limit || 8;
+  const limit = opts.limit || 5;
+  const maxDist = opts.maxDistanceMeters || 15000; // 15 km limit untuk pencarian lokal terdekat
+  const results = [];
 
-  // 1. Coba Photon Komoot API (OSM POI Search)
+  // 1. Nominatim Bounded Viewbox Search (~10 km radius dari titik GPS)
+  if (lat && lon) {
+    try {
+      const d = 0.09; // ~10km bounding box
+      const viewbox = `${lon - d},${lat + d},${lon + d},${lat - d}`; // left,top,right,bottom
+      const nomRes = await axios.get('https://nominatim.openstreetmap.org/search', {
+        params: {
+          q: cleanQuery,
+          format: 'json',
+          viewbox: viewbox,
+          bounded: 1,
+          limit: limit + 3,
+          addressdetails: 1
+        },
+        headers: { 'User-Agent': 'NexaAssistant/3.0 (admin@nexa-assistant.local)' },
+        timeout: 5000
+      });
+
+      if (Array.isArray(nomRes.data)) {
+        for (const item of nomRes.data) {
+          const itemLat = parseFloat(item.lat);
+          const itemLon = parseFloat(item.lon);
+          if (!isNaN(itemLat) && !isNaN(itemLon)) {
+            const dist = calculateHaversineDistance(lat, lon, itemLat, itemLon);
+            if (dist <= maxDist) {
+              const name = item.name || (item.display_name ? item.display_name.split(',')[0].trim() : cleanQuery);
+              results.push({
+                name,
+                address: item.display_name || 'Indonesia',
+                category: item.type || item.class || 'Tempat',
+                lat: itemLat,
+                lon: itemLon,
+                distanceMeters: dist,
+                distanceText: formatDistance(dist),
+                gmapsUrl: `https://www.google.com/maps/dir/?api=1&destination=${itemLat},${itemLon}`
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[LOCATION-ENGINE] Nominatim bounded search error:', err.message);
+    }
+  }
+
+  // 2. Photon Komoot API (Proximity bias dengan strict distance filter)
   try {
     const url = 'https://photon.komoot.io/api/';
     const response = await axios.get(url, {
@@ -63,85 +110,82 @@ async function searchNearbyPlaces(query, lat, lon, opts = {}) {
         q: cleanQuery,
         lat: lat,
         lon: lon,
-        limit: limit
+        limit: limit + 3
       },
       headers: USER_AGENT_HEADER,
-      timeout: 7000
+      timeout: 5000
     });
 
     const features = response.data?.features || [];
-    if (features.length > 0) {
-      const places = features.map(f => {
-        const props = f.properties || {};
-        const geom = f.geometry?.coordinates || [];
-        const itemLon = geom[0];
-        const itemLat = geom[1];
+    for (const f of features) {
+      const props = f.properties || {};
+      const geom = f.geometry?.coordinates || [];
+      const itemLon = geom[0];
+      const itemLat = geom[1];
 
-        // Format nama & alamat
+      if (itemLat && itemLon) {
+        const dist = (lat && lon) ? calculateHaversineDistance(lat, lon, itemLat, itemLon) : 0;
+        
+        // Filter: Jangan masukkan hasil di atas batas maxDist jika GPS aktif
+        if (lat && lon && dist > maxDist) continue;
+
         const name = props.name || props.street || cleanQuery;
-        const addressParts = [];
-        if (props.housenumber) addressParts.push(`No. ${props.housenumber}`);
-        if (props.street) addressParts.push(props.street);
-        if (props.locality || props.district) addressParts.push(props.locality || props.district);
-        if (props.city) addressParts.push(props.city);
-        const address = addressParts.join(', ') || props.state || 'Indonesia';
+        // Hindari duplikasi
+        if (!results.some(r => r.name.toLowerCase() === name.toLowerCase())) {
+          const addressParts = [];
+          if (props.street) addressParts.push(props.street);
+          if (props.locality || props.district) addressParts.push(props.locality || props.district);
+          if (props.city) addressParts.push(props.city);
+          const address = addressParts.join(', ') || props.state || 'Indonesia';
 
-        let distMeters = 0;
-        if (lat && lon && itemLat && itemLon) {
-          distMeters = calculateHaversineDistance(lat, lon, itemLat, itemLon);
+          results.push({
+            name,
+            address,
+            category: props.osm_value || props.osm_key || 'Tempat',
+            lat: itemLat,
+            lon: itemLon,
+            distanceMeters: dist,
+            distanceText: formatDistance(dist),
+            gmapsUrl: `https://www.google.com/maps/dir/?api=1&destination=${itemLat},${itemLon}`
+          });
         }
-
-        const gmapsUrl = (itemLat && itemLon)
-          ? `https://www.google.com/maps/dir/?api=1&destination=${itemLat},${itemLon}`
-          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + ' ' + address)}`;
-
-        return {
-          name,
-          address,
-          category: props.osm_value || props.osm_key || 'Tempat',
-          lat: itemLat,
-          lon: itemLon,
-          distanceMeters: distMeters,
-          distanceText: formatDistance(distMeters),
-          gmapsUrl
-        };
-      });
-
-      // Sortir berdasarkan jarak terdekat dari pengguna
-      places.sort((a, b) => a.distanceMeters - b.distanceMeters);
-
-      return places.slice(0, 5);
+      }
     }
   } catch (err) {
-    console.warn('[LOCATION-ENGINE] Photon POI search failed, trying fallback:', err.message);
+    console.warn('[LOCATION-ENGINE] Photon POI search failed:', err.message);
   }
 
-  // 2. Fallback ke Brave Place Search jika API Key tersedia
-  if (env.BRAVE_API_KEY) {
+  // 3. Fallback ke Brave Place Search jika API Key tersedia
+  if (results.length === 0 && env.BRAVE_API_KEY) {
     const braveRes = await searchBravePlaces(cleanQuery, opts);
     if (braveRes?.locations?.length > 0) {
-      return braveRes.locations.map(loc => {
+      for (const loc of braveRes.locations) {
         let distMeters = 0;
         if (lat && lon && loc.coordinates?.lat && loc.coordinates?.lng) {
           distMeters = calculateHaversineDistance(lat, lon, loc.coordinates.lat, loc.coordinates.lng);
         }
-        const gmapsUrl = loc.coordinates
-          ? `https://www.google.com/maps/dir/?api=1&destination=${loc.coordinates.lat},${loc.coordinates.lng}`
-          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.title + ' ' + loc.address)}`;
-
-        return {
-          name: loc.title,
-          address: loc.address,
-          category: 'Tempat',
-          lat: loc.coordinates?.lat || null,
-          lon: loc.coordinates?.lng || null,
-          distanceMeters: distMeters,
-          distanceText: distMeters > 0 ? formatDistance(distMeters) : '-',
-          gmapsUrl
-        };
-      });
+        if (distMeters <= maxDist) {
+          results.push({
+            name: loc.title,
+            address: loc.address,
+            category: 'Tempat',
+            lat: loc.coordinates?.lat || null,
+            lon: loc.coordinates?.lng || null,
+            distanceMeters: distMeters,
+            distanceText: distMeters > 0 ? formatDistance(distMeters) : '-',
+            gmapsUrl: loc.coordinates
+              ? `https://www.google.com/maps/dir/?api=1&destination=${loc.coordinates.lat},${loc.coordinates.lng}`
+              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.title + ' ' + loc.address)}`
+          });
+        }
+      }
     }
   }
+
+  // Sortir berdasarkan jarak terdekat dari pengguna
+  results.sort((a, b) => a.distanceMeters - b.distanceMeters);
+  return results.slice(0, limit);
+}
 
   return [];
 }
