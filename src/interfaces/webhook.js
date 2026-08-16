@@ -79,6 +79,22 @@ router.post('/bridge-test', async (req, res) => {
   }
 });
 
+// 7. Device Control Engine Cognitive Test Endpoint
+router.post('/device-test', async (req, res) => {
+  try {
+    const deviceControlEngine = require('../domain/Device_Control_Engine');
+    const aiRouter = require('../core/AI_Router');
+    const message = req.body.message || 'Nexa, berapa persentase baterai HP-ku sekarang?';
+    console.log(`[TEST-DEVICE-ROUTER] Routing message: "${message}"`);
+    const routingData = await aiRouter.routeUserMessage(message);
+    console.log(`[TEST-DEVICE-ROUTER] Routing result:`, JSON.stringify(routingData));
+    const result = await deviceControlEngine.executeDeviceAction(routingData);
+    res.status(200).json({ ok: true, routingData, result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ============================================================
 // EXPORTS
 // ============================================================
