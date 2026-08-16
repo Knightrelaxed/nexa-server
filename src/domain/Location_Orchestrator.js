@@ -89,10 +89,13 @@ async function _resolveUserCoordinates(context = {}) {
  */
 function _cleanPlaceQuery(query) {
   let q = String(query || '').trim();
-  // Hapus kata-kata percakapan umum
-  q = q.replace(/^(?:nexa|tolong|coba|tolong carikan|carikan|cari|rekomendasi|rekomendasikan|info|daftar)\s+/i, '');
-  q = q.replace(/\s+(?:terdekat|dekat sini|di sekitar saya|dari posisi saya sekarang|dari posisi saya|dari sini|posisi saya|sekarang|terbaik)$/i, '');
-  q = q.replace(/\s+(?:terdekat|dekat sini|di sekitar saya|dari posisi saya)\b/gi, '');
+  // Hapus tanda baca
+  q = q.replace(/[?!,."']/g, '');
+  // Hapus kata tanya & pengantar di awal
+  q = q.replace(/^(?:nexa|tolong|coba|tolong carikan|carikan|cari|rekomendasi|rekomendasikan|info|daftar|adakah|apakah|ada|dimana|di mana|sebutkan)\s+/i, '');
+  // Hapus frasa lokasi di akhir
+  q = q.replace(/\s+(?:terdekat|dekat sini|di dekat sini|di sekitar sini|sekitar sini|di sekitar saya|sekitar saya|dari posisi saya sekarang|dari posisi saya|dari sini|posisi saya|sekarang|terbaik)$/i, '');
+  q = q.replace(/\s+(?:terdekat|dekat sini|di dekat sini|di sekitar sini|sekitar sini|di sekitar saya|dari posisi saya)\b/gi, '');
   return q.trim() || query;
 }
 
