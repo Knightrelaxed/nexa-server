@@ -17,16 +17,6 @@ function getSupabase() {
   return _supabase;
 }
 
-// Fallback in-memory default limits if Supabase table is not yet migrated
-const DEFAULT_LIMITS = new Map([
-  ['com.google.android.youtube',   { app_label: 'YouTube',     max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
-  ['com.instagram.android',        { app_label: 'Instagram',   max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
-  ['com.zhiliaoapp.musically',     { app_label: 'TikTok',      max_session: 30, max_daily: 120, warning_pct: 80, level: 3 }],
-  ['com.twitter.android',          { app_label: 'X (Twitter)', max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
-  ['com.facebook.katana',          { app_label: 'Facebook',    max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
-  ['com.netflix.mediaclient',      { app_label: 'Netflix',     max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }]
-]);
-
 // Anti-spam cooldown cache: Map<`${pkg}_${type}`, lastTriggerTimestamp>
 const _alertCooldowns = new Map();
 const ALERT_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes cooldown per app alert
@@ -40,7 +30,7 @@ let _cachedDbLimits = null;
 let _cacheExpiry = 0;
 
 /**
- * Memuat batas waktu aplikasi dari Supabase (atau fallback).
+ * Memuat batas waktu aplikasi 100% langsung dari database Supabase.
  * @returns {Promise<Map<string, object>>}
  */
 async function loadAppLimits() {
@@ -50,7 +40,7 @@ async function loadAppLimits() {
   }
 
   const sb = getSupabase();
-  const limitsMap = new Map(DEFAULT_LIMITS);
+  const limitsMap = new Map();
 
   if (sb) {
     try {
@@ -59,19 +49,21 @@ async function loadAppLimits() {
         .select('*')
         .eq('is_active', true);
 
-      if (!error && data && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         for (const row of data) {
           limitsMap.set(row.package_name, {
             app_label:   row.app_label || row.package_name,
-            max_session: row.max_session_minutes || 30,
-            max_daily:   row.max_daily_minutes || 90,
-            warning_pct: row.warning_threshold_pct || 80,
-            level:       row.escalation_level || 2
+            max_session: Number(row.max_session_minutes) || 30,
+            max_daily:   Number(row.max_daily_minutes) || 120,
+            warning_pct: Number(row.warning_threshold_pct) || 80,
+            level:       Number(row.escalation_level) || 2
           });
         }
+      } else if (error) {
+        console.warn('[APP-DISCIPLINE] Supabase query error:', error.message);
       }
     } catch (err) {
-      console.warn('[APP-DISCIPLINE] Failed to load limits from DB, using defaults:', err.message);
+      console.warn('[APP-DISCIPLINE] Failed to load limits from DB:', err.message);
     }
   }
 
@@ -368,7 +360,6 @@ async function deleteAppLimit(packageName) {
     if (error) throw new Error(`Supabase delete error: ${error.message}`);
   }
 
-  DEFAULT_LIMITS.delete(cleanPkg);
   invalidateLimitsCache();
   return { success: true, package_name: cleanPkg };
 }
@@ -403,11 +394,23 @@ const APP_PACKAGE_MAP = {
 
 /**
  * Mencocokkan nama aplikasi kasual ke Package ID Android.
+ * Mencari dari database yang sedang dimuat, atau kamus alias umum.
  */
 function resolveAppPackage(nameOrPkg) {
   if (!nameOrPkg || typeof nameOrPkg !== 'string') return null;
   const str = nameOrPkg.trim().toLowerCase();
   if (str.includes('.')) return nameOrPkg.trim();
+
+  // 1. Cek dari database limits yang aktif
+  if (_cachedDbLimits && _cachedDbLimits.size > 0) {
+    for (const [pkg, meta] of _cachedDbLimits.entries()) {
+      if (meta.app_label && meta.app_label.toLowerCase() === str) {
+        return pkg;
+      }
+    }
+  }
+
+  // 2. Cek kamus alias umum
   return APP_PACKAGE_MAP[str] || null;
 }
 
