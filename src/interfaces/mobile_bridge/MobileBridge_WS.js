@@ -12,6 +12,7 @@ const env = require('../../config/env');
 let wss = null;
 let activeClient = null; // Single-device connection (Samsung Galaxy A33 5G)
 let latestTelemetry = null;
+let heartbeatInterval = null;
 
 // Map tracking active async command promises: commandId -> { resolve, timer }
 const pendingCommands = new Map();
@@ -24,7 +25,32 @@ let telemetryListener = null;
 function initWebSocket(server) {
   wss = new WebSocket.Server({ server, path: '/ws' });
 
+  // Active Keepalive Watchdog (Runs every 25 seconds to prevent NAT / Proxy timeout)
+  if (!heartbeatInterval) {
+    heartbeatInterval = setInterval(() => {
+      if (!wss) return;
+      wss.clients.forEach((ws) => {
+        if (ws.isAlive === false) {
+          console.warn('[NEXA-BRIDGE-WS] ⚠️ Dead socket detected by watchdog (No Pong). Terminating...');
+          if (activeClient === ws) {
+            activeClient = null;
+          }
+          return ws.terminate();
+        }
+        ws.isAlive = false;
+        try {
+          ws.ping();
+        } catch (_) {}
+      });
+    }, 25000);
+  }
+
   wss.on('connection', (ws, req) => {
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
+
     // 1. Handshake Authentication (Bearer Token with constant-time equality)
     const authHeader = req.headers.authorization;
     const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_GODMODE_SECRET || '').trim();
@@ -47,10 +73,10 @@ function initWebSocket(server) {
 
     console.log('[NEXA-BRIDGE-WS] 📱 Nexa Bridge Android connected successfully.');
 
-    // 2. Single-Device Connection Binding (Disconnect old socket if reconnected)
+    // 2. Single-Device Connection Binding (Instantly terminate old socket if reconnected)
     if (activeClient && activeClient !== ws) {
-      console.log('[NEXA-BRIDGE-WS] Replacing existing client connection.');
-      try { activeClient.close(4009, 'Replaced by new connection'); } catch (_) {}
+      console.log('[NEXA-BRIDGE-WS] Replacing existing client connection (instant termination).');
+      try { activeClient.terminate(); } catch (_) {}
     }
     activeClient = ws;
 
