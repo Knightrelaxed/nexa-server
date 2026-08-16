@@ -90,9 +90,9 @@ timeline
 ### v2.5 — Multi-Modal Sensory & Ecosystem Synchronization
 * **Integrasi Ekosistem Google:** Sinkronisasi dua arah (*bi-directional*) dengan **Google Calendar** dan **Google Tasks**, memungkinkan pembuatan jadwal kerja, pengingat tenggat waktu (*due date*), serta pemblokiran waktu otomatis (*time-blocking*).
 * **Persepsi Sensorik Ganda (Vision & Voice):**
-  - **Vision Engine 12-Tier Matrix:** Kemampuan memindai struk belanja fisik, tangkapan layar, dan dokumen visual melalui matriks redundansi 12 lapisan model AI (4x Gemini 2.5 + 4x Groq Llama + 2x Gemini 2.0 + OpenRouter).
-  - **Voice Transcription:** Pemrosesan langsung pesan suara Telegram menjadi instruksi terstruktur.
-* **Multi-Tier Fallback Anti-Mati:** Arsitektur failover otomatis yang mengalihkan beban kerja model AI utama ke model cadangan dalam hitungan milidetik saat terjadi *rate limit* atau *downtime* penyedia cloud.
+  - **Vision Engine 12-Tier Matrix:** Kemampuan memindai struk belanja fisik, tangkapan layar, dan dokumen visual melalui matriks redundansi 12 lapisan model AI (4x Gemini 2.5 + 4x Groq Llama + 2x Gemini 2.0 + Cerebras + Hugging Face Vision Inference API).
+  - **Voice Transcription:** Pemrosesan langsung pesan suara Telegram menjadi instruksi terstruktur via Hugging Face Whisper & Groq Whisper API.
+* **Multi-Tier Fallback Anti-Mati:** Arsitektur failover otomatis yang mengalihkan beban kerja model AI utama ke model cadangan (Gemini, Groq, Mistral, Cerebras, Hugging Face Inference API, OpenRouter) dalam hitungan milidetik saat terjadi *rate limit* atau *downtime*.
 
 ### v2.6 — Second Brain & Permanent Fact Store
 * Pembangunan arsip basis pengetahuan eksekutif (**2nd Brain**) terhubung ke Google Docs/Drive untuk menyimpan ide strategis, esai literatur Arab, dan catatan diplomasi.

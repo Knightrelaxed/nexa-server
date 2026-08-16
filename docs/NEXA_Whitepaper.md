@@ -1158,7 +1158,7 @@ Semua lalu lintas HTTP masuk dijaga oleh *middleware* keamanan sebelum mencapai 
 
 Modul `env.js` mengelola lebih dari 30 *credential* rahasia untuk mengeksekusi integrasi lintas platform, meliputi:
 
-- **LLM Key Rotation**: N.E.X.A siap menghadapi *Rate Limit* gratisan dengan menyiapkan slot rotasi untuk 4 Kunci Gemini (`GEMINI_API_KEY_1-4`), 4 Kunci Groq, Cerebras, Mistral, hingga *fallback* premium via OpenRouter.
+- **LLM Key Rotation & Multi-Modal Inference**: N.E.X.A siap menghadapi *Rate Limit* gratisan dengan menyiapkan slot rotasi untuk 4 Kunci Gemini (`GEMINI_API_KEY_1-4`), 4 Kunci Groq, Cerebras, Mistral, **Hugging Face Inference API** (`HF_TOKEN` untuk Vision OCR, Whisper Voice, dan model fallback), hingga *fallback* premium via OpenRouter.
 - **Dual Google Authentication**: Menggunakan JSON *Service Account* (`GOOGLE_PRIVATE_KEY`) untuk operasi Google Drive, namun menggunakan sistem kredensial manusia (OAuth2 `GMAIL_REFRESH_TOKEN` & `TASKS_REFRESH_TOKEN`) untuk mengakses *inbox* email dan daftar tugas Tuan Faqih secara mandiri.
 - **Node Fisik & Integrasi Eksternal**: Kunci akses untuk Supabase (Memori Permanen), Notion (Task Sync), Serper.dev (Pencarian Web), dan NTFY (Eksekutor God Mode Android).
 
