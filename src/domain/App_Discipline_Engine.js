@@ -31,6 +31,10 @@ const DEFAULT_LIMITS = new Map([
 const _alertCooldowns = new Map();
 const ALERT_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes cooldown per app alert
 
+// Active Lockout Map: Map<packageName, { expiry: number, attempts: number, appName: string }>
+const _activeLockouts = new Map();
+const LOCKOUT_DURATION_MS = 30 * 60 * 1000; // 30 minutes lockout upon limit breach
+
 // RAM cache for database limits (10 min TTL)
 let _cachedDbLimits = null;
 let _cacheExpiry = 0;
@@ -103,6 +107,40 @@ async function evaluateAppUsage(telemetry = {}) {
   const appName = rule.app_label || telemetry.app_name || pkg;
   const now = Date.now();
 
+  // ── 0. CEK STATUS LOCKOUT / COOLDOWN (UPAYA MEMBUKA LAGI / NGEYEL) ────────
+  if (_activeLockouts.has(pkg)) {
+    const lockout = _activeLockouts.get(pkg);
+    if (now < lockout.expiry) {
+      lockout.attempts = (lockout.attempts || 0) + 1;
+      const remainingMinutes = Math.ceil((lockout.expiry - now) / (60 * 1000));
+      console.warn(`[APP-DISCIPLINE] ⛔ DEFIANCE DETECTED: Attempted to re-open ${appName} during lockout (Attempt #${lockout.attempts}, ${remainingMinutes}m remaining)!`);
+
+      // Log ke Behavioral Engine (Cognitive Memory)
+      try {
+        const behaviorEngine = require('./Behavior_Engine');
+        behaviorEngine.logPassiveLearning(`Defiance detected: Attempted to open ${appName} during ${remainingMinutes}m lockout (Attempt #${lockout.attempts})`, 'BEHAVIOR_OBSERVATION').catch(() => {});
+      } catch (_) {}
+
+      // Trigger GodMode Level 3 (Surgical Restriction + Immediate Re-Bounce)
+      await disciplineGodMode.triggerGodMode(3, {
+        violation_app: `${appName} (Cooldown: ${remainingMinutes}m tersisa, Upaya #${lockout.attempts})`,
+        duration_minutes: sessionMinutes,
+        message_tone: 'urgent'
+      });
+
+      return {
+        status: 'LOCKOUT_DEFIANCE_BLOCKED',
+        action_taken: 'ESCALATION_LEVEL_3',
+        app_name: appName,
+        remaining_minutes: remainingMinutes,
+        attempts: lockout.attempts
+      };
+    } else {
+      // Masa lockout selesai
+      _activeLockouts.delete(pkg);
+    }
+  }
+
   console.log(`[APP-DISCIPLINE] ⏱️ Evaluating ${appName} (${pkg}): Session=${sessionMinutes}m/${rule.max_session}m | Daily=${dailyMinutes}m/${rule.max_daily}m`);
 
   // ── 1. CEK PELANGGARAN BATAS SESI (SESSION LIMIT BREACH) ─────────────────
@@ -112,7 +150,9 @@ async function evaluateAppUsage(telemetry = {}) {
 
     if (now - lastAlert >= ALERT_COOLDOWN_MS) {
       _alertCooldowns.set(cooldownKey, now);
-      console.warn(`[APP-DISCIPLINE] 🚨 SESSION LIMIT BREACH: ${appName} reached ${sessionMinutes} minutes!`);
+      // Set active lockout for 30 minutes
+      _activeLockouts.set(pkg, { expiry: now + LOCKOUT_DURATION_MS, attempts: 0, appName });
+      console.warn(`[APP-DISCIPLINE] 🚨 SESSION LIMIT BREACH: ${appName} reached ${sessionMinutes} minutes! Entered 30m lockout.`);
 
       // Trigger GodMode escalation
       await disciplineGodMode.triggerGodMode(rule.level, {
