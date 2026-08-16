@@ -991,6 +991,73 @@ Komunikasi fisik mengandalkan koneksi WebSocket aman (`wss://.../ws`) dengan mek
 - **Deep Sleep Immunity**: Saat layar ponsel mati atau pengguna berada di Launcher sistem, prosesor HP tidur total (*0% pemborosan baterai*).
 - **Graceful Failover**: Dilengkapi *in-memory policy cache* dan pemulihan otomatis jika koneksi jaringan terputus.
 
+#### 4. Panduan & Tutorial Konfigurasi Dinamis (*CRUD App Limits Management*)
+
+Aturan pembatasan aplikasi bersifat **100% dinamis** dan dapat diubah kapan saja tanpa perlu meng-install ulang atau mengompilasi file APK Android di ponsel.
+
+##### A. Struktur Metadata Tabel `nexa_app_limits` (Supabase)
+| Kolom | Tipe | Penjelasan |
+| :--- | :---: | :--- |
+| `package_name` | `TEXT (UNIQUE)` | Package ID Android (misal: `com.google.android.youtube`). |
+| `app_label` | `TEXT` | Nama aplikasi yang ramah manusia (misal: `YouTube`). |
+| `max_session_minutes` | `INT` | Batas durasi maksimum per satu kali sesi aktif. |
+| `max_daily_minutes` | `INT` | Batas total akumulasi waktu pemakaian per hari (00:00 - 23:59). |
+| `warning_threshold_pct`| `INT` | Persentase pemicu peringatan dini (default: `80`%). |
+| `escalation_level` | `INT` | Level eskalasi awal saat batas terlampaui (`1` - `4`). |
+| `is_active` | `BOOLEAN` | Status saklar pemantauan (`true` = dipantau, `false` = bebas). |
+
+##### B. Tutorial Mengedit Batas Waktu Aplikasi yang Sudah Ada
+Untuk melonggarkan atau memperketat batas waktu aplikasi (misal: mengubah batas sesi YouTube menjadi 45 menit):
+
+* **Cara 1: Melalui Supabase SQL Editor:**
+```sql
+UPDATE "public"."nexa_app_limits"
+SET "max_session_minutes" = 45, "max_daily_minutes" = 120, "updated_at" = NOW()
+WHERE "package_name" = 'com.google.android.youtube';
+```
+
+* **Cara 2: Melalui Programmatic Helper / Script Server:**
+```javascript
+const appDiscipline = require('./src/domain/App_Discipline_Engine');
+await appDiscipline.updateAppLimit('com.google.android.youtube', {
+  max_session_minutes: 45,
+  max_daily_minutes: 120
+});
+```
+
+##### C. Tutorial Menambahkan Aplikasi Baru yang Ingin Dipantau
+Untuk membatasi aplikasi baru (misal: game *Mobile Legends* atau *Genshin Impact*):
+
+* **Melalui Supabase SQL Editor:**
+```sql
+INSERT INTO "public"."nexa_app_limits" 
+  ("package_name", "app_label", "max_session_minutes", "max_daily_minutes", "escalation_level")
+VALUES 
+  ('com.mobile.legends', 'Mobile Legends', 25, 60, 3)
+ON CONFLICT ("package_name") 
+DO UPDATE SET 
+  "max_session_minutes" = EXCLUDED.max_session_minutes,
+  "max_daily_minutes" = EXCLUDED.max_daily_minutes;
+```
+
+##### D. Tutorial Menghapus atau Menonaktifkan Pemantauan
+Jika Tuan ingin membebaskan aplikasi tertentu agar tidak dibatasi sama sekali:
+
+* **Opsi 1: Nonaktifkan Sementara (`is_active = false`):**
+```sql
+UPDATE "public"."nexa_app_limits"
+SET "is_active" = false, "updated_at" = NOW()
+WHERE "package_name" = 'com.google.android.youtube';
+```
+
+* **Opsi 2: Hapus Permanen dari Daftar Pantau:**
+```sql
+DELETE FROM "public"."nexa_app_limits"
+WHERE "package_name" = 'com.mobile.legends';
+```
+
+*Setiap kali operasi CRUD di atas dijalankan, fungsi `invalidateLimitsCache()` pada server akan otomatis membersihkan RAM cache, sehingga aturan baru langsung aktif dalam hitungan milidetik tanpa perlu me-restart server ataupun aplikasi HP.*
+
 ---
 
 ## BAB 6: MEMORI ORGANIK & KESADARAN KONTEKSTUAL
