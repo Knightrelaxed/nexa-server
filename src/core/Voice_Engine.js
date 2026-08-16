@@ -430,22 +430,26 @@ async function transcribePcmBase64(pcmBase64, opts = {}) {
   fs.writeFileSync(tmpWavPath, wavBuffer);
 
   try {
+    // Build tier list dynamically — IDENTICAL to Telegram Voice Note pipeline:
+    // Tier 1-4: Hugging Face Whisper Large v3 Turbo (Ultra-Fast 4 Slots)
+    // Tier 5-8: Gemini 2.5 Flash Native Audio (Keys 1-4)
+    // Tier 9-12: Groq Whisper Large v3 (Keys 1-4)
     const tiers = [
-      // Tier 1-4: Groq Whisper Large v3 (Fastest & Best for Indonesian speech)
-      ...GROQ_CLIENTS.map((client, i) => ({
-        name: `Tier ${i + 1} (Groq Whisper Key ${i + 1})`,
-        fn: () => callGroqWhisper(client, tmpWavPath)
+      // Tier 1-4: Hugging Face Whisper Large v3 Turbo (Ultra-Fast 4 Slots)
+      ...Array.from({ length: 4 }).map((_, i) => ({
+        name: `Tier ${i + 1} (HuggingFace Whisper Large v3 Turbo Slot ${i + 1})`,
+        fn: () => callHuggingFaceWhisper(tmpWavPath)
       })),
-      // Tier 5-8: Gemini Native Audio (Keys 1-4)
+      // Tier 5-8: Gemini 2.5 Flash Native Audio (Keys 1-4)
       ...GEMINI_NATIVE_KEYS.map((key, i) => ({
-        name: `Tier ${i + 5} (Gemini Native Audio Key ${i + 1})`,
+        name: `Tier ${i + 5} (Gemini 2.5 Flash Native Audio Key ${i + 1})`,
         fn: () => callGeminiNativeAudio(key, tmpWavPath)
       })),
-      // Tier 9: Hugging Face Whisper Large v3 Turbo
-      {
-        name: 'Tier HF (HuggingFace Whisper Large v3 Turbo)',
-        fn: () => callHuggingFaceWhisper(tmpWavPath)
-      }
+      // Tier 9-12: Groq Whisper (Backup Keys)
+      ...GROQ_CLIENTS.map((client, i) => ({
+        name: `Tier ${i + 5 + GEMINI_NATIVE_KEYS.length} (Groq Whisper Key ${i + 1})`,
+        fn: () => callGroqWhisper(client, tmpWavPath)
+      }))
     ];
 
     for (const tier of tiers) {
