@@ -419,94 +419,87 @@ function resolveAppPackage(nameOrPkg) {
  * @param {string} [textInput] - Pesan teks asli pengguna
  * @returns {Promise<string>} Pesan balasan siap kirim ke Telegram
  */
-async function handleDisciplineChatIntent(extractedData = {}, textInput = '') {
-  const action = String(extractedData.action || 'READ_LIMITS').toUpperCase();
-  const rawTarget = String(extractedData.package_name || extractedData.app_name || extractedData.target_app || extractedData.app_label || '').trim();
+async function handleDisciplineChatIntent(extractedData, textInput) {
+  // ── Null / type guard ────────────────────────────────────────────────────
+  const ed = (extractedData && typeof extractedData === 'object') ? extractedData : {};
+
+  const action     = String(ed.action     || '').toUpperCase();
+  const rawTarget  = String(ed.package_name || ed.app_name || ed.target_app || ed.app_label || '').trim();
   const resolvedPkg = resolveAppPackage(rawTarget);
 
-  if (action === 'READ_LIMITS' || action === 'LIST_LIMITS' || action === 'READ' || (!rawTarget && !extractedData.max_session_minutes)) {
-    const all = await getAllAppLimits();
-    if (!all || all.length === 0) {
-      return '📱 <b>Daftar Batas Aplikasi N.E.X.A:</b>\nBelum ada aplikasi yang dikonfigurasi dalam daftar pantauan.';
-    }
-
-    const lines = all.map((app, idx) => {
-      const statusIcon = app.is_active !== false ? '🟢' : '⚪ (Nonaktif)';
-      return `${idx + 1}. ${statusIcon} <b>${app.app_label || app.package_name}</b>\n   • Maks Sekali Sesi: <b>${app.max_session_minutes || 30} menit</b>\n   • Total Kuota Harian: <b>${app.max_daily_minutes || 90} menit</b>\n   • Tingkat Eskalasi: <b>Level ${app.escalation_level || 2}</b>`;
-    });
-
-    return `📱 <b>Daftar Batas Aplikasi Aktif (Samsung A33 5G):</b>\n\n${lines.join('\n\n')}\n\n<i>💡 Tuan bisa mengubahnya kapan saja, misal: "Ubah batas YouTube jadi 45 menit" atau "Tambahkan game ML batas 25 menit".</i>`;
-  }
-
-  if (action === 'UPDATE_LIMIT' || action === 'EDIT' || (resolvedPkg && (extractedData.max_session_minutes || extractedData.max_daily_minutes))) {
+  // ── UPDATE ────────────────────────────────────────────────────────────────
+  if (action === 'UPDATE_LIMIT' || action === 'EDIT' || (resolvedPkg && (ed.max_session_minutes || ed.max_daily_minutes))) {
     const pkg = resolvedPkg || rawTarget;
     if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin diubah batasnya (misal: YouTube, Instagram, TikTok).';
 
     const updates = {};
-    if (extractedData.max_session_minutes) updates.max_session_minutes = Number(extractedData.max_session_minutes);
-    if (extractedData.max_daily_minutes) updates.max_daily_minutes = Number(extractedData.max_daily_minutes);
-    if (extractedData.warning_threshold_pct) updates.warning_threshold_pct = Number(extractedData.warning_threshold_pct);
-    if (extractedData.escalation_level) updates.escalation_level = Number(extractedData.escalation_level);
-    if (extractedData.is_active !== undefined) updates.is_active = Boolean(extractedData.is_active);
+    if (ed.max_session_minutes)   updates.max_session_minutes   = Number(ed.max_session_minutes);
+    if (ed.max_daily_minutes)     updates.max_daily_minutes     = Number(ed.max_daily_minutes);
+    if (ed.warning_threshold_pct) updates.warning_threshold_pct = Number(ed.warning_threshold_pct);
+    if (ed.escalation_level)      updates.escalation_level      = Number(ed.escalation_level);
+    if (ed.is_active !== undefined) updates.is_active           = Boolean(ed.is_active);
 
-    const appLabel = extractedData.app_label || extractedData.app_name || rawTarget || pkg;
+    const appLabel = ed.app_label || ed.app_name || rawTarget || pkg;
     updates.app_label = appLabel;
 
-    const result = await upsertAppLimit({
-      package_name: pkg,
-      app_label: appLabel,
-      ...updates
-    });
-
-    return `✅ <b>Batas Aplikasi Berhasil Diperbarui!</b>\n• Aplikasi: <b>${result.data.app_label}</b>\n• Batas Sesi: <b>${result.data.max_session_minutes} menit</b>\n• Batas Harian: <b>${result.data.max_daily_minutes} menit</b>\n• Level Penegakan: <b>Level ${result.data.escalation_level}</b>\n• Status: <b>${result.data.is_active ? 'Aktif 🟢' : 'Nonaktif ⚪'}</b>\n\n<i>Aturan baru langsung aktif seketika di ponsel Tuan.</i>`;
+    const result = await upsertAppLimit({ package_name: pkg, app_label: appLabel, ...updates });
+    const d = (result && result.data) ? result.data : {};
+    return `✅ <b>Batas Aplikasi Berhasil Diperbarui!</b>\n• Aplikasi: <b>${d.app_label || appLabel}</b>\n• Batas Sesi: <b>${d.max_session_minutes != null ? d.max_session_minutes : (ed.max_session_minutes ?? '-')} menit</b>\n• Batas Harian: <b>${d.max_daily_minutes != null ? d.max_daily_minutes : (ed.max_daily_minutes ?? '-')} menit</b>\n• Level Penegakan: <b>Level ${d.escalation_level || 2}</b>\n• Status: <b>${d.is_active !== false ? 'Aktif 🟢' : 'Nonaktif ⚪'}</b>\n\n<i>Aturan baru langsung aktif seketika di ponsel Tuan.</i>`;
   }
 
+  // ── ADD ───────────────────────────────────────────────────────────────────
   if (action === 'ADD_LIMIT' || action === 'CREATE') {
     const pkg = resolvedPkg || (rawTarget.includes('.') ? rawTarget : `com.${rawTarget.toLowerCase().replace(/\s+/g, '')}`);
-    const appLabel = extractedData.app_label || extractedData.app_name || rawTarget;
-    const sessionMins = Number(extractedData.max_session_minutes || 20);
-    const dailyMins = Number(extractedData.max_daily_minutes || (sessionMins * 2.5));
-    const level = Number(extractedData.escalation_level || 2);
+    const appLabel    = ed.app_label || ed.app_name || rawTarget;
+    const sessionMins = Number(ed.max_session_minutes || 20);
+    const dailyMins   = Number(ed.max_daily_minutes   || Math.round(sessionMins * 2.5));
+    const level       = Number(ed.escalation_level    || 2);
 
     const result = await upsertAppLimit({
-      package_name: pkg,
-      app_label: appLabel,
-      max_session_minutes: sessionMins,
-      max_daily_minutes: dailyMins,
-      warning_threshold_pct: 80,
-      escalation_level: level,
-      is_active: true
+      package_name: pkg, app_label: appLabel,
+      max_session_minutes: sessionMins, max_daily_minutes: dailyMins,
+      warning_threshold_pct: 80, escalation_level: level, is_active: true
     });
-
-    return `✅ <b>Aplikasi Baru Berhasil Ditambahkan ke Pantauan!</b>\n• Aplikasi: <b>${result.data.app_label}</b> (<code>${result.data.package_name}</code>)\n• Batas Sesi: <b>${result.data.max_session_minutes} menit</b>\n• Batas Harian: <b>${result.data.max_daily_minutes} menit</b>\n• Eskalasi: <b>Level ${result.data.escalation_level}</b>\n\n<i>Ponsel Samsung A33 5G Tuan sekarang memantau pemakaian aplikasi ini.</i>`;
+    const d = (result && result.data) ? result.data : {};
+    return `✅ <b>Aplikasi Baru Berhasil Ditambahkan ke Pantauan!</b>\n• Aplikasi: <b>${d.app_label || appLabel}</b> (<code>${d.package_name || pkg}</code>)\n• Batas Sesi: <b>${d.max_session_minutes || sessionMins} menit</b>\n• Batas Harian: <b>${d.max_daily_minutes || dailyMins} menit</b>\n• Eskalasi: <b>Level ${d.escalation_level || level}</b>\n\n<i>Ponsel Samsung A33 5G Tuan sekarang memantau pemakaian aplikasi ini.</i>`;
   }
 
+  // ── DELETE ────────────────────────────────────────────────────────────────
   if (action === 'DELETE_LIMIT' || action === 'DELETE' || action === 'REMOVE') {
     const pkg = resolvedPkg || rawTarget;
-    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin dihapus batasnya.';
-
+    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin dihapus batasnya (misal: "Hapus batas YouTube").';
     await deleteAppLimit(pkg);
-    return `🗑️ <b>Pemantauan Dihapus:</b>\nAplikasi <b>${rawTarget}</b> telah dihapus dari daftar batasan. Tuan sekarang bebas membukanya tanpa batasan waktu.`;
+    return `🗑️ <b>Pemantauan Dihapus:</b>\nAplikasi <b>${rawTarget || pkg}</b> telah dihapus dari daftar batasan. Tuan sekarang bebas membukanya tanpa batasan waktu.`;
   }
 
+  // ── DISABLE ───────────────────────────────────────────────────────────────
   if (action === 'DISABLE_LIMIT' || action === 'DISABLE') {
     const pkg = resolvedPkg || rawTarget;
-    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin dinonaktifkan.';
-
+    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin dinonaktifkan (misal: "Matikan pantauan TikTok").';
     await updateAppLimit(pkg, { is_active: false });
-    return `⚪ <b>Pemantauan Dinonaktifkan Sementara:</b>\nBatas waktu untuk <b>${rawTarget}</b> telah dimatikan sementara tanpa menghapus datanya.`;
+    return `⚪ <b>Pemantauan Dinonaktifkan Sementara:</b>\nBatas waktu untuk <b>${rawTarget || pkg}</b> telah dimatikan sementara tanpa menghapus datanya.`;
   }
 
+  // ── ENABLE ────────────────────────────────────────────────────────────────
   if (action === 'ENABLE_LIMIT' || action === 'ENABLE') {
     const pkg = resolvedPkg || rawTarget;
-    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin diaktifkan kembali.';
-
+    if (!pkg) return '❌ Mohon sebutkan nama aplikasi yang ingin diaktifkan kembali (misal: "Aktifkan kembali batas Instagram").';
     await updateAppLimit(pkg, { is_active: true });
-    return `🟢 <b>Pemantauan Diaktifkan Kembali:</b>\nBatas waktu untuk <b>${rawTarget}</b> kini aktif kembali.`;
+    return `🟢 <b>Pemantauan Diaktifkan Kembali:</b>\nBatas waktu untuk <b>${rawTarget || pkg}</b> kini aktif kembali.`;
   }
 
-  return '📱 Perintah batas aplikasi telah diproses.';
+  // ── READ / FALLBACK ───────────────────────────────────────────────────────
+  const all = await getAllAppLimits();
+  if (!all || all.length === 0) {
+    return '📱 <b>Daftar Batas Aplikasi N.E.X.A:</b>\nBelum ada aplikasi yang dikonfigurasi dalam daftar pantauan.';
+  }
+  const lines = all.map((app, idx) => {
+    const icon = app.is_active !== false ? '🟢' : '⚪ (Nonaktif)';
+    return `${idx + 1}. ${icon} <b>${app.app_label || app.package_name}</b>\n   • Maks Sekali Sesi: <b>${app.max_session_minutes || 30} menit</b>\n   • Total Kuota Harian: <b>${app.max_daily_minutes || 90} menit</b>\n   • Tingkat Eskalasi: <b>Level ${app.escalation_level || 2}</b>`;
+  });
+  return `📱 <b>Daftar Batas Aplikasi Aktif (Samsung A33 5G):</b>\n\n${lines.join('\n\n')}\n\n<i>💡 Tuan bisa mengubahnya kapan saja, misal: "Ubah batas YouTube jadi 45 menit" atau "Tambahkan game ML batas 25 menit".</i>`;
 }
+
 
 module.exports = {
   loadAppLimits,
