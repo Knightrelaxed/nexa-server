@@ -99,7 +99,7 @@ function initWebSocket(server) {
         // D. High-Level Context Update (Sensor / Geofence / Routine Engine)
         if (payload.type === 'CONTEXT_UPDATE') {
           try {
-            const adapter = require('../../adapters/NexaBridgeAdapter');
+            const adapter = require('./adapter');
             adapter.handleIncomingContextUpdate(payload);
           } catch (e) {
             console.error('[NEXA-BRIDGE-WS] Context routing error:', e.message);
@@ -110,7 +110,7 @@ function initWebSocket(server) {
         // E. Call Interaction Event (FakeCallActivity v2.0)
         if (payload.type === 'CALL_EVENT') {
           try {
-            const adapter = require('../../adapters/NexaBridgeAdapter');
+            const adapter = require('./adapter');
             adapter.handleIncomingCallEvent(payload);
           } catch (e) {
             console.error('[NEXA-BRIDGE-WS] Call event routing error:', e.message);

@@ -6,7 +6,7 @@
 // ============================================================
 'use strict';
 
-const bridge = require('../adapters/NexaBridgeAdapter');
+const bridge = require('../interfaces/mobile_bridge/adapter');
 const env = require('../config/env');
 
 class DeviceControlEngine {

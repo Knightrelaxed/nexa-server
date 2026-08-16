@@ -1,14 +1,14 @@
 // ============================================================
-// N.E.X.A 3.0 — NEXA MOBILE BRIDGE ADAPTER
+// N.E.X.A 3.0 — MOBILE BRIDGE ADAPTER
 // Master Neural-Peripheral Adapter linking N.E.X.A Cloud Server (Azure VPS)
 // to Physical Android Hardware (Samsung Galaxy A33 5G - Android 16 / One UI 8).
 // ============================================================
 'use strict';
 
-const mobileBridgeWs = require('../interfaces/mobile_bridge/MobileBridge_WS');
-const locationEngine = require('../infrastructure/Location_Engine');
-const taskerClient = require('../infrastructure/Tasker_Client');
-const env = require('../config/env');
+const mobileBridgeWs = require('./MobileBridge_WS');
+const locationEngine = require('../../infrastructure/Location_Engine');
+const taskerClient = require('../../infrastructure/Tasker_Client');
+const env = require('../../config/env');
 
 class NexaBridgeAdapter {
   constructor() {
@@ -107,13 +107,13 @@ class NexaBridgeAdapter {
       try {
         console.log(`[NEXA-ADAPTER] 🎙️ Processing Voice Reply (${callEvent.audio_base64.length} chars Base64)...`);
         // Lazy-load Voice_Engine to transcribe
-        const voiceEngine = require('../core/Voice_Engine');
+        const voiceEngine = require('../../core/Voice_Engine');
         const transcription = await voiceEngine.transcribePcmBase64(callEvent.audio_base64);
         console.log(`[NEXA-ADAPTER] 🗣️ Whisper Transcription: "${transcription}"`);
 
         if (transcription && transcription.trim().length > 0) {
           // Send transcription to AI Router for response
-          const aiRouter = require('../core/AI_Router');
+          const aiRouter = require('../../core/AI_Router');
           const aiReply = await aiRouter.routeUserMessage(transcription, {
             channel: 'MOBILE_CALL',
             caller_name: callEvent.caller_name || 'N.E.X.A'
