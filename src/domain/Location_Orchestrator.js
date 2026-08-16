@@ -1,16 +1,138 @@
 // ============================================================
 // N.E.X.A — LOCATION ORCHESTRATOR DOMAIN
-// Pengorkestrasi cerdas yang menggabungkan Brave Place Search & Mapbox
+// Pengorkestrasi Lokasi Cerdas (Open-Source Spatial Stack + Auto-GPS Bridge)
+// 100% Gratis Tanpa API Key & Tanpa Kartu Kredit
 // ============================================================
 'use strict';
 
 const locationEngine = require('../infrastructure/Location_Engine');
+const bridge = require('../interfaces/mobile_bridge/adapter');
+
+/**
+ * Pemetaan kata percakapan Indonesia ke sinonim POI OpenStreetMap
+ */
+const POI_SYNONYMS = {
+  'ngopi': ['kopi', 'warkop', 'cafe'],
+  'tempat ngopi': ['kopi', 'warkop', 'cafe'],
+  'kopi': ['kopi', 'warkop', 'cafe'],
+  'warkop': ['warkop', 'kopi', 'cafe'],
+  'makan': ['warung', 'restoran', 'kuliner'],
+  'tempat makan': ['restoran', 'warung', 'kuliner'],
+  'kuliner': ['kuliner', 'warung', 'restoran'],
+  'pom bensin': ['spbu', 'pertamina', 'bensin'],
+  'bensin': ['spbu', 'pertamina'],
+  'spbu': ['spbu', 'pertamina'],
+  'atm': ['atm', 'bank'],
+  'tarik tunai': ['atm', 'bank'],
+  'bank': ['bank', 'atm'],
+  'rumah sakit': ['rumah sakit', 'hospital', 'klinik'],
+  'dokter': ['klinik', 'rumah sakit'],
+  'apotek': ['apotek', 'pharmacy'],
+  'minimarket': ['indomaret', 'alfamart', 'supermarket'],
+  'supermarket': ['supermarket', 'indomaret', 'alfamart'],
+  'masjid': ['masjid', 'mosque'],
+  'mushola': ['mushola', 'masjid'],
+  'hotel': ['hotel', 'penginapan', 'homestay'],
+  'bengkel': ['bengkel', 'tambal ban']
+};
+
+/**
+ * Mendapatkan koordinat GPS pengguna secara otomatis dari HP via Mobile Bridge
+ * dengan fallback ke context atau geocode default.
+ */
+async function _resolveUserCoordinates(context = {}) {
+  // 1. Jika sudah ada di context
+  if (context.lat && (context.lon || context.lng)) {
+    return {
+      lat: Number(context.lat),
+      lon: Number(context.lon || context.lng),
+      source: 'CONTEXT'
+    };
+  }
+
+  // 2. Coba minta GPS langsung dari HP via Mobile Bridge
+  if (bridge.isConnected()) {
+    try {
+      console.log('[LOCATION-ORCHESTRATOR] 📡 Mengambil koordinat GPS aktif dari HP via Bridge...');
+      const bridgeRes = await bridge.getLocation();
+      if (bridgeRes && bridgeRes.status === 'SUCCESS' && bridgeRes.data) {
+        const lat = Number(bridgeRes.data.latitude);
+        const lon = Number(bridgeRes.data.longitude);
+        if (!isNaN(lat) && !isNaN(lon) && (lat !== 0 || lon !== 0)) {
+          console.log(`[LOCATION-ORCHESTRATOR] ✅ GPS Live diperoleh: ${lat}, ${lon} (akurasi: ${bridgeRes.data.accuracy || 0}m)`);
+          return { lat, lon, source: 'LIVE_GPS', accuracy: bridgeRes.data.accuracy };
+        }
+      }
+    } catch (err) {
+      console.warn('[LOCATION-ORCHESTRATOR] Gagal mengambil GPS dari Bridge:', err.message);
+    }
+  }
+
+  // 3. Fallback: Geocode kota default (misal context.userLocation atau 'Surakarta')
+  const defaultCity = context.userLocation || context.city || 'Surakarta';
+  console.log(`[LOCATION-ORCHESTRATOR] ℹ️ Menggunakan fallback kota: ${defaultCity}`);
+  const geocoded = await locationEngine.geocodeOsm(defaultCity);
+  if (geocoded) {
+    return {
+      lat: geocoded.lat,
+      lon: geocoded.lng,
+      source: 'CITY_FALLBACK',
+      cityName: defaultCity
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Membersihkan kalimat query agar menjadi kata kunci pencarian POI yang bersih
+ */
+function _cleanPlaceQuery(query) {
+  let q = String(query || '').trim();
+  // Hapus kata-kata percakapan umum
+  q = q.replace(/^(?:nexa|tolong|coba|tolong carikan|carikan|cari|rekomendasi|rekomendasikan|info|daftar)\s+/i, '');
+  q = q.replace(/\s+(?:terdekat|dekat sini|di sekitar saya|dari posisi saya sekarang|dari posisi saya|dari sini|posisi saya|sekarang|terbaik)$/i, '');
+  q = q.replace(/\s+(?:terdekat|dekat sini|di sekitar saya|dari posisi saya)\b/gi, '');
+  return q.trim() || query;
+}
+
+/**
+ * Menghasilkan daftar kandidat kata kunci pencarian dari query pengguna
+ */
+function _expandSearchKeywords(cleanQuery) {
+  const lower = cleanQuery.toLowerCase().trim();
+  const candidates = [cleanQuery];
+
+  // Cek sinonim langsung
+  for (const [key, syns] of Object.entries(POI_SYNONYMS)) {
+    if (lower.includes(key)) {
+      candidates.push(...syns);
+    }
+  }
+
+  // Pisahkan konjungsi "atau", "dan", "/"
+  if (lower.includes(' atau ') || lower.includes(' dan ') || lower.includes('/')) {
+    const parts = lower.split(/\s+(?:atau|dan|\/)\s+/);
+    for (const part of parts) {
+      const pClean = part.replace(/^tempat\s+/i, '').trim();
+      if (pClean) {
+        candidates.push(pClean);
+        for (const [key, syns] of Object.entries(POI_SYNONYMS)) {
+          if (pClean.includes(key)) candidates.push(...syns);
+        }
+      }
+    }
+  }
+
+  // Ambil hanya yang unik
+  return [...new Set(candidates)];
+}
 
 /**
  * Handle incoming location/navigation intent and route to appropriate API
  * @param {string} query - Full query text
  * @param {object} [context] - Context options (e.g., origin, userLocation, transportProfile)
- * @returns {Promise<string>} - Formatted markdown response for Telegram / CLI
+ * @returns {Promise<string>} - Formatted HTML response for Telegram
  */
 async function handleLocationQuery(query, context = {}) {
   const cleanQ = String(query || '').trim();
@@ -18,8 +140,10 @@ async function handleLocationQuery(query, context = {}) {
 
   const lower = cleanQ.toLowerCase();
 
-  // Detect intent type
-  const isRouteQuery = /rute|jarak|berapa (menit|jam|km)|estimasi waktu|perjalanan dari|ke/i.test(lower) && (lower.includes(' dari ') || lower.includes(' ke '));
+  // Deteksi tipe query: Rute/Navigasi vs Pencarian Tempat (Nearby POI)
+  const isRouteQuery =
+    /rute|jarak|berapa (menit|jam|km)|estimasi waktu|perjalanan dari|menuju ke|arah ke/i.test(lower) &&
+    (lower.includes(' dari ') || lower.includes(' ke ') || lower.includes(' menuju '));
 
   if (isRouteQuery) {
     return await _handleRouteRequest(cleanQ, context);
@@ -29,15 +153,14 @@ async function handleLocationQuery(query, context = {}) {
 }
 
 /**
- * Handle route calculation via Mapbox
+ * Handle route calculation via OSRM / Mapbox
  */
 async function _handleRouteRequest(query, context) {
-  // Extract origin and destination from string if not provided in context
   let origin = context.origin || null;
   let destination = context.destination || null;
 
   if (!origin || !destination) {
-    const match = query.match(/(?:dari|dr)\s+(.*?)\s+(?:ke|tujuan)\s+(.*)/i);
+    const match = query.match(/(?:dari|dr)\s+(.*?)\s+(?:ke|tujuan|menuju)\s+(.*)/i);
     if (match) {
       origin = match[1].trim();
       destination = match[2].trim();
@@ -45,8 +168,18 @@ async function _handleRouteRequest(query, context) {
       const matchTo = query.match(/(?:ke|menuju)\s+(.*)/i);
       if (matchTo) {
         destination = matchTo[1].trim();
-        origin = context.userLocation || 'Yogyakarta'; // Default fallback
+        origin = 'posisi saya';
       }
+    }
+  }
+
+  // Jika origin adalah posisi pengguna, ambil GPS
+  let origCoords = null;
+  if (!origin || /^(?:posisi saya|lokasi saya|sini|current location|tempat saya)$/i.test(String(origin).trim())) {
+    const userCoords = await _resolveUserCoordinates(context);
+    if (userCoords) {
+      origCoords = { lat: userCoords.lat, lng: userCoords.lon, name: 'Posisi Anda Saat Ini' };
+      origin = origCoords;
     }
   }
 
@@ -56,68 +189,92 @@ async function _handleRouteRequest(query, context) {
 
   const profile = context.profile || (query.toLowerCase().includes('jalan kaki') ? 'walking' : (query.toLowerCase().includes('sepeda') ? 'cycling' : 'driving'));
 
-  const routeData = await locationEngine.calculateMapboxRoute(origin, destination, profile);
+  const routeData = await locationEngine.calculateRouteOsm(origin, destination, profile);
   if (!routeData) {
-    return `⚠️ Maaf Tuan, N.E.X.A gagal menghitung rute dari <b>${origin}</b> ke <b>${destination}</b> via Mapbox. Mohon periksa kembali nama tempatnya.`;
+    return `⚠️ Maaf Tuan, N.E.X.A gagal menghitung rute ke <b>${typeof destination === 'object' ? destination.name : destination}</b>. Mohon periksa kembali nama tempatnya.`;
   }
 
-  return `🗺️ <b>Informasi Rute & Perjalanan (Mapbox Navigator)</b>\n\n` +
+  return `🗺️ <b>Informasi Rute & Estimasi Perjalanan</b>\n\n` +
     `📍 <b>Asal:</b> ${routeData.originName}\n` +
     `🏁 <b>Tujuan:</b> ${routeData.destName}\n` +
-    `🛵 <b>Mode:</b> ${routeData.profile}\n` +
+    `🛵 <b>Moda:</b> ${routeData.profile}\n` +
     `📏 <b>Jarak Tempuh:</b> <b>${routeData.distanceKm}</b>\n` +
-    `⏱️ <b>Estimasi Waktu (ETA):</b> <b>~${routeData.durationMins} menit</b>\n\n` +
-    `<i>Dihitung secara presisi menggunakan Mapbox GIS Engine.</i>`;
+    `⏱️ <b>Estimasi Waktu:</b> <b>~${routeData.durationMins} menit</b>\n\n` +
+    `🧭 <a href="${routeData.gmapsUrl}"><b>Buka Navigasi Langsung di Google Maps</b></a>\n\n` +
+    `<i>Dihitung secara akurat menggunakan Open-Source Routing Engine.</i>`;
 }
 
 /**
- * Handle place recommendations via Brave Place Search API with Mapbox Geocoding fallback
+ * Handle place recommendations via OpenStreetMap Photon + Nominatim + Auto GPS
  */
 async function _handlePlaceSearchRequest(query, context) {
-  // 1. Try Brave Place Search for rich qualitative data
-  const braveResult = await locationEngine.searchBravePlaces(query);
+  const cleanedKeyword = _cleanPlaceQuery(query);
 
-  if (braveResult && ((braveResult.locations && braveResult.locations.length > 0) || (braveResult.snippets && braveResult.snippets.length > 0))) {
-    let card = `📍 <b>Rekomendasi Tempat & Tempat Lokal (Brave Place Search)</b>\n`;
-    card += `🔍 <i>Query: "${braveResult.query}"</i>\n\n`;
+  // 1. Ambil koordinat pengguna (Live GPS dari HP jika terhubung)
+  const userCoords = await _resolveUserCoordinates(context);
+  let userAddressStr = '';
 
-    if (braveResult.locations && braveResult.locations.length > 0) {
-      braveResult.locations.forEach((loc, idx) => {
-        card += `${idx + 1}. <b>${loc.title}</b>\n`;
-        if (loc.address) card += `   🏠 Alamat: ${loc.address}\n`;
-        if (loc.rating) card += `   ⭐ Rating: ${loc.rating}/5 (${loc.reviewCount || 0} ulasan)\n`;
-        if (loc.openingHours) card += `   🕒 Jam Buka: ${loc.openingHours}\n`;
-        if (loc.phone) card += `   📞 Telp: ${loc.phone}\n`;
-        if (loc.coordinates) {
-          const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${loc.coordinates.lat},${loc.coordinates.lng}`;
-          card += `   🗺️ <a href="${gmapsUrl}">Buka di Maps</a>\n`;
+  if (userCoords) {
+    const rev = await locationEngine.reverseGeocodeOsm(userCoords.lat, userCoords.lon);
+    if (rev && rev.displayName) {
+      userAddressStr = rev.displayName;
+    }
+  }
+
+  const lat = userCoords?.lat || -7.558;
+  const lon = userCoords?.lon || 110.856;
+
+  // 2. Kembangkan kata kunci pencarian (Sinonim & Konjungsi)
+  const searchKeywords = _expandSearchKeywords(cleanedKeyword);
+  console.log('[LOCATION-ORCHESTRATOR] Keyword pencarian:', searchKeywords);
+
+  let places = [];
+  for (const kw of searchKeywords) {
+    const results = await locationEngine.searchNearbyPlaces(kw, lat, lon, { limit: 5 });
+    if (results && results.length > 0) {
+      // Gabungkan hasil dan hindari duplikasi nama
+      for (const r of results) {
+        if (!places.some(p => p.name.toLowerCase() === r.name.toLowerCase())) {
+          places.push(r);
         }
-        card += `\n`;
-      });
+      }
     }
+    if (places.length >= 4) break; // Cukup 4-5 tempat terbaik
+  }
 
-    if (braveResult.snippets && braveResult.snippets.length > 0) {
-      card += `💡 <b>Ringkasan Ulasan Web Manusia:</b>\n`;
-      braveResult.snippets.forEach(s => {
-        card += `• <b>${s.title}</b>\n  ${s.snippet}\n`;
-      });
+  // Sortir ulang berdasarkan jarak terdekat
+  places.sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+  if (places && places.length > 0) {
+    let card = `📍 <b>Rekomendasi Tempat Terdekat</b>\n`;
+    if (userAddressStr) {
+      card += `📌 <i>Posisi Anda: ${userAddressStr}</i>\n`;
     }
+    card += `🔍 <i>Pencarian: "${cleanedKeyword}"</i>\n\n`;
 
+    places.slice(0, 5).forEach((p, idx) => {
+      const num = idx + 1;
+      card += `${num}. <b>${p.name}</b> (~${p.distanceText})\n`;
+      if (p.address && p.address !== p.name) {
+        card += `   🏠 <i>${p.address}</i>\n`;
+      }
+      card += `   🧭 <a href="${p.gmapsUrl}">Buka Navigasi di Google Maps</a>\n\n`;
+    });
+
+    card += `<i>Data lokasi real-time berbasis OpenStreetMap Spatial Engine.</i>`;
     return card.trim();
   }
 
-  // 2. Fallback to Mapbox Geocoding if Brave has no location data or limit reached
-  const mapboxGeocode = await locationEngine.geocodeMapbox(query);
-  if (mapboxGeocode) {
-    const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${mapboxGeocode.lat},${mapboxGeocode.lng}`;
-    return `📍 <b>Hasil Pencarian Lokasi (Mapbox GIS)</b>\n\n` +
-      `📌 <b>Nama Tempat:</b> ${mapboxGeocode.name}\n` +
-      `🏠 <b>Alamat Lengkap:</b> ${mapboxGeocode.address}\n` +
-      `🌐 <b>Koordinat:</b> ${mapboxGeocode.lat}, ${mapboxGeocode.lng}\n` +
-      `🗺️ <b>Peta:</b> <a href="${gmapsUrl}">Lihat di Google Maps</a>`;
-  }
+  // 3. Jika pencarian spesifik tidak ada hasil, berikan tautan pencarian Google Maps instan
+  const encodedQ = encodeURIComponent(cleanedKeyword || query);
+  const fallbackGmapsUrl = (userCoords)
+    ? `https://www.google.com/maps/search/${encodedQ}/@${userCoords.lat},${userCoords.lon},15z`
+    : `https://www.google.com/maps/search/${encodedQ}`;
 
-  return `📭 Maaf Tuan, N.E.X.A tidak menemukan informasi lokasi atau tempat untuk <b>"${query}"</b>.`;
+  return `📍 <b>Pencarian Tempat: "${cleanedKeyword}"</b>\n\n` +
+    (userAddressStr ? `📌 <i>Posisi Anda: ${userAddressStr}</i>\n\n` : '') +
+    `N.E.X.A tidak menemukan titik POI persis di database lokal untuk kata kunci tersebut.\n\n` +
+    `🗺️ <a href="${fallbackGmapsUrl}"><b>Klik di sini untuk mencari langsung di Google Maps</b></a>`;
 }
 
 module.exports = {

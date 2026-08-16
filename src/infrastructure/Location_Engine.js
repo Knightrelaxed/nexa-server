@@ -1,132 +1,358 @@
 // ============================================================
 // N.E.X.A — LOCATION ENGINE INFRASTRUCTURE
-// Klien terpadu untuk Brave Place Search API & Mapbox API
+// Klien terpadu untuk Open-Source Spatial Stack (OSM, Photon, Nominatim, OSRM)
+// 100% Gratis Tanpa API Key & Tanpa Kartu Kredit
+// (Dengan graceful fallback ke Brave & Mapbox jika env key tersedia)
 // ============================================================
 'use strict';
 
 const axios = require('axios');
 const env = require('../config/env');
 
+const USER_AGENT_HEADER = {
+  'User-Agent': 'NEXA-Assistant-Personal/1.0 (Personal AI Assistant)'
+};
+
 /**
- * Search places and local POIs using Brave Place Search API
- * @param {string} query - Natural language query (e.g., "mi ayam enak jam 10 malam di Jogja")
- * @param {object} [opts] - Optional parameters (e.g., count, country)
- * @returns {Promise<object|null>}
+ * Hitung jarak garis lurus (Haversine formula) antara 2 koordinat (dalam Meter)
  */
-async function searchBravePlaces(query, opts = {}) {
-  const apiKey = env.BRAVE_API_KEY;
-  if (!apiKey) {
-    console.warn('[LOCATION-ENGINE] BRAVE_API_KEY belum dikonfigurasi.');
-    return null;
+function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // Earth radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return Math.round(R * c);
+}
+
+/**
+ * Format meter ke string jarak manusiawi (misal "350 m" atau "2.4 km")
+ */
+function formatDistance(meters) {
+  if (meters < 1000) {
+    return `${meters} meter`;
   }
+  return `${(meters / 1000).toFixed(1)} km`;
+}
 
+/**
+ * Search places and local POIs around GPS coordinates using Photon (Komoot / OpenStreetMap)
+ * @param {string} query - Keyword pencarian (e.g., "warkop", "kopi", "pom bensin", "atm mandiri", "makan")
+ * @param {number} lat - Latitude pengguna
+ * @param {number} lon - Longitude pengguna
+ * @param {object} [opts] - Opsi tambahan
+ * @returns {Promise<Array<{name: string, address: string, distanceMeters: number, distanceText: string, lat: number, lon: number, gmapsUrl: string, category: string}>>}
+ */
+async function searchNearbyPlaces(query, lat, lon, opts = {}) {
   const cleanQuery = String(query || '').trim();
-  if (!cleanQuery) return null;
+  if (!cleanQuery) return [];
 
+  const limit = opts.limit || 8;
+
+  // 1. Coba Photon Komoot API (OSM POI Search)
   try {
-    const url = 'https://api.search.brave.com/res/v1/web/search';
+    const url = 'https://photon.komoot.io/api/';
     const response = await axios.get(url, {
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip',
-        'X-Subscription-Token': apiKey
-      },
       params: {
         q: cleanQuery,
-        result_filter: 'locations,discussions',
-        search_lang: 'id',
-        country: opts.country || 'ID',
-        count: opts.count || 5
+        lat: lat,
+        lon: lon,
+        limit: limit
       },
-      timeout: 10000
+      headers: USER_AGENT_HEADER,
+      timeout: 7000
+    });
+
+    const features = response.data?.features || [];
+    if (features.length > 0) {
+      const places = features.map(f => {
+        const props = f.properties || {};
+        const geom = f.geometry?.coordinates || [];
+        const itemLon = geom[0];
+        const itemLat = geom[1];
+
+        // Format nama & alamat
+        const name = props.name || props.street || cleanQuery;
+        const addressParts = [];
+        if (props.housenumber) addressParts.push(`No. ${props.housenumber}`);
+        if (props.street) addressParts.push(props.street);
+        if (props.locality || props.district) addressParts.push(props.locality || props.district);
+        if (props.city) addressParts.push(props.city);
+        const address = addressParts.join(', ') || props.state || 'Indonesia';
+
+        let distMeters = 0;
+        if (lat && lon && itemLat && itemLon) {
+          distMeters = calculateHaversineDistance(lat, lon, itemLat, itemLon);
+        }
+
+        const gmapsUrl = (itemLat && itemLon)
+          ? `https://www.google.com/maps/dir/?api=1&destination=${itemLat},${itemLon}`
+          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + ' ' + address)}`;
+
+        return {
+          name,
+          address,
+          category: props.osm_value || props.osm_key || 'Tempat',
+          lat: itemLat,
+          lon: itemLon,
+          distanceMeters: distMeters,
+          distanceText: formatDistance(distMeters),
+          gmapsUrl
+        };
+      });
+
+      // Sortir berdasarkan jarak terdekat dari pengguna
+      places.sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+      return places.slice(0, 5);
+    }
+  } catch (err) {
+    console.warn('[LOCATION-ENGINE] Photon POI search failed, trying fallback:', err.message);
+  }
+
+  // 2. Fallback ke Brave Place Search jika API Key tersedia
+  if (env.BRAVE_API_KEY) {
+    const braveRes = await searchBravePlaces(cleanQuery, opts);
+    if (braveRes?.locations?.length > 0) {
+      return braveRes.locations.map(loc => {
+        let distMeters = 0;
+        if (lat && lon && loc.coordinates?.lat && loc.coordinates?.lng) {
+          distMeters = calculateHaversineDistance(lat, lon, loc.coordinates.lat, loc.coordinates.lng);
+        }
+        const gmapsUrl = loc.coordinates
+          ? `https://www.google.com/maps/dir/?api=1&destination=${loc.coordinates.lat},${loc.coordinates.lng}`
+          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.title + ' ' + loc.address)}`;
+
+        return {
+          name: loc.title,
+          address: loc.address,
+          category: 'Tempat',
+          lat: loc.coordinates?.lat || null,
+          lon: loc.coordinates?.lng || null,
+          distanceMeters: distMeters,
+          distanceText: distMeters > 0 ? formatDistance(distMeters) : '-',
+          gmapsUrl
+        };
+      });
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Reverse Geocode: Mengubah Koordinat GPS (Lat, Lon) menjadi Nama Alamat Manusiawi via Nominatim OSM
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {Promise<{displayName: string, road: string, subdistrict: string, city: string, state: string}|null>}
+ */
+async function reverseGeocodeOsm(lat, lon) {
+  if (!lat || !lon) return null;
+
+  try {
+    const url = 'https://nominatim.openstreetmap.org/reverse';
+    const response = await axios.get(url, {
+      params: {
+        lat: lat,
+        lon: lon,
+        format: 'json',
+        addressdetails: 1
+      },
+      headers: USER_AGENT_HEADER,
+      timeout: 6000
     });
 
     const data = response.data;
     if (!data) return null;
 
-    const locations = data.locations?.results || [];
-    const webResults = data.web?.results || [];
+    const addr = data.address || {};
+    const road = addr.road || addr.pedestrian || addr.footway || '';
+    const subdistrict = addr.village || addr.suburb || addr.neighbourhood || addr.quarter || '';
+    const district = addr.city_district || addr.district || addr.county || '';
+    const city = addr.city || addr.town || addr.municipality || addr.regency || '';
+    const state = addr.state || '';
+
+    const parts = [road, subdistrict, district, city].filter(Boolean);
+    const shortAddress = parts.length > 0 ? parts.join(', ') : data.display_name;
 
     return {
-      query: cleanQuery,
-      locations: locations.map(loc => ({
-        id: loc.id,
-        title: loc.title || loc.name,
-        address: loc.address?.formatted || loc.address || '-',
-        phone: loc.phone || null,
-        rating: loc.rating?.value || loc.rating || null,
-        reviewCount: loc.rating?.votes || null,
-        coordinates: loc.coordinates ? { lat: loc.coordinates[0], lng: loc.coordinates[1] } : null,
-        priceRange: loc.price_range || null,
-        openingHours: loc.opening_hours || null
-      })),
-      snippets: webResults.slice(0, 3).map(w => ({
-        title: w.title,
-        snippet: w.description,
-        url: w.url
-      }))
+      displayName: shortAddress,
+      fullAddress: data.display_name,
+      road,
+      subdistrict,
+      district,
+      city,
+      state
     };
   } catch (err) {
-    if (err.response?.status === 429) {
-      console.warn('[LOCATION-ENGINE] ⚠️ Brave Place Search limit reached (HTTP 429).');
-    } else {
-      console.error('[LOCATION-ENGINE] Brave Place Search error:', err.message);
-    }
-    return null;
+    console.error('[LOCATION-ENGINE] Nominatim Reverse Geocode error:', err.message);
+    // Fallback to Mapbox if available
+    return await reverseGeocodeMapbox(lat, lon);
   }
 }
 
 /**
- * Geocode address/location name to coordinates via Mapbox
- * @param {string} locationName 
- * @returns {Promise<{name: string, lat: number, lng: number, address: string}|null>}
+ * Geocode: Mengubah Nama Tempat / Kota menjadi Koordinat (Lat, Lng) via Nominatim OSM
+ * @param {string} locationName
+ * @returns {Promise<{name: string, address: string, lat: number, lng: number}|null>}
  */
-async function geocodeMapbox(locationName) {
-  const token = env.MAPBOX_ACCESS_TOKEN;
-  if (!token) {
-    console.warn('[LOCATION-ENGINE] MAPBOX_ACCESS_TOKEN belum dikonfigurasi.');
-    return null;
-  }
-
-  const cleanQuery = String(locationName || '').trim();
-  if (!cleanQuery) return null;
+async function geocodeOsm(locationName) {
+  const clean = String(locationName || '').trim();
+  if (!clean) return null;
 
   try {
-    const encoded = encodeURIComponent(cleanQuery);
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json`;
+    const url = 'https://nominatim.openstreetmap.org/search';
     const response = await axios.get(url, {
       params: {
-        access_token: token,
-        country: 'id',
-        limit: 1
+        q: clean,
+        format: 'json',
+        limit: 1,
+        countrycodes: 'id'
+      },
+      headers: USER_AGENT_HEADER,
+      timeout: 6000
+    });
+
+    const results = response.data;
+    if (results && results.length > 0) {
+      const top = results[0];
+      return {
+        name: clean,
+        address: top.display_name,
+        lat: parseFloat(top.lat),
+        lng: parseFloat(top.lon)
+      };
+    }
+  } catch (err) {
+    console.warn('[LOCATION-ENGINE] Nominatim Geocode failed, trying Mapbox fallback:', err.message);
+  }
+
+  // Fallback to Mapbox if available
+  return await geocodeMapbox(clean);
+}
+
+/**
+ * Hitung Rute, Jarak, dan ETA Perjalanan via OSRM (Open Source Routing Machine)
+ * @param {string|{lat: number, lng: number}} origin - Titik asal
+ * @param {string|{lat: number, lng: number}} destination - Titik tujuan
+ * @param {'driving'|'cycling'|'walking'} [profile='driving'] - Mode transportasi
+ * @returns {Promise<{distanceKm: string, durationMins: number, originName: string, destName: string, profile: string, gmapsUrl: string}|null>}
+ */
+async function calculateRouteOsm(origin, destination, profile = 'driving') {
+  try {
+    let origCoords = typeof origin === 'object' && origin.lat ? origin : await geocodeOsm(origin);
+    let destCoords = typeof destination === 'object' && destination.lat ? destination : await geocodeOsm(destination);
+
+    if (!origCoords || !destCoords) {
+      console.warn('[LOCATION-ENGINE] Could not resolve coordinates for OSRM route calculation.');
+      return null;
+    }
+
+    const osrmMode = profile === 'walking' ? 'foot' : (profile === 'cycling' ? 'bike' : 'driving');
+    const coordsStr = `${origCoords.lng || origCoords.lon},${origCoords.lat};${destCoords.lng || destCoords.lon},${destCoords.lat}`;
+    const url = `https://router.project-osrm.org/route/v1/${osrmMode}/${coordsStr}?overview=false`;
+
+    const response = await axios.get(url, { timeout: 7000 });
+    const routes = response.data?.routes;
+
+    if (!routes || routes.length === 0) {
+      // Fallback to Mapbox if token available
+      return await calculateMapboxRoute(origin, destination, profile);
+    }
+
+    const route = routes[0];
+    const distanceKm = (route.distance / 1000).toFixed(1);
+    const durationMins = Math.round(route.duration / 60);
+
+    const gmapsNavUrl = `https://www.google.com/maps/dir/?api=1&origin=${origCoords.lat},${origCoords.lng || origCoords.lon}&destination=${destCoords.lat},${destCoords.lng || destCoords.lon}`;
+
+    return {
+      distanceKm: `${distanceKm} km`,
+      durationMins: durationMins < 1 ? 1 : durationMins,
+      originName: origCoords.name || origCoords.address || 'Lokasi Asal',
+      destName: destCoords.name || destCoords.address || 'Lokasi Tujuan',
+      profile: profile === 'driving' ? 'Kendaraan (Motor/Mobil)' : (profile === 'walking' ? 'Jalan Kaki' : 'Sepeda'),
+      gmapsUrl: gmapsNavUrl
+    };
+  } catch (err) {
+    console.error('[LOCATION-ENGINE] OSRM Route error, trying Mapbox fallback:', err.message);
+    return await calculateMapboxRoute(origin, destination, profile);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Legacy / Fallback Functions (Brave & Mapbox)
+// ─────────────────────────────────────────────────────────────
+
+async function searchBravePlaces(query, opts = {}) {
+  const apiKey = env.BRAVE_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const response = await axios.get('https://api.search.brave.com/res/v1/web/search', {
+      headers: {
+        'Accept': 'application/json',
+        'X-Subscription-Token': apiKey
+      },
+      params: {
+        q: query,
+        result_filter: 'locations,discussions',
+        search_lang: 'id',
+        country: opts.country || 'ID',
+        count: opts.count || 5
       },
       timeout: 8000
+    });
+
+    const data = response.data;
+    const locations = data?.locations?.results || [];
+    return {
+      query,
+      locations: locations.map(loc => ({
+        id: loc.id,
+        title: loc.title || loc.name,
+        address: loc.address?.formatted || loc.address || '-',
+        coordinates: loc.coordinates ? { lat: loc.coordinates[0], lng: loc.coordinates[1] } : null
+      }))
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+async function geocodeMapbox(locationName) {
+  const token = env.MAPBOX_ACCESS_TOKEN;
+  if (!token) return null;
+
+  try {
+    const encoded = encodeURIComponent(locationName);
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json`;
+    const response = await axios.get(url, {
+      params: { access_token: token, country: 'id', limit: 1 },
+      timeout: 7000
     });
 
     const features = response.data?.features;
     if (!features || features.length === 0) return null;
 
-    const topMatch = features[0];
-    const [lng, lat] = topMatch.center;
-
+    const [lng, lat] = features[0].center;
     return {
-      name: topMatch.text || cleanQuery,
-      address: topMatch.place_name || cleanQuery,
+      name: features[0].text || locationName,
+      address: features[0].place_name || locationName,
       lat,
       lng
     };
   } catch (err) {
-    console.error('[LOCATION-ENGINE] Mapbox Geocoding error:', err.message);
     return null;
   }
 }
 
-/**
- * Reverse geocode coordinates (Lat, Lng) to address via Mapbox
- * @param {number} lat 
- * @param {number} lng 
- * @returns {Promise<{address: string, city: string}|null>}
- */
 async function reverseGeocodeMapbox(lat, lng) {
   const token = env.MAPBOX_ACCESS_TOKEN;
   if (!token) return null;
@@ -134,33 +360,27 @@ async function reverseGeocodeMapbox(lat, lng) {
   try {
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json`;
     const response = await axios.get(url, {
-      params: {
-        access_token: token,
-        limit: 1
-      },
-      timeout: 8000
+      params: { access_token: token, limit: 1 },
+      timeout: 7000
     });
 
     const features = response.data?.features;
     if (!features || features.length === 0) return null;
 
     return {
-      address: features[0].place_name,
-      city: features[0].context?.find(c => c.id.startsWith('place'))?.text || ''
+      displayName: features[0].place_name,
+      fullAddress: features[0].place_name,
+      road: '',
+      subdistrict: '',
+      district: '',
+      city: features[0].context?.find(c => c.id.startsWith('place'))?.text || '',
+      state: ''
     };
   } catch (err) {
-    console.error('[LOCATION-ENGINE] Mapbox Reverse Geocoding error:', err.message);
     return null;
   }
 }
 
-/**
- * Calculate route, distance, and duration between origin and destination via Mapbox Directions API
- * @param {string|{lat: number, lng: number}} origin - Address string or coordinate object
- * @param {string|{lat: number, lng: number}} destination - Address string or coordinate object
- * @param {'driving'|'cycling'|'walking'} [profile='driving'] - Mode of transport (driving = motor/mobil)
- * @returns {Promise<{distanceKm: string, durationMins: number, originName: string, destName: string, profile: string}|null>}
- */
 async function calculateMapboxRoute(origin, destination, profile = 'driving') {
   const token = env.MAPBOX_ACCESS_TOKEN;
   if (!token) return null;
@@ -169,48 +389,45 @@ async function calculateMapboxRoute(origin, destination, profile = 'driving') {
     let origCoords = typeof origin === 'object' ? origin : await geocodeMapbox(origin);
     let destCoords = typeof destination === 'object' ? destination : await geocodeMapbox(destination);
 
-    if (!origCoords || !destCoords) {
-      console.warn('[LOCATION-ENGINE] Could not resolve coordinates for route calculation.');
-      return null;
-    }
+    if (!origCoords || !destCoords) return null;
 
     const mode = ['driving', 'cycling', 'walking'].includes(profile) ? profile : 'driving';
     const coordsStr = `${origCoords.lng},${origCoords.lat};${destCoords.lng},${destCoords.lat}`;
     const url = `https://api.mapbox.com/directions/v5/mapbox/${mode}/${coordsStr}`;
 
     const response = await axios.get(url, {
-      params: {
-        access_token: token,
-        geometries: 'geojson',
-        overview: 'simplified'
-      },
-      timeout: 8000
+      params: { access_token: token, geometries: 'geojson', overview: 'simplified' },
+      timeout: 7000
     });
 
     const routes = response.data?.routes;
     if (!routes || routes.length === 0) return null;
 
     const route = routes[0];
-    const distanceMeters = route.distance || 0;
-    const durationSeconds = route.duration || 0;
-
-    const distanceKm = (distanceMeters / 1000).toFixed(1);
-    const durationMins = Math.round(durationSeconds / 60);
+    const distanceKm = (route.distance / 1000).toFixed(1);
+    const durationMins = Math.round(route.duration / 60);
 
     return {
       distanceKm: `${distanceKm} km`,
       durationMins,
       originName: origCoords.name || origCoords.address || 'Asal',
       destName: destCoords.name || destCoords.address || 'Tujuan',
-      profile: mode === 'driving' ? 'Kendaraan (Motor/Mobil)' : (mode === 'cycling' ? 'Sepeda' : 'Jalan Kaki')
+      profile: mode === 'driving' ? 'Kendaraan (Motor/Mobil)' : (mode === 'cycling' ? 'Sepeda' : 'Jalan Kaki'),
+      gmapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${origCoords.lat},${origCoords.lng}&destination=${destCoords.lat},${destCoords.lng}`
     };
   } catch (err) {
-    console.error('[LOCATION-ENGINE] Mapbox Routing error:', err.message);
     return null;
   }
 }
 
 module.exports = {
+  calculateHaversineDistance,
+  formatDistance,
+  searchNearbyPlaces,
+  reverseGeocodeOsm,
+  geocodeOsm,
+  calculateRouteOsm,
+  // Backward compatibility aliases
   searchBravePlaces,
   geocodeMapbox,
   reverseGeocodeMapbox,

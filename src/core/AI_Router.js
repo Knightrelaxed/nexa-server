@@ -348,6 +348,10 @@ OUTPUT JSON FORMAT:
     //   - mode: "deep" jika user meminta "analisis mendalam", "kronologi lengkap", "riset detail", "seluk beluk", "baca lengkap", atau investigasi kompleks. "fast" untuk pertanyaan umum/singkat.
     //   - EXAMPLE CORRECT: User says "coba baca tentang apa yang terbaru" → query="berita terbaru", type="news", mode="fast"
     //   - EXAMPLE WRONG: query="analisis konten terbaru dari lampiran" (DO NOT add words not spoken by user)
+    // LOCATION: { action: "SEARCH_NEARBY|ROUTE|GEOCODE", query: string, origin: string, destination: string }
+    //   - Triggers SEARCH_NEARBY: "carikan warkop/tempat ngopi/cafe/pom bensin/ATM/makan terdekat", "tempat makan di sekitar sini", "kopi terdekat dari posisi saya", "rekomendasi kuliner dekat sini", "ada masjid dekat sini?"
+    //   - Triggers ROUTE: "berapa menit dari A ke B", "rute dari X ke Y", "jarak dari sini ke kampus"
+    //   - Triggers GEOCODE: "alamat Masjid Zayed Solo", "di mana letak Monas"
     // DIAGNOSE_SYSTEM: { action: "READ_LOGS", search_keyword: string }
     //   - Triggers STRICTLY TECHNICAL LOGS ONLY: "cek log error", "kenapa server error", "baca log sistem". DO NOT use for chat history or past conversations!
   },
