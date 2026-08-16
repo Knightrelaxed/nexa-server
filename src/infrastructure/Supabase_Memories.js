@@ -17,7 +17,8 @@ const SUPABASE_TABLES = [
   'nexa_behavior_log',         // [PHASE 6 — Pilar 8.2]
   'nexa_identity_model',       // [PHASE 6 — Cognitive Identity Layer]
   'nexa_identity_proposals',   // [PHASE 6 — Git-Style Proposal Staging]
-  'nexa_self_model'            // [PHASE 8 — Self-Learning Engine]
+  'nexa_self_model',           // [PHASE 8 — Self-Learning Engine]
+  'nexa_app_limits'            // App Usage & Duration Limiting System
 ];
 
 function resolveAllowedTableName(tableName) {
