@@ -121,8 +121,9 @@ async function evaluateAppUsage(telemetry = {}) {
         behaviorEngine.logPassiveLearning(`Defiance detected: Attempted to open ${appName} during ${remainingMinutes}m lockout (Attempt #${lockout.attempts})`, 'BEHAVIOR_OBSERVATION').catch(() => {});
       } catch (_) {}
 
-      // Trigger GodMode Level 3 (Surgical Restriction + Immediate Re-Bounce)
-      await disciplineGodMode.triggerGodMode(3, {
+      // Trigger GodMode: Level 3 on 1st attempt, Level 4 (Nuclear Lockout) on repeated attempts
+      const targetLevel = lockout.attempts >= 2 ? 4 : 3;
+      await disciplineGodMode.triggerGodMode(targetLevel, {
         violation_app: `${appName} (Cooldown: ${remainingMinutes}m tersisa, Upaya #${lockout.attempts})`,
         duration_minutes: sessionMinutes,
         message_tone: 'urgent'
@@ -130,7 +131,7 @@ async function evaluateAppUsage(telemetry = {}) {
 
       return {
         status: 'LOCKOUT_DEFIANCE_BLOCKED',
-        action_taken: 'ESCALATION_LEVEL_3',
+        action_taken: `ESCALATION_LEVEL_${targetLevel}`,
         app_name: appName,
         remaining_minutes: remainingMinutes,
         attempts: lockout.attempts
