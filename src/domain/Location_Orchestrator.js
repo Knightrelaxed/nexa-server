@@ -55,7 +55,8 @@ async function _resolveUserCoordinates(context = {}) {
     try {
       console.log('[LOCATION-ORCHESTRATOR] 📡 Mengambil koordinat GPS aktif dari HP via Bridge...');
       const bridgeRes = await bridge.getLocation();
-      if (bridgeRes && bridgeRes.status === 'SUCCESS' && bridgeRes.data) {
+      // sendCommand resolves: { success: boolean, message: string, data: object }
+      if (bridgeRes && bridgeRes.success === true && bridgeRes.data) {
         const lat = Number(bridgeRes.data.latitude);
         const lon = Number(bridgeRes.data.longitude);
         if (!isNaN(lat) && !isNaN(lon) && (lat !== 0 || lon !== 0)) {
@@ -63,6 +64,7 @@ async function _resolveUserCoordinates(context = {}) {
           return { lat, lon, source: 'LIVE_GPS', accuracy: bridgeRes.data.accuracy };
         }
       }
+      console.warn('[LOCATION-ORCHESTRATOR] GPS bridge response tidak valid:', JSON.stringify(bridgeRes));
     } catch (err) {
       console.warn('[LOCATION-ORCHESTRATOR] Gagal mengambil GPS dari Bridge:', err.message);
     }
