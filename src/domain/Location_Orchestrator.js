@@ -70,19 +70,8 @@ async function _resolveUserCoordinates(context = {}) {
     }
   }
 
-  // 3. Fallback: Geocode kota default (misal context.userLocation atau 'Surakarta')
-  const defaultCity = context.userLocation || context.city || 'Surakarta';
-  console.log(`[LOCATION-ORCHESTRATOR] ℹ️ Menggunakan fallback kota: ${defaultCity}`);
-  const geocoded = await locationEngine.geocodeOsm(defaultCity);
-  if (geocoded) {
-    return {
-      lat: geocoded.lat,
-      lon: geocoded.lng,
-      source: 'CITY_FALLBACK',
-      cityName: defaultCity
-    };
-  }
-
+  // GPS tidak tersedia — kembalikan null agar pesan error yang informatif dikirim ke user
+  console.warn('[LOCATION-ORCHESTRATOR] ⚠️ GPS tidak tersedia dan tidak ada koordinat konteks.');
   return null;
 }
 
@@ -226,8 +215,20 @@ async function _handlePlaceSearchRequest(query, context) {
     }
   }
 
-  const lat = userCoords?.lat || -7.558;
-  const lon = userCoords?.lon || 110.856;
+  // Jika GPS tidak tersedia sama sekali, beri tahu user secara sopan
+  if (!userCoords) {
+    return `📡 <b>GPS Tidak Tersedia</b>\n\n` +
+      `Maaf Tuan, N.E.X.A tidak berhasil membaca koordinat lokasi HP saat ini.\n\n` +
+      `<b>Cara mengatasinya:</b>\n` +
+      `• Pastikan GPS / Lokasi di HP <b>aktif</b>\n` +
+      `• Buka aplikasi Nexa Bridge di HP\n` +
+      `• Coba lagi setelah beberapa detik\n\n` +
+      `Atau sebutkan nama kota/daerah Tuan secara langsung, contoh:\n` +
+      `<i>"Nexa, carikan pom bensin terdekat di Jebres Surakarta"</i>`;
+  }
+
+  const lat = userCoords.lat;
+  const lon = userCoords.lon;
 
   // 2. Kembangkan kata kunci pencarian (Sinonim & Konjungsi)
   const searchKeywords = _expandSearchKeywords(cleanedKeyword);
