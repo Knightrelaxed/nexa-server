@@ -157,8 +157,9 @@ async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
   // Audio files are small enough (usually <500KB) to be safe
   const audioBuffer = fs.readFileSync(tmpFilePath);
   const base64Audio = audioBuffer.toString('base64');
+  const mimeType = tmpFilePath.endsWith('.wav') ? 'audio/wav' : 'audio/ogg';
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const payload = {
     contents: [{
       parts: [
@@ -167,7 +168,7 @@ async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
         },
         {
           inlineData: {
-            mimeType: 'audio/ogg',
+            mimeType: mimeType,
             data: base64Audio
           }
         }
@@ -212,6 +213,7 @@ async function callHuggingFaceWhisper(tmpFilePath, retries = 2) {
   if (!token) throw new Error('No HF_INFERENCE_TOKEN configured');
 
   const audioBuffer = fs.readFileSync(tmpFilePath);
+  const contentType = tmpFilePath.endsWith('.wav') ? 'audio/wav' : 'audio/ogg';
   const url = 'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo';
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -219,7 +221,7 @@ async function callHuggingFaceWhisper(tmpFilePath, retries = 2) {
       const response = await axios.post(url, audioBuffer, {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'audio/ogg'
+          'Content-Type': contentType
         },
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
@@ -370,4 +372,109 @@ async function transcribeTelegramVoice(fileId) {
   }
 }
 
-module.exports = { transcribeTelegramVoice };
+// ============================================================
+// PCM TO WAV BUFFER CONVERTER (Helper for Android Mobile Bridge Calls)
+// ============================================================
+function pcmToWavBuffer(pcmBuffer, sampleRate = 16000, channels = 1, bitDepth = 16) {
+  const byteRate = sampleRate * channels * (bitDepth / 8);
+  const blockAlign = channels * (bitDepth / 8);
+  const dataSize = pcmBuffer.length;
+  const buffer = Buffer.alloc(44 + dataSize);
+
+  // RIFF chunk descriptor
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+
+  // fmt sub-chunk
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+  buffer.writeUInt16LE(1, 20);  // AudioFormat (1 for PCM)
+  buffer.writeUInt16LE(channels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitDepth, 34);
+
+  // data sub-chunk
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+
+  // Copy raw PCM data
+  pcmBuffer.copy(buffer, 44);
+
+  return buffer;
+}
+
+// ============================================================
+// MOBILE BRIDGE CALL VOICE TRANSCRIBER (Raw PCM Base64)
+// Transkripsi audio suara dari Nexa Bridge FakeCallActivity
+// ============================================================
+async function transcribePcmBase64(pcmBase64, opts = {}) {
+  if (!pcmBase64 || typeof pcmBase64 !== 'string') {
+    throw new Error('Invalid PCM Base64 audio data');
+  }
+
+  const pcmBuffer = Buffer.from(pcmBase64, 'base64');
+  if (pcmBuffer.length < 500) {
+    console.warn('[VOICE-BRIDGE] Audio buffer too short or empty.');
+    return '';
+  }
+
+  const sampleRate = opts.sampleRate || 16000;
+  const channels = opts.channels || 1;
+  const bitDepth = opts.bitDepth || 16;
+
+  const wavBuffer = pcmToWavBuffer(pcmBuffer, sampleRate, channels, bitDepth);
+  const tmpWavPath = path.join(os.tmpdir(), `bridge_call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.wav`);
+  fs.writeFileSync(tmpWavPath, wavBuffer);
+
+  try {
+    const tiers = [
+      // Tier 1-4: Groq Whisper Large v3 (Fastest & Best for Indonesian speech)
+      ...GROQ_CLIENTS.map((client, i) => ({
+        name: `Tier ${i + 1} (Groq Whisper Key ${i + 1})`,
+        fn: () => callGroqWhisper(client, tmpWavPath)
+      })),
+      // Tier 5-8: Gemini Native Audio (Keys 1-4)
+      ...GEMINI_NATIVE_KEYS.map((key, i) => ({
+        name: `Tier ${i + 5} (Gemini Native Audio Key ${i + 1})`,
+        fn: () => callGeminiNativeAudio(key, tmpWavPath)
+      })),
+      // Tier 9: Hugging Face Whisper Large v3 Turbo
+      {
+        name: 'Tier HF (HuggingFace Whisper Large v3 Turbo)',
+        fn: () => callHuggingFaceWhisper(tmpWavPath)
+      }
+    ];
+
+    for (const tier of tiers) {
+      try {
+        console.log(`[VOICE-BRIDGE] Transcribing via ${tier.name}...`);
+        const result = await tier.fn();
+        if (result && result.trim().length > 0) {
+          console.log(`[VOICE-BRIDGE] ✅ ${tier.name} SUCCESS: "${result.trim()}"`);
+          return result.trim();
+        }
+      } catch (err) {
+        console.warn(`[VOICE-BRIDGE] ⚠️ ${tier.name} failed: ${err.message}`);
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+
+    throw new Error('All voice transcription tiers failed for bridge call audio');
+  } finally {
+    try {
+      if (fs.existsSync(tmpWavPath)) {
+        fs.unlinkSync(tmpWavPath);
+      }
+    } catch (_) {}
+  }
+}
+
+module.exports = {
+  transcribeTelegramVoice,
+  transcribePcmBase64,
+  pcmToWavBuffer
+};
+

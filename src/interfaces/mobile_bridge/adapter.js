@@ -120,9 +120,12 @@ class NexaBridgeAdapter {
           });
 
           // Reply back with TTS speech on the phone
-          const replyText = typeof aiReply === 'string'
+          let rawReply = typeof aiReply === 'string'
             ? aiReply
             : (aiReply?.reply_message || aiReply?.text || 'Baik Tuan Faqih.');
+          // Strip HTML tags and markdown formatting for natural TTS speech
+          const replyText = rawReply.replace(/<[^>]*>/g, '').replace(/[*_`#]/g, '').trim();
+          console.log(`[NEXA-ADAPTER] 🗣️ Speaking reply on phone: "${replyText}"`);
           await this.speakText(replyText);
         }
       } catch (err) {
