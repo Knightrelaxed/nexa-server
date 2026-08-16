@@ -29,9 +29,38 @@ const app = express();
 app.disable('x-powered-by');
 
 // ============================================================
-// MIDDLEWARES
+// MIDDLEWARES & SECURITY HARDENING
 // ============================================================
-app.use(cors());
+// 1. Security Headers (Defense-in-Depth)
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.removeHeader('X-Powered-By');
+  next();
+});
+
+// 2. Strict CORS Configuration
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow non-browser clients (Telegram webhooks, CLI, mobile apps, curl)
+    if (!origin) return callback(null, true);
+    const allowedOrigins = [
+      'https://nexa-server.indonesiacentral.cloudapp.azure.com',
+      'http://localhost:3000',
+      'http://127.0.0.1:3000'
+    ];
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('CORS policy violation'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Telegram-Bot-Api-Secret-Token']
+}));
+
 app.use(morgan('dev', {
   skip: (req, res) => {
     // Skip noisy automated web scanner hits (404s like .env, .git, config)
@@ -92,12 +121,12 @@ if (require.main === module) {
   const server = http.createServer(app);
   mobileBridgeWs.initWebSocket(server);
 
-  server.listen(port, '0.0.0.0', () => {
+  server.listen(port, '127.0.0.1', () => {
     console.log(`[N.E.X.A 3.0] ✅ Server running on port ${port} (${process.env.NODE_ENV || 'development'} mode)`);
+    console.log(`[N.E.X.A 3.0] 🔒 Bound to 127.0.0.1 (Loopback only - Protected by Caddy Reverse Proxy)`);
     console.log(`[N.E.X.A 3.0] 📱 Mobile Bridge WebSocket Endpoint: /ws`);
-    console.log(`[N.E.X.A 3.0] 🏥 Health endpoint: http://0.0.0.0:${port}/health`);
+    console.log(`[N.E.X.A 3.0] 🏥 Health endpoint: http://127.0.0.1:${port}/health`);
     console.log(`[N.E.X.A 3.0] 💻 CLI Local URL  : http://127.0.0.1:${port}`);
-    console.log(`[N.E.X.A] 🌐 VPS Server: http://48.193.41.76:${port}`);
     // Initialize cron jobs AFTER server is listening
     // node-cron will run Morning Briefing at 05:30 WIB
     cronInterface.initCronJobs();

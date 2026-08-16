@@ -6,6 +6,7 @@
 'use strict';
 
 const WebSocket = require('ws');
+const crypto = require('crypto');
 const env = require('../../config/env');
 
 let wss = null;
@@ -24,14 +25,16 @@ function initWebSocket(server) {
   wss = new WebSocket.Server({ server, path: '/ws' });
 
   wss.on('connection', (ws, req) => {
-    // 1. Handshake Authentication (Bearer Token)
+    // 1. Handshake Authentication (Bearer Token with constant-time equality)
     const authHeader = req.headers.authorization;
     const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_GODMODE_SECRET || '').trim();
 
     let isAuthorized = false;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
+    if (authHeader && authHeader.startsWith('Bearer ') && configuredSecret.length > 0) {
       const token = authHeader.slice('Bearer '.length).trim();
-      if (token === configuredSecret && configuredSecret.length > 0) {
+      const aBuf = Buffer.from(token, 'utf8');
+      const bBuf = Buffer.from(configuredSecret, 'utf8');
+      if (aBuf.length === bBuf.length && crypto.timingSafeEqual(aBuf, bBuf)) {
         isAuthorized = true;
       }
     }
