@@ -69,7 +69,7 @@ function telegramWebhookSecret(req, res, next) {
 }
 
 /**
- * Middleware to protect incoming webhooks (from Tasker → N.E.X.A VPS)
+ * Middleware to protect incoming secure webhooks
  * Requires 'Authorization: Bearer <SECRET_TOKEN>' header
  */
 function webhookAuth(req, res, next) {
@@ -120,19 +120,6 @@ function cliAuth(req, res, next) {
   }
 
   next();
-}
-
-/**
- * Utility to generate HMAC signature for outgoing requests to Tasker
- * @param {string} timestamp - ISO timestamp string
- * @param {number} level - Escalation level
- * @returns {string} HMAC SHA-256 signature
- */
-function generateTaskerSignature(timestamp, level) {
-  const payload = `${timestamp}${level}${env.NEXA_GODMODE_SECRET}`;
-  return crypto.createHmac('sha256', env.NEXA_GODMODE_SECRET)
-               .update(payload)
-               .digest('hex');
 }
 
 /**
@@ -192,6 +179,5 @@ module.exports = {
   whatsappIdentityLock,
   telegramWebhookSecret,
   webhookAuth,
-  cliAuth,
-  generateTaskerSignature
+  cliAuth
 };

@@ -7,7 +7,6 @@
 
 const mobileBridgeWs = require('./MobileBridge_WS');
 const locationEngine = require('../../infrastructure/Location_Engine');
-const taskerClient = require('../../infrastructure/Tasker_Client');
 const env = require('../../config/env');
 
 class NexaBridgeAdapter {

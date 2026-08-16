@@ -90,7 +90,7 @@ async function logBehaviorEvent(eventType, eventData = {}) {
 
 /**
  * Log a WAKE_UP event.
- * Called from webhook.js when the ALARM_DISMISSED Tasker event fires.
+ * Called when morning wake up event fires.
  * Only logs once per day — checks if a WAKE_UP has already been logged today.
  */
 async function logWakeUp() {

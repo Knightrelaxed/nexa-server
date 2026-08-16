@@ -82,7 +82,7 @@ app.get('/', (req, res) => {
 
 // ============================================================
 // HEALTH ENDPOINT — Lapisan 2: Paramedis (Smart Vital Signs)
-// Digunakan oleh: UptimeRobot, cron-job.org, Tasker Watchdog
+// Digunakan oleh: UptimeRobot, cron-job.org, Health Check
 // MUST be registered BEFORE webhook router for fastest response
 // ============================================================
 app.get('/health', (req, res) => {

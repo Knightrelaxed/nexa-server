@@ -12,7 +12,6 @@ const security = require('../utils/security');
 
 // Adapters
 const { handleTelegramWebhook } = require('./telegram/adapter');
-const { handleTaskerWebhook } = require('./tasker/adapter');
 const { handleCliWebhook, handleCliStream } = require('./cli/adapter');
 const { handleGmailWebhook } = require('./gmail/adapter');
 
@@ -31,10 +30,7 @@ const {
 // 1. Telegram Webhook & Callback Query Handler
 router.post('/telegram', security.telegramWebhookSecret, security.telegramIdentityLock, handleTelegramWebhook);
 
-// 2. Tasker Webhook (Android -> N.E.X.A Server)
-router.post('/tasker', security.webhookAuth, handleTaskerWebhook);
-
-// 3. Gmail Webhook (Google Cloud Pub/Sub -> N.E.X.A Server)
+// 2. Gmail Webhook (Google Cloud Pub/Sub -> N.E.X.A Server)
 router.post('/gmail', handleGmailWebhook);
 
 // 4. CLI Remote Interface (Laptop manapun → N.E.X.A Server HF)

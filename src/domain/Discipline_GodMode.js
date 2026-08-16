@@ -6,8 +6,26 @@
 // ============================================================
 'use strict';
 
+const axios = require('axios');
 const env = require('../config/env');
-const taskerClient = require('../infrastructure/Tasker_Client');
+
+/**
+ * Mengirim notifikasi push instan ke Android via ntfy.sh (DND-proof).
+ */
+async function pushNtfy(message, options = {}) {
+  if (!env.NTFY_TOPIC || String(env.NTFY_TOPIC).trim() === '') return false;
+  const { title = 'N.E.X.A Alert', priority = 'default', tags = 'robot' } = options;
+  try {
+    await axios.post(`https://ntfy.sh/${env.NTFY_TOPIC}`, message, {
+      headers: { 'Title': title, 'Priority': priority, 'Tags': tags },
+      timeout: 5000
+    });
+    return true;
+  } catch (err) {
+    console.error('[NTFY PUSH ERROR] Failed to send push:', err.message);
+    return false;
+  }
+}
 
 function escapeHtml(value) {
   return String(value || '')
@@ -289,7 +307,7 @@ async function getDynamicEscalationPlan(level = 1, metadata = {}) {
 }
 
 /**
- * Trigger God Mode Escalation to Android Device via ntfy.sh & Tasker
+ * Trigger God Mode Escalation to Android Device via ntfy.sh
  * 
  * @param {number} level - Escalation level (1: Reminder, 2: Friction, 3: Surgical Force, 4: Ultimate God Mode)
  * @param {object} metadata - Details about violation (violation_app, duration_minutes, message_tone, include_wellness_note)
@@ -302,10 +320,10 @@ async function triggerGodMode(level = 1, metadata = {}) {
   console.log(`[GODMODE ENGINE] Plan Ready: Level ${level} (${plan.levelName}) for app "${metadata.violation_app || 'Unknown'}"`);
 
   // ============================================================
-  // PRIMARY: ntfy.sh direct push via infrastructure client (Instant, DND-proof)
+  // PRIMARY: ntfy.sh direct push (Instant, DND-proof)
   // ============================================================
   console.log(`[GODMODE OUTBOUND] Pushing instant command to ntfy topic (${plan.priority} priority)...`);
-  const ntfySent = await taskerClient.pushNtfy(plan.ntfyMessage, {
+  const ntfySent = await pushNtfy(plan.ntfyMessage, {
     title: plan.title,
     priority: plan.priority,
     tags: plan.tags
@@ -328,21 +346,6 @@ async function triggerGodMode(level = 1, metadata = {}) {
     } catch (telegramErr) {
       console.error('[GODMODE AUDIT] Failed to send God Mode audit to Telegram:', telegramErr.message);
     }
-  }
-
-  // ============================================================
-  // TERTIARY (FALLBACK): Direct HTTP push to Tasker via infrastructure client
-  // Only runs if TASKER_WEBHOOK_URL is configured
-  // ============================================================
-  const directSent = await taskerClient.sendDirectCommand({
-    type: 'GOD_MODE_ESCALATION',
-    level: Number(level),
-    level_name: plan.levelName,
-    actions: plan.actions
-  }, metadata, { level: Number(level), timestamp });
-
-  if (directSent) {
-    console.log(`[DISCIPLINE] Level ${level} delivered via direct Tasker URL.`);
   }
 
   return true;

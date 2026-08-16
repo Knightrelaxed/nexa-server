@@ -95,7 +95,6 @@ module.exports = {
   NEXA_GODMODE_SECRET: process.env.NEXA_GODMODE_SECRET,
   NEXA_CLI_SECRET: process.env.NEXA_CLI_SECRET, // Strict CLI isolation (No Fallback)
   NTFY_TOPIC: process.env.NTFY_TOPIC, // God Mode notification channel via ntfy.sh
-  TASKER_WEBHOOK_URL: process.env.TASKER_WEBHOOK_URL, // Tasker push fallback
   WHATSAPP_OWNER_NUMBER: process.env.WHATSAPP_OWNER_NUMBER,
   WHATSAPP_OWNER_JID: process.env.WHATSAPP_OWNER_JID,
   NEXA_WA_RELAY_URL: process.env.NEXA_WA_RELAY_URL || 'wss://peppy-horse-9232.knightrelaxed.deno.net',
