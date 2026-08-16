@@ -1,5 +1,5 @@
 {
-  "name": "nexa-backend",
+  "name": "nexa-server",
   "version": "3.0.0",
   "description": "",
   "main": "src/app.js",

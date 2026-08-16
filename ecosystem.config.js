@@ -1,6 +1,6 @@
 module.exports = {
   apps: [{
-    name: 'nexa',
+    name: 'nexa-server',
     script: 'src/app.js',
     instances: 1, // Fork mode required for FreeBSD Serv00 resource quota
     exec_mode: 'fork',
