@@ -96,7 +96,7 @@ Dua mekanisme utama *immortality* yang ditanamkan sejak level kode terdalam:
 
 ### 2.1 Infrastruktur Komputasi Utama: Server Core
 
-N.E.X.A beroperasi sebagai *backend* **Node.js 20 + Express.js** yang dikemas dalam kontainer **Docker** dan dijalankan di **Hugging Face Spaces** (platform *free tier*). Pilihan platform ini bukan tanpa hitung-hitungan—ini adalah keputusan arsitektural yang penuh konsekuensi teknis yang harus diatasi satu per satu.
+N.E.X.A beroperasi sebagai *backend* **Node.js 20 + Express.js** yang berjalan di atas **Azure Virtual Machine** (VM `Standard_B2ats_v2`, Ubuntu 24.04 ARM, Jakarta — `indonesiacentral`). Ini adalah infrastruktur *production-grade* 24/7 yang dikelola oleh **PM2** (process manager dengan integrasi systemd) dan **Caddy** (HTTPS reverse proxy dengan SSL otomatis via Let's Encrypt). Domain resmi produksi: `https://nexa-server.indonesiacentral.cloudapp.azure.com`.
 
 **Anatomi `app.js` (Boot Sequence):**
 Urutan inisialisasi saat server menyala bukan arbitrer—setiap baris memiliki alasan teknis yang ketat:
@@ -106,7 +106,7 @@ Urutan inisialisasi saat server menyala bukan arbitrer—setiap baris memiliki a
    const dns = require('dns');
    dns.setDefaultResultOrder('ipv4first');
    ```
-   Node 20 di Docker Hugging Face secara *default* mencari alamat IPv6 terlebih dahulu. Karena `api.telegram.org` dan Supabase berjalan via IPv4 di infrastruktur HF, resolusi IPv6 selalu gagal dengan error *TLS socket disconnect*. Baris ini **wajib dipanggil sebelum `require()` apapun**—jika tidak, sistem crash di *boot* pertama.
+   Node 20 di Docker Azure secara *default* mencari alamat IPv6 terlebih dahulu. Karena `api.telegram.org` dan Supabase berjalan via IPv4 di infrastruktur Azure, resolusi IPv6 selalu gagal dengan error *TLS socket disconnect*. Baris ini **wajib dipanggil sebelum `require()` apapun**—jika tidak, sistem crash di *boot* pertama.
 
 2. **Axios IPv4 Force:**
    ```js
@@ -115,7 +115,7 @@ Urutan inisialisasi saat server menyala bukan arbitrer—setiap baris memiliki a
    Melengkapi fix DNS di atas untuk seluruh HTTP request berbasis Axios (termasuk panggilan ke Groq, Mistral, dan relay Vercel).
 
 3. **Health Endpoint — Smart Vital Signs:**
-   Endpoint `/health` mengekspos metrik *real-time*: `uptime_seconds`, `memory_mb`, `timestamp_jakarta`, dan `node_env`. Endpoint ini dikonfigurasi **sebelum** router webhook agar bisa merespons paling cepat—digunakan oleh UptimeRobot, cron-job.org, dan pemantauan eksternal untuk mencegah HF Space masuk *sleep mode*.
+   Endpoint `/health` mengekspos metrik *real-time*: `uptime_seconds`, `memory_mb`, `timestamp_jakarta`, dan `node_env`. Endpoint ini dikonfigurasi **sebelum** router webhook agar bisa merespons paling cepat—digunakan untuk pemantauan kesehatan server secara eksternal. Karena N.E.X.A kini berjalan di Azure VPS (bukan platform serverless), tidak ada risiko *sleep mode*; server aktif 24/7 dijamin oleh `pm2 startup` + `systemd`.
 
 4. **Boot Recovery — Transaksi Menggantung:**
    Tepat setelah server mendengarkan port, `financeEngine.recoverPendingTransactions()` dipanggil secara otomatis. Ini memulihkan semua entri `nexa_pending_transactions` yang belum terkonfirmasi akibat *restart* server di waktu kritis.
@@ -133,7 +133,7 @@ N.E.X.A adalah sistem **multi-platform orchestrator**. Berikut setiap node dalam
 Semua interaksi Tuan Faqih masuk melalui Telegram. N.E.X.A menerima pesan via *webhook* HTTP POST ke `/webhook/telegram`. Telegram mengirim update dalam format JSON yang berisi `message.text`, `message.photo`, `message.voice`, `message.document`, dan `message.caption`.
 
 **Dua metode pengiriman respons ke Telegram (berdasarkan konteks):**
-- **Webhook Response (Zero-Outbound):** Untuk semua pesan reaktif (balasan percakapan biasa), N.E.X.A menanamkan respons langsung ke dalam HTTP response body dengan format `{ method: "sendMessage", chat_id: ..., text: ... }`. Mekanisme ini didukung resmi oleh Telegram Bot API dan tidak membutuhkan koneksi keluar sama sekali — melangkahi blokir Hugging Face.
+- **Webhook Response (Zero-Outbound):** Untuk semua pesan reaktif (balasan percakapan biasa), N.E.X.A menanamkan respons langsung ke dalam HTTP response body dengan format `{ method: "sendMessage", chat_id: ..., text: ... }`. Mekanisme ini didukung resmi oleh Telegram Bot API dan tidak membutuhkan koneksi keluar sama sekali — melangkahi blokir Azure.
 - **Vercel Relay (Outbound Async):** Untuk pesan inisiatif dari *cron job* (yang tidak memiliki webhook request untuk dibalas), N.E.X.A memanggil `sendTelegramOutbound()` yang menembakkan *request* ke `NEXA_VERCEL_RELAY_URL`. Relay Vercel kemudian meneruskannya ke Telegram API. Setiap request ke relay dibubuhi header HMAC (`NEXA_RELAY_SECRET`) untuk autentikasi.
 
 #### Node 2: Supabase (PostgreSQL — Otak Permanen)
@@ -218,8 +218,8 @@ Untuk memahami arsitektur *Multi-Cloud Microservices* yang kompleks secara intui
   Pemrosesan sinyal suara (*Voice-to-Text*) dengan kecepatan kilat, memungkinkan pencernaan *Voice Note* tanpa latensi.
 - 💾 **Hippocampus (Pusat Ingatan): Supabase**
   Gudang penyimpanan memori jangka panjang, catatan keuangan, dan profil kepribadian yang menjamin N.E.X.A terbebas dari amnesia meskipun peladen mengalami *restart*.
-- 🫀 **Jantung & Paru-Paru: Hugging Face Spaces (Node.js)**
-  Mesin pemompa (*Core Server*) yang berdenyut tanpa henti (24/7). Tanpanya, oksigen (data) berhenti mengalir dan seluruh subsistem N.E.X.A akan "tertidur".
+- 🫀 **Jantung & Paru-Paru: Azure VPS Jakarta (Node.js + PM2)**
+  Mesin pemompa (*Core Server*) yang berdenyut tanpa henti 24/7 di atas Azure Virtual Machine `Standard_B2ats_v2` region `indonesiacentral` (Jakarta). Dijaga oleh PM2 + systemd sehingga otomatis bangkit kembali setelah reboot. Tanpanya, oksigen (data) berhenti mengalir dan seluruh subsistem N.E.X.A akan berhenti.
 - 🧬 **DNA & Tulang Punggung: GitHub**
   Pusat kode genetik (*source code*). Setiap baris kode adalah DNA yang mendefinisikan sifat, batasan, dan evolusi kapabilitas N.E.X.A.
 - ⚡ **Sistem Syaraf Tepi: Cloudflare & Vercel (Relay API)**
@@ -232,8 +232,8 @@ Untuk memahami arsitektur *Multi-Cloud Microservices* yang kompleks secara intui
   Ujung syaraf peraba yang memantau kotak masuk secara pasif. Saat ada email mutasi dari bank, ia mengirimkan impuls ke *Finance Engine* tanpa disuruh.
 - 🌦️ **Indera Peraba Lingkungan Eksternal: WeatherAPI & NewsAPI**
   Organ sensorik yang menyerap data suhu, cuaca, dan berita global setiap subuh untuk diracik menjadi *Morning Briefing*.
-- ⚡ **Alat Pacu Jantung (Pacemaker): cron-job.org / UptimeRobot**
-  Pemberi "kejutan listrik" (ping) berkala setiap 5 menit ke *endpoint* `/health` agar jantung N.E.X.A (Hugging Face) tidak pernah berhenti berdetak.
+- ⚡ **Alat Pacu Jantung (Pacemaker): PM2 Plus + systemd**
+  Penjaga detak jantung permanen N.E.X.A. PM2 mengelola proses Node.js dengan *auto-restart* pada crash, sementara systemd memastikan PM2 sendiri hidup kembali setelah reboot VM. Dashboard pemantauan real-time tersedia di `https://app.pm2.io`. Tidak lagi membutuhkan ping eksternal (cron-job.org / UptimeRobot) karena VPS tidak pernah *sleep*.
 
 **Eksekutor Fisik ("Tangan-Tangan" N.E.X.A):**
 N.E.X.A tidak hanya berpikir, tetapi juga bertindak memanipulasi dunia digital Tuan Faqih melalui berbagai "tangan" (*API Integrations*):
@@ -249,8 +249,8 @@ N.E.X.A tidak hanya berpikir, tetapi juga bertindak memanipulasi dunia digital T
 
 N.E.X.A beroperasi di lingkungan yang penuh hambatan. Berikut setiap ancaman dan mekanisme perlawanannya yang ditanamkan langsung dalam kode:
 
-#### Ancaman 1 — Blokir Outbound Hugging Face
-**Problem:** HF memblokir semua request keluar ke `api.telegram.org` dan `*.workers.dev`.
+#### Ancaman 1 — Blokir Outbound Azure
+**Problem:** Azure memblokir semua request keluar ke `api.telegram.org` dan `*.workers.dev`.
 **Solusi:** *Zero-Outbound Webhook Response* — respons Telegram ditanamkan langsung ke body HTTP 200 dari webhook.
 
 #### Ancaman 2 — Cron Job Tanpa Webhook Trigger
@@ -258,7 +258,7 @@ N.E.X.A beroperasi di lingkungan yang penuh hambatan. Berikut setiap ancaman dan
 **Solusi:** `sendTelegramOutbound()` mengirim request ke Vercel Relay (`NEXA_VERCEL_RELAY_URL`) yang kemudian meneruskannya ke Telegram. Relay diverifikasi dengan `NEXA_RELAY_SECRET`.
 
 #### Ancaman 3 — IPv6 DNS Failure di Docker
-**Problem:** Node 20 Docker di HF mencari DNS IPv6 terlebih dahulu. Ini menyebabkan `TLS socket disconnect` saat mengakses Supabase dan API eksternal.
+**Problem:** Node 20 Docker di Azure mencari DNS IPv6 terlebih dahulu. Ini menyebabkan `TLS socket disconnect` saat mengakses Supabase dan API eksternal.
 **Solusi:** `dns.setDefaultResultOrder('ipv4first')` dipanggil **sebelum baris apapun** di `app.js`, diikuti `axios.defaults.httpsAgent = new https.Agent({ family: 4 })`.
 
 #### Ancaman 4 — Server Restart Saat Transaksi Pending
@@ -331,12 +331,12 @@ if (!(Test-Path $PROFILE)) { New-Item -Type File -Force $PROFILE }; Add-Content 
 Saat pertama kali dijalankan, CLI akan meminta dua input konfigurasi yang disimpan secara aman di file lokal `~/.nexa-config.json`:
 1. **NEXA Server URL:**
    - **Mode Lokal (Development):** `http://127.0.0.1:3000`
-   - **Mode Cloud (HF Space 24/7):** `https://nexa-asistant-nexa-core-server.hf.space`
+   - **Mode Cloud / Production (Azure VPS 24/7):** `https://nexa-server.indonesiacentral.cloudapp.azure.com`
 2. **Secret Key (NEXA_CLI_SECRET):**
    - Masukkan kunci rahasia: `cLiNeXa17`
 
-##### E. Beralih Antara Server Lokal dan Cloud HF Space
-Jika Tuan ingin mengganti endpoint server (misalnya dari server lokal ke cloud HF Space 24/7), hapus file konfigurasi lama di terminal:
+##### E. Beralih Antara Server Lokal dan Azure VPS
+Jika Tuan ingin mengganti endpoint server (misalnya dari server lokal ke Azure VPS Jakarta), hapus file konfigurasi lama di terminal:
 - **Windows PowerShell:**
   ```powershell
   Remove-Item ~/.nexa-config.json
@@ -407,13 +407,13 @@ Sebelum teks menyentuh AI Router, pesan mentah melewati tiga indera khusus yang 
 Ketika Tuan Faqih mengirim Voice Note, `Voice_Engine.js` mengaktifkan pipeline transkripsi berlapis:
 
 **Tier 0 — Worker Transcription (Game Changer):**
-N.E.X.A mengirim *hanya* `file_path` ke Vercel Relay melalui `postToRelay('/api/transcribe', ...)`. Worker Vercel yang mendownload audio secara langsung dari Telegram dan menjalankan transkripsi di sisi Edge. N.E.X.A hanya menerima teks transkripsi dalam respons JSON kecil. **Tidak ada file audio besar yang perlu diunduh oleh kontainer HF.**
+N.E.X.A mengirim *hanya* `file_path` ke Vercel Relay melalui `postToRelay('/api/transcribe', ...)`. Worker Vercel yang mendownload audio secara langsung dari Telegram dan menjalankan transkripsi di sisi Edge. N.E.X.A hanya menerima teks transkripsi dalam respons JSON kecil. **Tidak ada file audio besar yang perlu diunduh oleh kontainer Azure.**
 
-**Tier 1–4 — Hugging Face Whisper Large v3 Turbo (4 Attempts / Slots):**
-Jika Worker gagal, sistem mendownload file audio `.ogg` ke file sementara (`tmpFilePath`) di RAM HF, lalu menjalankan transkripsi kilat dengan model Whisper Large v3 Turbo.
+**Tier 1–4 — Azure Whisper Large v3 Turbo (4 Attempts / Slots):**
+Jika Worker gagal, sistem mendownload file audio `.ogg` ke file sementara (`tmpFilePath`) di RAM Azure, lalu menjalankan transkripsi kilat dengan model Whisper Large v3 Turbo.
 
 **Tier 5–8 — Gemini 3.6 Flash Native Audio (4 Kunci Rotasi):**
-Jika Hugging Face gagal, file `.ogg` dibaca sebagai `Buffer`, di-encode ke Base64, lalu dikirim langsung ke Gemini 3.6 Flash sebagai `inlineData` dengan `mimeType: 'audio/ogg'`.
+Jika Azure gagal, file `.ogg` dibaca sebagai `Buffer`, di-encode ke Base64, lalu dikirim langsung ke Gemini 3.6 Flash sebagai `inlineData` dengan `mimeType: 'audio/ogg'`.
 
 **Tier 9–12 — Groq Whisper Large v3 (4 Kunci Rotasi sebagai Backup):**
 Jika seluruh tier di atas gagal, sistem beralih ke 4 kunci Groq Whisper Large v3 secara berurutan dengan *smart retry* internal.
@@ -436,8 +436,8 @@ Analisis visual mendalam menggunakan model multimodal Google Gemini 3.6 Flash te
 **Tier 9–12 — Groq Vision Llama 3.2 90B/11B Vision (4 Kunci Rotasi):**
 Penalaran visual berkecepatan tinggi menggunakan Llama 3.2 Vision di infrastruktur Groq Cloud.
 
-**Tier 13 — Hugging Face Qwen2-VL Vision (Free Safety Net):**
-Terakhir, model multimodal *open-weight* yang dijalankan via HF Inference API tanpa batasan kuota harian.
+**Tier 13 — Azure Qwen2-VL Vision (Free Safety Net):**
+Terakhir, model multimodal *open-weight* yang dijalankan via Azure Inference API tanpa batasan kuota harian.
 
 **Dual Mode Vision (Narasi vs JSON Extraction):**
 Vision Engine mendukung dua *system prompt* berbeda:
@@ -448,7 +448,7 @@ Vision Engine mendukung dua *system prompt* berbeda:
 
 ### 3.3 Tahap Routing Kognitif: AI Router (`AI_Router.js`)
 
-Ini adalah otak pengambilan keputusan utama N.E.X.A. Setiap pesan teks (termasuk hasil transkripsi Voice dan OCR Vision) melewati `routeUserMessage()` yang membangun *prompt* multi-lapis dan memanggil `executeWithFallback()`.
+Ini adalah otak pengambilan keputusan utama N.E.X.A. Setiap pesan teks (termasuk hasil transkripsi Voice dan OCR Vision) melewati `routeUserMessage()` yang membangun *prompt* multi-lapis dan memanggil `executeWitAzureallback()`.
 
 #### 3.3.1 Pre-Flight Classifier — 0 Token, 0 Milidetik
 
@@ -571,14 +571,14 @@ Jika validasi gagal, N.E.X.A mengirim pertanyaan klarifikasi spesifik dan menghe
 
 ### 3.5 Fallback Engine — 15 Lapisan Ketangguhan & Validasi JSON Dinamis
 
-`Fallback_Engine.js` adalah sistem ketersediaan AI N.E.X.A. Setiap panggilan ke `executeWithFallback()` melewati 15 tier model secara berurutan—berpindah ke tier berikutnya jika tier sebelumnya melempar error jaringan, limit rate 429, atau menghasilkan sintaks JSON cacat.
+`Fallback_Engine.js` adalah sistem ketersediaan AI N.E.X.A. Setiap panggilan ke `executeWitAzureallback()` melewati 15 tier model secara berurutan—berpindah ke tier berikutnya jika tier sebelumnya melempar error jaringan, limit rate 429, atau menghasilkan sintaks JSON cacat.
 
 | Tier | Model | Provider | Karakteristik |
 |---|---|---|---|
 | 1–4 | Gemma 4 31B | Cerebras WSE-3 (4 Kunci Rotasi) | Natural, empatik, kecepatan kilat ~0 milidetik |
 | 5–8 | Llama 3.3 70B Versatile | Groq Cloud (4 Kunci Rotasi) | Enterprise logic & structured output |
 | 9–12 | Gemini 3.6 Flash | Google AI (4 Kunci Rotasi) | High context limit & deep reasoning |
-| 13 | Gemma 4 31B IT | Hugging Face Router | Open-weight dedicated safety net |
+| 13 | Gemma 4 31B IT | Azure Router | Open-weight dedicated safety net |
 | 14 | Pixtral 12B | Mistral AI API | Reliable European API close |
 | 15 | Multi-Model Free Pool | OpenRouter | Indestructible last resort |
 
@@ -1026,7 +1026,7 @@ Menghapus atau mengedit ingatan sering kali merepotkan di sistem *database* konv
 Sistem memori N.E.X.A bersifat *multimodal*. Ketika Tuan Faqih mengirimkan gambar dokumen penting, modul Vault menembakkannya ke Google Drive melalui `extractOcrTextViaDriveOcr()`.
 
 Sistem ini memakai trik API lawas (*Google Drive API v2*) karena fitur mutasi OCR (`ocr: true`, `convert: true`) sudah dihapus Google pada versi v3.
-Jika kuota *Service Account* Hugging Face (yang sering dibatasi Google) habis (`"Service Accounts do not have storage quota"`), sebuah *try-catch* *handler* khusus segera menangkap *error* tersebut dan **melakukan fallback paksa** menggunakan kredensial OAuth2 User Tuan Faqih (via `getOAuthDriveClients()`). Hasil ekstrak teks OCR ini kemudian di-simpan utuh ke tabel `nexa_vault_items` agar bisa dicari secara semantik kapanpun.
+Jika kuota *Service Account* Azure (yang sering dibatasi Google) habis (`"Service Accounts do not have storage quota"`), sebuah *try-catch* *handler* khusus segera menangkap *error* tersebut dan **melakukan fallback paksa** menggunakan kredensial OAuth2 User Tuan Faqih (via `getOAuthDriveClients()`). Hasil ekstrak teks OCR ini kemudian di-simpan utuh ke tabel `nexa_vault_items` agar bisa dicari secara semantik kapanpun.
 
 ### 6.5 *Cognitive Identity Engine* (Phase 6)
 
@@ -1135,15 +1135,15 @@ Dua *cron* bekerja dengan tempo yang sangat cepat untuk memastikan data tetap ko
 
 ## BAB 8: JARINGAN, KEAMANAN, & MANAJEMEN DEPLOYMENT
 
-Beroperasi di atas infrastruktur *cloud* gratis Hugging Face Spaces menuntut rekayasa jaringan (*network engineering*) dan protokol keamanan tingkat militer untuk mengakali blokir peladen dan menjaga privasi mutlak Tuan Faqih.
+Beroperasi di atas **Azure VPS Jakarta** (`Standard_B2ats_v2`, Ubuntu 24.04, `indonesiacentral`) dengan domain produksi `https://nexa-server.indonesiacentral.cloudapp.azure.com`, N.E.X.A mengimplementasikan rekayasa jaringan (*network engineering*) dan protokol keamanan tingkat militer untuk menjaga ketersediaan layanan dan privasi mutlak Tuan Faqih.
 
 ### 8.1 *Zero-Outbound Telegram Bypass* & *Relay Chain*
 
-Hugging Face Spaces memiliki regulasi ketat: secara sepihak memutuskan koneksi *outbound TLS* ke domain tertentu seperti `api.telegram.org` dan Cloudflare Workers. Jika `axios.post` langsung ke Telegram, *server* akan mengalami *Timeout*.
+Meskipun N.E.X.A kini berjalan di Azure VPS (bukan platform serverless), strategi *Dual-Strategy Routing* tetap dipertahankan demi ketahanan jaringan berlapis. Koneksi langsung ke Telegram (`Direct` tier) kini menjadi jalur utama (Tier 1), sementara Vercel Relay dan AllOrigins berfungsi sebagai *fallback* cadangan jika terjadi gangguan jaringan sesaat.
 
 N.E.X.A mengatasi limitasi fisik peladen ini dengan **Dual-Strategy Routing** di `telegram_network.js`:
 1. **Zero-Outbound Webhook**: Untuk pesan obrolan biasa, modul `webhook.js` tidak membuat koneksi baru. Ia menanamkan *payload* `JSON { method: "sendMessage", text: "..." }` langsung ke dalam **HTTP Webhook Response (res.status(200).json)**. Balasan meluncur dengan 0 koneksi keluar.
-2. **Vercel Relay & Failover Chain**: Untuk operasi latar belakang (*Cron Jobs*) yang tidak diinisiasi oleh pesan masuk, N.E.X.A membidik *request* ke infrastruktur Vercel (`NEXA_VERCEL_RELAY_URL`) yang mem- *proxy* pesan ke Telegram. Jika Vercel mati, `fetchWithFailover` secara otomatis me- *routing* ulang permintaan lewat AllOrigins API, menciptakan ketahanan jaringan berlapis.
+2. **Vercel Relay & Failover Chain**: Untuk operasi latar belakang (*Cron Jobs*) yang tidak diinisiasi oleh pesan masuk, N.E.X.A membidik *request* ke infrastruktur Vercel (`NEXA_VERCEL_RELAY_URL`) yang mem- *proxy* pesan ke Telegram. Jika Vercel mati, `fetchWitAzureailover` secara otomatis me- *routing* ulang permintaan lewat AllOrigins API, menciptakan ketahanan jaringan berlapis.
 
 ### 8.2 Postur Keamanan & *Firewall* Isolasi Data (`security.js`)
 
@@ -1251,7 +1251,8 @@ Ketika Tuan Faqih memberitahu informasi baru, fungsi \deduplicateAndSaveFact\ di
 ---
 
 ### 6.3 Memory Hygiene Pipeline: Pembersihan Memori 4-Tahap
-Agar ingatan tetap segar dan tidak menjadi tempat sampah informasi usang, N.E.X.A menjalankan siklus \unFullHygienePipeline\ setiap hari Minggu pukul 02:00 WIB.
+Agar ingatan tetap segar dan tidak menjadi tempat sampah informasi usang, N.E.X.A menjalankan siklus \
+unFullHygienePipeline\ setiap hari Minggu pukul 02:00 WIB.
 
 #### Step 1: Ephemeral Sweep (Penyapuan Fakta Sementara)
 Memori dengan \category_type = 'EPHEMERAL'\ (seperti mood sesaat atau fokus mingguan) dipindai secara matematis murni. Jika umurnya melebihi 30 hari tanpa penegasan (\last_reinforced_at\), statusnya diubah dari \ACTIVE\ menjadi \ARCHIVED\. 
