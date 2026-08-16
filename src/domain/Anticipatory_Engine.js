@@ -99,10 +99,20 @@ const BUILTIN_PATTERNS = [
     // Trigger: intent ADVICE atau pertanyaan serius di atas jam 23:00
     trigger: (ctx) =>
       ['ADVICE', 'DISCIPLINE'].includes(ctx.intent) &&
-      ctx.hour >= 23,
+      (ctx.hour >= 23 || ctx.hour <= 4),
     prediction: 'Pengambilan keputusan penting di larut malam saat kapasitas kognitif menurun.',
-    intervention: '🌙 *Catatan Kognitif N.E.X.A*\n\nIni adalah pertanyaan yang memerlukan penilaian jernih, dan sekarang sudah melewati pukul 23:00. Fungsi prefrontal cortex — pusat penilaian rasional — bekerja suboptimal di jam ini.\n\nSaya tetap bantu menjawab, namun menyarankan untuk mengevaluasi ulang keputusan ini besok pagi dengan perspektif segar.',
+    intervention: '🌙 *Catatan Kognitif N.E.X.A*\n\nIni adalah pertanyaan yang memerlukan penilaian jernih, dan sekarang sudah larut malam. Fungsi prefrontal cortex — pusat penilaian rasional — bekerja suboptimal di jam ini.\n\nSaya tetap bantu menjawab, namun menyarankan untuk mengevaluasi ulang keputusan ini besok pagi dengan perspektif segar.',
     confidence: 0.65
+  },
+  {
+    name: 'late_night_high_stakes_academic',
+    description: 'Lembur tugas/jadwal larut malam berpotensi menurunkan retensi memori dan fokus esok hari',
+    trigger: (ctx) =>
+      ['TASK', 'CALENDAR'].includes(ctx.intent) &&
+      (ctx.hour >= 23 || ctx.hour <= 4),
+    prediction: 'Lembur larut malam mengerjakan tugas atau penjadwalan menjelang pagi.',
+    intervention: '🌙 *Antisipasi Kognitif N.E.X.A*\n\nTuan sedang memproses tugas/jadwal di larut malam. Riset neurosains menunjukkan kerja intensif di atas pukul 23:00 menurunkan konsolidasi memori dan fokus eksekutif esok hari.\n\nSaran saya: Kunci progres terpenting saat ini, lalu luangkan waktu untuk istirahat agar performa puncak Tuan terjaga esok hari.',
+    confidence: 0.75
   },
   {
     name: 'overthinking_spiral',
@@ -114,6 +124,17 @@ const BUILTIN_PATTERNS = [
     prediction: 'Pola overthinking yang mencari kepastian berlebihan sebelum bertindak.',
     intervention: '🔄 *Observasi Pola N.E.X.A*\n\nSaya perhatikan Tuan sudah menanyakan perspektif yang serupa beberapa kali. Ini bisa menjadi tanda bahwa Tuan sudah memiliki jawaban sendiri tetapi mencari validasi tambahan.\n\nApa keputusan yang *sudah* terasa paling benar bagi Tuan, terlepas dari analisis lebih lanjut?',
     confidence: 0.60
+  },
+  {
+    name: 'post_decision_drift',
+    description: 'Keraguan dan pengulangan analisis pasca pengambilan keputusan strategis',
+    trigger: (ctx) =>
+      ctx.intent === 'ADVICE' &&
+      ctx.mood === 'STRESSED' &&
+      ctx.sessionAdviceCount >= 2,
+    prediction: 'Keraguan pasca pengambilan keputusan strategis.',
+    intervention: '🎯 *Fokus Eksekutif N.E.X.A*\n\nSetelah membuat keputusan penting, wajar jika muncul keraguan atau dorongan untuk menganalisis ulang skenario alternatif.\n\nSaran saya: Beri ruang eksekusi minimal 24-48 jam pada langkah pertama sebelum melakukan evaluasi ulang.',
+    confidence: 0.70
   },
   {
     name: 'negative_mood_trend_alert',

@@ -31,9 +31,9 @@ function _formatTimeWib(isoString) {
 // [PHASE 6] MORNING BRIEFING — Format Ringkas + Check-In 3 Pertanyaan
 // ============================================================
 async function generateMorningBriefing() {
-  console.log('[INTELLIGENCE] Generating Morning Briefing (Phase 6 — Compact + Check-In)...');
+  console.log('[INTELLIGENCE] Generating Executive Morning Briefing (4-Pillar Multi-Table Fusion)...');
 
-  // ── 1. Cuaca ───────────────────────────────────────────────
+  // ── 1. Cuaca Yogyakarta ─────────────────────────────────────
   let weatherStr = null;
   let weatherEmoji = '🌤️';
   try {
@@ -88,17 +88,28 @@ async function generateMorningBriefing() {
     console.warn('[INTELLIGENCE] Failed to get tasks:', err.message);
   }
 
-  // ── 4. Identitas Habit yang Relevan untuk Konteks Pagi ─────
-  let habitContext = '';
+  // ── 4. Komitmen & Target Intensi Aktif (nexa_intentions) ───
+  let activeIntentionsStr = '';
   try {
-    const habits = await supabaseMemories.getIdentityModel('HABITS');
-    if (habits && habits.length > 0) {
-      habitContext = habits.map(h => h.trait_value).join(', ');
+    const { supabase } = supabaseMemories;
+    if (supabase) {
+      const { data: intentions } = await supabase
+        .from('nexa_intentions')
+        .select('title, target_date, category, friction_level')
+        .eq('status', 'ACTIVE')
+        .order('target_date', { ascending: true })
+        .limit(3);
+      if (intentions && intentions.length > 0) {
+        activeIntentionsStr = intentions.map(i => `• ${i.title}${i.target_date ? ` (Target: ${i.target_date})` : ''}`).join('\n');
+      }
     }
-  } catch (_) { /* Jangan crash jika tabel belum ada */ }
+  } catch (err) {
+    console.warn('[INTELLIGENCE] Failed to get intentions:', err.message);
+  }
 
-  // ── 4.5. Ambil Memori Kemarin ──────────────────────────────
+  // ── 5. Mood / Behavior Context & Ringkasan Kemarin ─────────
   let yesterdayLog = '';
+  let moodContextStr = '';
   try {
     const mems = await supabaseMemories.getYesterdayMemories();
     if (mems && mems.length > 0) {
@@ -108,25 +119,47 @@ async function generateMorningBriefing() {
     console.warn('[INTELLIGENCE] Failed to get yesterday memories:', err.message);
   }
 
-  // ── 5. Susun Pesan Mode Ringkas dengan AI ────────────────────────────
+  try {
+    const behaviorEngine = require('./Behavior_Engine');
+    const moodTs = await behaviorEngine.computeMoodTimeSeries();
+    if (moodTs && moodTs.mood_7d_trend) {
+      moodContextStr = `Tren Mood 7 Hari: ${moodTs.mood_7d_trend} (Rata-rata: ${moodTs.mood_7d_avg}/10, Stabilitas: ${moodTs.mood_7d_variance})`;
+    }
+  } catch (_) { /* Non-critical */ }
+
+  // ── 6. Ringkasan Keuangan Terkini ─────────────────────────
+  let financeContextStr = '';
+  try {
+    const financeEngine = require('./Finance_Engine');
+    const recentTx = await financeEngine.getRecentTransactions(3);
+    if (recentTx && !recentTx.includes('(Tidak ada transaksi')) {
+      financeContextStr = recentTx;
+    }
+  } catch (_) { /* Non-critical */ }
+
+  // ── 7. Susun Pesan Executive Morning Briefing dengan AI ───
   const greeting = _getWibGreeting();
   
-  const prompt = `Anda adalah N.E.X.A, asisten pribadi eksklusif Tuan Faqih. Susun pesan Morning Briefing yang natural, elegan, dan proaktif.
-Sertakan komponen berikut dengan tata bahasa yang luwes (bukan list kaku):
+  const prompt = `Anda adalah N.E.X.A, Asisten Eksekutif Digital Pribadi eksklusif Tuan Faqih Hidayatulloh. Susun pesan Executive Morning Briefing (Pukul 05:30 WIB) yang berwibawa, elegan, cerdas, dan membakar semangat layaknya J.A.R.V.I.S.
+
+KOMPONEN DATA HARI INI:
 1. Sapaan: "${greeting}, Tuan Faqih. ☀️"
-2. Cuaca: ${weatherStr || 'Data cuaca tidak tersedia.'}
-3. Agenda Hari Ini: ${agendaStr ? agendaStr.replace(/\n/g, ' ') : 'Tidak ada agenda terjadwal hari ini.'}
-4. Tugas Prioritas: ${taskWarning ? taskWarning.replace(/\n/g, ' ') : 'Tidak ada tugas mendesak hari ini.'}
-5. Refleksi Kemarin: Berdasarkan transkrip percakapan kemarin, berikan SATU kalimat yang meresonansi kegiatan kemarin, menanyakan niat/rencana yang belum selesai, atau mem-follow up masalah/topik dari kemarin. Jika tidak ada yang relevan, berikan kalimat motivasi singkat.
-6. Check-In Pagi: Tutup dengan menanyakan kualitas tidur (skor 1-5 & cerita), tingkat energi (skor 1-5 & cerita), dan satu fokus utama hari ini. Beri contoh format jawabannya secara natural. (misal: "4 dan 3, tapi semalam tidur jam 2 karena nyamuk, fokus revisi makalah")
+2. Cuaca: ${weatherStr || 'Cerah Berawan di Yogyakarta.'}
+3. Agenda Kalender: ${agendaStr ? agendaStr.replace(/\n/g, ' ') : 'Tidak ada agenda terjadwal di kalender.'}
+4. Tugas Prioritas: ${taskWarning ? taskWarning.replace(/\n/g, ' ') : 'Tidak ada tugas terlambat/mendesak.'}
+5. Komitmen Intensi Aktif: ${activeIntentionsStr || 'Semua komitmen jangka pendek berada pada jalurnya.'}
+6. Konteks Emosi & Kebugaran: ${moodContextStr || 'Stabil dan berenergi.'}
+7. Catatan Keuangan: ${financeContextStr || 'Kondisi kas terkendali.'}
+8. Refleksi Singkat Kemarin: Hubungkan dengan satu benang merah produktif dari obrolan kemarin jika relevan.
+9. Check-In Kebugaran Pagi: Tutup dengan menanyakan kualitas tidur semalam (skor 1-5 & cerita), tingkat energi sekarang (skor 1-5 & cerita), dan satu fokus mutlak hari ini. Beri panduan format jawaban natural.
 
 Transkrip Obrolan Kemarin:
-${yesterdayLog ? yesterdayLog.substring(0, 15000) : '(Tidak ada percakapan kemarin)'}
+${yesterdayLog ? yesterdayLog.substring(0, 10000) : '(Tidak ada percakapan kemarin)'}
 
-Aturan:
-- Gunakan bahasa Indonesia baku namun hangat dan empatik.
-- Jangan gunakan format JSON. Langsung output berupa pesan Telegram.
-- Format teks yang rapi dan elegan.
+PEDOMAN FORMAT:
+- Gunakan bahasa Indonesia berkelas, hangat, proaktif, dan berwibawa.
+- Sajikan secara elegan dengan bullet point terstruktur (Sapaan & Cuaca, Medan Tempur Hari Ini, Komitmen & Fokus, Check-In).
+- DILARANG menggunakan JSON. Langsung output berupa pesan Telegram utuh.
 `;
 
   let finalMessage = `${greeting}, Tuan Faqih. ☀️\n\n`;
@@ -134,16 +167,17 @@ Aturan:
     const aiResponse = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false, { forceHeavy: true });
     finalMessage = aiResponse.replace(/```json/g, '').replace(/```/g, '').trim();
   } catch (err) {
-    console.warn('[INTELLIGENCE] Failed to generate AI Morning Briefing:', err.message);
+    console.warn('[INTELLIGENCE] Failed to generate AI Morning Briefing, falling back:', err.message);
     const parts = [`${greeting}, Tuan Faqih. ☀️`];
     if (weatherStr) parts.push(weatherStr);
     if (agendaStr) parts.push(agendaStr);
     else parts.push('📅 Tidak ada agenda terjadwal hari ini.');
     if (taskWarning) parts.push(taskWarning);
+    if (activeIntentionsStr) parts.push(`🎯 *Komitmen Aktif:*\n${activeIntentionsStr}`);
     parts.push([
-      'Sebelum memulai hari, saya ingin mengenal kondisi Tuan:',
-      '😴 Kualitas tidur semalam? *(Skor 1-5 & ceritakan kondisinya)*',
-      '⚡ Tingkat energi sekarang? *(Skor 1-5 & ceritakan alasannya)*',
+      'Sebelum memulai hari, mari kalibrasi kondisi Tuan:',
+      '😴 Kualitas tidur semalam? *(Skor 1-5 & cerita kondisi)*',
+      '⚡ Tingkat energi sekarang? *(Skor 1-5 & cerita alasannya)*',
       '🎯 Satu fokus utama hari ini?'
     ].join('\n'));
     finalMessage = parts.join('\n\n');
