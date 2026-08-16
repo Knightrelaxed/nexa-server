@@ -120,7 +120,10 @@ class NexaBridgeAdapter {
           });
 
           // Reply back with TTS speech on the phone
-          await this.speakText(aiReply);
+          const replyText = typeof aiReply === 'string'
+            ? aiReply
+            : (aiReply?.reply_message || aiReply?.text || 'Baik Tuan Faqih.');
+          await this.speakText(replyText);
         }
       } catch (err) {
         console.error('[NEXA-ADAPTER] Error processing call audio reply:', err.message);

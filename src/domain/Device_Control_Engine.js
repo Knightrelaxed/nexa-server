@@ -17,13 +17,13 @@ class DeviceControlEngine {
    * @returns {Promise<{ message: string, photoBase64?: string, success: boolean, rawResult?: Object }>}
    */
   async executeDeviceAction(routingData, context = {}) {
-    const data = routingData.extracted_data || {};
+    const data = routingData?.extracted_data || {};
     const rawAction = String(data.action || '').toUpperCase().trim();
 
     if (!rawAction) {
       return {
         success: false,
-        message: routingData.reply_message || '⚠️ Mohon maaf Tuan, aksi kontrol perangkat tidak dikenali.'
+        message: routingData?.reply_message || '⚠️ Mohon maaf Tuan, aksi kontrol perangkat tidak dikenali.'
       };
     }
 
@@ -39,8 +39,9 @@ class DeviceControlEngine {
           const enabled = data.enabled !== undefined ? Boolean(data.enabled) : true;
           result = await bridge.toggleFlashlight(enabled);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🔦 Lampu senter HP telah <b>${enabled ? 'DINYALAKAN' : 'DIMATIKAN'}</b>.`
           };
         }
@@ -51,8 +52,9 @@ class DeviceControlEngine {
           const level = Number(data.level !== undefined ? data.level : 70);
           result = await bridge.setVolume(stream, level);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🔊 Volume [${stream}] diatur ke <b>${level}%</b>.`
           };
         }
@@ -62,8 +64,9 @@ class DeviceControlEngine {
           const enabled = data.enabled !== undefined ? Boolean(data.enabled) : true;
           result = await bridge.forceDnd(enabled);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🔕 Mode Jangan Ganggu (DND) <b>${enabled ? 'DIAKTIFKAN' : 'DINONAKTIFKAN'}</b>.`
           };
         }
@@ -72,11 +75,12 @@ class DeviceControlEngine {
         case 'BATTERY': {
           result = await bridge.getBatteryStatus();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           const batData = result.data || {};
           const level = batData.battery_level !== undefined ? batData.battery_level : 'Unknown';
           const charging = batData.charging ? '⚡ (Sedang Mengisi Daya)' : '🔋 (Menggunakan Baterai)';
           return {
-            success: result.success,
+            success: true,
             message: `🔋 <b>Status Baterai HP Tuan Faqih:</b> <b>${level}%</b> ${charging}`
           };
         }
@@ -85,11 +89,12 @@ class DeviceControlEngine {
         case 'WIFI_INFO': {
           result = await bridge.getNetworkInfo();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           const netData = result.data || {};
           const ssidStr = netData.ssid ? `(SSID: <b>${netData.ssid}</b>)` : '';
           const rssiStr = netData.rssi ? `| Kekuatan: <b>${netData.rssi} dBm</b>` : '';
           return {
-            success: result.success,
+            success: true,
             message: `📶 <b>Status Jaringan HP:</b> ${netData.type || 'WIFI'} ${ssidStr} ${rssiStr}`
           };
         }
@@ -98,8 +103,9 @@ class DeviceControlEngine {
           const enabled = data.enabled !== undefined ? Boolean(data.enabled) : true;
           result = await bridge.toggleWifi(enabled);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `📶 Modul Wi-Fi HP telah <b>${enabled ? 'DIAKTIFKAN' : 'DIMATIKAN'}</b>.`
           };
         }
@@ -108,28 +114,30 @@ class DeviceControlEngine {
         case 'LOCATION': {
           result = await bridge.getLocation();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           const loc = result.data || {};
           if (loc.latitude && loc.longitude) {
             const address = loc.address ? `\n\n📌 <b>Alamat Terdeteksi:</b>\n<i>${loc.address}</i>` : '';
             const mapLink = `\n\n🗺️ <a href="https://www.google.com/maps?q=${loc.latitude},${loc.longitude}">Buka Lokasi di Google Maps</a>`;
             return {
-              success: result.success,
+              success: true,
               message: `📍 <b>Lokasi GPS HP Tuan Faqih:</b>\nKoordinat: <code>${loc.latitude}, ${loc.longitude}</code> (Akurasi: ±${Math.round(loc.accuracy || 0)}m)${address}${mapLink}`
             };
           }
           return {
-            success: result.success,
+            success: true,
             message: result.message || '📍 Lokasi GPS berhasil diperbarui.'
           };
         }
 
         case 'SPEAK_TEXT':
         case 'TTS': {
-          const textToSpeak = data.text || routingData.reply_message || 'Halo Tuan Faqih';
+          const textToSpeak = data.text || routingData?.reply_message || 'Halo Tuan Faqih';
           result = await bridge.speakText(textToSpeak);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🗣️ <b>Suara Disuarakan di HP:</b>\n<i>"${textToSpeak}"</i>`
           };
         }
@@ -139,8 +147,9 @@ class DeviceControlEngine {
         case 'LOCK': {
           result = await bridge.lockScreen();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🔒 Layar HP Samsung A33 5G telah <b>berhasil dikunci</b>.`
           };
         }
@@ -149,8 +158,9 @@ class DeviceControlEngine {
         case 'HOME': {
           result = await bridge.goHomeScreen();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🏠 HP telah diarahkan kembali ke <b>Home Screen</b>.`
           };
         }
@@ -159,8 +169,9 @@ class DeviceControlEngine {
         case 'BACK': {
           result = await bridge.goBack();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🔙 Navigasi tombol <b>Kembali (Back)</b> telah dieksekusi di HP.`
           };
         }
@@ -169,8 +180,9 @@ class DeviceControlEngine {
         case 'RECENTS': {
           result = await bridge.showRecents();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `📑 Menu <b>Recent Apps</b> telah dibuka di layar HP.`
           };
         }
@@ -219,10 +231,11 @@ class DeviceControlEngine {
         case 'DUMP_UI': {
           result = await bridge.dumpUiHierarchy();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           const nodes = result.data?.nodes || [];
           const topNodes = nodes.slice(0, 10).map(n => `- [${n.class || 'View'}] ${n.text || n.desc || n.id || '(no text)'}`).join('\n');
           return {
-            success: result.success,
+            success: true,
             message: `👁️ <b>Pohon UI Layar HP Terdeteksi (${nodes.length} elemen):</b>\n${topNodes || '(Layar kosong/privat)'}`
           };
         }
@@ -236,8 +249,9 @@ class DeviceControlEngine {
           }
           result = await bridge.click(target || { x: 500, y: 500 });
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `👆 Gestur klik berhasil dieksekusi di HP pada target: <code>${JSON.stringify(target)}</code>`
           };
         }
@@ -248,8 +262,9 @@ class DeviceControlEngine {
           const target = data.target || null;
           result = await bridge.inputText(textInput, target);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `⌨️ Teks berhasil diketikkan ke form HP: <i>"${textInput}"</i>`
           };
         }
@@ -259,8 +274,9 @@ class DeviceControlEngine {
           const direction = String(data.direction || 'FORWARD').toUpperCase();
           result = await bridge.scroll(direction);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `📜 Layar HP telah digulir (${direction}).`
           };
         }
@@ -268,9 +284,10 @@ class DeviceControlEngine {
         case 'GET_CLIPBOARD': {
           result = await bridge.getClipboard();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           const clipText = result.data?.text || '(Kosong)';
           return {
-            success: result.success,
+            success: true,
             message: `📋 <b>Isi Clipboard HP:</b>\n<code>${clipText}</code>`
           };
         }
@@ -279,8 +296,9 @@ class DeviceControlEngine {
           const textToCopy = data.text || '';
           result = await bridge.setClipboard(textToCopy);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `📋 Teks berhasil disalin ke Clipboard HP: <i>"${textToCopy}"</i>`
           };
         }
@@ -290,8 +308,9 @@ class DeviceControlEngine {
           const pkg = data.package_name || data.package || 'com.android.chrome';
           result = await bridge.launchApp(pkg);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🚀 Aplikasi <code>${pkg}</code> berhasil diluncurkan di HP.`
           };
         }
@@ -301,8 +320,9 @@ class DeviceControlEngine {
           const url = data.url || 'https://google.com';
           result = await bridge.openUrl(url);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🌐 Membuka tautan di browser HP:\n${url}`
           };
         }
@@ -314,8 +334,9 @@ class DeviceControlEngine {
           const options = Array.isArray(data.options) ? data.options : [];
           result = await bridge.showOverlay(title, msg, options);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🪟 Dialog pop-up berhasil dimunculkan di layar HP:\n<i>"${msg}"</i>`
           };
         }
@@ -325,8 +346,9 @@ class DeviceControlEngine {
         case 'RING': {
           result = await bridge.playRingtone();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `🔔 <b>Ringtone Alarm Darurat dinyalakan</b> pada volume 100% di HP.`
           };
         }
@@ -335,8 +357,9 @@ class DeviceControlEngine {
         case 'STOP_AUDIO': {
           result = await bridge.stopMedia();
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `⏹️ Pemutaran audio di HP telah dihentikan.`
           };
         }
@@ -347,8 +370,9 @@ class DeviceControlEngine {
           const callMsg = data.message || 'Tuan Faqih, ada panggilan interaktif dari N.E.X.A.';
           result = await bridge.simulateIncomingCall(caller, callMsg, true);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `📞 <b>Panggilan Masuk Interaktif</b> telah diluncurkan ke layar HP Tuan Faqih.`
           };
         }
@@ -357,8 +381,9 @@ class DeviceControlEngine {
         case 'SET_GEOFENCE': {
           result = await bridge.execute('SET_GEOFENCE', data);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `📍 Pagar virtual Geofence [${data.id || 'ZONE'}] berhasil didaftarkan di HP.`
           };
         }
@@ -366,8 +391,9 @@ class DeviceControlEngine {
         case 'MARK_GEOFENCE_HERE': {
           result = await bridge.execute('MARK_GEOFENCE_HERE', data);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: `📍 Titik koordinat GPS saat ini berhasil disimpan sebagai Geofence [${data.id || 'HOME'}].`
           };
         }
@@ -376,8 +402,9 @@ class DeviceControlEngine {
           // Passthrough to generic executor
           result = await bridge.execute(rawAction, data);
           if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          if (!result.success) return this._formatFailureResult(rawAction, result.message);
           return {
-            success: result.success,
+            success: true,
             message: result.message || `Aksi [${rawAction}] selesai dieksekusi di HP.`
           };
       }
@@ -394,6 +421,13 @@ class DeviceControlEngine {
     return {
       success: false,
       message: `⚠️ <b>Nexa Mobile Bridge Offline:</b> Perangkat HP Samsung A33 5G Tuan Faqih saat ini belum tersambung ke WebSocket server. Perintah <code>${action}</code> tidak dapat dieksekusi.`
+    };
+  }
+
+  _formatFailureResult(action, detail) {
+    return {
+      success: false,
+      message: `❌ <b>Gagal Mengeksekusi ${action}:</b> ${detail || 'Perangkat menolak atau gagal menjalankan perintah.'}`
     };
   }
 }

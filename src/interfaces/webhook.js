@@ -65,36 +65,6 @@ router.post('/wa-logout', security.webhookAuth, async (req, res) => {
   }
 });
 
-// 6. Mobile Bridge Hardware Test Endpoint
-router.post('/bridge-test', async (req, res) => {
-  try {
-    const mobileBridge = require('./mobile_bridge/MobileBridge_WS');
-    const action = req.body.action || 'SPEAK_TEXT';
-    const params = req.body.params || { text: 'Sinyal terhubung sempurna. N.E.X.A Server Azure VPS di Jakarta siap sedia, Tuan Faqih.' };
-    console.log(`[TEST-BRIDGE] 🚀 Executing '${action}' on connected Android device...`);
-    const result = await mobileBridge.sendCommand(action, params, { timeoutMs: 10000 });
-    res.status(200).json({ status: 'ok', action, params, result });
-  } catch (err) {
-    res.status(500).json({ status: 'error', error: err.message });
-  }
-});
-
-// 7. Device Control Engine Cognitive Test Endpoint
-router.post('/device-test', async (req, res) => {
-  try {
-    const deviceControlEngine = require('../domain/Device_Control_Engine');
-    const aiRouter = require('../core/AI_Router');
-    const message = req.body.message || 'Nexa, berapa persentase baterai HP-ku sekarang?';
-    console.log(`[TEST-DEVICE-ROUTER] Routing message: "${message}"`);
-    const routingData = await aiRouter.routeUserMessage(message);
-    console.log(`[TEST-DEVICE-ROUTER] Routing result:`, JSON.stringify(routingData));
-    const result = await deviceControlEngine.executeDeviceAction(routingData);
-    res.status(200).json({ ok: true, routingData, result });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
 // ============================================================
 // EXPORTS
 // ============================================================
