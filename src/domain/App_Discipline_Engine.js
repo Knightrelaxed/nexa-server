@@ -90,26 +90,28 @@ async function loadAppLimits() {
  * @param {number} [telemetry.daily_total_minutes] - Total akumulasi hari ini
  * @returns {Promise<{ status: string, action_taken?: string, message?: string }>}
  */
-async function evaluateAppUsage(telemetry = {}) {
-  const pkg = telemetry.package_name || telemetry.current_foreground_app;
-  if (!pkg) return { status: 'IGNORED_NO_PACKAGE' };
+async function evaluateAppUsage(telemetry) {
+  const data = (telemetry && typeof telemetry === 'object') ? telemetry : {};
+  const pkg = data.package_name || data.current_foreground_app;
+  if (!pkg || typeof pkg !== 'string' || pkg.trim().length === 0) return { status: 'IGNORED_NO_PACKAGE' };
 
-  const sessionMinutes = Number(telemetry.session_minutes || telemetry.current_session_minutes || 0);
-  const dailyMinutes = Number(telemetry.daily_total_minutes || telemetry.total_daily_minutes || sessionMinutes);
+  const cleanPkg = pkg.trim();
+  const sessionMinutes = Number(data.session_minutes || data.current_session_minutes || 0);
+  const dailyMinutes = Number(data.daily_total_minutes || data.total_daily_minutes || sessionMinutes);
   const appLimits = await loadAppLimits();
 
-  const rule = appLimits.get(pkg);
+  const rule = appLimits.get(cleanPkg);
   if (!rule) {
     // Aplikasi tidak termasuk dalam daftar pantauan ketat
-    return { status: 'UNMONITORED_APP', package_name: pkg };
+    return { status: 'UNMONITORED_APP', package_name: cleanPkg };
   }
 
-  const appName = rule.app_label || telemetry.app_name || pkg;
+  const appName = rule.app_label || data.app_name || cleanPkg;
   const now = Date.now();
 
   // ── 0. CEK STATUS LOCKOUT / COOLDOWN (UPAYA MEMBUKA LAGI / NGEYEL) ────────
-  if (_activeLockouts.has(pkg)) {
-    const lockout = _activeLockouts.get(pkg);
+  if (_activeLockouts.has(cleanPkg)) {
+    const lockout = _activeLockouts.get(cleanPkg);
     if (now < lockout.expiry) {
       lockout.attempts = (lockout.attempts || 0) + 1;
       const remainingMinutes = Math.ceil((lockout.expiry - now) / (60 * 1000));
@@ -265,35 +267,39 @@ async function getAllAppLimits() {
 /**
  * Menambahkan atau mengupdate batas aplikasi (CRUD: CREATE / UPDATE).
  */
-async function upsertAppLimit(limitData = {}) {
-  const pkg = limitData.package_name;
-  if (!pkg) throw new Error('package_name is required');
+async function upsertAppLimit(limitData) {
+  const data = (limitData && typeof limitData === 'object') ? limitData : {};
+  const pkg = data.package_name;
+  if (!pkg || typeof pkg !== 'string' || pkg.trim().length === 0) {
+    throw new Error('package_name is required and must be a non-empty string');
+  }
 
+  const cleanPkg = pkg.trim();
   const payload = {
-    package_name: pkg,
-    app_label: limitData.app_label || pkg,
-    max_session_minutes: Number(limitData.max_session_minutes || 30),
-    max_daily_minutes: Number(limitData.max_daily_minutes || 90),
-    warning_threshold_pct: Number(limitData.warning_threshold_pct || 80),
-    escalation_level: Number(limitData.escalation_level || 2),
-    is_active: limitData.is_active !== undefined ? Boolean(limitData.is_active) : true,
+    package_name: cleanPkg,
+    app_label: data.app_label || cleanPkg,
+    max_session_minutes: Number(data.max_session_minutes || 30),
+    max_daily_minutes: Number(data.max_daily_minutes || 90),
+    warning_threshold_pct: Number(data.warning_threshold_pct || 80),
+    escalation_level: Number(data.escalation_level || 2),
+    is_active: data.is_active !== undefined ? Boolean(data.is_active) : true,
     updated_at: new Date().toISOString()
   };
 
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb
+    const { data: inserted, error } = await sb
       .from('nexa_app_limits')
       .upsert([payload], { onConflict: 'package_name' })
       .select();
 
     if (error) throw new Error(`Supabase upsert error: ${error.message}`);
     invalidateLimitsCache();
-    return { success: true, data: data?.[0] || payload };
+    return { success: true, data: inserted?.[0] || payload };
   }
 
   // Update in-memory fallback
-  DEFAULT_LIMITS.set(pkg, {
+  DEFAULT_LIMITS.set(cleanPkg, {
     app_label: payload.app_label,
     max_session: payload.max_session_minutes,
     max_daily: payload.max_daily_minutes,
@@ -307,16 +313,21 @@ async function upsertAppLimit(limitData = {}) {
 /**
  * Mengubah sebagian kolom konfigurasi batas aplikasi (CRUD: EDIT / PATCH).
  */
-async function updateAppLimit(packageName, updates = {}) {
-  if (!packageName) throw new Error('packageName is required');
+async function updateAppLimit(packageName, updates) {
+  if (!packageName || typeof packageName !== 'string' || packageName.trim().length === 0) {
+    throw new Error('packageName is required and must be a non-empty string');
+  }
+
+  const cleanPkg = packageName.trim();
+  const patch = (updates && typeof updates === 'object') ? { ...updates } : {};
+  patch.updated_at = new Date().toISOString();
 
   const sb = getSupabase();
   if (sb) {
-    const patch = { ...updates, updated_at: new Date().toISOString() };
     const { data, error } = await sb
       .from('nexa_app_limits')
       .update(patch)
-      .eq('package_name', packageName)
+      .eq('package_name', cleanPkg)
       .select();
 
     if (error) throw new Error(`Supabase update error: ${error.message}`);
@@ -325,38 +336,41 @@ async function updateAppLimit(packageName, updates = {}) {
   }
 
   // Update in-memory fallback
-  if (DEFAULT_LIMITS.has(packageName)) {
-    const curr = DEFAULT_LIMITS.get(packageName);
-    if (updates.max_session_minutes !== undefined) curr.max_session = Number(updates.max_session_minutes);
-    if (updates.max_daily_minutes !== undefined) curr.max_daily = Number(updates.max_daily_minutes);
-    if (updates.warning_threshold_pct !== undefined) curr.warning_pct = Number(updates.warning_threshold_pct);
-    if (updates.escalation_level !== undefined) curr.level = Number(updates.escalation_level);
-    if (updates.app_label) curr.app_label = updates.app_label;
-    DEFAULT_LIMITS.set(packageName, curr);
+  if (DEFAULT_LIMITS.has(cleanPkg)) {
+    const curr = DEFAULT_LIMITS.get(cleanPkg);
+    if (patch.max_session_minutes !== undefined) curr.max_session = Number(patch.max_session_minutes);
+    if (patch.max_daily_minutes !== undefined) curr.max_daily = Number(patch.max_daily_minutes);
+    if (patch.warning_threshold_pct !== undefined) curr.warning_pct = Number(patch.warning_threshold_pct);
+    if (patch.escalation_level !== undefined) curr.level = Number(patch.escalation_level);
+    if (patch.app_label) curr.app_label = patch.app_label;
+    DEFAULT_LIMITS.set(cleanPkg, curr);
   }
   invalidateLimitsCache();
-  return { success: true, data: updates, note: 'Updated in-memory fallback' };
+  return { success: true, data: patch, note: 'Updated in-memory fallback' };
 }
 
 /**
  * Menghapus batas aplikasi (CRUD: DELETE).
  */
 async function deleteAppLimit(packageName) {
-  if (!packageName) throw new Error('packageName is required');
+  if (!packageName || typeof packageName !== 'string' || packageName.trim().length === 0) {
+    throw new Error('packageName is required and must be a non-empty string');
+  }
 
+  const cleanPkg = packageName.trim();
   const sb = getSupabase();
   if (sb) {
     const { error } = await sb
       .from('nexa_app_limits')
       .delete()
-      .eq('package_name', packageName);
+      .eq('package_name', cleanPkg);
 
     if (error) throw new Error(`Supabase delete error: ${error.message}`);
   }
 
-  DEFAULT_LIMITS.delete(packageName);
+  DEFAULT_LIMITS.delete(cleanPkg);
   invalidateLimitsCache();
-  return { success: true, package_name: packageName };
+  return { success: true, package_name: cleanPkg };
 }
 
 module.exports = {
