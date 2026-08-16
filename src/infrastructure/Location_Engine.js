@@ -187,9 +187,6 @@ async function searchNearbyPlaces(query, lat, lon, opts = {}) {
   return results.slice(0, limit);
 }
 
-  return [];
-}
-
 /**
  * Reverse Geocode: Mengubah Koordinat GPS (Lat, Lon) menjadi Nama Alamat Manusiawi via Nominatim OSM
  * @param {number} lat
