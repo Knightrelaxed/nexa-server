@@ -1404,6 +1404,8 @@ FORMAT OUTPUT (JSON MURNI, tanpa markdown):
   // ── STEP 5: Upsert setiap proposal ke nexa_self_model ──────────────────────
   const VALID_SELF_LAYERS = new Set(['CAPABILITIES', 'LIMITATIONS', 'OPERATIONAL_RULES', 'CORRECTIONS', 'COMMUNICATION_STYLE']);
   const supabaseMemories = require('../infrastructure/Supabase_Memories');
+  const upsertedTraits = [];
+  const skippedTraits = [];
 
   for (const p of proposals) {
     try {
@@ -1411,9 +1413,24 @@ FORMAT OUTPUT (JSON MURNI, tanpa markdown):
       const traitKey = String(p.trait_key || '').trim();
       const traitValue = String(p.trait_value || '').trim();
 
-      if (!VALID_SELF_LAYERS.has(layer) || !traitKey || traitKey.length < 3 || !traitValue || traitValue.length < 10) {
-        console.warn('[SELF-REFLECTION] Proposal tidak valid, dilewati:', JSON.stringify(p).substring(0, 100));
+      let invalidReason = '';
+      if (!VALID_SELF_LAYERS.has(layer)) {
+        invalidReason = `Layer '${layer || 'KOSONG'}' tidak valid`;
+      } else if (!traitKey || traitKey.length < 3) {
+        invalidReason = 'trait_key terlalu pendek atau kosong';
+      } else if (!traitValue || traitValue.length < 10) {
+        invalidReason = 'trait_value terlalu pendek (< 10 karakter)';
+      }
+
+      if (invalidReason) {
+        console.warn('[SELF-REFLECTION] Proposal tidak valid, dilewati:', JSON.stringify(p).substring(0, 100), `(${invalidReason})`);
         skipped++;
+        skippedTraits.push({
+          layer: layer || 'UNKNOWN',
+          trait_key: traitKey || 'tanpa_kunci',
+          trait_value: traitValue || '',
+          reason: invalidReason
+        });
         continue;
       }
 
@@ -1425,7 +1442,16 @@ FORMAT OUTPUT (JSON MURNI, tanpa markdown):
         `Weekly Self-Reflection Pass ${new Date().toISOString().substring(0, 10)}`
       );
 
-      if (result === 'error') { errors++; } else { upserted++; }
+      if (result === 'error') {
+        errors++;
+      } else {
+        upserted++;
+        upsertedTraits.push({
+          layer,
+          trait_key: traitKey,
+          trait_value: traitValue
+        });
+      }
     } catch (loopErr) {
       console.error('[SELF-REFLECTION] Error upserting proposal:', loopErr.message);
       errors++;
@@ -1433,7 +1459,7 @@ FORMAT OUTPUT (JSON MURNI, tanpa markdown):
   }
 
   console.log(`[SELF-REFLECTION] ✔ Pass complete: upserted=${upserted} skipped=${skipped} errors=${errors}`);
-  return { success: true, upserted, skipped, errors };
+  return { success: true, upserted, skipped, errors, upsertedTraits, skippedTraits };
 }
 
 // ============================================================

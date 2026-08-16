@@ -2970,20 +2970,32 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             );
           } else if (action === 'READ') {
             const keyword = routingData.extracted_data.search_keyword || textInput;
+            const isQueryAboutNexa = isFactAboutNexa(keyword) || /fakta\s+baru|self[\s_-]?model|refleksi|koreksi|yang\s+(kamu|anda)\s+pelajari|pemahaman\s+diri/i.test(keyword);
+
             const facts = await supabaseMemories.getPersonalFacts();
+            const selfModelTraits = (typeof supabaseMemories.getSelfModel === 'function')
+              ? await supabaseMemories.getSelfModel(10)
+              : [];
+
             const aiRouter = require("../../core/AI_Router");
             const relevantFacts = facts.userProfile ? aiRouter.selectUserProfileFacts(facts.userProfile, textInput) : [];
-            const relevantVault = (facts.vaultItems && aiRouter.selectVaultFacts) ? aiRouter.selectVaultFacts(facts.vaultItems, textInput) : [];
-            
-            if (relevantFacts.length > 0 || relevantVault.length > 0) {
+            const relevantVault = (!isQueryAboutNexa && facts.vaultItems && aiRouter.selectVaultFacts) ? aiRouter.selectVaultFacts(facts.vaultItems, textInput) : [];
+            const relevantSelfModel = selfModelTraits.map(t => `[${t.layer}] ${t.trait_value}`);
+
+            if (isQueryAboutNexa && relevantSelfModel.length > 0) {
+              const list = relevantSelfModel.map(f => `- [SELF-LEARNING / PEMAHAMAN DIRI N.E.X.A] ${f}`).join('\n');
+              const prompt = `CATATAN PEMAHAMAN DIRI & FAKTA YANG DIPELAJARI N.E.X.A DARI TUAN FAQIH (SELF-MODEL):\n${list}\n\nPERTANYAAN TUAN FAQIH: "${keyword}"\n\nTUGAS: Jawab pertanyaan Tuan Faqih dengan menjelaskan fakta-fakta atau koreksi yang telah dipelajari/direvisi oleh N.E.X.A tentang dirinya sendiri berdasarkan daftar di atas. Jelaskan dengan gaya asisten pribadi yang cerdas, rendah hati, loyal, dan terus berkembang. DILARANG KERAS membacakan dokumen arsip pribadi Tuan Faqih (seperti KTP, NIK, alamat, BPJS) karena Tuan Faqih sedang bertanya tentang pemahaman diri N.E.X.A. WAJIB sapa dengan "Tuan" atau "Tuan Faqih".`;
+              domainReply = await aiRouter.callAI(prompt);
+            } else if (relevantFacts.length > 0 || relevantVault.length > 0 || relevantSelfModel.length > 0) {
               const list = [
                 ...relevantFacts.map(f => `- [USER PROFILE] ${f}`),
-                ...relevantVault.map(f => `- [VAULT DOKUMEN/ARSIP] ${f}`)
+                ...relevantVault.map(f => `- [VAULT DOKUMEN/ARSIP] ${f}`),
+                ...relevantSelfModel.map(f => `- [SELF-MODEL N.E.X.A] ${f}`)
               ].join('\n');
-              const prompt = `FILTERED PERMANENT FACTS & VAULT DOCUMENTS ABOUT TUAN FAQIH:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user's question accurately using ONLY the relevant facts and vault document metadata above. If the answer (such as birth place, NIK, birth date, name, address) is found in the VAULT DOKUMEN/ARSIP metadata, answer clearly and proudly citing that it is recorded in their vaulted documents. Summarize them into a warm, natural narrative from an assistant's perspective. Do NOT use bullet points unless requested. CRITICAL RULE: ALWAYS address and refer to the user as "Tuan" or "Tuan Faqih". NEVER address or refer to the user as "Bapak", "Mas", or "Anda". MUST answer in fluent, elegant Indonesian.`;
+              const prompt = `FILTERED PERMANENT FACTS & VAULT DOCUMENTS ABOUT TUAN FAQIH & N.E.X.A:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user's question accurately using ONLY the relevant facts above. If the question is about Tuan Faqih's personal details (birth date, NIK, address), cite from VAULT/USER PROFILE. If the question is about N.E.X.A's learned habits/corrections/facts, cite from SELF-MODEL N.E.X.A. Summarize them into a warm, natural narrative from an assistant's perspective. Do NOT use bullet points unless requested. CRITICAL RULE: ALWAYS address and refer to the user as "Tuan" or "Tuan Faqih". NEVER address or refer to the user as "Bapak", "Mas", or "Anda". MUST answer in fluent, elegant Indonesian.`;
               domainReply = await aiRouter.callAI(prompt);
             } else {
-              domainReply = `🧠 Saat ini saya belum memiliki catatan fakta personal permanen maupun arsip di Vault terkait hal tersebut, Tuan Faqih.`;
+              domainReply = `🧠 Saat ini saya belum memiliki catatan fakta terkait hal tersebut, Tuan Faqih.`;
             }
           }
         }
@@ -3026,14 +3038,24 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
               deletedLayer ? `🗑️ <i>Dihapus dari Memori ${deletedLayer}</i>` : `❌ <i>Aturan Tidak Ditemukan di Seluruh Memori</i>`
             );
           } else if (action === 'READ') {
-
              const keyword = routingData.extracted_data.search_keyword || textInput;
              const facts = await supabaseMemories.getPersonalFacts();
-             if (facts.coreIdentity && facts.coreIdentity.length > 0) {
-                const aiRouter = require("../../core/AI_Router");
-                const relevantIdentity = aiRouter.selectCoreIdentityFacts(facts.coreIdentity, textInput);
-                const list = relevantIdentity.map(f => `- ${f}`).join('\n');
-                const prompt = `FILTERED N.E.X.A CORE IDENTITIES & RULES:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user gracefully and authoritatively based on your identity rules above. If it's a casual greeting, respond naturally as an assistant. Do NOT ask the user to specify aspects unless they requested the full list. CRITICAL RULE: ALWAYS address and refer to the user as "Tuan" or "Tuan Faqih". NEVER address or refer to the user as "Bapak", "Mas", or "Anda". MUST answer in fluent, elegant Indonesian.`;
+             const selfModelTraits = (typeof supabaseMemories.getSelfModel === 'function')
+               ? await supabaseMemories.getSelfModel(10)
+               : [];
+
+             const aiRouter = require("../../core/AI_Router");
+             const relevantIdentity = (facts.coreIdentity && facts.coreIdentity.length > 0)
+               ? aiRouter.selectCoreIdentityFacts(facts.coreIdentity, textInput)
+               : [];
+             const relevantSelfModel = selfModelTraits.map(t => `[${t.layer}] ${t.trait_value}`);
+
+             if (relevantIdentity.length > 0 || relevantSelfModel.length > 0) {
+                const list = [
+                  ...relevantIdentity.map(f => `- [CORE IDENTITY] ${f}`),
+                  ...relevantSelfModel.map(f => `- [SELF-MODEL N.E.X.A] ${f}`)
+                ].join('\n');
+                const prompt = `FILTERED N.E.X.A CORE IDENTITIES, RULES & SELF-LEARNING MODEL:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user gracefully, accurately, and authoritatively based on your identity rules and self-learning model above. If it's a question about what N.E.X.A learned/corrected, cite from SELF-MODEL N.E.X.A. If it's a casual greeting, respond naturally as an assistant. Do NOT ask the user to specify aspects unless they requested the full list. CRITICAL RULE: ALWAYS address and refer to the user as "Tuan" or "Tuan Faqih". NEVER address or refer to the user as "Bapak", "Mas", or "Anda". MUST answer in fluent, elegant Indonesian.`;
                 domainReply = await aiRouter.callAI(prompt);
              } else {
                 domainReply = `🤖 Saat ini tidak ada aturan identitas inti khusus yang diterapkan.`;

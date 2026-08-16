@@ -134,17 +134,34 @@ function initCronJobs() {
       const result = await inferenceEngine.runWeeklySelfReflectionPass();
       console.log(`[CRON] Self-Reflection done: upserted=${result.upserted} skipped=${result.skipped} errors=${result.errors}`);
 
-      if (result.success && result.upserted > 0) {
-        const msg = [
+      if (result.success && (result.upserted > 0 || result.skipped > 0)) {
+        const msgParts = [
           `🪞 <b>Weekly N.E.X.A Self-Reflection Selesai</b>`,
           `<i>(Pemahaman Diri N.E.X.A — Minggu Sore)</i>`,
-          ``,
-          `🧩 Fakta baru / direvisi : <b>${result.upserted}</b>`,
-          `⏭ Dilewati (tidak valid) : <b>${result.skipped}</b>`,
-          ``,
-          `N.E.X.A telah memperbarui pemahamannya tentang dirinya sendiri berdasarkan obrolan minggu ini.`
-        ].join('\n');
-        await sendTelegramOutbound(msg, true);
+          ``
+        ];
+
+        if (result.upsertedTraits && result.upsertedTraits.length > 0) {
+          msgParts.push(`🧩 <b>Fakta Baru / Direvisi (${result.upsertedTraits.length}):</b>`);
+          result.upsertedTraits.forEach((t, i) => {
+            msgParts.push(`<b>${i + 1}. [${t.layer}]</b> ${t.trait_value}`);
+          });
+          msgParts.push(``);
+        } else {
+          msgParts.push(`🧩 Fakta baru / direvisi : <b>0</b>\n`);
+        }
+
+        if (result.skippedTraits && result.skippedTraits.length > 0) {
+          msgParts.push(`⏭ <b>Dilewati / Tidak Valid (${result.skippedTraits.length}):</b>`);
+          result.skippedTraits.forEach((t, i) => {
+            const desc = t.trait_value ? `"${t.trait_value.substring(0, 60)}${t.trait_value.length > 60 ? '...' : ''}"` : `<code>${t.trait_key}</code>`;
+            msgParts.push(`• ${desc} — <i>${t.reason}</i>`);
+          });
+          msgParts.push(``);
+        }
+
+        msgParts.push(`<i>N.E.X.A telah memperbarui model pemahaman dirinya di database nexa_self_model.</i>`);
+        await sendTelegramOutbound(msgParts.join('\n'), true);
       }
     } catch (e) {
       console.error('[CRON] Weekly Self-Reflection Pass failed:', e.message);
