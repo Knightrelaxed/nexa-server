@@ -3354,7 +3354,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           platform: 'telegram'
         });
 
-        if (devResult.photoBase64) {
+        if (devResult && devResult.photoBase64) {
           try {
             const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
             const chatId = (message.chat?.id || env.TELEGRAM_CHAT_ID)?.toString().trim();
@@ -3384,7 +3384,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           }
         }
 
-        domainReply = devResult.message;
+        domainReply = devResult?.message || '⚠️ Perintah kontrol perangkat telah diproses.';
         break;
       }
 
