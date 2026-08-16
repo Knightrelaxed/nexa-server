@@ -27,13 +27,27 @@ function telegramIdentityLock(req, res, next) {
     return res.status(200).send('OK');
   }
 
-  // Convert both to string for safe comparison
-  if (String(chat.id) !== String(env.TELEGRAM_CHAT_ID)) {
-    console.warn(`[SECURITY] Unauthorized Telegram access attempt from Chat ID: ${chat.id}`);
-    return res.status(403).send('Forbidden: Identity Lock Active');
+  // Parse authorized chat IDs (supports single or comma-separated list of IDs)
+  const authorizedIds = String(env.TELEGRAM_CHAT_ID || '')
+    .split(',')
+    .map(id => id.trim())
+    .filter(Boolean);
+
+  // Jika ini adalah ID Telegram Tuan Faqih yang terdaftar, loloskan langsung tanpa print log security
+  if (authorizedIds.includes(String(chat.id))) {
+    return next();
   }
 
-  next();
+  // Jika ini ID orang lain (unauthorized), catat bukti lengkap: Chat ID, username, nama
+  const fromUser = req.body?.message?.from || req.body?.callback_query?.from || req.body?.edited_message?.from || {};
+  const userDetails = [
+    `Chat ID: ${chat.id}`,
+    fromUser.username ? `@${fromUser.username}` : null,
+    (fromUser.first_name || fromUser.last_name) ? `(${[fromUser.first_name, fromUser.last_name].filter(Boolean).join(' ')})` : null
+  ].filter(Boolean).join(' ');
+
+  console.warn(`[SECURITY] 🚨 Unauthorized Telegram access attempt from ${userDetails}`);
+  return res.status(403).send('Forbidden: Identity Lock Active');
 }
 
 /**
