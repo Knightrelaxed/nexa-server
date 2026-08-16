@@ -144,6 +144,19 @@ function initWebSocket(server) {
           return;
         }
 
+        // F. App Usage Telemetry & Duration Limiting Engine
+        if (payload.type === 'APP_USAGE_TELEMETRY' || payload.type === 'app_usage') {
+          try {
+            const appDiscipline = require('../../domain/App_Discipline_Engine');
+            appDiscipline.evaluateAppUsage(payload).catch((err) => {
+              console.warn('[NEXA-BRIDGE-WS] App discipline evaluation error:', err.message);
+            });
+          } catch (e) {
+            console.error('[NEXA-BRIDGE-WS] App usage routing error:', e.message);
+          }
+          return;
+        }
+
         console.log('[NEXA-BRIDGE-WS] Unhandled payload type:', payload.type);
       } catch (err) {
         console.error('[NEXA-BRIDGE-WS] Failed to parse incoming JSON:', err.message);
