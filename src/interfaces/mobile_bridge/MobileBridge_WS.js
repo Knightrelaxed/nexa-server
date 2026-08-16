@@ -255,10 +255,19 @@ function requestOverlay(title, message, buttons = [], timeoutMs = 15000) {
   }, { timeoutMs });
 }
 
+/**
+ * Check if the Android bridge device is actively connected.
+ * @returns {boolean}
+ */
+function isConnected() {
+  return activeClient !== null && activeClient.readyState === WebSocket.OPEN;
+}
+
 module.exports = {
   initWebSocket,
   sendCommand,
   setOnTelemetryListener,
   getLatestTelemetry,
-  requestOverlay
+  requestOverlay,
+  isConnected
 };

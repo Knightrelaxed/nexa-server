@@ -51,7 +51,7 @@ async function _resolveUserCoordinates(context = {}) {
   }
 
   // 2. Coba minta GPS langsung dari HP via Mobile Bridge
-  if (bridge.isConnected()) {
+  if (typeof bridge.isConnected === 'function' && bridge.isConnected()) {
     try {
       console.log('[LOCATION-ORCHESTRATOR] 📡 Mengambil koordinat GPS aktif dari HP via Bridge...');
       const bridgeRes = await bridge.getLocation();

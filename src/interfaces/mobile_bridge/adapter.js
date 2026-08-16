@@ -303,9 +303,12 @@ class NexaBridgeAdapter {
     }
   }
 
+  isConnected() {
+    return mobileBridgeWs.isConnected ? mobileBridgeWs.isConnected() : false;
+  }
+
   isOnline() {
-    const wsStatus = mobileBridgeWs.getLatestTelemetry();
-    return Boolean(wsStatus);
+    return this.isConnected();
   }
 
   getSnapshot() {
