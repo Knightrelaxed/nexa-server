@@ -3,7 +3,7 @@
 > **Dokumentasi Resmi Implementasi Infrastruktur Cloud VPS**  
 > **Status:** Production / Active 24/7 🟢  
 > **Lokasi Data Center:** 🇮🇩 Jakarta, Indonesia (`indonesiacentral`)  
-> **Domain HTTPS:** `https://nexa-server-faqih.indonesiacentral.cloudapp.azure.com`  
+> **Domain HTTPS:** `https://nexa-server.indonesiacentral.cloudapp.azure.com`  
 > **Waktu Implementasi:** Minggu, 16 Agustus 2026
 
 ---
@@ -199,12 +199,12 @@ Telegram API secara ketat menolak pendaftaran Webhook yang menggunakan URL `http
 
 ### B. Solusi Enterprise: Azure DNS Label + Caddy Reverse Proxy
 1. **Azure DNS Name:** Dikonfigurasi pada Azure Public IP:
-   `nexa-server-faqih.indonesiacentral.cloudapp.azure.com`
+   `nexa-server.indonesiacentral.cloudapp.azure.com`
 2. **Caddy Web Server:** Menggantikan kebutuhan manual Certbot/Nginx. Caddy otomatis meminta, memverifikasi, dan memperpanjang sertifikat SSL Let's Encrypt secara mandiri.
 
 **Konfigurasi `/etc/caddy/Caddyfile`:**
 ```caddy
-nexa-server-faqih.indonesiacentral.cloudapp.azure.com {
+nexa-server.indonesiacentral.cloudapp.azure.com {
     reverse_proxy localhost:3000
 }
 ```
@@ -220,7 +220,7 @@ sudo systemctl restart caddy
 
 Pendaftaran Webhook dieksekusi langsung ke Telegram API:
 ```
-https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://nexa-server-faqih.indonesiacentral.cloudapp.azure.com/webhook/telegram
+https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://nexa-server.indonesiacentral.cloudapp.azure.com/webhook/telegram
 ```
 
 **Respon API:**
