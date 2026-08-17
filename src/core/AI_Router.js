@@ -570,7 +570,13 @@ const DOMAIN_KEYWORD_SYNONYMS = {
 
   // Banking & Financial Shield
   'bank': ['bank', 'perbankan', 'm-banking', 'mbankingshieldmanager', 'bca', 'livin', 'brimo', 'pin', 'keamanan', 'aksesibilitas'],
-  'pin': ['pin', 'password', 'keamanan', 'm-banking', 'mbankingshieldmanager']
+  'pin': ['pin', 'password', 'keamanan', 'm-banking', 'mbankingshieldmanager'],
+
+  // Temporal & Time Awareness (UTC+7 WIB)
+  'waktu': ['waktu', 'jam', 'hari', 'tanggal', 'bulan', 'tahun', 'temporal', 'utc+7', 'wib', 'jakarta', 'sapaan'],
+  'jam': ['waktu', 'jam', 'hari', 'tanggal', 'bulan', 'tahun', 'temporal', 'utc+7', 'wib', 'jakarta', 'sapaan'],
+  'hari': ['waktu', 'jam', 'hari', 'tanggal', 'bulan', 'tahun', 'temporal', 'utc+7', 'wib', 'jakarta', 'kalender'],
+  'tanggal': ['waktu', 'jam', 'hari', 'tanggal', 'bulan', 'tahun', 'temporal', 'utc+7', 'wib', 'jakarta', 'iso']
 };
 
 /**
