@@ -576,7 +576,15 @@ const DOMAIN_KEYWORD_SYNONYMS = {
   'waktu': ['waktu', 'jam', 'hari', 'tanggal', 'bulan', 'tahun', 'temporal', 'utc+7', 'wib', 'jakarta', 'sapaan'],
   'jam': ['waktu', 'jam', 'hari', 'tanggal', 'bulan', 'tahun', 'temporal', 'utc+7', 'wib', 'jakarta', 'sapaan'],
   'hari': ['waktu', 'jam', 'hari', 'tanggal', 'bulan', 'tahun', 'temporal', 'utc+7', 'wib', 'jakarta', 'kalender'],
-  'tanggal': ['waktu', 'jam', 'hari', 'tanggal', 'bulan', 'tahun', 'temporal', 'utc+7', 'wib', 'jakarta', 'iso']
+  'tanggal': ['waktu', 'jam', 'hari', 'tanggal', 'bulan', 'tahun', 'temporal', 'utc+7', 'wib', 'jakarta', 'iso'],
+
+  // SACR & AI Fallback Architecture (Selective On-Demand Injection)
+  'fallback': ['fallback', 'tier', 'sacr', 'failover', 'arsitektur', 'cerebras', 'gemini', 'gemma', 'heavy', 'light', 'mode'],
+  'tier': ['fallback', 'tier', 'sacr', 'failover', 'cerebras', 'gemini', 'gemma', 'heavy', 'light'],
+  'sacr': ['sacr', 'fallback', 'tier', 'cerebras', 'gemini', 'gemma', 'heavy', 'light'],
+  'heavy': ['heavy', 'sacr', 'fallback', 'tier', 'mode'],
+  'light': ['light', 'sacr', 'fallback', 'tier', 'mode'],
+  'urutan': ['urutan', 'fallback', 'tier', 'sacr', 'mode', 'heavy', 'light']
 };
 
 /**
