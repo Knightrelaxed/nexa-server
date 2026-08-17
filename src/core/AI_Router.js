@@ -642,8 +642,16 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const _hasContextRef = CONTEXTUAL_REF_WORDS.some(kw => textInput.toLowerCase().includes(kw));
 
   // ── Log Analysis Intent Detection (Universal — works on all interfaces) ───
-  const isLogRequest = /(?:cek|analisis|lihat|baca|periksa|mana)\s*(?:log|logs|telemetri|kontainer|space|server)/i.test(textInput) ||
-    (/(?:log|logs)/i.test(textInput) && /(?:mana|analisis|cek|baca|periksa|lihat|kontainer|space)/i.test(textInput));
+  const isVisionInput = textInput.includes('[SISTEM PENGLIHATAN N.E.X.A');
+  const textToCheck = isVisionInput 
+    ? (textInput.match(/Konteks\/Caption dari Tuan Faqih:\s*"([^"]*)"/i)?.[1] || '')
+    : textInput;
+
+  // Strict log diagnosis regex with word boundaries \b to avoid matching "logo", "dialog", "katalog", "teknologi"
+  const isLogRequest = !isVisionInput && (
+    /\b(?:cek|analisis|lihat|baca|periksa|diagnosa|mana)\s+(?:system\s+|server\s+)?(?:log|logs|telemetri|telemetry)\b/i.test(textToCheck) ||
+    (/\b(?:log|logs)\b/i.test(textToCheck) && /\b(?:server|sistem|kontainer|space|crash|error|telemetri)\b/i.test(textToCheck))
+  );
 
   if (isLogRequest) {
     console.log('[ROUTER] 🔍 Log Analysis Intent Detected (DIAGNOSE_SYSTEM)');
