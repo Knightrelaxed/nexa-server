@@ -580,21 +580,61 @@ const DOMAIN_KEYWORD_SYNONYMS = {
 };
 
 /**
- * Ekstraksi token kata kunci percakapan dengan penanganan singkatan teknis 2-3 huruf dan kluster sinonim domain.
+ * Fast Indonesian Stemmer & Morphological Root Extractor (0ms CPU)
+ * Cleans affixes: me-, men-, meng-, mem-, meny-, di-, ke-, pe-, pem-, pen-, peng-, peny-, ber-, ter-, se-
+ * Suffixes: -kan, -an, -i, -nya, -ku, -mu, -lah, -kah
+ */
+function _stemIndonesianWord(word) {
+  if (!word || word.length < 4) return word;
+  let w = word.toLowerCase();
+
+  // Suffix stripping
+  w = w.replace(/(?:lah|kah|pun|tah|ku|mu|nya)$/, '');
+  w = w.replace(/(?:kan|an|i)$/, '');
+
+  // Prefix stripping
+  if (w.startsWith('meng') || w.startsWith('peng')) {
+    w = w.replace(/^(?:meng|peng)/, '');
+  } else if (w.startsWith('meny') || w.startsWith('peny')) {
+    w = 's' + w.replace(/^(?:meny|peny)/, '');
+  } else if (w.startsWith('mem') || w.startsWith('pem')) {
+    w = w.replace(/^(?:mem|pem)/, '');
+  } else if (w.startsWith('men') || w.startsWith('pen')) {
+    w = w.replace(/^(?:men|pen)/, '');
+  } else if (w.startsWith('ber') || w.startsWith('ter') || w.startsWith('per')) {
+    w = w.replace(/^(?:ber|ter|per)/, '');
+  } else if (w.startsWith('di') || w.startsWith('ke') || w.startsWith('se')) {
+    w = w.replace(/^(?:di|ke|se)/, '');
+  }
+
+  return w.length >= 3 ? w : word;
+}
+
+/**
+ * Universal token extraction: extracts raw words, Indonesian stemmed roots, tech acronyms, and semantic clusters.
  */
 function _extractResonanceTokens(userMessage) {
   if (!userMessage) return [];
-  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana', 'nexa', 'tuan', 'faqih', 'sistem', 'adalah', 'yaitu', 'merupakan', 'oleh', 'sebagai', 'harus', 'wajib', 'juga', 'lagi', 'saja', 'tadi', 'baru', 'banyak', 'coba', 'tolong']);
+  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana', 'nexa', 'tuan', 'faqih', 'sistem', 'adalah', 'yaitu', 'merupakan', 'oleh', 'sebagai', 'harus', 'wajib', 'juga', 'lagi', 'saja', 'tadi', 'baru', 'banyak', 'coba', 'tolong', 'apakah']);
   const msgStr = typeof userMessage === 'string' ? userMessage.toLowerCase() : String(userMessage || '').toLowerCase();
   const rawWords = msgStr.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
 
   const tokens = new Set();
   for (const w of rawWords) {
     if (stopWords.has(w)) continue;
-    if (w.length >= 4 || SHORT_TECH_ALLOWLIST.has(w)) {
+    if (w.length >= 3 || SHORT_TECH_ALLOWLIST.has(w)) {
       tokens.add(w);
+      const stem = _stemIndonesianWord(w);
+      if (stem && stem.length >= 3 && !stopWords.has(stem)) {
+        tokens.add(stem);
+      }
       if (DOMAIN_KEYWORD_SYNONYMS[w]) {
         for (const syn of DOMAIN_KEYWORD_SYNONYMS[w]) {
+          tokens.add(syn);
+        }
+      }
+      if (stem && DOMAIN_KEYWORD_SYNONYMS[stem]) {
+        for (const syn of DOMAIN_KEYWORD_SYNONYMS[stem]) {
           tokens.add(syn);
         }
       }
@@ -604,7 +644,7 @@ function _extractResonanceTokens(userMessage) {
 }
 
 /**
- * Menghitung bobot relevansi fakta terhadap token konteks pesan pengguna.
+ * Menghitung bobot relevansi fakta secara universal (Exact substring + Word overlap).
  */
 function _scoreFactRelevance(fact, tokens) {
   if (!fact || typeof fact !== 'string') return 0;
@@ -614,6 +654,11 @@ function _scoreFactRelevance(fact, tokens) {
   for (const token of tokens) {
     if (factLower.includes(token)) {
       score += 10;
+      // Bonus jika token muncul sebagai kata utuh
+      const regex = new RegExp(`\\b${token}\\b`, 'i');
+      if (regex.test(factLower)) {
+        score += 5;
+      }
     }
   }
   return score;
