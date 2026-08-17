@@ -3234,20 +3234,25 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             domainReply = `📭 Tabel <b>${escapeHtml(result.table)}</b> tidak memiliki data yang cocok.`;
             break;
           }
-          const rowsPreview = result.rows.map((r) => {
-            if (tableName && (tableName.toLowerCase() === 'nexa_vault_items' || result.table === 'nexa_vault_items')) {
-              let metaDetails = typeof r.metadata_json === 'object' && r.metadata_json
-                ? Object.entries(r.metadata_json).map(([k,v]) => `${k}: ${v}`).join(' | ')
-                : String(r.metadata_json || '');
-              return `• [${r.category || 'ARSIP'}] ${r.file_name} — ${metaDetails} (Link: ${r.drive_web_view_link || '-'})`;
-            }
-            const summary = Object.entries(r)
-              .slice(0, 4)
-              .map(([k, v]) => `${k}: ${String(v).substring(0, 80)}`)
-              .join(' | ');
-            return `• ${escapeHtml(summary)}`;
-          }).join('\n');
-          domainReply = `📚 <b>Data ${escapeHtml(result.table)} (${result.rows.length} baris):</b>\n${rowsPreview}`;
+          if (tableName && (tableName.toLowerCase() === 'nexa_vault_items' || result.table === 'nexa_vault_items')) {
+            const rowsPreview = result.rows.map((r, idx) => {
+              const category = r.category || r.metadata_json?.kategori_gambar || 'Dokumen';
+              const title = r.metadata_json?.judul || r.metadata_json?.title || r.metadata_json?.nama_dokumen || r.file_name.replace(/_\d+\.[a-zA-Z0-9]+$/, '').replace(/_/g, ' ');
+              const link = r.drive_web_view_link;
+              const linkStr = link ? `\n   🔗 <a href="${escapeHtml(link)}">Buka di Google Drive</a>` : '';
+              return `${idx + 1}. <b>[${escapeHtml(category)}]</b> ${escapeHtml(title)}\n   📁 <code>${escapeHtml(r.file_name)}</code>${linkStr}`;
+            }).join('\n\n');
+            domainReply = `🗄️ <b>Daftar Dokumen Vault (${result.rows.length} dokumen tersimpan):</b>\n\n${rowsPreview}`;
+          } else {
+            const rowsPreview = result.rows.map((r) => {
+              const summary = Object.entries(r)
+                .slice(0, 4)
+                .map(([k, v]) => `${k}: ${String(v).substring(0, 80)}`)
+                .join(' | ');
+              return `• ${escapeHtml(summary)}`;
+            }).join('\n');
+            domainReply = `📚 <b>Data ${escapeHtml(result.table)} (${result.rows.length} baris):</b>\n${rowsPreview}`;
+          }
           pendingDatabaseContext = { tableName: result.table, lastAction: dbAction, askedAt: Date.now() };
         } else if (dbAction === 'INSERT_ROW') {
           const result = await supabaseMemories.insertDatabaseRow(tableName, dbData.row_data || {});
