@@ -209,12 +209,26 @@ Mencegah perintah berbahaya dijalankan dari sumber tak dikenal jika koneksi teri
 
 ---
 
-### 3.6. System Lifecycle & Safety Mechanisms
+### 3.6. System Lifecycle & Safety Mechanisms (WebSocket Immortality Protocol)
 
 - **Single Scope Lifecycle:** `serviceScope` di dalam `NexaBridgeService` diciptakan ulang pada `onCreate()` dan dibatalkan penuh pada `onDestroy()` menggunakan `serviceScope.cancel()`.
 - **Anti-Duplikasi Loop (`isServiceStarted`):** Bendera boolean memastikan bahwa panggilan `onStartCommand` yang berulang (misal dari spamming switch UI) tidak mencetuskan *consumer loop* ganda.
 - **State Reset:** Method `orchestrator.reset()` dipanggil setiap kali koneksi baru dipicu dari UI agar state percobaan lama benar-benar bersih.
 - **Pencegahan Out-Of-Memory (OOM):** `resizeBitmap(bitmap, 1280)` membatasi ukuran gambar kamera & screenshot sebelum diubah menjadi string Base64.
+- **Boot Completed Auto-Start (`BootCompletedReceiver.kt`):** Mendaftarkan `ACTION_BOOT_COMPLETED` & `ACTION_QUICKBOOT_POWERON` agar service Bridge otomatis menyala di latar belakang saat HP di-restart tanpa perlu membuka aplikasi secara manual.
+- **Bi-Directional Keepalive (Anti-NAT / Caddy Timeout):**
+  - **Android Client:** `OkHttpClient.pingInterval(20, TimeUnit.SECONDS)` secara proaktif mengirim 2-byte ping frame setiap 20 detik, mencegah router Wi-Fi rumah dan Caddy Reverse Proxy memutus jalur NAT yang sedang diam/idle.
+  - **Node.js Server:** `heartbeatInterval` (25s) secara berkala memeriksa kesehatan soket klien. Jika tidak ada respons `pong`, server langsung mengeksekusi pembersihan.
+- **Instant Zombie Socket Termination (`ws.terminate()`):**
+  - Menggantikan `ws.close()` yang lambat/menggantung saat koneksi baru masuk (*client replacement*).
+  - Server langsung memutus koneksi lama di level kernel TCP (`socket.destroy()`), mengeliminasi kode error `1006` (Abnormal Closure) dan mencegah kebocoran memori di PM2.
+- **Client-Side Stale Socket Abort & Listener Guarding:**
+  - `NexaWebSocketClient.kt` memanggil `webSocket?.cancel()` sebelum membuka soket baru untuk membunuh thread pool usang.
+  - `WebSocketListener` dilengkapi *instance guarding* (`ws !== this@NexaWebSocketClient.webSocket`) agar event `onFailure`/`onClosed` dari soket lama yang mati tidak merusak status koneksi soket baru yang sehat.
+- **Samsung One UI `WifiLock` (`WIFI_MODE_FULL_LOW_LATENCY`):**
+  - `NexaBridgeService` mengakuisisi `WifiManager.WifiLock` bersamaan dengan `PARTIAL_WAKE_LOCK` untuk mencegah OS Samsung menidurkan chip radio Wi-Fi saat layar HP terkunci di meja.
+- **Network Watcher Debounce (1500ms):**
+  - `ConnectivityManager.NetworkCallback.onAvailable()` dilengkapi timer debounce 1.5 detik untuk meredam osilasi sinyal cepat saat berpindah antara Wi-Fi ↔ 4G, mencegah *reconnect storm*.
 
 ---
 

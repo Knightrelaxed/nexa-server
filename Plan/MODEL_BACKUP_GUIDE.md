@@ -8,9 +8,10 @@ Dokumen ini adalah acuan darurat eksekutif (*Emergency Contingency Guide*) dan k
 
 | Tanggal / Status | Penyedia & Model | Mesin Terdampak | Status / Tindakan yang Diperlukan |
 | :--- | :--- | :--- | :--- |
-| **17 Juli 2026 (HARI INI)** | **Groq `Llama 4 Scout 17B`** | **Vision Engine (`Tier 9-12`)** | ⚠️ **DIMATIKAN GROQ.** Telah diperbarui pada 17 Juli 2026 menjadi `llama-3.2-90b-vision-preview` di `Vision_Engine.js` baris 229. |
-| **16 Agustus 2026** | **Groq `Llama 3.3 70B Versatile`** | **Text / AI Router (`Tier 5-8`)** | 🔔 Evaluasi transisi ke `open-mistral-nemo` (`MISTRAL_API_KEY`) atau `llama-3.1-8b-instant` jika skema berubah. |
-| **17 Agustus 2026** | **Cerebras `Gemma 4 31B`** | **Text (`Tier 1-4`) & Vision (`Tier 1-4`)** | ⚠️ **TRANSISI FREE TIER.** Wajib verifikasi kartu kredit untuk $5 free credits ($20 total untuk 4 akun), atau biarkan sistem melompat otomatis ke Gemini & Groq, atau promokan **Mistral `pixtral-12b-2409`** ke Tier atas. |
+| **17 Juli 2026** | **Groq `Llama 4 Scout 17B`** | **Vision Engine (`Tier 9-12`)** | ⚠️ **DIMATIKAN GROQ.** Telah diperbarui menjadi `llama-3.2-90b-vision-preview` di `Vision_Engine.js` baris 229. |
+| **16 Agustus 2026** | **Groq `Llama 3.3 70B Versatile`** | **Text / AI Router (`Tier 5-8`)** | ⚠️ **DIMATIKAN GROQ.** Groq resmi menyarankan transisi ke `openai/gpt-oss-120b` atau `qwen/qwen3.6-27b`. Namun karena limit 8K TPM Groq, beban dialihkan ke Google Gemini / Google Gemma. |
+| **Minggu I September 2026** | **Cerebras `Gemma 4 31B`** | **Text (`Tier 1-4`) & Vision (`Tier 1-4`)** | 📢 **DIPERPANJANG S/D SEPTEMBER.** Email resmi Cerebras (15 Agust 2026) mengonfirmasi Gemma 4 31B aman sampai awal September, disusul kedatangan `Qwen 3.8 27B`. |
+| **AKTIF & ABADI (FREE TIER)** | **Google AI Studio `Gemma 4 31B IT`** | **Text / AI Router (`Tier 5-8` / Suksesor)** | 🏆 **PENGGANTI UTAMA CEREBRAS (90% MATCH).** Model resmi Google DeepMind di Google AI Studio via 4 kunci Gemini. Kuota **14.400 RPD/Key (57.600 RPD total)**, **BEBAS BATAS TPD**, dan jendela konteks **262.144 token**. |
 
 ---
 
@@ -46,14 +47,74 @@ model: 'llama-3.2-90b-vision-preview',
 
 ---
 
-### 2. 🚀 Mempromosikan Mistral Pixtral / Open Nemo ke Tier Utama (`Fallback_Engine.js`)
-Jika Cerebras (`gemma-4-31b`) wajib kartu kredit per 17 Agustus 2026 dan Anda ingin langsung mempromosikan **Mistral** yang super kencang ini:
-1. Buka `src/core/Fallback_Engine.js`.
-2. Pada fungsi `callCerebras()` atau `callGroq()`, Anda bisa langsung mengarahkan pemanggilan ke fungsi `callMistral(prompt, systemInstruction, temperature, jsonMode)` atau mengganti parameter model pada fungsi `callMistral` (baris 224) dari `pixtral-12b-2409` menjadi `open-mistral-nemo` atau `codestral-latest` sesuai kebutuhan beban kerja.
+### 2. 👑 Mengalihkan Cerebras ke Google AI Studio Gemma 4 31B (Pengganti Resmi 90% Match)
+Jika kuota Cerebras habis atau memasuki jadwal transisi September, alihkan pemanggilan ke Google AI Studio (`gemma-4-31b-it` / `gemma-4-26b-a4b-it`):
+1. **Endpoint API:** `https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${apiKey}`
+2. **Kunci API:** Menggunakan 4 kunci Gemini kita (`GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4`).
+3. **Kuota:** **14.400 RPD / Key (57.600 RPD Total)**, **BEBAS BATAS TPD (No Limit)**, dan **262K context window**.
+
+#### ⚡ Kode Implementasi Lengkap & Teknik Bypass Deep Thinking (*Anti-CoT*):
+Gemma 4 di Google AI Studio secara default memiliki DNA *native chain-of-thought (thinking: true)*. Untuk memangkas latensinya dari **35 detik menjadi 4–11 detik**, terapkan fungsi pembungkus berikut:
+
+```javascript
+/**
+ * Panggilan Google AI Studio Gemma 4 31B dengan Optimasi Bypass Deep Thinking
+ * Memangkas latensi dari 35 detik menjadi 4 - 11 detik.
+ */
+async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperature = 0.3, jsonMode = true, maxTokens = 600) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${apiKey}`;
+
+  // 1. Injeksi Instruksi Anti-CoT (Mematikan Monolog Internal & Draf)
+  let optimizedSys = systemInstruction || '';
+  if (jsonMode) {
+    optimizedSys += '\n[IMPORTANT: Output ONLY pure raw JSON starting with { and ending with }. Absolutely NO thinking notes, no markdown codeblocks, no thought analysis.]';
+  } else {
+    optimizedSys += '\n[CRITICAL: Speak directly as N.E.X.A in natural Indonesian. Output ONLY the final conversational message. DO NOT output drafts, internal thoughts, bulleted analysis, notes, or English meta-commentary.]';
+  }
+
+  // 2. Direct User Prefix (Memaksa Model Langsung Menjawab Tanpa Coretan)
+  const userPayload = jsonMode 
+    ? `[RESPOND ONLY IN JSON. NO THINKING]\n\n${prompt}`
+    : `[SPEAK DIRECTLY IN INDONESIAN. NO THINKING]\n\n${prompt}`;
+
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [{ text: userPayload }]
+    }],
+    systemInstruction: { parts: [{ text: optimizedSys }] },
+    generationConfig: {
+      temperature,
+      maxOutputTokens: maxTokens // Batasi token agar tidak bertele-tele
+    }
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Google Gemma error: ${res.status} - ${err.error?.message || res.statusText}`);
+  }
+
+  const resJson = await res.json();
+  const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return rawText;
+}
+```
 
 ---
 
-### 3. 🧠 Mengganti Model Teks Cerebras dengan Hugging Face
+### 3. 🚀 Mempromosikan Mistral Pixtral / Open Nemo ke Tier Cadangan (`Fallback_Engine.js`)
+Jika membutuhkan varian model Eropa dengan kuota 937.500 TPM:
+* Gunakan fungsi `callMistral()` dengan model `pixtral-12b-2409` atau `open-mistral-nemo`.
+
+---
+
+### 4. 🧠 Mengganti Model Teks Cerebras dengan Hugging Face
 Jika ingin beralih ke Hugging Face Inference API dengan model yang 100% sama dengan Cerebras:
 * Endpoint URL: `https://router.huggingface.co/hf-inference/models/google/gemma-4-31B-it`
 * Auth Header: `Bearer ${env.HF_INFERENCE_TOKEN}`
@@ -190,6 +251,23 @@ Tujuan pengujian ini adalah mencari alternatif terbaik jika *free-tier* Cerebras
   - **Kedalaman Emosional:** **Sangat Tinggi**. Merespons kekhawatiran Tuan Faqih dengan argumen yang realistis, menenangkan, dan membangun rasa percaya diri (misal: *"Dalam diplomasi, menjadi langka itu adalah aset, bukan hambatan"*). Mengetahui kapan harus santai, bercanda, atau bertindak presisi.
   - **Kepatuhan Aturan Mutlak:** **Lulus Sempurna**. Sama sekali bebas dari sindrom *template-looping* (tidak pernah mengulang paragraf hafalan) dan selalu mematuhi instruksi *Chief of Staff* yang elegan.
 - **Kesimpulan:** Berada di **kasta tertinggi** dan menjadi tolok ukur (*Gold Standard*) untuk seluruh arsitektur AI N.E.X.A. Belum ada model *free-tier* lain yang mampu menyamai keseimbangan kecepatan, kecerdasan nalar, dan kehangatan emosionalnya.
+
+---
+
+### 12. Google AI Studio Inference API (`gemma-4-31b-it` & `gemma-4-26b-a4b-it` / `GEMINI_API_KEY`)
+- **Status Pengujian:** Selesai (**Penerus Takhta & Pengganti Utama Cerebras — 90% Match**)
+- **Hasil Respons:** Luwes, sangat hangat, natural, dan memiliki nalar empati yang 100% identik dengan Cerebras (karena menggunakan bobot model yang sama persis dari Google DeepMind).
+- **Spesifikasi & Batas Kuota Resmi (Google AI Studio Free Tier):**
+  - **RPD (Request Harian):** **`14.400 RPD` per Akun** (`57.600 RPD Total` untuk 4 akun Gemini!).
+  - **TPD (Token Harian):** **`BEBAS BATAS TPD (No Limit)`** — Tidak dibatasi token harian selama dalam jatah RPD.
+  - **TPM (Throughput Menit):** **`16.000 TPM` per Akun** (`64.000 TPM Total`).
+  - **RPM (Request Menit):** **`30 RPM` per Akun** (`120 RPM Total`).
+  - **Jendela Konteks:** **`262.144 Token` (262K)** dengan batas output **`32.768 Token` (32K)**.
+- **Analisis Kepatuhan & Karakteristik:**
+  - **Pemahaman Konteks & Empati:** **100% Sempurna**. Mampu merespons situasi stres Tuan Faqih (Sastra Arab UGM, Beasiswa Jardine Oxford) dengan nasihat *time-blocking* dan strategi diplomatik yang elegan.
+  - **Kepatuhan Aturan Mutlak:** Lulus sempurna (tidak kaku, memanggil Tuan Faqih, bebas bahasa robotik).
+  - **Optimasi Latensi (Skip Deep Thinking):** Secara bawaan model ini memiliki DNA *native reasoning/CoT*. Dengan menerapkan instruksi *Anti-CoT* dan pembatasan token di `Fallback_Engine.js`, latensinya terpangkas 80% dari **35 detik menjadi 4–11 detik**!
+- **Kesimpulan:** Merupakan **pemenang mutlak untuk cadangan abadi Cerebras (Kecocokan 90%)**. Memiliki kuota gratis terbesar di dunia (57.600 chat/hari) langsung dari server resmi Google tanpa risiko depresiasi.
 
 ---
 

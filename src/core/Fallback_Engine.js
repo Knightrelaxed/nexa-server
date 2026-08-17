@@ -27,11 +27,11 @@ const geminiClients = [
   env.GEMINI_API_KEY_4 ? new GoogleGenerativeAI(env.GEMINI_API_KEY_4) : null
 ];
 
-const groqKeys = [
-  env.GROQ_API_KEY_1,
-  env.GROQ_API_KEY_2,
-  env.GROQ_API_KEY_3,
-  env.GROQ_API_KEY_4
+const googleApiKeys = [
+  env.GEMINI_API_KEY_1,
+  env.GEMINI_API_KEY_2,
+  env.GEMINI_API_KEY_3,
+  env.GEMINI_API_KEY_4
 ];
 
 const cerebrasKeys = [
@@ -42,10 +42,10 @@ const cerebrasKeys = [
 ];
 
 // ============================================================
-// SMART ADAPTIVE CONTEXT ROUTING (SACR) — v1.0
+// SMART ADAPTIVE CONTEXT ROUTING (SACR) — v2.0
 // Memilah beban konteks secara otomatis:
-//   MODE LIGHT ⚡ : Cerebras Gemma 4 31B di Tier 1 (chat biasa, perintah rutin, ~1.6 detik)
-//   MODE HEAVY 🧠 : Google Gemini 3.6 Flash di Tier 1 (analisis, rekap, dokumen, penalaran berat)
+//   MODE LIGHT ⚡ : Cerebras (Tier 1-4) -> Gemini 3.7 (Tier 5-8) -> Gemini 3.6 (Tier 9-12)
+//   MODE HEAVY 🧠 : Gemini 3.7 (Tier 1-4) -> Gemini 3.6 (Tier 5-8) -> Google Gemma 4 Skip-CoT (Tier 9-12)
 // ============================================================
 
 /** Batas panjang karakter (prompt + systemInstruction) untuk trigger MODE HEAVY */
@@ -126,21 +126,22 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
 
 
 /**
- * Execute AI Prompt with Smart Adaptive Context Routing (SACR) + 15-Layer Fallback
+ * Execute AI Prompt with Smart Adaptive Context Routing (SACR) + 16-Layer Fallback
  *
  * MODE LIGHT ⚡ (Konteks Normal — default):
- *   Tier 1-4  : Cerebras Gemma 4 31B Key 1-4    (The Ultra-Fast WSE-3 Sprinters)
- *   Tier 5-8  : Gemini 3.6 Flash Key 1-4         (The Deep Thinkers & Fast Secondary)
- *   Tier 9-12 : Groq Llama 3.3 70B Versatile Key 1-4 (The Tertiary Fallback)
+ *   Tier 1-4  : Cerebras Gemma 4 31B Key 1-4       (The Ultra-Fast WSE-3 Sprinters)
+ *   Tier 5-8  : Google Gemini 3.7 Flash Key 1-4    (The Advanced Reasoning Secondary)
+ *   Tier 9-12 : Google Gemini 3.6 Flash Key 1-4    (The Rock-Solid Tertiary — 1M Context)
  *
- * MODE HEAVY 🧠 (Konteks Berat — otomatis jika threshold/keyword terpenuhi):
- *   Tier 1-4  : Gemini 3.6 Flash Key 1-4         (1 Juta Token Window, Deep Reasoning)
- *   Tier 5-8  : Cerebras Gemma 4 31B Key 1-4    (The Ultra-Fast WSE-3 Secondary)
- *   Tier 9-12 : Groq Llama 3.3 70B Versatile Key 1-4 (The Tertiary Fallback)
+ * MODE HEAVY 🧠 (Konteks Berat & Berpikir Kritis — otomatis jika threshold/keyword terpenuhi):
+ *   Tier 1-4  : Google Gemini 3.7 Flash Key 1-4    (1 Juta Token Window, Deep Critical Thinking Priority)
+ *   Tier 5-8  : Google Gemini 3.6 Flash Key 1-4    (1 Juta Token Window, 100% Stable Secondary)
+ *   Tier 9-12 : Google AI Studio Gemma 4 31B Key 1-4 (Skip-CoT Fast Companion Tertiary)
  *
  * Tier 13 : Hugging Face Gemma 4 31B IT          (The Free Safety Net)
  * Tier 14 : Mistral Pixtral 12B                  (The Reliable European Closer — 937.5K TPM)
- * Tier 15 : OpenRouter Multi-Model Free          (The Indestructible Last Resort)
+ * Tier 15 : Puter AI Multi-Model Pool            (Codestral & GPT-4o)
+ * Tier 16 : OpenRouter Multi-Model Free          (The Indestructible Last Resort)
  *
  * Trigger HEAVY otomatis:
  *   a) Pesan MURNI Tuan Faqih > 1.000 karakter
@@ -210,40 +211,54 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       ? false
       : isHeavyContext(prompt, systemInstruction, options);
 
-  const sacrMode = heavy ? 'HEAVY 🧠 [Gemini 3.6 Flash Priority]' : 'LIGHT ⚡ [Cerebras Priority]';
+  const sacrMode = heavy
+    ? 'HEAVY 🧠 [Gemini 3.7 -> Gemini 3.6 -> Google Gemma 4]'
+    : 'LIGHT ⚡ [Cerebras -> Gemini 3.7 -> Gemini 3.6]';
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
   asyncLog(`[SACR] Mode: ${sacrMode} | Total chars: ${inputChars}`);
 
-  // --- Bangun blok tier Cerebras dan Gemini secara terpisah ---
+  // 1. Cerebras Gemma 4 31B (4 Keys)
   const cerebrasBlock = cerebrasKeys
     .filter(Boolean)
     .map((key, i) => ({
-      name: `Tier X (Cerebras Key ${i + 1})`,
+      name: `Tier X (Cerebras Gemma 4 Key ${i + 1})`,
       fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  const geminiBlock = geminiClients
+  // 2. Gemini 3.7 Flash (4 Keys)
+  const gemini37Block = geminiClients
     .filter(Boolean)
     .map((client, i) => ({
-      name: `Tier X (Gemini 3.6 Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode)
+      name: `Tier X (Gemini 3.7 Flash Key ${i + 1})`,
+      fn: () => callGeminiWithRetry(client, 'gemini-3.7-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // Primary   = Tier 1-4 (Cerebras jika LIGHT, Gemini 3.6 jika HEAVY)
-  // Secondary = Tier 5-8 (Gemini 3.6 jika LIGHT, Cerebras jika HEAVY)
-  const primaryBlock   = (heavy ? geminiBlock   : cerebrasBlock);
-  const secondaryBlock = (heavy ? cerebrasBlock  : geminiBlock);
+  // 3. Gemini 3.6 Flash (4 Keys)
+  const gemini36Block = geminiClients
+    .filter(Boolean)
+    .map((client, i) => ({
+      name: `Tier X (Gemini 3.6 Flash Key ${i + 1})`,
+      fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
+    }));
+
+  // 4. Google AI Studio Gemma 4 31B (Skip-CoT) (4 Keys)
+  const googleGemmaBlock = googleApiKeys
+    .filter(Boolean)
+    .map((key, i) => ({
+      name: `Tier X (Google Gemma 4 Key ${i + 1} [Skip-CoT])`,
+      fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
+    }));
+
+  // Penataan Top 12 Tiers Sesuai Mode SACR:
+  // MODE LIGHT: Cerebras (1-4) -> Gemini 3.7 (5-8) -> Gemini 3.6 (9-12)
+  // MODE HEAVY: Gemini 3.7 (1-4) -> Gemini 3.6 (5-8) -> Google Gemma 4 (9-12)
+  const top12Block = heavy
+    ? [...gemini37Block, ...gemini36Block, ...googleGemmaBlock]
+    : [...cerebrasBlock, ...gemini37Block, ...gemini36Block];
 
   const tiers = [
-    // Tier 1-4: Primary AI (Cerebras di LIGHT, Gemini di HEAVY)
-    ...primaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
-    // Tier 5-8: Secondary AI (Gemini di LIGHT, Cerebras di HEAVY) — Gemini dipindah ke Tier 5-8
-    ...secondaryBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 5}`) })),
-    // Tier 9-12: Groq Llama 3.3 70B Versatile — Groq dipindah ke Tier 9-12
-    ...groqKeys.filter(Boolean).map((key, i) => ({
-      name: `Tier ${i + 9} (Groq Key ${i + 1})`,
-      fn: () => callGroq(key, prompt, systemInstruction, temperature, jsonMode)
-    })),
+    // Tier 1-12 Top Engine
+    ...top12Block.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
     // Tier 13: Hugging Face Gemma 4 31B
     ...(env.HF_INFERENCE_TOKEN ? [{
       name: 'Tier 13 (Hugging Face Gemma 4 31B)',
@@ -287,18 +302,68 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   }
 
   // Fallback Final
-  asyncError('[FALLBACK] ⚠️ All 15 AI layers exhausted. Entering Dumb Mode.');
+  asyncError('[FALLBACK] ⚠️ All 16 AI layers exhausted. Entering Dumb Mode.');
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,
     god_mode_trigger: false,
-    reply_message: '⚠️ Sistem Otak N.E.X.A (AI Router) mengalami Down Total di semua 15 peladen dunia. Mohon tunggu beberapa saat.'
+    reply_message: '⚠️ Sistem Otak N.E.X.A (AI Router) mengalami Down Total di semua 16 peladen dunia. Mohon tunggu beberapa saat.'
   });
 }
 
 // ----------------------------------------------------
 // API WRAPPERS WITH 503 SMART RETRY
 // ----------------------------------------------------
+
+async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperature = 0.3, jsonMode = true, retries = 1) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${apiKey}`;
+
+  // Injeksi Instruksi Anti-CoT (Mematikan Monolog Internal & Draf)
+  let optimizedSys = systemInstruction || '';
+  if (jsonMode) {
+    optimizedSys += '\n[IMPORTANT: Output ONLY pure raw JSON starting with { and ending with }. Absolutely NO thinking notes, no markdown codeblocks, no thought analysis.]';
+  } else {
+    optimizedSys += '\n[CRITICAL: Speak directly as N.E.X.A in natural Indonesian. Output ONLY the final conversational message. DO NOT output drafts, internal thoughts, bulleted analysis, notes, or English meta-commentary.]';
+  }
+
+  const userPayload = jsonMode 
+    ? `[RESPOND ONLY IN JSON. NO THINKING]\n\n${prompt}`
+    : `[SPEAK DIRECTLY IN INDONESIAN. NO THINKING]\n\n${prompt}`;
+
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [{ text: userPayload }]
+    }],
+    systemInstruction: { parts: [{ text: optimizedSys }] },
+    generationConfig: {
+      temperature,
+      maxOutputTokens: jsonMode ? 1500 : 1000
+    }
+  };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(12000)
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Google Gemma error: ${res.status} - ${err.error?.message || res.statusText}`);
+      }
+
+      const resJson = await res.json();
+      return resJson.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } catch (e) {
+      if (attempt === retries) throw e;
+      await new Promise(r => setTimeout(r, 1500 * attempt));
+    }
+  }
+}
 
 async function callGeminiWithRetry(client, modelName, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
   const generationConfig = { temperature };
@@ -309,8 +374,8 @@ async function callGeminiWithRetry(client, modelName, prompt, systemInstruction,
     systemInstruction: systemInstruction,
     generationConfig,
     // Gemini berjalan di arsitektur Google TPU dengan penalaran mendalam & konteks 1M token.
-    // Diberi batas waktu 12.000ms (12 detik) agar cukup waktu untuk memproses beban berat.
-    requestOptions: { timeout: 12000 }
+    // Diberi batas waktu 15.000ms (15 detik) agar cukup waktu untuk memproses beban berat.
+    requestOptions: { timeout: 15000 }
   });
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -319,6 +384,8 @@ async function callGeminiWithRetry(client, modelName, prompt, systemInstruction,
       return response.response.text();
     } catch (e) {
       if (attempt === retries) throw e;
+      // Smart backoff delay jika terjadi spike 503 / 429 sesaat
+      await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
     }
   }
 }
