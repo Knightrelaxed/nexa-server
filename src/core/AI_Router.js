@@ -526,56 +526,151 @@ function _preflightClassify(text) {
   return { hasTime, hasCal };
 }
 
+// ============================================================
+// SEMANTIC KEYWORD & DOMAIN CLUSTERS FOR RESONANCE
+// ============================================================
+const SHORT_TECH_ALLOWLIST = new Set([
+  'hp', 'gps', 'tts', 'dnd', 'app', 'wa', 'pin', 'sim', 'cam', 'ui', 'vn', 'api', 'os', 'ai', 'qris', 'bca', 'bri', 'rek', 'id'
+]);
+
+const DOMAIN_KEYWORD_SYNONYMS = {
+  // Mobile & Hardware Peripherals
+  'hp': ['hp', 'ponsel', 'samsung', 'perangkat', 'android', 'bridge', 'device', 'mobile'],
+  'ponsel': ['hp', 'ponsel', 'samsung', 'perangkat', 'android', 'bridge', 'device', 'mobile'],
+  'senter': ['senter', 'flashlight', 'lampu'],
+  'kamera': ['kamera', 'foto', 'photo', 'camera', 'swafoto', 'take_photo'],
+  'foto': ['kamera', 'foto', 'photo', 'camera', 'swafoto', 'take_photo', 'gambar'],
+  'screenshot': ['screenshot', 'tangkapan layar', 'capture', 'layar'],
+  'layar': ['layar', 'screen', 'hierarchy', 'ui', 'dump_ui_hierarchy', 'screenshot', 'kunci'],
+  'baterai': ['baterai', 'battery', 'daya', 'charging', 'telemetri'],
+  'volume': ['volume', 'suara', 'speaker', 'audio', 'set_volume'],
+  'dnd': ['dnd', 'jangan ganggu', 'force_dnd'],
+  
+  // Voice & Real-Time Call Interaction
+  'telepon': ['telepon', 'call', 'panggilan', 'dering', 'ringtone', 'fakecallactivity', 'simulate_incoming_call'],
+  'call': ['telepon', 'call', 'panggilan', 'dering', 'ringtone', 'fakecallactivity', 'simulate_incoming_call'],
+  'panggilan': ['telepon', 'call', 'panggilan', 'dering', 'ringtone', 'fakecallactivity', 'simulate_incoming_call'],
+  'suara': ['suara', 'voice', 'audio', 'tts', 'whisper', 'pcm', 'bicara', 'speak_text', 'transkripsi'],
+  'rekam': ['rekam', 'suara', 'audio', 'recording', 'pcm', 'mic', 'mikrofon'],
+
+  // Spatial & OpenStreetMap Navigation
+  'lokasi': ['lokasi', 'gps', 'posisi', 'koordinat', 'get_location', 'geofence', 'spatial', 'tempat', 'terdekat'],
+  'gps': ['lokasi', 'gps', 'posisi', 'koordinat', 'get_location', 'geofence', 'spatial', 'tempat', 'terdekat'],
+  'tempat': ['lokasi', 'tempat', 'terdekat', 'spbu', 'bensin', 'pom', 'cafe', 'warkop', 'resto', 'atm', 'nominatim', 'photon', 'osrm'],
+  'rute': ['rute', 'arah', 'jarak', 'osrm', 'navigasi', 'maps'],
+  'bensin': ['spbu', 'pertamina', 'pom bensin', 'bensin', 'lokasi'],
+  'spbu': ['spbu', 'pertamina', 'pom bensin', 'bensin', 'lokasi'],
+
+  // Hands & Accessibility Gestures
+  'klik': ['klik', 'click', 'accessibility', 'accessibility_click', 'sentuh', 'tombol'],
+  'ketik': ['ketik', 'input', 'input_text', 'accessibility', 'formulir'],
+  'scroll': ['scroll', 'gulir', 'accessibility', 'accessibility_scroll'],
+  'clipboard': ['clipboard', 'papan klip', 'salin', 'copy', 'paste', 'get_clipboard', 'set_clipboard'],
+  'buka': ['launch_app', 'open_intent', 'buka', 'aplikasi', 'app'],
+
+  // Banking & Financial Shield
+  'bank': ['bank', 'perbankan', 'm-banking', 'mbankingshieldmanager', 'bca', 'livin', 'brimo', 'pin', 'keamanan', 'aksesibilitas'],
+  'pin': ['pin', 'password', 'keamanan', 'm-banking', 'mbankingshieldmanager']
+};
+
 /**
- * Progressive userProfile fact injection with Dynamic Word Resonance (Token-based Exact Word Match)
+ * Ekstraksi token kata kunci percakapan dengan penanganan singkatan teknis 2-3 huruf dan kluster sinonim domain.
+ */
+function _extractResonanceTokens(userMessage) {
+  if (!userMessage) return [];
+  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana', 'nexa', 'tuan', 'faqih', 'sistem', 'adalah', 'yaitu', 'merupakan', 'oleh', 'sebagai', 'harus', 'wajib', 'juga', 'lagi', 'saja', 'tadi', 'baru', 'banyak', 'coba', 'tolong']);
+  const msgStr = typeof userMessage === 'string' ? userMessage.toLowerCase() : String(userMessage || '').toLowerCase();
+  const rawWords = msgStr.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(Boolean);
+
+  const tokens = new Set();
+  for (const w of rawWords) {
+    if (stopWords.has(w)) continue;
+    if (w.length >= 4 || SHORT_TECH_ALLOWLIST.has(w)) {
+      tokens.add(w);
+      if (DOMAIN_KEYWORD_SYNONYMS[w]) {
+        for (const syn of DOMAIN_KEYWORD_SYNONYMS[w]) {
+          tokens.add(syn);
+        }
+      }
+    }
+  }
+  return Array.from(tokens);
+}
+
+/**
+ * Menghitung bobot relevansi fakta terhadap token konteks pesan pengguna.
+ */
+function _scoreFactRelevance(fact, tokens) {
+  if (!fact || typeof fact !== 'string') return 0;
+  const factLower = fact.toLowerCase();
+  let score = 0;
+
+  for (const token of tokens) {
+    if (factLower.includes(token)) {
+      score += 10;
+    }
+  }
+  return score;
+}
+
+/**
+ * Dynamic Progressive userProfile Fact Injection with Semantic Resonance & Multi-Word Scoring
  */
 function _selectUserProfileFacts(userProfile, userMessage) {
   if (!userProfile || !Array.isArray(userProfile) || userProfile.length === 0) return [];
 
-  const core = userProfile.slice(0, PROFILE_CORE_COUNT);
-  const remaining = userProfile.slice(PROFILE_CORE_COUNT);
-  if (remaining.length === 0) return core;
+  const tokens = _extractResonanceTokens(userMessage);
+  const coreBase = userProfile.slice(0, PROFILE_CORE_COUNT);
 
-  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana', 'nexa', 'tuan', 'faqih', 'sistem', 'adalah', 'yaitu', 'merupakan', 'oleh', 'sebagai', 'harus', 'wajib', 'juga', 'lagi', 'saja', 'tadi', 'baru', 'banyak']);
-  const msgStr = typeof userMessage === 'string' ? userMessage : String(userMessage || '');
-  const words = msgStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
+  if (tokens.length === 0) {
+    return coreBase;
+  }
 
-  if (words.length === 0) return core;
+  // Hitung relevansi seluruh profil pengguna
+  const scored = userProfile.map(fact => ({
+    fact,
+    score: _scoreFactRelevance(fact, tokens)
+  }));
 
-  const wordSet = new Set(words);
-  const relevant = remaining.filter(fact => {
-    if (typeof fact !== 'string' || !fact) return false;
-    const fWords = fact.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/);
-    return fWords.some(fw => wordSet.has(fw));
-  });
+  // Ambil fakta dengan skor tertinggi (skor > 0)
+  const resonant = scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(s => s.fact);
 
-  return [...core, ...relevant.slice(0, PROFILE_KW_LIMIT)];
+  // Tempatkan fakta profil yang paling beresonansi di paling atas, disusul profil dasar
+  const merged = Array.from(new Set([...resonant.slice(0, PROFILE_KW_LIMIT), ...coreBase]));
+  return merged;
 }
 
 /**
- * Progressive coreIdentity fact injection with Dynamic Word Resonance (Token-based Exact Word Match)
+ * Dynamic Progressive coreIdentity Fact Injection with Semantic Resonance & Domain Trigger Scoring
  */
 function _selectCoreIdentityFacts(coreIdentity, userMessage) {
   if (!coreIdentity || !Array.isArray(coreIdentity) || coreIdentity.length === 0) return [];
 
-  const core = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
-  const remaining = coreIdentity.slice(IDENTITY_CORE_COUNT);
-  if (remaining.length === 0) return core;
+  const tokens = _extractResonanceTokens(userMessage);
+  const coreBase = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
 
-  const stopWords = new Set(['yang', 'akan', 'bisa', 'dari', 'pada', 'untuk', 'dengan', 'dalam', 'tidak', 'sudah', 'telah', 'agar', 'atau', 'saat', 'mau', 'ini', 'itu', 'karena', 'kalau', 'jika', 'kemudian', 'mengapa', 'bagaimana', 'nexa', 'tuan', 'faqih', 'sistem', 'adalah', 'yaitu', 'merupakan', 'oleh', 'sebagai', 'harus', 'wajib', 'juga', 'lagi', 'saja', 'tadi', 'baru', 'banyak']);
-  const msgStr = typeof userMessage === 'string' ? userMessage : String(userMessage || '');
-  const words = msgStr.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !stopWords.has(w));
+  if (tokens.length === 0) {
+    return coreBase;
+  }
 
-  if (words.length === 0) return core;
+  // Hitung relevansi untuk seluruh basis data identitas N.E.X.A
+  const scored = coreIdentity.map(fact => ({
+    fact,
+    score: _scoreFactRelevance(fact, tokens)
+  }));
 
-  const wordSet = new Set(words);
-  const relevant = remaining.filter(fact => {
-    if (typeof fact !== 'string' || !fact) return false;
-    const fWords = fact.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/);
-    return fWords.some(fw => wordSet.has(fw));
-  });
+  // Ambil fakta yang beresonansi kuat dengan input pengguna
+  const resonant = scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(s => s.fact);
 
-  return [...core, ...relevant.slice(0, IDENTITY_KW_LIMIT)];
+  // Tempatkan fakta identitas & kapabilitas yang paling relevan di paling atas
+  const merged = Array.from(new Set([...resonant.slice(0, IDENTITY_KW_LIMIT), ...coreBase]));
+  return merged;
 }
 
 /**
