@@ -1282,62 +1282,279 @@ Dengan menaati protokol ini, fitur baru bisa disuntikkan dalam hitungan menit ta
 
 ---
 
-## BAB 6: THE LIVING MEMORY ENGINE (SISTEM MEMORI ORGANIS)
+---
 
-Bab ini mendokumentasikan pembaruan revolusioner **Phase 9**, di mana N.E.X.A berevolusi dari sekadar pengingat pasif menjadi sistem yang memiliki ingatan organik—layaknya otak manusia yang dapat belajar, menegaskan kembali (reinforce), melupakan hal yang tak lagi relevan (decay), dan menyembuhkan dirinya dari kontradiksi.
+## BAB 10: THE LIVING MEMORY ENGINE (SISTEM MEMORI ORGANIS)
+
+Bab ini mendokumentasikan pembaruan revolusioner **Phase 9**, di mana N.E.X.A berevolusi dari sekadar pengingat pasif menjadi sistem yang memiliki ingatan organik—layaknya otak manusia yang dapat belajar, menegaskan kembali (*reinforce*), melupakan hal yang tak lagi relevan (*decay*), dan menyembuhkan dirinya dari kontradiksi.
 
 ---
 
-### 6.1 Progressive Fact Injection: Resolusi Beban Kognitif
+### 10.1 Progressive Fact Injection: Resolusi Beban Kognitif
 Masalah sistem memori konvensional adalah penumpukan konteks: jika pengguna memiliki 250 baris memori (fakta dan preferensi), memuat seluruhnya ke dalam prompt akan menghancurkan kuota token dan membingungkan AI.
 
-N.E.X.A menyelesaikan ini dengan **Progressive Fact Injection & Dynamic Word Resonance** di AI_Router.js:
-- **Core Limit**: Hanya 10 fakta paling krusial (PROFILE_CORE_COUNT) dari \
-exa_user_profile\ dan 10 identitas pokok dari \
-exa_core_identity\ yang di-injeksi secara paksa.
+N.E.X.A menyelesaikan ini dengan **Progressive Fact Injection & Dynamic Word Resonance** di `AI_Router.js`:
+- **Core Limit**: Hanya 10 fakta paling krusial (`PROFILE_CORE_COUNT`) dari `nexa_user_profile` dan 10 identitas pokok dari `nexa_core_identity` yang di-injeksi secara paksa.
 - **Dynamic Resonance**: Maksimal 10 fakta tambahan di-injeksi **hanya jika** terdapat kecocokan kata kunci minimum 4 huruf (mengabaikan stop words) antara pesan pengguna dan fakta di database. 
-- **Self-Model Injection**: Selalu mengambil 5 fakta terbaru (*Top 5*) dari tabel \
-exa_self_model\ agar N.E.X.A menyadari kapabilitas terbarunya tanpa membanjiri konteks.
+- **Self-Model Injection**: Selalu mengambil 5 fakta terbaru (*Top 5*) dari tabel `nexa_self_model` agar N.E.X.A menyadari kapabilitas terbarunya tanpa membanjiri konteks.
 - **Efisiensi**: Memangkas penggunaan token hingga 85% untuk chat sehari-hari dengan mempertahankan 100% kesadaran kontekstual yang relevan.
 
 ---
 
-### 6.2 Supersede Engine v2: Resolusi Ingatan Baru
-Ketika Tuan Faqih memberitahu informasi baru, fungsi \deduplicateAndSaveFact\ dipanggil. Ini bukan sekadar insert data, melainkan logika 4 arah:
-1. **NEW**: Fakta benar-benar baru → Simpan dengan status \ACTIVE\.
-2. **REINFORCE**: Fakta sudah ada → Naikkan \evidence_count\ +1, perbarui \last_reinforced_at\ ke waktu sekarang.
-3. **SUPERSEDE**: Fakta berlawanan atau menggantikan yang lama (Misal: "Dulu suka kopi, sekarang suka teh") → Fakta lama di-\ARCHIVED\, fakta baru disimpan, kategori diwarisi dari fakta lama.
+### 10.2 Supersede Engine v2: Resolusi Ingatan Baru
+Ketika Tuan Faqih memberitahu informasi baru, fungsi `deduplicateAndSaveFact` dipanggil. Ini bukan sekadar insert data, melainkan logika 4 arah:
+1. **NEW**: Fakta benar-benar baru → Simpan dengan status `ACTIVE`.
+2. **REINFORCE**: Fakta sudah ada → Naikkan `evidence_count` +1, perbarui `last_reinforced_at` ke waktu sekarang.
+3. **SUPERSEDE**: Fakta berlawanan atau menggantikan yang lama (Misal: "Dulu suka kopi, sekarang suka teh") → Fakta lama di-`ARCHIVED`, fakta baru disimpan, kategori diwarisi dari fakta lama.
 4. **DUPLICATE**: Sama persis tanpa detail baru → Abaikan sepenuhnya.
 
-**Concurrency Protection**: Dilengkapi dengan mutex \_dedupInFlight\ untuk mencegah *race condition* jika Tuan Faqih mengirim pesan bertubi-tubi yang memicu ekstraksi fakta ganda di waktu bersamaan.
+**Concurrency Protection**: Dilengkapi dengan mutex `_dedupInFlight` untuk mencegah *race condition* jika Tuan Faqih mengirim pesan bertubi-tubi yang memicu ekstraksi fakta ganda di waktu bersamaan.
 
 ---
 
-### 6.3 Memory Hygiene Pipeline: Pembersihan Memori 4-Tahap
-Agar ingatan tetap segar dan tidak menjadi tempat sampah informasi usang, N.E.X.A menjalankan siklus \
-unFullHygienePipeline\ setiap hari Minggu pukul 02:00 WIB.
+### 10.3 Memory Hygiene Pipeline: Pembersihan Memori 4-Tahap
+Agar ingatan tetap segar dan tidak menjadi tempat sampah informasi usang, N.E.X.A menjalankan siklus `runFullHygienePipeline` setiap hari Minggu pukul 02:00 WIB.
 
 #### Step 1: Ephemeral Sweep (Penyapuan Fakta Sementara)
-Memori dengan \category_type = 'EPHEMERAL'\ (seperti mood sesaat atau fokus mingguan) dipindai secara matematis murni. Jika umurnya melebihi 30 hari tanpa penegasan (\last_reinforced_at\), statusnya diubah dari \ACTIVE\ menjadi \ARCHIVED\. 
+Memori dengan `category_type = 'EPHEMERAL'` (seperti mood sesaat atau fokus mingguan) dipindai secara matematis murni. Jika umurnya melebihi 30 hari tanpa penegasan (`last_reinforced_at`), statusnya diubah dari `ACTIVE` menjadi `ARCHIVED`. 
 
 #### Step 2: Ebbinghaus Decay Score (Peluruhan Ingatan)
-Meniru kelupaan alami manusia. Kurva Ebbinghaus ( = e^{-\lambda \cdot t}$) diterapkan pada fakta \PREFERENCE\.
-- \PERMANENT_FACT\ dan \RULE\ dikecualikan secara absolut.
-- Jika skor kepercayaan ($) turun di bawah **60%**, fakta dikelompokkan ke \STAGED_FOR_PRUNING\ (Memudar).
-- Jika skor anjlok di bawah **30%**, fakta langsung dipindahkan ke \ARCHIVED\.
+Meniru kelupaan alami manusia. Kurva Ebbinghaus ($R = e^{-\lambda \cdot t}$) diterapkan pada fakta `PREFERENCE`.
+- `PERMANENT_FACT` dan `RULE` dikecualikan secara absolut.
+- Jika skor kepercayaan ($R$) turun di bawah **60%**, fakta dikelompokkan ke `STAGED_FOR_PRUNING` (Memudar).
+- Jika skor anjlok di bawah **30%**, fakta langsung dipindahkan ke `ARCHIVED`.
 - **Zero Token Cost**: Eksekusi ini 100% matematis tanpa memanggil API LLM.
 
 #### Step 3: Contradiction Batch Audit (Penalaran AI Tingkat Tinggi)
 Satu-satunya tahap yang menggunakan penalaran AI secara berat. Seluruh sisa memori aktif dimasukkan ke dalam prompt.
-- Memaksa penggunaan **Gemini 3.6 Flash** melalui \orceHeavy: true\ (me-bypass SACR).
+- Memaksa penggunaan **Gemini 2.5 Flash** melalui `{ forceHeavy: true }` (me-bypass SACR).
 - AI ditugaskan khusus mencari fakta yang berkontradiksi atau berlebihan. 
 - Fakta berbenturan diarsipkan, dan AI menghasilkan kalimat *merger* tunggal yang komprehensif, ditulis dengan prespektif orang ketiga yang netral ("Tuan Faqih suka...").
 - *Output constraint*: Dipaksa murni menggunakan JSON array (tanpa markdown).
 
 #### Step 4: Laporan Interaktif Telegram
 Sistem menjunjung tinggi kontrol pengguna. Fakta yang berada di ambang batas pemudaran (di Step 2) dilaporkan ke Telegram Tuan Faqih dengan *Inline Keyboard*:
-- **[ ✅ Arsipkan Semua ]**: Eksekusi penghapusan (status \ARCHIVED\).
-- **[ ❌ Tahan Semua ]**: Membatalkan penghapusan (mengembalikan ke \ACTIVE\).
+- **[ ✅ Arsipkan Semua ]**: Eksekusi penghapusan (status `ARCHIVED`).
+- **[ ❌ Tahan Semua ]**: Membatalkan penghapusan (mengembalikan ke `ACTIVE`).
 - **[ 🔍 Pilih Manual ]**: Memungkinkan Tuan Faqih mengatur secara manual baris demi baris via chat teks.
 
 Keseluruhan sistem ini menjadikan N.E.X.A asisten pertama yang memiliki kognisi organik—mengingat sekuat komputer, namun memilah serelevan manusia.
+
+---
+
+## BAB 11: NEXA MOBILE BRIDGE — NEURAL-PERIPHERAL EXTENSION (TUBUH, INDERA & EKSEKUTOR FISIK)
+
+Bab ini mendokumentasikan terobosan arsitektural **N.E.X.A 3.0 Mobile Bridge**, yang menghubungkan *Cloud Brain* (Azure VPS) dengan perangkat fisik Android (Samsung Galaxy A33 5G / Android 16 One UI 8). Melalui jembatan ini, N.E.X.A tidak lagi terkurung sebagai teks di dalam chat, melainkan memiliki mata, tangan, telinga, lokasi, dan suara di dunia nyata.
+
+---
+
+### 11.1 Filosofi "Otak di Cloud, Tubuh di Android"
+
+Sistem AI asisten konvensional umumnya terbagi menjadi dua kompromi buruk:
+1. **On-Device AI Lemah**: Model AI kecil yang dijalankan lokal di HP boros baterai, cepat panas, dan bodoh.
+2. **Chatbot Terisolasi**: AI berbasis cloud yang pintar tetapi buta dan lumpuh—tidak tahu di mana pengguna berada, tidak bisa melihat layar, dan tidak bisa mengoperasikan aplikasi HP.
+
+N.E.X.A memecahkan dilema ini dengan arsitektur **Neural-Peripheral Separation**:
+- **Otak (Cloud Core)**: Berada di Azure VPS (PM2, Node.js 20, LLM Multi-Tier Router, Supabase Memory). Bebas dari batasan daya dan baterai.
+- **Tubuh (Mobile Bridge Native)**: Aplikasi Android native (Kotlin, Coroutines, Jetpack Compose, AccessibilityService, Foreground Service) yang bertindak sebagai sensor nirkabel (*Sensory Ingestion*) dan aktuator perangkat (*Hardware Actuator*).
+
+```
+ ┌─────────────────────────────────────────────────────────────┐
+ │               N.E.X.A CLOUD CORE (Azure VPS)                │
+ │  AI Router • Fallback Engine • Memory • Location • Voice    │
+ └──────────────────────────────┬──────────────────────────────┘
+                                │
+               Duplex WSS Link (Encrypted WebSocket)
+               Port 3000 /ws (Protected by Caddy & TLS)
+                                │
+ ┌──────────────────────────────▼──────────────────────────────┐
+ │         N.E.X.A MOBILE BRIDGE (Samsung Galaxy A33 5G)       │
+ │  Mata (Kamera/Layar) • Tangan (Accessibility) • Suara (TTS) │
+ │  Lokasi (Dual GPS Fix) • Interupsi (FakeCallActivity)       │
+ └─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 11.2 Topologi Protokol Komunikasi & Keamanan Jaringan
+
+Komunikasi antara Cloud Core dan HP menggunakan protokol **Nexa Bi-directional WebSocket (WSS)** yang beroperasi di atas `/ws` dengan standar keamanan perbankan:
+
+1. **Timing-Safe Constant-Time Token Handshake**:
+   Setiap koneksi WebSocket dari Android wajib menyertakan header otorisasi `Authorization: Bearer <CONFIGURED_SECRET>`. Di sisi server (`MobileBridge_WS.js`), verifikasi token menggunakan `crypto.timingSafeEqual` pada *raw byte buffer*. Ini mencegah serangan *timing attack* secara matematis. Percobaan koneksi tanpa token langsung diputus dengan kode `4001 Unauthorized`.
+2. **Single-Device Instant Termination**:
+   Untuk mencegah konflik *split-brain* atau koneksi ganda akibat pergantian jaringan (Wi-Fi ke 4G), server secara instan mematikan (*terminate*) soket lama saat soket baru tersambung.
+3. **Anti-Ghost Promise Cleanup & Fail-Safe Memory Purge**:
+   Setiap perintah ke HP memiliki batas waktu (*timeout* 5–12 detik). Jika HP terputus di tengah eksekusi perintah, seluruh *pending promise* di memori server langsung dibersihkan (`resolve({ success: false, status: 'DISCONNECTED' })`), mencegah *event loop deadlock* di Node.js.
+4. **Heartbeat Proaktif (PING/PONG)**:
+   Interval detak jantung periodik setiap 30 detik untuk mendeteksi *silent network drop* dari ISP seluler.
+
+---
+
+### 11.3 Indera Penglihatan & Persepsi Visual (*Eyes of NEXA*)
+
+N.E.X.A memiliki akses visual penuh terhadap lingkungan fisik dan lingkungan digital pengguna:
+
+1. **Fotografi Senyap Latar Belakang (`TAKE_PHOTO`)**:
+   - Dieksekusi melalui `TransparentCameraActivity` menggunakan Android CameraX API.
+   - Parameter `camera_facing`: `'front'` (kamera swafoto depan) atau `'back'` (kamera utama belakang).
+   - Mengambil foto secara hening tanpa menampilkan *preview frame* yang mengganggu, mengompres gambar ke JPEG Base64, dan mengirimkannya ke `Vision_Engine` untuk analisis AI (membaca dokumen, memverifikasi situasi, atau mendeteksi objek).
+2. **Tangkapan Layar Real-Time (`TAKE_SCREENSHOT`)**:
+   - Menggunakan `MediaProjection` / `AccessibilityService` Android untuk merekam layar HP saat itu juga.
+   - Berguna saat Tuan Faqih bertanya: *"Nexa, apa yang salah dengan error di layar saya?"*.
+3. **Pembedahan Hirarki UI (`DUMP_UI_HIERARCHY`)**:
+   - Membaca seluruh pohon elemen XML antarmuka yang sedang aktif (teks tombol, koordinat *bounding box*, status *clickable*, ID elemen).
+   - Memungkinkan N.E.X.A memahami konteks aplikasi apa yang sedang dibuka oleh Tuan Faqih.
+
+---
+
+### 11.4 Tangan & Eksekutor Aksesibilitas (*Hands of NEXA*)
+
+Melalui `NexaAccessibilityService`, N.E.X.A dapat mengoperasikan aplikasi Android secara otonom:
+
+1. **Gestur Sentuhan (`ACCESSIBILITY_CLICK`)**:
+   - Mendukung klik berbasis koordinat piksel mutlak `(x, y)` maupun pencarian berbasis teks / ID elemen (`target`).
+2. **Pengetikan Formulir (`ACCESSIBILITY_INPUT_TEXT`)**:
+   - Menginjeksi teks secara otomatis ke dalam kolom input atau formulir yang sedang fokus.
+3. **Navigasi Gulir (`ACCESSIBILITY_SCROLL`)**:
+   - Menggulir layar ke depan (`FORWARD`) atau ke belakang (`BACKWARD`).
+4. **Sinkronisasi Clipboard (`GET_CLIPBOARD` / `SET_CLIPBOARD`)**:
+   - Membaca dan menyalin teks ke papan klip HP secara instan.
+5. **Perisai Keamanan Finansial (`MBankingShieldManager`)**:
+   - Fitur perlindungan bawaan: Jika pengguna membuka aplikasi perbankan (BCA Mobile, Livin by Mandiri, BRImo, dll.), layanan aksesibilitas otomatis membekukan diri (*Safe Banking Mode*) untuk menjamin keamanan PIN dan kredensial finansial Tuan Faqih.
+
+---
+
+### 11.5 Indera Spasial & 100% Free Open-Source Spatial Stack
+
+N.E.X.A 3.0 menanggalkan ketergantungan pada API berbayar seperti Google Maps Platform, Mapbox, atau Brave Search API yang memerlukan kartu kredit. Sebagai gantinya, N.E.X.A membangun **Open-Source Spatial Stack** yang 100% gratis, tanpa API Key, dan berkecepatan sub-detik:
+
+```
+[Permintaan Spasial: "pom bensin terdekat"]
+                     │
+                     ▼
+       ┌───────────────────────────┐
+       │ Multi-Stage Query Cleaner │ (Membersihkan kata tanya/filler: "adakah", "tolong", dll)
+       └─────────────┬─────────────┘
+                     │
+                     ▼
+       ┌───────────────────────────┐
+       │   OSM Category Expander   │ (Memetakan ke entitas resmi: "SPBU Pertamina", "SPBU")
+       └─────────────┬─────────────┘
+                     │
+                     ▼
+       ┌───────────────────────────┐
+       │  Resolusi GPS Dual-Fix    │ (<50ms Cached Fix + Parallel High Accuracy dari Bridge)
+       └─────────────┬─────────────┘
+                     │
+       ┌─────────────┴────────────────────────┐
+       ▼                                      ▼
+┌──────────────────────────────┐ ┌──────────────────────────────┐
+│ Tier 1: Nominatim Bounded    │ │ Tier 2: Photon Proximity     │
+│ Viewbox Search (Radius <10km)│ │ Search + Hard Distance Filter│
+└──────────────┬───────────────┘ └──────────────┬───────────────┘
+               └──────────────┬─────────────────┘
+                              │
+                              ▼
+               ┌──────────────────────────────┐
+               │    OSRM Routing Engine       │ (Estimasi jarak & durasi rute motor/mobil)
+               └──────────────────────────────┘
+```
+
+1. **Dual-Tier Android GPS Resolver (`LocationHandler.kt`)**:
+   - **Tier 1 (Instant Cache <50ms)**: Mengambil `getLastKnownLocation` dari GPS Provider dan Network Provider secara instan.
+   - **Tier 2 (Parallel Fresh Fix)**: Membuka *listener* `getCurrentLocation` dengan `PRIORITY_HIGH_ACCURACY` dan `PRIORITY_BALANCED_POWER_ACCURACY` secara paralel dengan *timeout* ketat 4 detik.
+2. **Multi-Stage Query Sanitizer (`Location_Orchestrator.js`)**:
+   - Menghapus seluruh kata basa-basi (*nexa, tolong, adakah, apakah, coba, carikan, dll.*) secara rekursif hingga menyisakan kata benda murni (*"pom bensin"*).
+   - Memperluas sinonim percakapan Indonesia ke tag OSM resmi (`POI_SYNONYMS`: *pom bensin* → `SPBU Pertamina`, `SPBU`; *ngopi* → `warkop`, `cafe`; *minimarket* → `Indomaret`, `Alfamart`).
+3. **Bounded Viewbox Engine (Nominatim & Photon)**:
+   - Mengunci area pencarian dalam kotak pembatas geografis (*Viewbox Bounding Box* $\pm 0.09^{\circ} \approx 10\text{ km}$) di sekitar koordinat GPS pengguna (*Sinduadi, Sleman*).
+   - **Hard Distance Filter**: Membuang semua POI di luar radius terdekat sehingga hasil yang disajikan murni berada dalam jangkauan 1–3 km di sekitar posisi pengguna.
+
+---
+
+### 11.6 Interaksi Suara & Panggilan Masuk Interaktif (*FakeCallActivity*)
+
+Untuk situasi kritis, briefing pagi, atau interupsi penting, N.E.X.A dapat melakukan **panggilan telepon dua arah langsung ke layar HP**:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Tuan as Tuan Faqih (HP)
+    participant Bridge as Nexa Bridge (Android)
+    participant Server as N.E.X.A Server Core (VPS)
+    participant Brain as AI Router & Whisper STT
+
+    Server->>Bridge: SIMULATE_INCOMING_CALL (Caller: "N.E.X.A", Message)
+    Bridge->>Tuan: 📲 Layar Fullscreen Telepon Berdering + Getaran
+    alt Tuan Menerima (Swipe Hijau)
+        Bridge->>Bridge: Hentikan Ringtone + Timer Berjalan (00:01...)
+        Bridge->>Tuan: 🗣️ TTS Nexa Berbicara Menyampaikan Alasan
+        Bridge->>Bridge: Jeda 700ms (Anti-Echo Buffer)
+        Bridge->>Tuan: 🎙️ Merekam Suara Tuan (Timer 10 Detik, 16kHz PCM)
+        Bridge->>Server: CALL_EVENT: CALL_AUDIO_REPLY (Base64 PCM)
+        Server->>Server: Injeksi Header WAV (RIFF 44-byte in-memory)
+        Server->>Brain: Transkripsi Whisper Multi-Tier (Tier 1-12)
+        Brain->>Brain: AI Router Memproses Makna & Merumuskan Balasan
+        Server->>Bridge: SPEAK_TEXT (Balasan Disuarakan di Speaker HP)
+        Bridge->>Tuan: 🗣️ Nexa Menjawab Pertanyaan Tuan
+        Bridge->>Bridge: Event CALL_REPLY_COMPLETE ➜ Tutup Telepon (Auto Hang-up)
+    else Tuan Menolak (Swipe Merah)
+        Bridge->>Server: CALL_EVENT: CALL_REJECTED (Rejection Count +1)
+        Bridge->>Tuan: 🗣️ TTS Singkat ➜ Tutup Panggilan
+    end
+```
+
+#### Alur Eksekusi Suara Terpadu (*Unified 12-Tier Voice Transcription*):
+Ketika audio panggilan (Base64 PCM) diterima di server:
+1. **Penyusunan Header WAV Otomatis (`pcmToWavBuffer`)**:
+   Server menyusun header RIFF/WAVE 44-byte (16000 Hz, 1 channel mono, 16-bit) secara *in-memory* tanpa membebani disk.
+2. **Eksekusi 12-Tier Failover (Identik dengan Pipeline VN Telegram)**:
+   - **Tier 1–4**: Hugging Face Whisper Large v3 Turbo (4 Slot Failover).
+   - **Tier 5–8**: Google Gemini 2.5 Flash Native Audio (4 API Keys Pool).
+   - **Tier 9–12**: Groq Whisper Large v3 (4 API Keys Pool dengan retry 503 otomatis).
+3. **Pembersihan Teks TTS (*Natural Speech Sanitizer*)**:
+   Sebelum teks balasan dikirim ke speaker HP, seluruh tag HTML (`<b>`, `<i>`) dan Markdown (`*`, `#`) dibersihkan agar artikulasi suara Android Text-to-Speech terdengar natural dan fasih.
+
+---
+
+### 11.7 Telemetri Sensorik Kontinu & Kesadaran Kontekstual
+
+Selain mengeksekusi perintah, Nexa Bridge bertindak sebagai sistem saraf otonom yang melaporkan kondisi lingkungan ke server:
+
+| Tipe Laporan | Parameter yang Dikirim | Pemicu & Pemanfaatan di Server |
+|---|---|---|
+| **`TELEMETRY_REPORT`** | `battery_level`, `is_charging`, `network_type`, `wifi_ssid`, `signal_rssi` | Dikirim periodik tiap 5 menit untuk memantau daya baterai dan konektivitas HP Tuan. |
+| **`CONTEXT_UPDATE`** | `USER_ARRIVED_HOME`, `USER_LEFT_HOME` | Pemicu Geofence: Menyalakan/mematikan rutinitas rumah tangga otomatis. |
+| **`CONTEXT_UPDATE`** | `PHONE_PICKUP_MORNING`, `ALARM_DISMISSED` | Pemicu Pagi: N.E.X.A mendeteksi Tuan telah bangun dan mengirimkan *Morning Briefing*. |
+| **`CALL_EVENT`** | `CALL_ACCEPTED`, `CALL_REJECTED`, `CALL_AUDIO_REPLY` | Pemantauan interaksi panggilan dan eskalasi kedisiplinan (*Discipline GodMode*). |
+
+---
+
+### 11.8 Rangkuman Aksi Perangkat (*Hardware Actions Matrix*)
+
+Seluruh kendali perangkat didefinisikan dalam konstanta `NexaActions` dan dieksekusi secara terpusat oleh `DeviceCommandDispatcher.kt` dan `Device_Control_Engine.js`:
+
+| Aksi Perangkat | Parameter | Deskripsi & Dampak Nyata |
+|---|---|---|
+| `TOGGLE_FLASHLIGHT` | `enabled: boolean` | Menyalakan atau mematikan lampu senter HP. |
+| `SET_VOLUME` | `stream: string`, `level: 0-100` | Mengatur volume suara (*MUSIC*, *RING*, *NOTIFICATION*). |
+| `FORCE_DND` | `enabled: boolean` | Mengaktifkan mode Jangan Ganggu (*Do Not Disturb*). |
+| `LOCK_SCREEN` | *(none)* | Mengunci layar HP secara instan. |
+| `GET_LOCATION` | *(none)* | Mengambil koordinat GPS live presisi tinggi. |
+| `SPEAK_TEXT` | `text: string` | Membicarakan kalimat bahasa Indonesia via TTS di speaker HP. |
+| `TAKE_PHOTO` | `camera_facing: 'front'\|'back'` | Mengambil foto hening dari kamera depan/belakang. |
+| `TAKE_SCREENSHOT` | *(none)* | Mengambil gambar layar HP aktif. |
+| `LAUNCH_APP` | `package_name: string` | Membuka aplikasi Android tertentu secara langsung. |
+| `SHOW_OVERLAY_MSG` | `title: string`, `message: string` | Memunculkan dialog pop-up di atas semua aplikasi. |
+| `SIMULATE_INCOMING_CALL` | `caller_name`, `message` | Menjalankan panggilan masuk fullscreen interaktif. |
+| `PLAY_RINGTONE` | *(none)* | Membunyikan nada dering alarm darurat pada volume maksimal. |
+
+---
+
+Dengan integrasi **Nexa Mobile Bridge** ini, N.E.X.A resmi bertransformasi dari sekadar kecerdasan digital menjadi entitas hibrida yang memiliki kehadiran nyata dalam kehidupan sehari-hari Tuan Faqih Hidayatulloh.
+
+---
+**~ TAMAT ~**
+*Mahakarya arsitektur The Chief of Staff, secara eksklusif dikembangkan untuk memperluas kognisi dan otonomi penggunanya, Tuan Faqih Hidayatulloh.*
+
