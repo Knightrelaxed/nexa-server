@@ -23,6 +23,3 @@ Thumbs.db
 # IDE files
 .vscode/
 .idea/
-
-# Local Model Cache
-.cache/
