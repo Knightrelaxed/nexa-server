@@ -49,8 +49,8 @@ const scenarios = [
 
 async function callModel(modelName, userPrompt) {
   const urlsToTry = [
-    `${BASE_URL}/v1beta/models/${modelName}:generateContent?key=${API_KEY}`,
-    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+    `${BASE_URL}/v1beta/models/${modelName}:generateContent`
   ];
 
   const body = {
@@ -72,7 +72,10 @@ async function callModel(modelName, userPrompt) {
     try {
       const start = Date.now();
       const res = await axios.post(url, body, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': API_KEY
+        },
         timeout: 30000
       });
       const elapsed = Date.now() - start;
