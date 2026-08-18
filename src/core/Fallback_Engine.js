@@ -245,16 +245,16 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       : isHeavyContext(prompt, systemInstruction, options);
 
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
-  // [SACR v2.2 DUAL-MODE ROUTING MATRIX]
-  // Prioritas Utama: Gemini 2.5 Flash (Tier 1-4) -> Gemini 3.7 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
-  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY 🧠' : 'LIGHT ⚡'} [Gemini 2.5 Flash -> Gemini 3.7 -> Gemini 3.6] | Total chars: ${inputChars}`);
+  // [SACR v2.3 DUAL-MODE ROUTING MATRIX]
+  // Prioritas Utama: Google Gemma 4 31B (Tier 1-4, 57.6K RPD, Warm & Natural) -> Gemini 3.7 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
+  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY 🧠' : 'LIGHT ⚡'} [Google Gemma 4 31B -> Gemini 3.7 -> Gemini 3.6] | Total chars: ${inputChars}`);
 
-  // 1. Gemini 2.5 Flash (4 Keys - Fast 1M Context, No-CoT Direct Response)
-  const gemini25Block = googleApiKeys
+  // 1. Google AI Studio Gemma 4 31B (Anti-CoT) (4 Keys - 57.6K RPD Free Quota, Ultra-Natural Persona)
+  const googleGemmaBlock = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
-      name: `Tier X (Gemini 2.5 Flash Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(key, 'gemini-2.5-flash', prompt, systemInstruction, temperature, jsonMode, 1)
+      name: `Tier X (Google Gemma 4 Key ${i + 1} [Anti-CoT])`,
+      fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
   // 2. Gemini 3.7 Flash (4 Keys)
@@ -281,11 +281,11 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  // Penataan Top 12 Tiers Sesuai SACR v2.2:
-  // Tier 1-4: Gemini 2.5 Flash (4 Keys)
+  // Penataan Top 12 Tiers Sesuai SACR v2.3:
+  // Tier 1-4: Google Gemma 4 31B Anti-CoT (4 Keys - 57.6K RPD)
   // Tier 5-8: Gemini 3.7 Flash (4 Keys)
   // Tier 9-12: Gemini 3.6 Flash (4 Keys)
-  const top12Block = [...gemini25Block, ...gemini37Block, ...gemini36Block];
+  const top12Block = [...googleGemmaBlock, ...gemini37Block, ...gemini36Block];
 
   const tiers = [
     // Tier 1-12 Top Engine
@@ -388,7 +388,7 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
     systemInstruction: { parts: [{ text: optimizedSys }] },
     generationConfig: {
       temperature,
-      maxOutputTokens: jsonMode ? 1500 : 1000
+      maxOutputTokens: jsonMode ? 2048 : 4096
     }
   };
 
@@ -398,7 +398,7 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(30000)
       });
 
       if (!res.ok) {
