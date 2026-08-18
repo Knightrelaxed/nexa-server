@@ -127,6 +127,10 @@ if (require.main === module) {
     console.log(`[N.E.X.A 3.0] 📱 Mobile Bridge WebSocket Endpoint: /ws`);
     console.log(`[N.E.X.A 3.0] 🏥 Health endpoint: http://127.0.0.1:${port}/health`);
     console.log(`[N.E.X.A 3.0] 💻 CLI Local URL  : http://127.0.0.1:${port}`);
+    // Load Gemini Semantic Vector Snapshot (0.001s in-memory load)
+    const geminiVectorCache = require('./utils/gemini_vector_cache');
+    geminiVectorCache.loadVectorSnapshot();
+
     // Initialize cron jobs AFTER server is listening
     // node-cron will run Morning Briefing at 05:30 WIB
     cronInterface.initCronJobs();

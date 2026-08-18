@@ -1,6 +1,7 @@
 const { executeWithFallback } = require('./Fallback_Engine');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 const { NEXA_PERSONALITY } = require('../config/personality');
+const geminiVectorCache = require('../utils/gemini_vector_cache');
 
 
 
@@ -675,61 +676,65 @@ function _scoreFactRelevance(fact, tokens) {
 /**
  * Dynamic Progressive userProfile Fact Injection with Semantic Resonance & Multi-Word Scoring
  */
-function _selectUserProfileFacts(userProfile, userMessage) {
+function _selectUserProfileFacts(userProfile, userMessage, semanticMatches = []) {
   if (!userProfile || !Array.isArray(userProfile) || userProfile.length === 0) return [];
 
-  const tokens = _extractResonanceTokens(userMessage);
   const coreBase = userProfile.slice(0, PROFILE_CORE_COUNT);
 
+  // Jika ada temuan semantik berkecepatan tinggi dari Google Gemini Vector Cache, utamakan temuan tersebut
+  if (Array.isArray(semanticMatches) && semanticMatches.length > 0) {
+    return Array.from(new Set([...semanticMatches.slice(0, PROFILE_KW_LIMIT), ...coreBase]));
+  }
+
+  const tokens = _extractResonanceTokens(userMessage);
   if (tokens.length === 0) {
     return coreBase;
   }
 
-  // Hitung relevansi seluruh profil pengguna
+  // Fallback ke pencocokan leksikal jika semantik tidak aktif
   const scored = userProfile.map(fact => ({
     fact,
     score: _scoreFactRelevance(fact, tokens)
   }));
 
-  // Ambil fakta dengan skor tertinggi (skor > 0)
   const resonant = scored
     .filter(s => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .map(s => s.fact);
 
-  // Tempatkan fakta profil yang paling beresonansi di paling atas, disusul profil dasar
-  const merged = Array.from(new Set([...resonant.slice(0, PROFILE_KW_LIMIT), ...coreBase]));
-  return merged;
+  return Array.from(new Set([...resonant.slice(0, PROFILE_KW_LIMIT), ...coreBase]));
 }
 
 /**
  * Dynamic Progressive coreIdentity Fact Injection with Semantic Resonance & Domain Trigger Scoring
  */
-function _selectCoreIdentityFacts(coreIdentity, userMessage) {
+function _selectCoreIdentityFacts(coreIdentity, userMessage, semanticMatches = []) {
   if (!coreIdentity || !Array.isArray(coreIdentity) || coreIdentity.length === 0) return [];
 
-  const tokens = _extractResonanceTokens(userMessage);
   const coreBase = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
 
+  // Jika ada temuan semantik berkecepatan tinggi dari Google Gemini Vector Cache, utamakan temuan tersebut
+  if (Array.isArray(semanticMatches) && semanticMatches.length > 0) {
+    return Array.from(new Set([...semanticMatches.slice(0, IDENTITY_KW_LIMIT), ...coreBase]));
+  }
+
+  const tokens = _extractResonanceTokens(userMessage);
   if (tokens.length === 0) {
     return coreBase;
   }
 
-  // Hitung relevansi untuk seluruh basis data identitas N.E.X.A
+  // Fallback ke pencocokan leksikal jika semantik tidak aktif
   const scored = coreIdentity.map(fact => ({
     fact,
     score: _scoreFactRelevance(fact, tokens)
   }));
 
-  // Ambil fakta yang beresonansi kuat dengan input pengguna
   const resonant = scored
     .filter(s => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .map(s => s.fact);
 
-  // Tempatkan fakta identitas & kapabilitas yang paling relevan di paling atas
-  const merged = Array.from(new Set([...resonant.slice(0, IDENTITY_KW_LIMIT), ...coreBase]));
-  return merged;
+  return Array.from(new Set([...resonant.slice(0, IDENTITY_KW_LIMIT), ...coreBase]));
 }
 
 /**
@@ -834,9 +839,30 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   ]);
   const _identityModel = identityModel.status === 'fulfilled' ? (identityModel.value || {}) : {};
 
-  // 2. Contextual Retrieval — dynamic limit (Step 3: Adaptive History)
+  // 2. Contextual & Semantic Retrieval — Masked Parallel Execution (Step 3: Zero Added Latency)
   const _fetchLimit = _hasContextRef ? 20 : 12;
-  const _rawMemories = await supabaseMemories.getRecentMemories(_fetchLimit);
+  const isShortReflex = !textInput || (textInput.trim().split(/\s+/).length <= 2 && /^(halo|hai|p|ping|cek|test|tes|pagi|siang|malam|makasih|terima kasih|ok|oke|siap)$/i.test(textInput.trim()));
+
+  const [_rawMemories, semanticMatches] = await Promise.all([
+    supabaseMemories.getRecentMemories(_fetchLimit).catch(e => {
+      console.error('[ROUTER] Memory fetch error:', e.message);
+      return [];
+    }),
+    (!isShortReflex && geminiVectorCache.isSnapshotReady())
+      ? geminiVectorCache.getRelevantFacts(textInput, {
+          topKProfile: PROFILE_KW_LIMIT,
+          topKIdentity: IDENTITY_KW_LIMIT,
+          minScore: 0.58
+        }).catch(e => {
+          console.warn('[ROUTER] Semantic retrieval warning:', e.message);
+          return { profileFacts: [], identityFacts: [] };
+        })
+      : Promise.resolve({ profileFacts: [], identityFacts: [] })
+  ]);
+
+  if (semanticMatches?.stats?.matchedProfileCount > 0 || semanticMatches?.stats?.matchedIdentityCount > 0) {
+    console.log(`[ROUTER] 🎯 Gemini Semantic matched: ${semanticMatches.stats.matchedProfileCount} profiles, ${semanticMatches.stats.matchedIdentityCount} identities (${semanticMatches.stats.latencyMs} ms parallel).`);
+  }
 
   // Character safety net — trim oldest messages if total exceeds HISTORY_CHAR_CAP.
   let _memories = _rawMemories;
@@ -849,9 +875,8 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
       if (_chars + _len <= HISTORY_CHAR_CAP) {
         _kept.unshift(_rawMemories[i]);
         _chars += _len;
-      } else { continue; } // FIX BUG 2: Menggunakan continue agar tidak membuang pesan pendek yang lebih lama
+      } else { continue; }
     }
-    // Pastikan tidak mulai dengan pesan 'nexa' tanpa pasangan user-nya
     if (_kept.length > 0 && _kept[0].role === 'nexa') _kept.shift();
     _memories = _kept;
     console.log(`[ROUTER] History trimmed by char cap: ${_rawMemories.length}msg/${_totalHistChars}ch → ${_memories.length}msg/${_chars}ch`);
@@ -884,12 +909,12 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
 
   // 3. Build personal facts context block (Step 4: Progressive userProfile injection)
   let factsContext = '';
-  const _selectedProfile = _selectUserProfileFacts(personalFacts.userProfile, textInput);
+  const _selectedProfile = _selectUserProfileFacts(personalFacts.userProfile, textInput, semanticMatches?.profileFacts);
   if (_selectedProfile.length > 0) {
     factsContext += `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${_selectedProfile.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
   }
   if (personalFacts.coreIdentity && personalFacts.coreIdentity.length > 0) {
-    const _selectedIdentity = _selectCoreIdentityFacts(personalFacts.coreIdentity, textInput);
+    const _selectedIdentity = _selectCoreIdentityFacts(personalFacts.coreIdentity, textInput, semanticMatches?.identityFacts);
     factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${_selectedIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
   }
 

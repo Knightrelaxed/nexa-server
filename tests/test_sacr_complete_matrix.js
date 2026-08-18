@@ -2,8 +2,8 @@ const dns = require('dns');
 try { dns.setDefaultResultOrder('ipv4first'); } catch (e) {}
 
 require('dotenv').config();
-const { executeWithFallback, resetTokenAccumulator, getAccumulatedTokenUsage } = require('./src/core/Fallback_Engine.js');
-const { routeUserMessage } = require('./src/core/AI_Router.js');
+const { executeWithFallback, resetTokenAccumulator, getAccumulatedTokenUsage } = require('../src/core/Fallback_Engine.js');
+const { routeUserMessage } = require('../src/core/AI_Router.js');
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
