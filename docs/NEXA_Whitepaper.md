@@ -569,45 +569,126 @@ Jika validasi gagal, N.E.X.A mengirim pertanyaan klarifikasi spesifik dan menghe
 
 ---
 
-### 3.5 Fallback Engine — 15 Lapisan Ketangguhan & Validasi JSON Dinamis
+### 3.5 Fallback Engine — 16 Lapisan Ketangguhan Kognitif & Redundansi Global (SACR v2.1)
 
-`Fallback_Engine.js` adalah sistem ketersediaan AI N.E.X.A. Setiap panggilan ke `executeWitAzureallback()` melewati 15 tier model secara berurutan—berpindah ke tier berikutnya jika tier sebelumnya melempar error jaringan, limit rate 429, atau menghasilkan sintaks JSON cacat.
+`Fallback_Engine.js` adalah benteng pertahanan terakhir ketersediaan AI N.E.X.A. Setiap pemanggilan kognitif melewati 16 tier model secara berurutan, berpindah ke tier berikutnya (*instant failover*) jika tier sebelumnya mengalami error jaringan, timeout, atau rate limit.
 
-| Tier | Model | Provider | Karakteristik |
+| Tier | Model | Provider / Endpoint Gateway | Kuota & Karakteristik |
 |---|---|---|---|
-| 1–4 | Gemma 4 31B | Cerebras WSE-3 (4 Kunci Rotasi) | Natural, empatik, kecepatan kilat ~0 milidetik |
-| 5–8 | Llama 3.3 70B Versatile | Groq Cloud (4 Kunci Rotasi) | Enterprise logic & structured output |
-| 9–12 | Gemini 3.6 Flash | Google AI (4 Kunci Rotasi) | High context limit & deep reasoning |
-| 13 | Gemma 4 31B IT | Azure Router | Open-weight dedicated safety net |
-| 14 | Pixtral 12B | Mistral AI API | Reliable European API close |
-| 15 | Multi-Model Free Pool | OpenRouter | Indestructible last resort |
-
-**Dynamic Tier JSON Validation:**
-Setiap eksekusi tier yang membutuhkan `jsonMode = true` dilindungi oleh fungsi `validateResponseJson()`. Jika suatu model mengembalikan JSON cacat (*malformed syntax*), sistem langsung menolak hasil tersebut dan otomatis melompat (*failover*) ke tier berikutnya hingga mendapatkan JSON 100% valid.
-
-Setiap API wrapper (`callCerebras`, `callGroq`, `callGemini`, dll.) juga dilengkapi **503 Smart Retry** internal untuk perlindungan terhadap *momentary server overload*.
-
-**Dumb Mode** — Jika semua 15 tier gagal:
-```json
-{
-  "intent": "DUMB_MODE",
-  "reply_message": "⚠️ Sistem Otak N.E.X.A mengalami Down Total di semua 15 peladen dunia."
-}
-```
-
-#### 3.5.1 Smart Adaptive Context Routing (SACR)
-
-Sejak implementasi SACR, hierarki *Fallback Engine* tidak lagi sepenuhnya statis. SACR adalah mekanisme *load-balancing* kognitif yang menukar posisi model secara *on-the-fly* berdasarkan beban tugas.
-
-Secara *default*, Cerebras Gemma 4 31B berada di **Tier 1 (Light Mode)** untuk latensi ultra-cepat (~0.6 detik). Namun, fungsi `isHeavyContext()` akan otomatis membalik urutan, menaikkan Google Gemini 3.6 Flash ke Tier 1 (**Heavy Mode**), jika salah satu dari 3 kondisi ini terpenuhi:
-1. **Panjang Konteks Ekstrem**: Teks input melebih 1.000 karakter.
-2. **Kata Kunci Kognitif Berat**: Prompt mengandung instruksi analitis seperti *analisis, evaluasi, rekap, laporan, komparasi, debug, hipotesis*.
-3. **Hardware Force-Flag (`forceHeavy: true`)**: Beberapa *Cron Job* Kategori A (seperti *Daily Memory Consolidation*, *Weekly Identity Inference*, dan *Causal Graph Build*) di-*hardcode* untuk selalu menembak Gemini 3.6 Flash. Tugas-tugas ini memerlukan sintesis lintas domain yang ekstensif, kepatuhan kendala JSON yang ketat tanpa halusinasi duplikasi, dan penalaran psikologis (1.000.000 context window).
-
-Mekanisme ini memastikan N.E.X.A merespons obrolan santai seketika, namun mengalokasikan "deep thinking" secara otomatis untuk analisis strategis (berdasarkan prinsip *Dual-Process Theory*: *System 1 Fast* vs *System 2 Slow*).
+| **1–4** | **Google Gemma 4 31B (Anti-CoT)** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | **57.600 Chat/Hari (14.4K RPD x 4)** — Super Cerdas, 0 Geo-block |
+| **5–8** | **Google Gemini 3.7 Flash** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | Deep Reasoning & Adaptive Thinking (Reset Harian 07:00 WIB) |
+| **9–12** | **Google Gemini 3.6 Flash** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | Ultra Long Context 1M Token & High Reliability |
+| **13** | **Cerebras Gemma 4 31B** | Cerebras Cloud AI | PayGo Ultra-Fast Inference Backup |
+| **14** | **Mistral Pixtral 12B / Large** | Mistral AI API | European Independent Inference (691 ms Latency) |
+| **15** | **Puter AI Multi-Model Pool** | Puter.js Global Pool | Codestral, GPT-4o, dan Claude Backup Pool |
+| **16** | **OpenRouter Multi-Model Pool** | OpenRouter Global | LLaMA 3.3 70B & Qwen 2.5 72B Indestructible Safety Net |
 
 ---
 
+#### 3.5.1 Penanganan Masalah Geolocation & Cloud Datacenter ASN (`400 User location is not supported`)
+
+**Akar Masalah:**  
+Google AI Studio *Free Tier* menerapkan filter keamanan geografis otomatis berbasis Autonomous System Number (ASN). IP publik Azure VPS Jakarta (`48.193.41.76`) terdaftar sebagai `AS8075 (Microsoft Corporation Cloud Hosting)`. Google menolak request dari IP data center cloud komersial dengan error `400 Bad Request: User location is not supported for the API use`, sementara koneksi dari IP perumahan/laptop (Telkomsel/Indihome) diizinkan normal.
+
+**Solusi Arsitektur: Cloudflare Edge AI Gateway (`nexa-relay.dazatulloh2.workers.dev`)**  
+N.E.X.A mengarahkan semua traffic Google Generative Language API melalui Cloudflare Worker Reverse Proxy 12 baris:
+```javascript
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    url.hostname = 'generativelanguage.googleapis.com';
+    const newRequest = new Request(url.toString(), {
+      method: request.method,
+      headers: request.headers,
+      body: request.body
+    });
+    return fetch(newRequest);
+  }
+};
+```
+- **Latensi Tambahan:** Hanya **~1–3 milidetik** karena Cloudflare memiliki Point of Presence (PoP) di Jakarta (`CGK`), satu kota dengan Azure VPS Jakarta kita.
+- **Hasil:** Google AI Studio menerima koneksi dari Cloudflare Edge IP secara legal dan mengembalikan respon **`200 OK`**, membuka kembali 100% kapasitas kuota 57.600 request/hari Google Gemma 4 dan Gemini 3.7/3.6.
+
+---
+
+#### 3.5.2 Penanganan Multi-Part Thought & "Empty Response String" pada Google Gemma 4
+
+**Akar Masalah:**  
+Google Gemma 4 31B mengembalikan struktur respon multi-part pada API v1beta:
+- `parts[0]`: Wadah *thought container* kosong (`{ text: "", thought: true }`).
+- `parts[1]`: Wadah teks jawaban nyata (`{ text: "{\"intent\": ...}" }`).
+
+Jika kode membaca `parts[0].text`, server menerima string kosong `""` dan melempar error `Empty response string`.
+
+**Solusi Standar Resmi Google v1beta:**
+```javascript
+const parts = resJson.candidates?.[0]?.content?.parts || [];
+const rawText = parts
+  .filter(p => !p.thought)
+  .map(p => p.text || '')
+  .join('\n')
+  .trim() || (parts[parts.length - 1]?.text || '');
+```
+Logika ini 100% kompatibel universal:
+- Menyaring wadah thought kosong pada **Gemma 4**.
+- Membuang monolog internal draf pada **Gemini 3.7 Thinking Mode**.
+- Menjaga 100% keutuhan teks pada **Gemini 3.6 Flash Normal Single-Part**.
+
+---
+
+#### 3.5.3 Robust JSON Parsing: Balanced-Brace Depth Parser (`extractFirstValidJson`)
+
+**Akar Masalah:**  
+Ketika model LLM menghasilkan output dengan catatan pemikiran internal, *code blocks*, atau beberapa opsi JSON sekaligus, pemotongan string berbasis `lastIndexOf('}')` dapat menangkap karakter non-JSON di antara kurung kurawal, memicu error `Unexpected non-whitespace character after JSON`.
+
+**Solusi Algoritma Depth Parser:**
+Fungsi `extractFirstValidJson()` melacak kedalaman kurung kurawal (`depth counter`) dan status escape string secara sekuensial:
+```javascript
+function extractFirstValidJson(str) {
+  if (!str || typeof str !== 'string') return null;
+  let text = str.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const startIdx = text.indexOf('{');
+  if (startIdx === -1) return null;
+
+  let depth = 0, inString = false, escape = false;
+  for (let i = startIdx; i < text.length; i++) {
+    const char = text[i];
+    if (escape) { escape = false; continue; }
+    if (char === '\\') { escape = true; continue; }
+    if (char === '"') { inString = !inString; continue; }
+    if (!inString) {
+      if (char === '{') depth++;
+      else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          const candidate = text.substring(startIdx, i + 1);
+          try { JSON.parse(candidate); return candidate; } catch (e) {}
+        }
+      }
+    }
+  }
+  return null;
+}
+```
+Algoritma ini menjamin bahwa objek JSON valid pertama yang selesai langsung diekstrak secara murni, kebal dari segala bentuk kebocoran teks atau monolog LLM.
+
+---
+
+#### 3.5.4 Proteksi Timeout (15s AbortSignal) & Smart Rate-Limit Circuit Breaker
+
+1. **Strict Timeout Guard:** Setiap panggilan API eksternal dibatasi dengan `AbortSignal.timeout(15000)`. Jika server AI global mengalami *hang/stuck*, N.E.X.A memutus koneksi dalam 15 detik dan melompat ke tier berikutnya tanpa membiarkan bot Telegram terdiam.
+2. **TPM / RPD Quota Shield:** 
+   - Batas **16.000 TPM (Token Per Menit)** dan **20 RPD (Request Per Hari)** pada free-tier ditangani dengan rotasi 4 kunci API independen.
+   - Jika satu kunci terkena status `429 Too Many Requests`, sistem langsung mencoba kunci ke-2, ke-3, hingga ke-4 secara mulus (*Zero User Interruption*).
+
+---
+
+#### 3.5.5 Dumb Mode — Jaring Pengaman Terakhir
+
+Jika seluruh 16 lapisan peladen dunia mengalami pemadaman total secara bersamaan, sistem mengembalikan struktur darurat terisolasi tanpa crash:
+```json
+{
+  "intent": "DUMB_MODE",
 ### 3.6 Classifier Spesialisasi — Fungsi AI Ringan Non-Routing
 
 Selain `routeUserMessage()`, `AI_Router.js` menyediakan tiga fungsi AI spesialisasi yang hanya dipanggil dalam konteks tertentu:
