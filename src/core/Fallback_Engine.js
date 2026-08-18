@@ -246,10 +246,18 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
   // [SACR v2.1 DUAL-MODE ROUTING MATRIX]
-  // Prioritas Utama: Google Gemma 4 (Anti-CoT) dengan kuota 14.4K RPD x 4 Keys = 57.600 Request/Hari!
-  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY 🧠' : 'LIGHT ⚡'} [Google Gemma 4 -> Gemini 3.7 -> Gemini 3.6] | Total chars: ${inputChars}`);
+  // Prioritas Uji Coba: Gemini 3.5 Flash-Lite (Super Cepat ~1s, 6.000 RPD) -> Google Gemma 4 (Anti-CoT) -> Gemini 3.7 -> Gemini 3.6
+  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY 🧠' : 'LIGHT ⚡'} [Gemini 3.5 Flash-Lite -> Google Gemma 4 -> Gemini 3.7 -> Gemini 3.6] | Total chars: ${inputChars}`);
 
-  // 1. Google AI Studio Gemma 4 31B (Anti-CoT) (4 Keys - 57.6K RPD Free Quota)
+  // 1. Gemini 3.5 Flash-Lite (4 Keys - 6.000 RPD Free Quota, Super Cepat ~1s)
+  const gemini35LiteBlock = googleApiKeys
+    .filter(Boolean)
+    .map((key, i) => ({
+      name: `Tier X (Gemini 3.5 Flash-Lite Key ${i + 1})`,
+      fn: () => callGeminiWithRetry(key, 'gemini-3.5-flash-lite', prompt, systemInstruction, temperature, jsonMode, 1)
+    }));
+
+  // 2. Google AI Studio Gemma 4 31B (Anti-CoT) (4 Keys - 57.6K RPD Free Quota)
   const googleGemmaBlock = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -257,7 +265,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 2. Gemini 3.7 Flash (4 Keys)
+  // 3. Gemini 3.7 Flash (4 Keys)
   const gemini37Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -265,7 +273,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(key, 'gemini-3.7-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 3. Gemini 3.6 Flash (4 Keys)
+  // 4. Gemini 3.6 Flash (4 Keys)
   const gemini36Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -273,7 +281,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 4. Cerebras Gemma 4 31B (4 Keys - PayGo / Fallback)
+  // 5. Cerebras Gemma 4 31B (4 Keys - PayGo / Fallback)
   const cerebrasBlock = cerebrasKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -281,15 +289,16 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  // Penataan Top 12 Tiers Sesuai SACR v2.1:
-  // Tier 1-4: Google Gemma 4 31B Anti-CoT
-  // Tier 5-8: Gemini 3.7 Flash
-  // Tier 9-12: Gemini 3.6 Flash
-  const top12Block = [...googleGemmaBlock, ...gemini37Block, ...gemini36Block];
+  // Penataan Top Engine Sesuai Prioritas:
+  // Tier 1-4: Gemini 3.5 Flash-Lite (Uji Coba Percakapan Kilat)
+  // Tier 5-8: Google Gemma 4 31B Anti-CoT
+  // Tier 9-12: Gemini 3.7 Flash
+  // Tier 13-16: Gemini 3.6 Flash
+  const topBlock = [...gemini35LiteBlock, ...googleGemmaBlock, ...gemini37Block, ...gemini36Block];
 
   const tiers = [
-    // Tier 1-12 Top Engine
-    ...top12Block.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
+    // Top Engine Tiers
+    ...topBlock.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
     // Tier 13: Cerebras Gemma 4 31B (PayGo Fallback)
     ...(cerebrasBlock.length > 0 ? [{
       name: 'Tier 13 (Cerebras Gemma 4 Pool)',
