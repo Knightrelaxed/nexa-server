@@ -196,7 +196,7 @@ async function generateAndSaveSnapshot() {
 
   async function batchEmbedList(list) {
     const results = [];
-    const chunkSize = 20; // 20 fakta per batch
+    const chunkSize = 25; // Kirim per 25 fakta sekaligus dalam 1 request HTTP
     for (let i = 0; i < list.length; i += chunkSize) {
       const chunk = list.slice(i, i + chunkSize);
       const requests = chunk.map(text => ({
@@ -204,52 +204,27 @@ async function generateAndSaveSnapshot() {
         content: { parts: [{ text }] }
       }));
 
-      let success = false;
-      let lastErr = null;
+      const apiKey = getNextApiKey();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests })
+      });
 
-      for (let k = 0; k < googleApiKeys.length; k++) {
-        const apiKey = getNextApiKey();
-        try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents?key=${apiKey}`;
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ requests })
-          });
-
-          if (res.status === 429 || res.status === 503) {
-            await new Promise(r => setTimeout(r, 1000));
-            continue;
-          }
-
-          if (!res.ok) {
-            lastErr = new Error(`Batch embed failed: ${res.statusText}`);
-            continue;
-          }
-
-          const data = await res.json();
-          const embeddings = data.embeddings || [];
-          chunk.forEach((content, idx) => {
-            results.push({
-              id: i + idx + 1,
-              content,
-              vector: embeddings[idx]?.values || []
-            });
-          });
-
-          success = true;
-          break;
-        } catch (e) {
-          lastErr = e;
-        }
+      if (!res.ok) {
+        throw new Error(`Batch embed failed: ${res.statusText}`);
       }
 
-      if (!success) {
-        console.warn(`[VECTOR-CACHE] ⚠️ Batch chunk ${i} warning:`, lastErr?.message);
-      }
-
-      // Beri jeda kecil agar tidak menabrak batas RPM
-      await new Promise(r => setTimeout(r, 400));
+      const data = await res.json();
+      const embeddings = data.embeddings || [];
+      chunk.forEach((content, idx) => {
+        results.push({
+          id: i + idx + 1,
+          content,
+          vector: embeddings[idx]?.values || []
+        });
+      });
     }
     return results;
   }

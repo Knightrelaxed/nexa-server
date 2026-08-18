@@ -211,13 +211,12 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       ? false
       : isHeavyContext(prompt, systemInstruction, options);
 
-  const sacrMode = heavy
-    ? 'HEAVY 🧠 [Google Gemma 4 (Anti-CoT) -> Gemini 3.7 -> Gemini 3.6]'
-    : 'LIGHT ⚡ [Google Gemma 4 (Anti-CoT) -> Gemini 3.7 -> Gemini 3.6]';
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
-  asyncLog(`[SACR] Mode: ${sacrMode} | Total chars: ${inputChars}`);
+  // [SACR v2.1 DUAL-MODE ROUTING MATRIX]
+  // Prioritas Utama: Google Gemma 4 (Anti-CoT) dengan kuota 14.4K RPD x 4 Keys = 57.600 Request/Hari!
+  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY 🧠' : 'LIGHT ⚡'} [Google Gemma 4 -> Gemini 3.7 -> Gemini 3.6] | Total chars: ${inputChars}`);
 
-  // 1. Google AI Studio Gemma 4 31B (Anti-CoT) (4 Keys - 14.4K RPD Free Quota per Key)
+  // 1. Google AI Studio Gemma 4 31B (Anti-CoT) (4 Keys - 57.6K RPD Free Quota)
   const googleGemmaBlock = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -241,7 +240,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 4. Cerebras Gemma 4 31B (Backup)
+  // 4. Cerebras Gemma 4 31B (4 Keys - PayGo / Fallback)
   const cerebrasBlock = cerebrasKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -250,25 +249,25 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }));
 
   // Penataan Top 12 Tiers Sesuai SACR v2.1:
-  // Tier 1-4: Google Gemma 4 31B (57.6K RPD Free Pool)
-  // Tier 5-8: Gemini 3.7 Flash (Key 1..4)
-  // Tier 9-12: Gemini 3.6 Flash (Key 1..4)
+  // Tier 1-4: Google Gemma 4 31B Anti-CoT
+  // Tier 5-8: Gemini 3.7 Flash
+  // Tier 9-12: Gemini 3.6 Flash
   const top12Block = [...googleGemmaBlock, ...gemini37Block, ...gemini36Block];
 
   const tiers = [
     // Tier 1-12 Top Engine
     ...top12Block.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
-    // Tier 13: Cerebras Fallback
+    // Tier 13: Cerebras Gemma 4 31B (PayGo Fallback)
     ...(cerebrasBlock.length > 0 ? [{
-      name: 'Tier 13 (Cerebras Gemma 4 Backup)',
-      fn: cerebrasBlock[0].fn
+      name: 'Tier 13 (Cerebras Gemma 4 Pool)',
+      fn: () => cerebrasBlock[0].fn()
     }] : []),
     // Tier 14: Mistral Pixtral 12B
     ...(env.MISTRAL_API_KEY ? [{
       name: 'Tier 14 (Mistral Pixtral 12B)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
     }] : []),
-    // Tier 15: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large)
+    // Tier 15: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
     ...(env.PUTER_AUTH_TOKEN ? [{
       name: 'Tier 15 (Puter AI Pool - Codestral & GPT-4o)',
       fn: () => callPuter(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
@@ -314,6 +313,29 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 // API WRAPPERS WITH 503 SMART RETRY
 // ----------------------------------------------------
 
+function cleanGemmaOutput(rawText, jsonMode = false) {
+  if (!rawText) return '';
+  let text = rawText.trim();
+
+  if (jsonMode) {
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) return jsonMatch[0];
+    return text;
+  }
+
+  // Jika Gemma mengeluarkan format thought list "* User: ... * Greeting: ...", ambil pesan percakapan terakhir
+  const quoteMatch = text.match(/"([^"]{10,})"/g);
+  if (quoteMatch && quoteMatch.length > 0) {
+    const lastQuote = quoteMatch[quoteMatch.length - 1].replace(/^"|"$/g, '');
+    if (lastQuote.length > 15) return lastQuote;
+  }
+
+  // Bersihkan bullet points monolog internal jika ada
+  const lines = text.split('\n');
+  const cleanLines = lines.filter(l => !l.trim().startsWith('*   User:') && !l.trim().startsWith('*   Persona:') && !l.trim().startsWith('*   Constraint:') && !l.trim().startsWith('*   Greeting:'));
+  return cleanLines.join('\n').trim();
+}
+
 async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperature = 0.3, jsonMode = true, retries = 1) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${apiKey}`;
 
@@ -347,7 +369,7 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(15000)
       });
 
       if (!res.ok) {
@@ -356,11 +378,8 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
       }
 
       const resJson = await res.json();
-      const candidate = resJson.candidates?.[0];
-      const parts = candidate?.content?.parts || [];
-      // Google Gemma memisahkan thought ke parts[0] { thought: true }. Ambil part jawaban bersih:
-      const answerPart = parts.find(p => !p.thought) || parts[parts.length - 1];
-      return answerPart?.text || '';
+      const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      return cleanGemmaOutput(rawText, jsonMode);
     } catch (e) {
       if (attempt === retries) throw e;
       await new Promise(r => setTimeout(r, 1500 * attempt));
