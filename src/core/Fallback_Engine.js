@@ -693,4 +693,10 @@ async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode =
   throw new Error('All OpenRouter fallback models exhausted.');
 }
 
-module.exports = { executeWithFallback, resetTokenAccumulator, getAccumulatedTokenUsage };
+module.exports = {
+  executeWithFallback,
+  resetTokenAccumulator,
+  getAccumulatedTokenUsage,
+  extractFirstValidJson,
+  validateResponseJson
+};

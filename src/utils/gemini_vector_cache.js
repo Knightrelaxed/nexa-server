@@ -138,8 +138,8 @@ async function getRelevantFacts(userQuery, options = {}) {
   const startTime = process.hrtime.bigint();
 
   try {
-    // 1. Ambil vektor query via Google Cloud Embedding (~150 ms)
-    const queryVector = await computeQueryVector(userQuery, 1500);
+    // 1. Ambil vektor query via Google Cloud Embedding (~200-800 ms)
+    const queryVector = await computeQueryVector(userQuery, 2500);
     if (!queryVector || queryVector.length === 0) {
       return { profileFacts: [], identityFacts: [], stats: { available: false } };
     }
