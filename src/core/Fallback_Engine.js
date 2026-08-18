@@ -225,19 +225,19 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }));
 
   // 2. Gemini 3.7 Flash (4 Keys)
-  const gemini37Block = geminiClients
+  const gemini37Block = googleApiKeys
     .filter(Boolean)
-    .map((client, i) => ({
+    .map((key, i) => ({
       name: `Tier X (Gemini 3.7 Flash Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(client, 'gemini-3.7-flash', prompt, systemInstruction, temperature, jsonMode, 1)
+      fn: () => callGeminiWithRetry(key, 'gemini-3.7-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
   // 3. Gemini 3.6 Flash (4 Keys)
-  const gemini36Block = geminiClients
+  const gemini36Block = googleApiKeys
     .filter(Boolean)
-    .map((client, i) => ({
+    .map((key, i) => ({
       name: `Tier X (Gemini 3.6 Flash Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
+      fn: () => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
   // 4. Cerebras Gemma 4 31B (4 Keys - PayGo / Fallback)
@@ -337,7 +337,8 @@ function cleanGemmaOutput(rawText, jsonMode = false) {
 }
 
 async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperature = 0.3, jsonMode = true, retries = 1) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemma-4-31b-it:generateContent?key=${apiKey}`;
+  const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
+  const url = `${baseUrl}/v1beta/models/gemma-4-31b-it:generateContent?key=${apiKey}`;
 
   // Injeksi Instruksi Anti-CoT (Mematikan Monolog Internal & Draf)
   let optimizedSys = systemInstruction || '';
@@ -387,26 +388,47 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
   }
 }
 
-async function callGeminiWithRetry(client, modelName, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
-  const generationConfig = { temperature };
-  if (jsonMode) generationConfig.responseMimeType = 'application/json';
-  
-  const model = client.getGenerativeModel({
-    model: modelName,
-    systemInstruction: systemInstruction,
-    generationConfig,
-    // Gemini berjalan di arsitektur Google TPU dengan penalaran mendalam & konteks 1M token.
-    // Diberi batas waktu 15.000ms (15 detik) agar cukup waktu untuk memproses beban berat.
-    requestOptions: { timeout: 15000 }
-  });
+async function callGeminiWithRetry(apiKey, modelName, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
+  const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
+  const url = `${baseUrl}/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+
+  const body = {
+    contents: [{
+      role: 'user',
+      parts: [{ text: prompt }]
+    }],
+    generationConfig: {
+      temperature,
+      maxOutputTokens: 1500
+    }
+  };
+
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  if (jsonMode) {
+    body.generationConfig.responseMimeType = 'application/json';
+  }
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const response = await model.generateContent(prompt);
-      return response.response.text();
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Gemini error: ${res.status} - ${err.error?.message || res.statusText}`);
+      }
+
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     } catch (e) {
       if (attempt === retries) throw e;
-      // Smart backoff delay jika terjadi spike 503 / 429 sesaat
       await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
     }
   }

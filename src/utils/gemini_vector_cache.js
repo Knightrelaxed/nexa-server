@@ -92,7 +92,8 @@ async function computeQueryVector(text, timeoutMs = 1500) {
     const apiKey = getNextApiKey();
     for (const model of models) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${apiKey}`;
+        const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
+        const url = `${baseUrl}/v1beta/models/${model}:embedContent?key=${apiKey}`;
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -205,7 +206,8 @@ async function generateAndSaveSnapshot() {
       }));
 
       const apiKey = getNextApiKey();
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents?key=${apiKey}`;
+      const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
+      const url = `${baseUrl}/v1beta/models/gemini-embedding-2:batchEmbedContents?key=${apiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
