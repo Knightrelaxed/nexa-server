@@ -154,7 +154,7 @@ KOMPONEN DATA HARI INI:
 9. Check-In Kebugaran Pagi: Tutup dengan menanyakan kualitas tidur semalam (skor 1-5 & cerita), tingkat energi sekarang (skor 1-5 & cerita), dan satu fokus mutlak hari ini. Beri panduan format jawaban natural.
 
 Transkrip Obrolan Kemarin:
-${yesterdayLog ? yesterdayLog.substring(0, 10000) : '(Tidak ada percakapan kemarin)'}
+${yesterdayLog ? yesterdayLog.substring(0, 2000) : '(Tidak ada percakapan kemarin)'}
 
 PEDOMAN FORMAT:
 - Gunakan bahasa Indonesia berkelas, hangat, proaktif, dan berwibawa.
