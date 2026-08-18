@@ -426,18 +426,21 @@ async function callGeminiWithRetry(apiKey, modelName, prompt, systemInstruction,
   const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
   const url = `${baseUrl}/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
+  const generationConfig = {
+    temperature,
+    maxOutputTokens: jsonMode ? 2048 : 4096
+  };
+
+  if (/3\.7|2\.5|2\.0/i.test(modelName)) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+
   const body = {
     contents: [{
       role: 'user',
       parts: [{ text: prompt }]
     }],
-    generationConfig: {
-      temperature,
-      maxOutputTokens: jsonMode ? 2048 : 4096,
-      thinkingConfig: {
-        thinkingBudget: 0
-      }
-    }
+    generationConfig
   };
 
   if (systemInstruction) {
