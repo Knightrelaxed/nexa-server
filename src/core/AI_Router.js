@@ -1,6 +1,7 @@
 const { executeWithFallback } = require('./Fallback_Engine');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 const { NEXA_PERSONALITY } = require('../config/personality');
+const semanticEngine = require('./Semantic_Retrieval_Engine');
 
 
 
@@ -110,6 +111,7 @@ async function loadPersonalFactsWithCache() {
 function invalidatePersonalFactsCache() {
   _personalFactsCache = null;
   _personalFactsCacheTime = 0;
+  semanticEngine.invalidateSemanticCache();
   console.log('[ROUTER] Personal facts cache invalidated. Will re-fetch on next message.');
 }
 
@@ -675,61 +677,65 @@ function _scoreFactRelevance(fact, tokens) {
 /**
  * Dynamic Progressive userProfile Fact Injection with Semantic Resonance & Multi-Word Scoring
  */
-function _selectUserProfileFacts(userProfile, userMessage) {
+function _selectUserProfileFacts(userProfile, userMessage, semanticMatches = []) {
   if (!userProfile || !Array.isArray(userProfile) || userProfile.length === 0) return [];
 
-  const tokens = _extractResonanceTokens(userMessage);
   const coreBase = userProfile.slice(0, PROFILE_CORE_COUNT);
 
+  // Jika ada temuan semantik berkecepatan tinggi dari Local ONNX Engine, utamakan temuan tersebut
+  if (Array.isArray(semanticMatches) && semanticMatches.length > 0) {
+    return Array.from(new Set([...semanticMatches.slice(0, PROFILE_KW_LIMIT), ...coreBase]));
+  }
+
+  const tokens = _extractResonanceTokens(userMessage);
   if (tokens.length === 0) {
     return coreBase;
   }
 
-  // Hitung relevansi seluruh profil pengguna
+  // Fallback ke pencocokan leksikal jika semantik tidak aktif
   const scored = userProfile.map(fact => ({
     fact,
     score: _scoreFactRelevance(fact, tokens)
   }));
 
-  // Ambil fakta dengan skor tertinggi (skor > 0)
   const resonant = scored
     .filter(s => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .map(s => s.fact);
 
-  // Tempatkan fakta profil yang paling beresonansi di paling atas, disusul profil dasar
-  const merged = Array.from(new Set([...resonant.slice(0, PROFILE_KW_LIMIT), ...coreBase]));
-  return merged;
+  return Array.from(new Set([...resonant.slice(0, PROFILE_KW_LIMIT), ...coreBase]));
 }
 
 /**
  * Dynamic Progressive coreIdentity Fact Injection with Semantic Resonance & Domain Trigger Scoring
  */
-function _selectCoreIdentityFacts(coreIdentity, userMessage) {
+function _selectCoreIdentityFacts(coreIdentity, userMessage, semanticMatches = []) {
   if (!coreIdentity || !Array.isArray(coreIdentity) || coreIdentity.length === 0) return [];
 
-  const tokens = _extractResonanceTokens(userMessage);
   const coreBase = coreIdentity.slice(0, IDENTITY_CORE_COUNT);
 
+  // Jika ada temuan semantik berkecepatan tinggi dari Local ONNX Engine, utamakan temuan tersebut
+  if (Array.isArray(semanticMatches) && semanticMatches.length > 0) {
+    return Array.from(new Set([...semanticMatches.slice(0, IDENTITY_KW_LIMIT), ...coreBase]));
+  }
+
+  const tokens = _extractResonanceTokens(userMessage);
   if (tokens.length === 0) {
     return coreBase;
   }
 
-  // Hitung relevansi untuk seluruh basis data identitas N.E.X.A
+  // Fallback ke pencocokan leksikal jika semantik tidak aktif
   const scored = coreIdentity.map(fact => ({
     fact,
     score: _scoreFactRelevance(fact, tokens)
   }));
 
-  // Ambil fakta yang beresonansi kuat dengan input pengguna
   const resonant = scored
     .filter(s => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .map(s => s.fact);
 
-  // Tempatkan fakta identitas & kapabilitas yang paling relevan di paling atas
-  const merged = Array.from(new Set([...resonant.slice(0, IDENTITY_KW_LIMIT), ...coreBase]));
-  return merged;
+  return Array.from(new Set([...resonant.slice(0, IDENTITY_KW_LIMIT), ...coreBase]));
 }
 
 /**
@@ -882,14 +888,31 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     }).join('\n')
     : '[Tidak ada riwayat obrolan sebelumnya]';
 
+  // 2.5. Fast Local Semantic Vector Retrieval (0.01s ONNX in RAM)
+  let semanticMatches = { profileFacts: [], identityFacts: [] };
+  try {
+    if (semanticEngine.isSemanticEngineReady()) {
+      semanticMatches = await semanticEngine.retrieveRelevantFacts(textInput, {
+        topKProfile: PROFILE_KW_LIMIT,
+        topKIdentity: IDENTITY_KW_LIMIT,
+        minScore: 0.74
+      });
+      if (semanticMatches.stats?.matchedProfileCount > 0 || semanticMatches.stats?.matchedIdentityCount > 0) {
+        console.log(`[ROUTER] 🎯 Semantic vector matched: ${semanticMatches.stats.matchedProfileCount} profiles, ${semanticMatches.stats.matchedIdentityCount} identities (${semanticMatches.stats.latencyMs} ms).`);
+      }
+    }
+  } catch (semErr) {
+    console.warn('[ROUTER] Semantic retrieval error (falling back to lexical):', semErr.message);
+  }
+
   // 3. Build personal facts context block (Step 4: Progressive userProfile injection)
   let factsContext = '';
-  const _selectedProfile = _selectUserProfileFacts(personalFacts.userProfile, textInput);
+  const _selectedProfile = _selectUserProfileFacts(personalFacts.userProfile, textInput, semanticMatches.profileFacts);
   if (_selectedProfile.length > 0) {
     factsContext += `\n[FAKTA PERMANEN TENTANG TUAN FAQIH — SELALU INGAT INI]\n${_selectedProfile.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
   }
   if (personalFacts.coreIdentity && personalFacts.coreIdentity.length > 0) {
-    const _selectedIdentity = _selectCoreIdentityFacts(personalFacts.coreIdentity, textInput);
+    const _selectedIdentity = _selectCoreIdentityFacts(personalFacts.coreIdentity, textInput, semanticMatches.identityFacts);
     factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${_selectedIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
   }
 

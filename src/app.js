@@ -132,6 +132,14 @@ if (require.main === module) {
     cronInterface.initCronJobs();
     console.log('[N.E.X.A] ⏰ Cron jobs initialized (Morning Briefing: 05:30 WIB)');
 
+    // Initialize Local ONNX Semantic Vector Retrieval Engine (multilingual-e5-small)
+    const { initSemanticEngine } = require('./core/Semantic_Retrieval_Engine');
+    initSemanticEngine().then(() => {
+      console.log('[N.E.X.A] 🧠 Semantic Vector Retrieval Engine active and warmed up.');
+    }).catch(e => {
+      console.warn('[N.E.X.A] Semantic Engine initialization warning:', e.message);
+    });
+
     // Recover pending transactions that were never sent to Telegram (e.g. after server restart)
     const financeEngine = require('./domain/Finance_Engine');
     financeEngine.recoverPendingTransactions().then(() => {
