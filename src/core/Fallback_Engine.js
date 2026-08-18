@@ -212,17 +212,17 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       : isHeavyContext(prompt, systemInstruction, options);
 
   const sacrMode = heavy
-    ? 'HEAVY 🧠 [Gemini 3.7 -> Gemini 3.6 -> Google Gemma 4]'
-    : 'LIGHT ⚡ [Cerebras -> Gemini 3.7 -> Gemini 3.6]';
+    ? 'HEAVY 🧠 [Google Gemma 4 (Anti-CoT) -> Gemini 3.7 -> Gemini 3.6]'
+    : 'LIGHT ⚡ [Google Gemma 4 (Anti-CoT) -> Gemini 3.7 -> Gemini 3.6]';
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
   asyncLog(`[SACR] Mode: ${sacrMode} | Total chars: ${inputChars}`);
 
-  // 1. Cerebras Gemma 4 31B (4 Keys)
-  const cerebrasBlock = cerebrasKeys
+  // 1. Google AI Studio Gemma 4 31B (Anti-CoT) (4 Keys - 14.4K RPD Free Quota per Key)
+  const googleGemmaBlock = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
-      name: `Tier X (Cerebras Gemma 4 Key ${i + 1})`,
-      fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
+      name: `Tier X (Google Gemma 4 Key ${i + 1} [Anti-CoT])`,
+      fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
   // 2. Gemini 3.7 Flash (4 Keys)
@@ -241,35 +241,34 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(client, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 4. Google AI Studio Gemma 4 31B (Skip-CoT) (4 Keys)
-  const googleGemmaBlock = googleApiKeys
+  // 4. Cerebras Gemma 4 31B (Backup)
+  const cerebrasBlock = cerebrasKeys
     .filter(Boolean)
     .map((key, i) => ({
-      name: `Tier X (Google Gemma 4 Key ${i + 1} [Skip-CoT])`,
-      fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
+      name: `Tier X (Cerebras Gemma 4 Key ${i + 1})`,
+      fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  // Penataan Top 12 Tiers Sesuai Mode SACR:
-  // MODE LIGHT: Cerebras (1-4) -> Gemini 3.7 (5-8) -> Gemini 3.6 (9-12)
-  // MODE HEAVY: Gemini 3.7 (1-4) -> Gemini 3.6 (5-8) -> Google Gemma 4 (9-12)
-  const top12Block = heavy
-    ? [...gemini37Block, ...gemini36Block, ...googleGemmaBlock]
-    : [...cerebrasBlock, ...gemini37Block, ...gemini36Block];
+  // Penataan Top 12 Tiers Sesuai SACR v2.1:
+  // Tier 1-4: Google Gemma 4 31B (57.6K RPD Free Pool)
+  // Tier 5-8: Gemini 3.7 Flash (Key 1..4)
+  // Tier 9-12: Gemini 3.6 Flash (Key 1..4)
+  const top12Block = [...googleGemmaBlock, ...gemini37Block, ...gemini36Block];
 
   const tiers = [
     // Tier 1-12 Top Engine
     ...top12Block.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
-    // Tier 13: Hugging Face Gemma 4 31B
-    ...(env.HF_INFERENCE_TOKEN ? [{
-      name: 'Tier 13 (Hugging Face Gemma 4 31B)',
-      fn: () => callHuggingFaceInference(prompt, systemInstruction, temperature, jsonMode)
+    // Tier 13: Cerebras Fallback
+    ...(cerebrasBlock.length > 0 ? [{
+      name: 'Tier 13 (Cerebras Gemma 4 Backup)',
+      fn: cerebrasBlock[0].fn
     }] : []),
     // Tier 14: Mistral Pixtral 12B
     ...(env.MISTRAL_API_KEY ? [{
       name: 'Tier 14 (Mistral Pixtral 12B)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
     }] : []),
-    // Tier 15: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
+    // Tier 15: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large)
     ...(env.PUTER_AUTH_TOKEN ? [{
       name: 'Tier 15 (Puter AI Pool - Codestral & GPT-4o)',
       fn: () => callPuter(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
@@ -348,7 +347,7 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(12000)
+        signal: AbortSignal.timeout(25000)
       });
 
       if (!res.ok) {
@@ -357,7 +356,11 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
       }
 
       const resJson = await res.json();
-      return resJson.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const candidate = resJson.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
+      // Google Gemma memisahkan thought ke parts[0] { thought: true }. Ambil part jawaban bersih:
+      const answerPart = parts.find(p => !p.thought) || parts[parts.length - 1];
+      return answerPart?.text || '';
     } catch (e) {
       if (attempt === retries) throw e;
       await new Promise(r => setTimeout(r, 1500 * attempt));
