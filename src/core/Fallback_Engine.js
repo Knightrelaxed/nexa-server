@@ -155,35 +155,68 @@ const getErrDetails = (e) => {
   return `[${status}] ${e.message} ${data ? '| ' + data : ''}`.substring(0, 500);
 };
 
+function extractFirstValidJson(str) {
+  if (!str || typeof str !== 'string') return null;
+  let text = str.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  const startIdx = text.indexOf('{');
+  if (startIdx === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const char = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') depth++;
+      else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          const candidate = text.substring(startIdx, i + 1);
+          try {
+            JSON.parse(candidate);
+            return candidate;
+          } catch (e) {}
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function validateResponseJson(str, jsonMode) {
   if (!jsonMode) return str;
   if (!str || typeof str !== 'string') throw new Error('Empty response string');
+
+  const validJson = extractFirstValidJson(str);
+  if (validJson) {
+    return validJson;
+  }
+
+  // Fallback ke array jika formatnya [ ... ]
   let cleanStr = str.replace(/```json/gi, '').replace(/```/g, '').trim();
-
-  // Cari bracket pembuka pertama — bisa array [ atau object {
   const firstBracket = cleanStr.indexOf('[');
-  const firstBrace = cleanStr.indexOf('{');
-
-  // Pilih yang lebih awal muncul di string
-  let startChar, endChar;
-  if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
-    startChar = '[';
-    endChar = ']';
-  } else if (firstBrace !== -1) {
-    startChar = '{';
-    endChar = '}';
-  } else {
-    throw new Error('No JSON bracket found in response');
+  const lastBracket = cleanStr.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    const arrCandidate = cleanStr.substring(firstBracket, lastBracket + 1);
+    JSON.parse(arrCandidate);
+    return arrCandidate;
   }
 
-  const startIdx = cleanStr.indexOf(startChar);
-  const endIdx = cleanStr.lastIndexOf(endChar);
-  if (startIdx !== -1 && endIdx > startIdx) {
-    cleanStr = cleanStr.substring(startIdx, endIdx + 1);
-  }
-
-  JSON.parse(cleanStr); // validate — throw jika malformed
-  return str;
+  throw new Error('No valid JSON object found in response: ' + str.substring(0, 80));
 }
 
 
