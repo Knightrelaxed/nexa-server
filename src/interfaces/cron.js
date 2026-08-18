@@ -195,6 +195,15 @@ function initCronJobs() {
       console.error('[CRON] Daily Memory Decay Pass failed:', e.message);
     }
 
+    // 3. Vector Snapshot Full Sync [SACR v3.0]
+    try {
+      const { generateAndSaveSnapshot } = require('../utils/gemini_vector_cache.js');
+      const snap = await generateAndSaveSnapshot();
+      console.log(`[CRON] Vector Snapshot full sync done: ${snap.total_profiles} profiles, ${snap.total_identities} identities.`);
+    } catch (vErr) {
+      console.warn('[CRON] Vector snapshot sync failed (non-blocking):', vErr.message);
+    }
+
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // [PHASE 7 — M1+M2] Morning Pass (setiap hari 08:15 WIB)

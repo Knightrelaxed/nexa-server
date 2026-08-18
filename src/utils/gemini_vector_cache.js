@@ -257,10 +257,49 @@ function isSnapshotReady() {
   return _isSnapshotLoaded;
 }
 
+/**
+ * Tambahkan fakta baru ke cache RAM & perbarui snapshot di disk secara asinkron (Auto-Sync)
+ * @param {string} content
+ * @param {'USER_PROFILE'|'CORE_IDENTITY'} type
+ */
+async function appendFactToVectorCache(content, type = 'USER_PROFILE') {
+  if (!content || typeof content !== 'string') return;
+  try {
+    const vec = await computeQueryVector(content, 3000);
+    if (!vec || vec.length === 0) return;
+
+    const newItem = {
+      id: Date.now(),
+      content: content.trim(),
+      vector: vec
+    };
+
+    if (type === 'CORE_IDENTITY') {
+      _cachedIdentityVectors.push(newItem);
+    } else {
+      _cachedProfileVectors.push(newItem);
+    }
+
+    // Tulis snapshot baru ke disk
+    const payload = {
+      generated_at: new Date().toISOString(),
+      total_profiles: _cachedProfileVectors.length,
+      total_identities: _cachedIdentityVectors.length,
+      profiles: _cachedProfileVectors,
+      identities: _cachedIdentityVectors
+    };
+    fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(payload), 'utf-8');
+    console.log(`[VECTOR-CACHE] ⚡ Fakta baru otomatis ter-embed & masuk ke snapshot (${type}): "${content.substring(0, 50)}..."`);
+  } catch (e) {
+    console.warn('[VECTOR-CACHE] Gagal auto-embed fakta baru:', e.message);
+  }
+}
+
 module.exports = {
   loadVectorSnapshot,
   computeQueryVector,
   getRelevantFacts,
   generateAndSaveSnapshot,
-  isSnapshotReady
+  isSnapshotReady,
+  appendFactToVectorCache
 };

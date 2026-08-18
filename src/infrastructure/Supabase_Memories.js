@@ -262,6 +262,13 @@ async function saveMemoryWithMeta(content, categoryType, type = 'USER_PROFILE') 
     return { success: false, id: null };
   }
   console.log(`[LIVING-MEMORY] ✅ Saved [${validCat}] to ${table}: "${String(content).substring(0, 60)}"`);
+
+  // [AUTO-SYNC VECTOR SNAPSHOT] Sinkronisasi instan ke cache vektor RAM & snapshot disk
+  try {
+    const { appendFactToVectorCache } = require('../utils/gemini_vector_cache.js');
+    appendFactToVectorCache(content, type).catch(e => console.warn('[VECTOR-CACHE] Auto-sync background failed:', e.message));
+  } catch (e) {}
+
   return { success: true, id: data?.[0]?.id ?? null };
 }
 
