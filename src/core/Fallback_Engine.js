@@ -412,7 +412,13 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
       }
 
       const resJson = await res.json();
-      const rawText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const parts = resJson.candidates?.[0]?.content?.parts || [];
+      const rawText = parts
+        .filter(p => !p.thought)
+        .map(p => p.text || '')
+        .join('\n')
+        .trim() || (parts[parts.length - 1]?.text || '');
+
       return cleanGemmaOutput(rawText, jsonMode);
     } catch (e) {
       if (attempt === retries) throw e;
@@ -459,7 +465,14 @@ async function callGeminiWithRetry(apiKey, modelName, prompt, systemInstruction,
       }
 
       const data = await res.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      const rawText = parts
+        .filter(p => !p.thought)
+        .map(p => p.text || '')
+        .join('\n')
+        .trim() || (parts[parts.length - 1]?.text || '');
+
+      return rawText;
     } catch (e) {
       if (attempt === retries) throw e;
       await new Promise(resolve => setTimeout(resolve, 1500 * attempt));
