@@ -282,7 +282,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }));
 
   // Penataan Top 12 Tiers Sesuai SACR v2.1:
-  // Tier 1-4: Google Gemma 4 31B Anti-CoT
+  // Tier 1-4: Google Gemma 4 31B Anti-CoT (57.6K RPD via Cloudflare Gateway)
   // Tier 5-8: Gemini 3.7 Flash
   // Tier 9-12: Gemini 3.6 Flash
   const top12Block = [...googleGemmaBlock, ...gemini37Block, ...gemini36Block];
@@ -290,24 +290,19 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const tiers = [
     // Tier 1-12 Top Engine
     ...top12Block.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
-    // Tier 13: Cerebras Gemma 4 31B (PayGo Fallback)
-    ...(cerebrasBlock.length > 0 ? [{
-      name: 'Tier 13 (Cerebras Gemma 4 Pool)',
-      fn: () => cerebrasBlock[0].fn()
-    }] : []),
-    // Tier 14: Mistral Pixtral 12B
+    // Tier 13: Mistral Pixtral 12B (European Datacenter)
     ...(env.MISTRAL_API_KEY ? [{
-      name: 'Tier 14 (Mistral Pixtral 12B)',
+      name: 'Tier 13 (Mistral Pixtral 12B)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
     }] : []),
-    // Tier 15: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
+    // Tier 14: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
     ...(env.PUTER_AUTH_TOKEN ? [{
-      name: 'Tier 15 (Puter AI Pool - Codestral & GPT-4o)',
+      name: 'Tier 14 (Puter AI Pool - Codestral & GPT-4o)',
       fn: () => callPuter(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
     }] : []),
-    // Tier 16: OpenRouter Multi-Model Free Pool
+    // Tier 15: OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
     ...(env.OPENROUTER_API_KEY ? [{
-      name: 'Tier 16 (OpenRouter)',
+      name: 'Tier 15 (OpenRouter Multi-Model Free Pool)',
       fn: () => callOpenRouter(prompt, systemInstruction, temperature, jsonMode)
     }] : [])
   ];
