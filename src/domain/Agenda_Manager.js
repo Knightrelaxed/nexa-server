@@ -178,6 +178,93 @@ async function _resolveTargetEvent(searchSummary = '', eventId = null) {
   return { id: null, summary: searchSummary };
 }
 
+/**
+ * 🔄 Universal RFC 5545 iCalendar Recurrence Generator
+ * Constructs standard compliant RRULE strings for Google Calendar
+ */
+function buildRRule(rec) {
+  if (!rec) return '';
+  if (typeof rec === 'string') {
+    let s = rec.trim();
+    if (!s.toUpperCase().startsWith('RRULE:')) {
+      s = `RRULE:${s}`;
+    }
+    return s;
+  }
+
+  if (typeof rec === 'object') {
+    const parts = [];
+    const freq = (rec.frequency || rec.freq || 'WEEKLY').toUpperCase();
+    parts.push(`FREQ=${freq}`);
+
+    if (rec.interval && parseInt(rec.interval) > 1) {
+      parts.push(`INTERVAL=${parseInt(rec.interval)}`);
+    }
+
+    if (rec.by_day || rec.byday) {
+      const days = Array.isArray(rec.by_day || rec.byday) 
+        ? (rec.by_day || rec.byday).join(',')
+        : String(rec.by_day || rec.byday).toUpperCase();
+      parts.push(`BYDAY=${days}`);
+    }
+
+    if (rec.by_month_day || rec.bymonthday) {
+      parts.push(`BYMONTHDAY=${parseInt(rec.by_month_day || rec.bymonthday)}`);
+    }
+
+    if (rec.count && parseInt(rec.count) > 0) {
+      parts.push(`COUNT=${parseInt(rec.count)}`);
+    } else if (rec.until_date || rec.until) {
+      const u = String(rec.until_date || rec.until).replace(/[-:]/g, '');
+      if (u.includes('T')) {
+        parts.push(`UNTIL=${u.split('.')[0]}Z`);
+      } else {
+        parts.push(`UNTIL=${u.slice(0, 8)}T235959Z`);
+      }
+    }
+
+    return `RRULE:${parts.join(';')}`;
+  }
+
+  return '';
+}
+
+/**
+ * 📅 Calculate the first occurrence ISO date-time from an anchor date and day-of-week
+ * E.g., anchor = "2026-08-25", day = "MO", time = "08:00"
+ * Returns: "2026-08-31T08:00:00+07:00"
+ */
+function calculateFirstOccurrenceDate(anchorDateStr, dayOfWeekCode = 'MO', timeHHMM = '08:00') {
+  const dayMap = {
+    SU: 0, SUN: 0, MINGGU: 0,
+    MO: 1, MON: 1, SENIN: 1,
+    TU: 2, TUE: 2, SELASA: 2,
+    WE: 3, WED: 3, RABU: 3,
+    TH: 4, THU: 4, KAMIS: 4,
+    FR: 5, FRI: 5, JUMAT: 5,
+    SA: 6, SAT: 6, SABTU: 6
+  };
+
+  const code = String(dayOfWeekCode || '').toUpperCase().trim();
+  const targetDay = dayMap[code] !== undefined ? dayMap[code] : 1;
+
+  const anchor = anchorDateStr ? new Date(`${anchorDateStr.split('T')[0]}T00:00:00+07:00`) : new Date();
+  const anchorDay = anchor.getDay();
+
+  let daysToAdd = (targetDay - anchorDay + 7) % 7;
+  const targetDate = new Date(anchor.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+  const yyyy = targetDate.getFullYear();
+  const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const dd = String(targetDate.getDate()).padStart(2, '0');
+
+  const cleanTime = (timeHHMM || '08:00').trim();
+  const [hh, min] = cleanTime.split(':');
+  const finalHH = String(hh || '08').padStart(2, '0');
+  const finalMin = String(min || '00').padStart(2, '0');
+
+  return `${yyyy}-${mm}-${dd}T${finalHH}:${finalMin}:00+07:00`;
+}
+
 async function _tryProactiveTaskSuggestion(summary) {
   try {
     const { callAI } = require('../core/AI_Router');
@@ -205,7 +292,7 @@ async function _tryProactiveTaskSuggestion(summary) {
  * Main handler for Calendar Intent (Zero-Friction & Probabilistic)
  */
 async function handleCalendarIntent(extractedData, rawUserText = '') {
-  let { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence, color_id, with_meet } = extractedData;
+  let { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence, color_id, with_meet, events, semester_start, semester_end, until_date, count } = extractedData;
   console.log(`[AGENDA] Executing Calendar Intent: ${action} | summary: "${summary}"`);
 
   // Sanitize hallucinated summaries in READ actions
@@ -311,6 +398,103 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
       }
 
       return { status: 'SUCCESS', message: successMsg, eventId: result.id, proactiveTasks };
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 1b. ACTION: CREATE_MULTIPLE (Batch Semester / Multi-Course Scheduling)
+    // ════════════════════════════════════════════════════════════════
+    else if (action === 'CREATE_MULTIPLE') {
+      const eventList = events || [];
+      if (eventList.length === 0) {
+        return { status: 'FAILED', message: '❌ Tidak ada daftar jadwal atau mata kuliah yang disebutkan untuk dibuat.' };
+      }
+
+      const semStart = semester_start || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      const semEnd = semester_end || until_date || null;
+      const createdResults = [];
+
+      for (const ev of eventList) {
+        try {
+          const evSummary = ev.summary || ev.title;
+          if (!evSummary) continue;
+
+          let evStart = ev.start || null;
+          let evEnd = ev.end || null;
+          const dayCode = ev.day_of_week || ev.day || 'MO';
+          const startTimeStr = ev.start_time || '08:00';
+          const endTimeStr = ev.end_time || null;
+
+          if (!evStart) {
+            evStart = calculateFirstOccurrenceDate(semStart, dayCode, startTimeStr);
+          }
+
+          const sDate = new Date(evStart);
+          let durationMins = null;
+          if (!evEnd) {
+            if (endTimeStr) {
+              const [eH, eM] = endTimeStr.split(':');
+              const eDate = new Date(sDate);
+              eDate.setHours(parseInt(eH), parseInt(eM || '0'), 0);
+              evEnd = eDate.toISOString();
+              durationMins = Math.max(15, Math.round((eDate.getTime() - sDate.getTime()) / 60000));
+            } else {
+              durationMins = inferProbableDuration(evSummary, rawUserText);
+              evEnd = new Date(sDate.getTime() + durationMins * 60000).toISOString();
+            }
+          } else {
+            durationMins = Math.max(15, Math.round((new Date(evEnd).getTime() - sDate.getTime()) / 60000));
+          }
+
+          // Build Recurrence Rule
+          let rrule = ev.recurrence ? buildRRule(ev.recurrence) : '';
+          if (!rrule && (semEnd || count || ev.count || ev.until_date)) {
+            rrule = buildRRule({
+              frequency: 'WEEKLY',
+              by_day: dayCode,
+              until_date: semEnd || ev.until_date,
+              count: count || ev.count
+            });
+          } else if (!rrule && semStart) {
+            // Default weekly recurrence for courses
+            rrule = buildRRule({
+              frequency: 'WEEKLY',
+              by_day: dayCode,
+              until_date: semEnd
+            });
+          }
+
+          const evColor = ev.color_id || color_id || '7'; // Default 7 = Peacock (Academic Blue)
+          const evLocation = ev.location || '';
+          const evDesc = ev.description || (rrule ? `Jadwal Berulang Perkuliahan: ${evSummary}` : '');
+
+          await googleWorkspace.createCalendarEvent(
+            evSummary,
+            evStart,
+            evEnd,
+            evDesc,
+            evLocation,
+            reminder_minutes || [30],
+            rrule,
+            evColor
+          );
+
+          const sDayName = sDate.toLocaleDateString('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' });
+          const sTimeFmt = sDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+          const eTimeFmt = new Date(evEnd).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+
+          createdResults.push(`   • 📚 <b>${escapeHtml(evSummary)}</b>: ${sDayName}, ${sTimeFmt}–${eTimeFmt} WIB${evLocation ? ` (📍 ${escapeHtml(evLocation)})` : ''}`);
+        } catch (e) {
+          createdResults.push(`   • ❌ Gagal (${escapeHtml(ev.summary || 'Jadwal')}): ${e.message}`);
+        }
+      }
+
+      let responseMsg = `🗓️ <b>${createdResults.length} Jadwal Perkuliahan Berhasil Dibuat di Kalender!</b>\n\n${createdResults.join('\n')}`;
+      if (semEnd) {
+        const untilFmt = new Date(semEnd).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        responseMsg += `\n\n🔄 <i>Terjadwal berulang setiap minggu hingga <b>${untilFmt}</b>.</i>`;
+      }
+
+      return { status: 'SUCCESS', message: responseMsg, count: createdResults.length };
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -492,6 +676,8 @@ function cancelPending(summary) {
 module.exports = {
   handleCalendarIntent,
   inferProbableDuration,
+  buildRRule,
+  calculateFirstOccurrenceDate,
   getLastRenderedCalendarEvents: () => _lastRenderedCalendarEvents,
   tryResolvePending,
   cancelPending

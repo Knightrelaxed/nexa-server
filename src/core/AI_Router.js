@@ -349,7 +349,20 @@ OUTPUT JSON FORMAT:
     //   Contoh split: "belanja indomaret 50rb: beras 20rb, sabun 15rb, es krim 15rb" → is_split=true, items=[{beras,20000,Bahan Makanan},{sabun,15000,Perawatan},{es krim,15000,Jajan}]
     //   Contoh BUKAN split: "beli nasi goreng 15rb" → is_split=false (satu kategori, RECORD biasa)
     //   - EDIT/DELETE last tx: set search_keyword="LATEST" (Triggers: "hapus yang tadi", "ubah yang barusan").
-    // CALENDAR: { action: "CREATE|DELETE|UPDATE|READ|READ_TODAY|READ_TOMORROW|READ_UPCOMING", summary, start: "ISO+07:00", end: "ISO+07:00", description, eventId, location, reminder_minutes: [], recurrence: "RRULE...", color_id }
+    // CALENDAR: { action: "CREATE|CREATE_MULTIPLE|DELETE|UPDATE|READ|READ_TODAY|READ_TOMORROW|READ_UPCOMING", summary, start: "ISO+07:00", end: "ISO+07:00", description, eventId, location, reminder_minutes: [], recurrence: "RRULE...", color_id, events: [], semester_start: "YYYY-MM-DD", semester_end: "YYYY-MM-DD" }
+    //   - CREATE_MULTIPLE (Batch Semester / Multi-Course Scheduling):
+    //     * Triggers: "jadwalkan kuliah semester ini: 1. Senin 08:00 - 10:00 Sastra Arab, 2. Selasa 10:00 - 12:00 Diplomasi...", "buat jadwal kuliah semester ganjil..."
+    //     * Set action="CREATE_MULTIPLE", semester_start="YYYY-MM-DD", semester_end="YYYY-MM-DD", events=[{summary, day_of_week: "MO|TU|WE|TH|FR|SA|SU", start_time: "HH:MM", end_time: "HH:MM", location, recurrence: "RRULE:FREQ=WEEKLY;BYDAY=...;UNTIL=..."}]
+    //   - RECURRENCE (RRULE) RULES:
+    //     * "tiap hari" -> "RRULE:FREQ=DAILY"
+    //     * "setiap hari kerja / senin-jumat" -> "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+    //     * "tiap kamis" -> "RRULE:FREQ=WEEKLY;BYDAY=TH"
+    //     * "tiap senin dan kamis" -> "RRULE:FREQ=WEEKLY;BYDAY=MO,TH"
+    //     * "tiap 2 minggu di hari jumat" -> "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=FR"
+    //     * "tiap tanggal 25" -> "RRULE:FREQ=MONTHLY;BYMONTHDAY=25"
+    //     * "tiap kamis minggu ke-3" -> "RRULE:FREQ=MONTHLY;BYDAY=3TH"
+    //     * "selama 14 pertemuan / 14 kali" -> "...;COUNT=14"
+    //     * "sampai 31 Desember 2026 / 1 semester" -> "...;UNTIL=20261231T170000Z"
     //   - Triggers: "jadwal hari ini" -> READ_TODAY, "jadwal besok" -> READ_TOMORROW, "jadwal minggu ini" -> READ_UPCOMING, "jadwal tgl X" -> READ.
     //   - FUZZY TEMPORAL ANCHORS (WIB):
     //     * "pagi" -> 09:00 WIB, "siang" -> 13:00 WIB, "sore" -> 16:00 WIB, "malam" -> 20:00 WIB, "habis/ba'da ashar" -> 15:30 WIB, "ba'da isya" -> 19:30 WIB, "nanti" -> +30m.
@@ -366,7 +379,7 @@ OUTPUT JSON FORMAT:
     //   - due_date: STRICTLY the task DEADLINE (kapan tugas harus selesai, e.g. "deadline lusa" -> due_date=lusa).
     //   - calendar_start_time: Waktu MULAI BLOK KERJA jika user menyebut jam pengerjaan (e.g. "besok jam 8 malam kerjakan makalah").
     //   - ORDINAL / MULTI-INDEX / RELATIVE ACTIONS:
-    //     * "tandai tugas 1, 2, 4 selesai" / "tandai tugad1,2,4 selesai" / "selesaikan 1 dan 3" -> action="COMPLETE", search_keyword="1,2,4" (or tasks=["1","2","4"]). NEVER map completion to CREATE_MULTIPLE!
+    //     * "tandai tugas 1, 2, 4 selesai" / "selesaikan 1 dan 3" -> action="COMPLETE", search_keyword="1,2,4" (or tasks=["1","2","4"]). NEVER map completion to CREATE_MULTIPLE!
     //     * "hapus tugas 1, 3" / "hapus tugas 2 dan 4" -> action="DELETE", search_keyword="1,3"
     //     * "tandai yang pertama/ke-1/nomor 1 selesai" -> action="COMPLETE", search_keyword="INDEX_1"
     //     * "tandai yang kedua/ke-2/nomor 2 selesai" -> action="COMPLETE", search_keyword="INDEX_2"
@@ -559,7 +572,7 @@ const DOMAIN_KEYWORD_SYNONYMS = {
   'baterai': ['baterai', 'battery', 'daya', 'charging', 'telemetri'],
   'volume': ['volume', 'suara', 'speaker', 'audio', 'set_volume'],
   'dnd': ['dnd', 'jangan ganggu', 'force_dnd'],
-  
+
   // Voice & Real-Time Call Interaction
   'telepon': ['telepon', 'call', 'panggilan', 'dering', 'ringtone', 'fakecallactivity', 'simulate_incoming_call'],
   'call': ['telepon', 'call', 'panggilan', 'dering', 'ringtone', 'fakecallactivity', 'simulate_incoming_call'],
@@ -815,7 +828,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
 
   // ── Log Analysis Intent Detection (Universal — works on all interfaces) ───
   const isVisionInput = textInput.includes('[SISTEM PENGLIHATAN N.E.X.A');
-  const textToCheck = isVisionInput 
+  const textToCheck = isVisionInput
     ? (textInput.match(/Konteks\/Caption dari Tuan Faqih:\s*"([^"]*)"/i)?.[1] || '')
     : textInput;
 
@@ -863,13 +876,13 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     }),
     (!isShortReflex && geminiVectorCache.isSnapshotReady())
       ? geminiVectorCache.getRelevantFacts(textInput, {
-          topKProfile: PROFILE_KW_LIMIT,
-          topKIdentity: IDENTITY_KW_LIMIT,
-          minScore: 0.58
-        }).catch(e => {
-          console.warn('[ROUTER] Semantic retrieval warning:', e.message);
-          return { profileFacts: [], identityFacts: [] };
-        })
+        topKProfile: PROFILE_KW_LIMIT,
+        topKIdentity: IDENTITY_KW_LIMIT,
+        minScore: 0.58
+      }).catch(e => {
+        console.warn('[ROUTER] Semantic retrieval warning:', e.message);
+        return { profileFacts: [], identityFacts: [] };
+      })
       : Promise.resolve({ profileFacts: [], identityFacts: [] })
   ]);
 

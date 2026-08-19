@@ -194,9 +194,9 @@ async function createCalendarEvent(summary, startTime, endTime, description = ''
     };
   }
 
-  // Add recurrence if provided (RRULE string)
+  // Add recurrence if provided (RRULE string or array)
   if (recurrence) {
-    requestBody.recurrence = [recurrence];
+    requestBody.recurrence = Array.isArray(recurrence) ? recurrence : [recurrence];
   }
 
   const response = await calendar.events.insert({
