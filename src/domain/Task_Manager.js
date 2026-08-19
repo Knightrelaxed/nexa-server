@@ -131,7 +131,7 @@ async function _resolveSingleTargetTask(searchKeyword = '') {
 }
 
 /**
- * Resolve multiple target tasks from array or comma/number list
+ * Resolve multiple target tasks from array, object, or comma/number list
  */
 async function _resolveTargetTasks(input) {
   if (!input) return [];
@@ -139,10 +139,15 @@ async function _resolveTargetTasks(input) {
   if (Array.isArray(input)) {
     const items = [];
     for (const el of input) {
-      const resolved = await _resolveTargetTasks(el);
+      const val = (typeof el === 'object' && el !== null) ? (el.title || el.search_keyword || el.name || JSON.stringify(el)) : el;
+      const resolved = await _resolveTargetTasks(val);
       items.push(...resolved);
     }
     return items;
+  }
+
+  if (typeof input === 'object' && input !== null) {
+    return await _resolveTargetTasks(input.title || input.search_keyword || input.name || '');
   }
 
   const s = String(input).trim();

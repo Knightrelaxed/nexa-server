@@ -134,9 +134,10 @@ async function _ensureWorkingMemoryCalendar() {
  * Resolve target event ID or summary from working memory or ordinal references
  */
 async function _resolveTargetEvent(searchSummary = '', eventId = null) {
-  if (eventId) return { id: eventId, summary: searchSummary };
+  if (eventId) return { id: eventId, summary: typeof searchSummary === 'string' ? searchSummary : (searchSummary?.summary || '') };
 
-  const s = String(searchSummary || '').toLowerCase().trim();
+  const raw = (typeof searchSummary === 'object' && searchSummary !== null) ? (searchSummary.summary || searchSummary.title || '') : searchSummary;
+  const s = String(raw || '').toLowerCase().trim();
   await _ensureWorkingMemoryCalendar();
 
   // Direct number index check (e.g. "1", "2", "index_1", "jadwal 1")
