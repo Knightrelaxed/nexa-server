@@ -37,14 +37,16 @@ export default async function handler(req, res) {
     const geminiPrompt = prompt || 'Deskripsikan gambar ini secara detail dalam Bahasa Indonesia.';
     const sysPrompt = system_prompt || '';
 
+    // Use proper systemInstruction + contents separation for better accuracy
     const payload = {
+      ...(sysPrompt ? { systemInstruction: { parts: [{ text: sysPrompt }] } } : {}),
       contents: [{
         parts: [
-          { text: sysPrompt ? `${sysPrompt}\n\n${geminiPrompt}` : geminiPrompt },
+          { text: geminiPrompt },
           { inlineData: { mimeType: contentType, data: base64Image } },
         ],
       }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+      generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
     };
 
     const geminiResp = await fetch(

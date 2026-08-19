@@ -1624,12 +1624,37 @@ async function handleTelegramWebhook(req, res) {
         console.log('[TELEGRAM] Photo received. Processing (11-Tier God Mode Vision)...');
         const largestPhoto = message.photo[message.photo.length - 1];
         const visionDescription = await visionEngine.processTelegramImage(largestPhoto.file_id, message.caption || '');
+
+        // ── Inject current week's concrete date map so Router never guesses ──
+        const _jakartaNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const _dayOfWeek = _jakartaNow.getDay(); // 0=Sun,1=Mon,...
+        const _weekMonday = new Date(_jakartaNow);
+        _weekMonday.setDate(_jakartaNow.getDate() - ((_dayOfWeek + 6) % 7));
+        _weekMonday.setHours(0, 0, 0, 0);
+        const _hariMap = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+        const _weekDates = [];
+        for (let _i = 0; _i < 7; _i++) {
+          const _d = new Date(_weekMonday);
+          _d.setDate(_weekMonday.getDate() + _i);
+          const _iso = _d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+          const _label = _d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' });
+          _weekDates.push(`  ${_hariMap[_d.getDay()]}: ${_iso} (${_label})`);
+        }
+        const _weekMapText = _weekDates.join('\n');
+
         textInput = `[SISTEM PENGLIHATAN N.E.X.A TELAH MEMBACA GAMBAR]
 Deskripsi Gambar: ${visionDescription}
 Konteks/Caption dari Tuan Faqih: "${message.caption || '(Tidak ada caption)'}"
 
-Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunakan 'Deskripsi Gambar' di atas sebagai matamu untuk menjawabnya secara natural.`;
-        console.log('[VISION] Image analysis result formatted for Router.');
+[PETA TANGGAL MINGGU INI — WAJIB DIGUNAKAN UNTUK PENJADWALAN]
+Berikut adalah tanggal konkret setiap hari pada minggu yang sedang berjalan (WIB):
+${_weekMapText}
+
+PERINGATAN KRITIS UNTUK AI ROUTER:
+- Jika Tuan Faqih meminta menjadwalkan berdasarkan hari (Senin, Selasa, dll), WAJIB gunakan tanggal ISO dari peta di atas. JANGAN menebak atau menggunakan tanggal lain.
+- Jika gambar berupa TABEL JADWAL (piket/roster), ekstrak SETIAP SEL yang berisi nama Tuan secara akurat, petakan ke hari dan tanggal yang benar sesuai kolom tabel.
+- Gunakan 'Deskripsi Gambar' di atas sebagai referensi visual untuk menjawab permintaan Tuan secara presisi.`;
+        console.log('[VISION] Image analysis result formatted for Router (with week date anchor).');
       } catch (e) {
         console.error('[VISION] All 11 Vision Tiers FAILED:', e.message);
         await respondToTelegram('⚠️ Maaf Tuan, seluruh 11 lapisan sistem penglihatan N.E.X.A (4x Gemini 2.5 + 4x Groq + 2x Gemini 2.0 + HuggingFace) gagal merespons. Semua provider AI sedang down secara bersamaan.');
