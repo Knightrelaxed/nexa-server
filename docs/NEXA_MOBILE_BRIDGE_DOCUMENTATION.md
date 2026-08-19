@@ -482,16 +482,19 @@ Modul perekam suara dirancang terpisah dan **100% Reusable** untuk seluruh kebut
     }
   }
   ```
-- **`PLAY_AUDIO_STREAM`:**
+- **`PLAY_AUDIO_STREAM` / `CALL_AUDIO_PLAY` (Downlink PCM 24kHz):**
   ```json
   {
-    "type": "EXECUTE_COMMAND",
-    "command_id": "cmd_reply_1786003065000",
-    "action": "PLAY_AUDIO_STREAM",
-    "params": {
-      "audio_base64": "",
-      "audio_format": "PCM_16BIT_16KHZ_MONO"
-    }
+    "type": "CALL_AUDIO_PLAY",
+    "pcm_chunk": "UklGRi... (String Base64 PCM 24kHz 16-bit Mono ~40-80ms Audio Frame)"
+  }
+  ```
+- **`CALL_LIVE_READY`:**
+  ```json
+  {
+    "type": "CALL_LIVE_READY",
+    "sessionId": "cmd_call_1787103580837_p9blho",
+    "model": "models/gemini-3.1-flash-live-preview"
   }
   ```
 
@@ -501,37 +504,98 @@ Modul perekam suara dirancang terpisah dan **100% Reusable** untuk seluruh kebut
   {
     "type": "CALL_EVENT",
     "event": "CALL_ACCEPTED",
-    "command_id": "cmd_call_1786003061219",
+    "command_id": "cmd_call_1787103580837_p9blho",
     "caller_name": "N.E.X.A Assistant",
     "device_name": "Samsung_A33_5G",
-    "timestamp": 1786003062000
+    "timestamp": 1787103581000
   }
   ```
-- **`CALL_REJECTED`:**
+- **`CALL_AUDIO_STREAM` (Uplink PCM 16kHz Realtime Mic):**
+  ```json
+  {
+    "type": "CALL_AUDIO_STREAM",
+    "command_id": "cmd_call_1787103580837_p9blho",
+    "pcm_chunk": "V2F2Z... (String Base64 PCM 16kHz 16-bit Mono ~32ms Audio Frame)"
+  }
+  ```
+- **`CALL_FINISHED`:**
   ```json
   {
     "type": "CALL_EVENT",
-    "event": "CALL_REJECTED",
-    "command_id": "cmd_call_1786003061219",
-    "caller_name": "N.E.X.A Assistant",
-    "rejection_count": 1,
+    "event": "CALL_FINISHED",
+    "command_id": "cmd_call_1787103580837_p9blho",
     "device_name": "Samsung_A33_5G",
-    "timestamp": 1786003062500
-  }
-  ```
-- **`CALL_AUDIO_REPLY`:**
-  ```json
-  {
-    "type": "CALL_EVENT",
-    "event": "CALL_AUDIO_REPLY",
-    "command_id": "cmd_call_1786003061219",
-    "caller_name": "N.E.X.A Assistant",
-    "audio_base64": "UklGRi... (String Base64 PCM 16kHz 16-bit Mono 128.000 Bytes)",
-    "audio_format": "PCM_16BIT_16KHZ_MONO",
-    "device_name": "Samsung_A33_5G",
-    "timestamp": 1786003073000
+    "timestamp": 1787103620000
   }
   ```
 
 ---
-*Dokumentasi Lengkap Ekosistem N.E.X.A Assistant (Update Terakhir: 2026).*
+
+## 6. Real-Time Multimodal Live Voice Architecture (Full-Duplex PCM Stream)
+
+Sistem Panggilan N.E.X.A 3.0 berevolusi dari model *Turn-Based TTS* konvensional menjadi **Real-Time Multimodal Voice Engine** berkecepatan tinggi dengan latensi respons sub-detik (**TTFA <600ms**).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Tuan as 🗣️ Tuan Faqih (Mic HP)
+    participant Android as 📱 Nexa Mobile Bridge (VoiceStreamHandler)
+    participant Relay as 🌐 Cloudflare Worker Relay (nexa-relay)
+    participant Server as ☁️ N.E.X.A Core (Live_Voice_Engine)
+    participant Google as 🧠 Google Gemini Live API (BidiGenerateContent)
+    participant DB as 🗄️ Supabase / Local Memory Cache
+
+    Note over Tuan,Google: FASE 1: HANDSHAKE & STREAMING PCM
+    Android->>Server: CALL_ACCEPTED (cmd_id)
+    Server->>Relay: WSS Handshake via wss://nexa-relay.../ws/...
+    Relay->>Google: BidiGenerateContent (Gemini 3.1 Flash Live Preview)
+    Google-->>Server: setupComplete: {}
+    Server-->>Android: CALL_LIVE_READY (Session Active)
+
+    Note over Tuan,Google: FASE 2: PERCAKAPAN DUA ARAH (TURN-AWARE DUPLEX)
+    Tuan->>Android: "Catat pengeluaran 20 ribu beli bensin pakai Cash"
+    Android->>Server: CALL_AUDIO_STREAM (16kHz PCM Base64)
+    Server->>Google: realtimeInput.audio { mimeType: "audio/pcm;rate=16000", data }
+    
+    Note over Google,DB: FASE 3: REAL-TIME TOOL CALLING (INTENT EXECUTION)
+    Google-->>Server: toolCall: recordExpense(amount: 20000, desc: "bensin", method: "Cash")
+    Server->>DB: writeTransaction() -> Supabase Insert (1ms)
+    DB-->>Server: { status: "SUCCESS", transaction_id: "trx_99182" }
+    Server-->>Google: toolResponse: { status: "SUCCESS", message: "Tersimpan" }
+    
+    Note over Google,Tuan: FASE 4: VOKAL RESPON FENRIR
+    Google-->>Server: modelTurn.parts[].inlineData (24kHz PCM Base64)
+    Server-->>Android: CALL_AUDIO_PLAY (24kHz PCM Base64)
+    Android->>Tuan: 🔊 Loudspeaker / Earpiece Suara Fenrir Bersuara Lancar
+```
+
+### 6.1. Turn-Aware Duplex State Machine & Anti-Feedback
+* **Downlink Priority (Saat N.E.X.A Berbicara):**
+  Mic input di-pause sementara agar suara dari speaker bawah tidak masuk ke mikrofon dan tidak membingungkan server-side VAD Google (*mencegah False Barge-In*).
+* **Uplink Priority (Saat Giliran Tuan Berbicara):**
+  Mic langsung terbuka 100% sensitif dengan threshold 0 RMS. Setiap bisikan atau ucapan Tuan seketika diteruskan ke Google.
+* **Hardware Session Pairing:**
+  `AudioRecord` dan `AudioTrack` dikunci pada satu `hardwareSessionId` yang sama, memungkinkan chip DSP Samsung Exynos (`AcousticEchoCanceler` & `NoiseSuppressor`) meredam gema secara hardware.
+* **Software PCM 16-Bit Gain Booster:**
+  Algoritma penguat amplitudo 2.2x dengan proteksi *soft clipping* menghasilkan suara vokal yang tebal, jernih, dan bertenaga.
+
+---
+
+## 7. Desain Panggilan Mirip WhatsApp (Lockscreen Wake & Zero-Footprint Task)
+
+Sistem panggilan `FakeCallActivity` dirancang untuk meniru pengalaman panggilan native WhatsApp:
+
+1. **Layar Bangun Otomatis Saat Terkunci (*Screen Bright WakeLock*):**
+   - Menggunakan `PowerManager.SCREEN_BRIGHT_WAKE_LOCK`, `setShowWhenLocked(true)`, `setTurnScreenOn(true)`, `FLAG_KEEP_SCREEN_ON`, dan `requestDismissKeyguard()`.
+   - Ketika HP dalam keadaan tidur/terkunci di meja, layar seketika menyala terang dan menampilkan layar panggilan di atas lockscreen tanpa perlu membuka kunci PIN/sidik jari.
+2. **Kembali Mulus Tanpa Membuka Aplikasi Nexa (*Zero-Footprint Task Stack*):**
+   - `FakeCallActivity` berjalan di task stack terisolasi (`taskAffinity="com.nexa.mobilebridge.call"` + `launchMode="singleInstance"`).
+   - Saat panggilan dimatikan, sistem mengeksekusi `finishAndRemoveTask()`.
+   - **Hasil:** Jika pengguna sebelumnya sedang membuka Galeri, layar langsung kembali ke Galeri; jika sedang di YouTube/WhatsApp, langsung kembali ke YouTube/WhatsApp tanpa pernah memunculkan dashboard Nexa Bridge.
+3. **UI Minimalis Ikonik (*Icon-Only Floating Buttons*):**
+   - **Tombol Kiri (Speaker Toggle):** Ikon Speaker Minimalis Tergaris Miring Merah (Earpiece / Speaker Atas) $\leftrightarrow$ Ikon Speaker Berpendar Cyan dengan Gelombang Suara (Loudspeaker / Speaker Utama).
+   - **Tombol Kanan (End Call):** Lingkaran merah elegan untuk menutup panggilan seketika.
+
+---
+*Dokumentasi Resmi Ekosistem N.E.X.A Assistant & Nexa Mobile Bridge (Update Terakhir: 2026).*
+

@@ -1639,48 +1639,57 @@ N.E.X.A 3.0 menanggalkan ketergantungan pada API berbayar seperti Google Maps Pl
 
 ---
 
-### 11.6 Interaksi Suara & Panggilan Masuk Interaktif (*FakeCallActivity*)
+### 11.6 Interaksi Suara Real-Time & Panggilan Multimodal (*Live Voice Engine*)
 
-Untuk situasi kritis, briefing pagi, atau interupsi penting, N.E.X.A dapat melakukan **panggilan telepon dua arah langsung ke layar HP**:
+N.E.X.A 3.0 berevolusi dari sekadar panggilan berbasis *Text-to-Speech* menjadi **Real-Time Multimodal Full-Duplex Voice Engine** yang memanfaatkan **Google Gemini Multimodal Live API (`BidiGenerateContent`)** berlatensi sub-detik (**TTFA <600ms**):
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Tuan as Tuan Faqih (HP)
-    participant Bridge as Nexa Bridge (Android)
-    participant Server as N.E.X.A Server Core (VPS)
-    participant Brain as AI Router & Whisper STT
+    actor Tuan as 🗣️ Tuan Faqih (Mic HP)
+    participant Bridge as 📱 Nexa Bridge (VoiceStreamHandler)
+    participant Relay as 🌐 Cloudflare Worker Relay (nexa-relay)
+    participant Server as ☁️ N.E.X.A Core (Live_Voice_Engine)
+    participant Google as 🧠 Google Gemini Live API
+    participant Tools as 🛠️ Live Tool Registry & DB
 
-    Server->>Bridge: SIMULATE_INCOMING_CALL (Caller: "N.E.X.A", Message)
-    Bridge->>Tuan: 📲 Layar Fullscreen Telepon Berdering + Getaran
-    alt Tuan Menerima (Swipe Hijau)
-        Bridge->>Bridge: Hentikan Ringtone + Timer Berjalan (00:01...)
-        Bridge->>Tuan: 🗣️ TTS Nexa Berbicara Menyampaikan Alasan
-        Bridge->>Bridge: Jeda 700ms (Anti-Echo Buffer)
-        Bridge->>Tuan: 🎙️ Merekam Suara Tuan (Timer 10 Detik, 16kHz PCM)
-        Bridge->>Server: CALL_EVENT: CALL_AUDIO_REPLY (Base64 PCM)
-        Server->>Server: Injeksi Header WAV (RIFF 44-byte in-memory)
-        Server->>Brain: Transkripsi Whisper Multi-Tier (Tier 1-12)
-        Brain->>Brain: AI Router Memproses Makna & Merumuskan Balasan
-        Server->>Bridge: SPEAK_TEXT (Balasan Disuarakan di Speaker HP)
-        Bridge->>Tuan: 🗣️ Nexa Menjawab Pertanyaan Tuan
-        Bridge->>Bridge: Event CALL_REPLY_COMPLETE ➜ Tutup Telepon (Auto Hang-up)
-    else Tuan Menolak (Swipe Merah)
-        Bridge->>Server: CALL_EVENT: CALL_REJECTED (Rejection Count +1)
-        Bridge->>Tuan: 🗣️ TTS Singkat ➜ Tutup Panggilan
-    end
+    Note over Tuan,Tools: FASE 1: HANDSHAKE & SETUP WSS
+    Server->>Relay: WSS Handshake via wss://nexa-relay.../ws/...
+    Relay->>Google: BidiGenerateContent (Gemini 3.1 Flash Live Preview)
+    Google-->>Server: setupComplete: {}
+    Server-->>Bridge: CALL_LIVE_READY (Session Handshake Confirmed)
+
+    Note over Tuan,Tools: FASE 2: PERCAKAPAN AUDIO DUA ARAH (TURN-AWARE DUPLEX)
+    Tuan->>Bridge: "Catat pengeluaran 20 ribu beli bensin pakai Cash"
+    Bridge->>Server: CALL_AUDIO_STREAM (16kHz PCM Base64)
+    Server->>Google: realtimeInput.audio { mimeType: "audio/pcm;rate=16000", data }
+    
+    Note over Google,Tools: FASE 3: EKSEKUSI INTENT ROUTER NYATA (TOOL CALLING)
+    Google-->>Server: toolCall: recordExpense(amount: 20000, desc: "bensin", method: "Cash")
+    Server->>Tools: writeTransaction() -> Simpan ke Database Supabase (1ms)
+    Tools-->>Server: { status: "SUCCESS", transaction_id: "trx_99182" }
+    Server-->>Google: toolResponse: { status: "SUCCESS", message: "Tersimpan" }
+    
+    Note over Google,Tuan: FASE 4: STREAMING SUARA VOKAL FENRIR
+    Google-->>Server: modelTurn.parts[].inlineData (24kHz PCM Base64)
+    Server-->>Bridge: CALL_AUDIO_PLAY (24kHz PCM Base64)
+    Bridge->>Tuan: 🔊 Loudspeaker / Earpiece Suara Fenrir Bersuara Lancar
 ```
 
-#### Alur Eksekusi Suara Terpadu (*Unified 12-Tier Voice Transcription*):
-Ketika audio panggilan (Base64 PCM) diterima di server:
-1. **Penyusunan Header WAV Otomatis (`pcmToWavBuffer`)**:
-   Server menyusun header RIFF/WAVE 44-byte (16000 Hz, 1 channel mono, 16-bit) secara *in-memory* tanpa membebani disk.
-2. **Eksekusi 12-Tier Failover (Identik dengan Pipeline VN Telegram)**:
-   - **Tier 1–4**: Hugging Face Whisper Large v3 Turbo (4 Slot Failover).
-   - **Tier 5–8**: Google Gemini 2.5 Flash Native Audio (4 API Keys Pool).
-   - **Tier 9–12**: Groq Whisper Large v3 (4 API Keys Pool dengan retry 503 otomatis).
-3. **Pembersihan Teks TTS (*Natural Speech Sanitizer*)**:
-   Sebelum teks balasan dikirim ke speaker HP, seluruh tag HTML (`<b>`, `<i>`) dan Markdown (`*`, `#`) dibersihkan agar artikulasi suara Android Text-to-Speech terdengar natural dan fasih.
+#### 🛡️ Terobosan Akustik & Manajemen Status (*Turn-Aware Duplex Architecture*):
+1. **Cloudflare Worker Relay WebSocket Routing (`nexa-relay`)**:
+   - Merutekan sesi WebSocket Google Gemini Live API melalui jaringan tepi Cloudflare untuk membebaskan server dari restriksi IP datacenter cloud (`Code 1007 Location Block`).
+2. **Turn-Aware Duplex Gating**:
+   - **Saat Asisten Berbicara (Downlink Priority):** Jalur mikrofon dijeda sementara (*gated*), sehingga suara dari speaker utama tidak memantul masuk ke mic dan tidak memicu *False Barge-In* di server Google.
+   - **Saat Giliran Pengguna Berbicara (Listening Mode):** Mikrofon seketika terbuka 100% sensitif (Threshold = 0 RMS) untuk menangkap setiap kata dan bisikan pengguna.
+3. **Hardware DSP AudioSession Pairing**:
+   - `AudioRecord` dan `AudioTrack` dikunci pada satu `hardwareSessionId` yang sama, memungkinkan chip DSP Samsung Exynos (`AcousticEchoCanceler` & `NoiseSuppressor`) melakukan peredaman gema aktif di level prosesor audio.
+4. **Mekanisme Panggilan Mirip WhatsApp (*WhatsApp-Style Fullscreen Overlay & Zero-Footprint Task*)**:
+   - **Bangun Otomatis Saat Terkunci:** Menggunakan `PowerManager.SCREEN_BRIGHT_WAKE_LOCK`, `setShowWhenLocked(true)`, `setTurnScreenOn(true)`, dan `requestDismissKeyguard()`, layar HP seketika menyala terang dan menampilkan panggilan di atas layar kunci tanpa perlu membuka PIN/sidik jari.
+   - **Zero-Footprint Task Return:** `FakeCallActivity` diisolasi ke task stack tersendiri (`taskAffinity="com.nexa.mobilebridge.call"` + `launchMode="singleInstance"`). Ketika panggilan dimatikan via `finishAndRemoveTask()`, layar seketika kembali ke aplikasi pengguna sebelumnya (Galeri, WhatsApp, Home Screen) tanpa pernah memunculkan dashboard Nexa Bridge.
+5. **Desain UI Minimalis Ikonik (*Icon-Only Floating Buttons*)**:
+   - Tombol Kiri: Ikon Speaker Tergaris Miring Merah (*Earpiece / Speaker Atas*) $\leftrightarrow$ Ikon Speaker Berpendar Cyan (*Loudspeaker / Speaker Utama*).
+   - Tombol Kanan: Lingkaran Merah Elegan (*End Call Button*).
 
 ---
 
