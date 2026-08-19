@@ -332,6 +332,24 @@ async function handleTaskIntent(extractedData, chatId = null) {
             } catch (_) {}
           }
           const created = await googleTasks.createTask({ title: taskTitle, notes: taskNotes, dueDate: taskDue, listId });
+
+          // Optional: Create Work Block in Google Calendar if specified
+          if (t && (t.sync_calendar || t.calendar_start_time)) {
+            const calStart = t.calendar_start_time || (taskDue ? `${taskDue.split('T')[0]}T08:00:00+07:00` : null);
+            if (calStart) {
+              const durMins = t.duration_minutes || 60;
+              const calEnd = new Date(new Date(calStart).getTime() + durMins * 60000).toISOString();
+              try {
+                await googleWorkspace.createCalendarEvent(
+                  `⏰ BLOK KERJA: ${taskTitle}`,
+                  calStart,
+                  calEnd,
+                  taskNotes || 'Otomatis dijadwalkan oleh N.E.X.A'
+                );
+              } catch (_) {}
+            }
+          }
+
           results.push(`✅ <b>${escapeHtml(created.title)}</b> → <i>${escapeHtml(matched.name)}</i>`);
         } catch (e) {
           results.push(`❌ Gagal: ${e.message}`);
