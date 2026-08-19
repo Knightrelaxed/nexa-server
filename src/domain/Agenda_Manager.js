@@ -5,6 +5,7 @@ const env = require('../config/env');
 // Short-term working memory for rendered calendar events (for ordinal commands like "hapus yang pertama", "ubah yang kedua")
 let _lastRenderedCalendarEvents = [];
 let _lastActionContext = null;
+const pendingAgendas = new Map();
 
 function escapeHtml(value) {
   return String(value || '')
@@ -339,7 +340,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 4. ACTION: READ / READ_TODAY / READ_TOMORROW
+    // 4. ACTION: READ / READ_TODAY / READ_TOMORROW / READ_UPCOMING
     // ════════════════════════════════════════════════════════════════
     else if (action === 'READ' || action === 'READ_TODAY' || action === 'READ_TOMORROW' || action === 'READ_UPCOMING') {
       let events = [];
@@ -371,7 +372,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         events = await googleWorkspace.getEventsByDateRange(start, end);
         tasks = await googleTasks.getTasksByDateRange(start, end);
         const sDate = new Date(start).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' });
-        const eDate = new Date(end).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        const eDate = new Date(end).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' });
         dateLabel = sDate === eDate ? sDate : `${sDate} – ${eDate}`;
       } else if (start) {
         const sD = new Date(start);
@@ -442,8 +443,26 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
   }
 }
 
+/**
+ * Backward compatibility helpers for Telegram Adapter
+ */
+async function tryResolvePending(userText, pendingCtx) {
+  return null;
+}
+
+function cancelPending(summary) {
+  for (const [id, data] of pendingAgendas.entries()) {
+    if (data.summary?.toLowerCase() === summary?.toLowerCase()) {
+      if (data.timer) clearTimeout(data.timer);
+      pendingAgendas.delete(id);
+    }
+  }
+}
+
 module.exports = {
   handleCalendarIntent,
   inferProbableDuration,
-  getLastRenderedCalendarEvents: () => _lastRenderedCalendarEvents
+  getLastRenderedCalendarEvents: () => _lastRenderedCalendarEvents,
+  tryResolvePending,
+  cancelPending
 };

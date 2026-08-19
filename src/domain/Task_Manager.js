@@ -5,6 +5,7 @@ const notionClient = require('../infrastructure/Notion_Client');
 // Short-term working memory for rendered tasks (for ordinal references like "tandai yang pertama selesai", "hapus tugas kedua")
 let _lastRenderedTasks = [];
 let _lastActionTask = null;
+const pendingTaskCategories = new Map();
 
 function escapeHtml(value) {
   return String(value || '')
@@ -28,7 +29,6 @@ async function _matchBestTasklist(title = '', preferredListName = null) {
   try {
     const liveLists = await googleTasks.getTaskLists();
     if (liveLists && liveLists.length > 0) {
-      // Check each live list title against title tokens
       for (const list of liveLists) {
         if (!list.title || list.title === 'My Tasks' || list.title === 'Tugas Saya') continue;
         const listTokens = list.title.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
@@ -135,7 +135,7 @@ function formatTask(task, index, indent = 0) {
  * Main handler for TASK intent from AI Router (Zero-Friction & Natural)
  */
 async function handleTaskIntent(extractedData, chatId = null) {
-  const { action, title, due_date, notes, search_keyword, list_name, parent_task_keyword, duration_minutes, sync_calendar, calendar_start_time } = extractedData;
+  const { action, title, due_date, notes, search_keyword, list_name, parent_task_keyword, duration_minutes, sync_calendar, calendar_start_time, tasks } = extractedData;
   console.log(`[TASKS] Executing Task Intent: ${action} | title: "${title}"`);
 
   try {
@@ -206,7 +206,54 @@ async function handleTaskIntent(extractedData, chatId = null) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 2. ACTION: COMPLETE (With Ordinal & Relative Support)
+    // 2. ACTION: CREATE_SUBTASK
+    // ════════════════════════════════════════════════════════════════
+    if (action === 'CREATE_SUBTASK') {
+      if (!title) return { status: 'FAILED', message: '❌ Sebutkan nama sub-tugasnya, Tuan.' };
+      if (!parent_task_keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas utama yang akan ditambahkan sub-tugas.' };
+
+      const parents = await googleTasks.findTasksByKeyword(parent_task_keyword);
+      if (parents.length === 0) return { status: 'FAILED', message: `❌ Tugas utama '<b>${escapeHtml(parent_task_keyword)}</b>' tidak ditemukan.` };
+      const parent = parents[0];
+
+      const sub = await googleTasks.createSubtask({ title, notes: notes || '', dueDate: due_date || null, parentId: parent.id, listId: parent.listId || '@default' });
+      return { status: 'SUCCESS', message: `✅ Sub-tugas '<b>${escapeHtml(sub.title)}</b>' ditambahkan ke bawah tugas '<b>${escapeHtml(parent.title)}</b>'.` };
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 3. ACTION: CREATE_MULTIPLE
+    // ════════════════════════════════════════════════════════════════
+    if (action === 'CREATE_MULTIPLE') {
+      const taskListToCreate = tasks || [];
+      if (taskListToCreate.length === 0) return { status: 'FAILED', message: '❌ Tidak ada tugas yang disebutkan untuk dibuat.' };
+
+      const results = [];
+      for (const t of taskListToCreate) {
+        try {
+          const taskTitle = t.title || t;
+          if (!taskTitle) continue;
+          const taskNotes = t.notes || '';
+          const taskDue = t.due_date || null;
+          const matched = await _matchBestTasklist(taskTitle, t.list_name);
+
+          let listId = '@default';
+          if (matched.name && matched.name !== 'Tugas Saya') {
+            try {
+              const listObj = await googleTasks.findOrCreateList(matched.name);
+              listId = listObj.id;
+            } catch (_) {}
+          }
+          const created = await googleTasks.createTask({ title: taskTitle, notes: taskNotes, dueDate: taskDue, listId });
+          results.push(`✅ <b>${escapeHtml(created.title)}</b> → <i>${escapeHtml(matched.name)}</i>`);
+        } catch (e) {
+          results.push(`❌ Gagal: ${e.message}`);
+        }
+      }
+      return { status: 'SUCCESS', message: `📋 <b>${results.length} tugas berhasil dibuat:</b>\n${results.join('\n')}` };
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 4. ACTION: COMPLETE (With Ordinal & Relative Support)
     // ════════════════════════════════════════════════════════════════
     if (action === 'COMPLETE') {
       const keyword = search_keyword || title;
@@ -246,7 +293,7 @@ async function handleTaskIntent(extractedData, chatId = null) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 3. ACTION: DELETE (With Ordinal & Relative Support)
+    // 5. ACTION: DELETE (With Ordinal & Relative Support)
     // ════════════════════════════════════════════════════════════════
     if (action === 'DELETE') {
       const keyword = search_keyword || title;
@@ -284,35 +331,35 @@ async function handleTaskIntent(extractedData, chatId = null) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 4. ACTION: READ / READ_TODAY / READ_OVERDUE / READ_UPCOMING
+    // 6. ACTION: READ / READ_TODAY / READ_OVERDUE / READ_UPCOMING
     // ════════════════════════════════════════════════════════════════
     if (action === 'READ' || action === 'READ_TODAY' || action === 'READ_TOMORROW' || action === 'READ_UPCOMING' || action === 'READ_OVERDUE') {
-      let tasks = [];
+      let taskList = [];
       let headerTitle = 'DAFTAR TUGAS AKTIF';
 
       if (action === 'READ_TODAY') {
-        tasks = await googleTasks.getTasksDueToday();
+        taskList = await googleTasks.getTasksDueToday();
         headerTitle = 'TUGAS JATUH TEMPO HARI INI';
       } else if (action === 'READ_TOMORROW') {
-        tasks = await googleTasks.getTasksDueTomorrow();
+        taskList = await googleTasks.getTasksDueTomorrow();
         headerTitle = 'TUGAS JATUH TEMPO BESOK';
       } else if (action === 'READ_OVERDUE') {
-        tasks = await googleTasks.getOverdueTasks();
+        taskList = await googleTasks.getOverdueTasks();
         headerTitle = 'TUGAS TERLAMBAT (OVERDUE)';
       } else if (action === 'READ_UPCOMING') {
-        tasks = await googleTasks.getUpcomingTasks(7);
+        taskList = await googleTasks.getUpcomingTasks(7);
         headerTitle = 'TUGAS 7 HARI KE DEPAN';
       } else {
-        tasks = await googleTasks.getActiveTasks();
+        taskList = await googleTasks.getActiveTasks();
         headerTitle = 'SEMUA TUGAS AKTIF';
       }
 
-      if (!tasks || tasks.length === 0) {
+      if (!taskList || taskList.length === 0) {
         return { status: 'SUCCESS', message: `✅ Tidak ada tugas yang tertunda untuk kategori ini, Tuan. Semuanya bersih! 🎉` };
       }
 
       // Update Working Memory Cache
-      _lastRenderedTasks = tasks.map((t, idx) => ({
+      _lastRenderedTasks = taskList.map((t, idx) => ({
         index: idx + 1,
         id: t.id,
         title: t.title || '(Tanpa Judul)',
@@ -320,10 +367,29 @@ async function handleTaskIntent(extractedData, chatId = null) {
         due: t.due
       }));
 
-      let msg = `📋 <b>${headerTitle} (${tasks.length}):</b>\n\n`;
-      msg += tasks.map((t, idx) => formatTask(t, idx)).join('\n\n');
+      let msg = `📋 <b>${headerTitle} (${taskList.length}):</b>\n\n`;
+      msg += taskList.map((t, idx) => formatTask(t, idx)).join('\n\n');
 
-      return { status: 'SUCCESS', message: msg, tasksCount: tasks.length };
+      return { status: 'SUCCESS', message: msg, tasksCount: taskList.length };
+    }
+
+    // ── READ_LIST ────────────────────────────────────────────
+    if (action === 'READ_LIST') {
+      const targetList = list_name || search_keyword;
+      if (!targetList) return { status: 'FAILED', message: '❌ Sebutkan nama list yang ingin ditampilkan.' };
+      const taskList = await googleTasks.getTasksFromList(targetList);
+      if (taskList.length === 0) return { status: 'SUCCESS', message: `📋 List '<b>${escapeHtml(targetList)}</b>' kosong atau tidak ditemukan.` };
+      
+      _lastRenderedTasks = taskList.map((t, idx) => ({
+        index: idx + 1,
+        id: t.id,
+        title: t.title || '(Tanpa Judul)',
+        listId: t.listId || '@default',
+        due: t.due
+      }));
+
+      const listOutput = taskList.map((t, i) => formatTask(t, i)).join('\n\n');
+      return { status: 'SUCCESS', message: `📋 <b>List "${escapeHtml(targetList)}" (${taskList.length}):</b>\n\n${listOutput}` };
     }
 
     // ── READ_LISTS ───────────────────────────────────────────
@@ -334,10 +400,38 @@ async function handleTaskIntent(extractedData, chatId = null) {
       return { status: 'SUCCESS', message: `📁 <b>Daftar Tasklist (${lists.length}):</b>\n\n${lines}` };
     }
 
+    // ── READ_DONE ───────────────────────────────────────────
+    if (action === 'READ_DONE') {
+      const taskList = await googleTasks.getCompletedTasks();
+      if (taskList.length === 0) return { status: 'SUCCESS', message: '📭 Belum ada tugas yang diselesaikan.' };
+      const listOutput = taskList.map((t, i) => formatTask(t, i)).join('\n\n');
+      return { status: 'SUCCESS', message: `✅ <b>Tugas Selesai (${taskList.length}):</b>\n\n${listOutput}` };
+    }
+
     // ── CLEAR_DONE ──────────────────────────────────────────
     if (action === 'CLEAR_DONE') {
       await googleTasks.clearCompletedTasks();
       return { status: 'SUCCESS', message: '🧹 Semua tugas yang sudah selesai telah dibersihkan dari Google Tasks.' };
+    }
+
+    // ── MOVE ────────────────────────────────────────────────
+    if (action === 'MOVE') {
+      const keyword = search_keyword || title;
+      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dipindahkan.' };
+      if (!list_name) return { status: 'FAILED', message: '❌ Sebutkan nama list tujuan.' };
+
+      const resolved = _resolveTargetTask(keyword);
+      let matches = [];
+      if (resolved.id) {
+        matches = [{ id: resolved.id, title: resolved.title, listId: resolved.listId || '@default' }];
+      } else {
+        matches = await googleTasks.findTasksByKeyword(resolved.title || keyword);
+      }
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
+
+      const task = matches[0];
+      await googleTasks.moveTaskToList(task.id, list_name, task.listId);
+      return { status: 'SUCCESS', message: `✅ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil dipindahkan ke list <b>${escapeHtml(list_name)}</b>.` };
     }
 
     // ── EDIT ────────────────────────────────────────────────
@@ -370,6 +464,29 @@ async function handleTaskIntent(extractedData, chatId = null) {
       return { status: 'SUCCESS', message: `✏️ Tugas '<b>${escapeHtml(matches[0].title)}</b>' berhasil diperbarui.` };
     }
 
+    // ── SET_PRIORITY ─────────────────────────────────────────
+    if (action === 'SET_PRIORITY') {
+      const keyword = search_keyword || title;
+      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin diprioritaskan, Tuan.' };
+      const resolved = _resolveTargetTask(keyword);
+      let matches = [];
+      if (resolved.id) {
+        matches = [{ id: resolved.id, title: resolved.title, listId: resolved.listId || '@default' }];
+      } else {
+        matches = await googleTasks.findTasksByKeyword(resolved.title || keyword);
+      }
+      if (matches.length === 0) return { status: 'FAILED', message: `❌ Tidak ditemukan tugas cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
+
+      const task = matches[0];
+      const alreadyPriority = task.title.startsWith('⭐ [PRIORITAS]');
+      if (alreadyPriority) {
+        return { status: 'SUCCESS', message: `⭐ Tugas '<b>${escapeHtml(task.title)}</b>' sudah ditandai sebagai prioritas tinggi, Tuan.` };
+      }
+      const newTitle = `⭐ [PRIORITAS] ${task.title}`;
+      await googleTasks.editTask({ taskId: task.id, newTitle, listId: task.listId });
+      return { status: 'SUCCESS', message: `⭐ Tugas '<b>${escapeHtml(task.title)}</b>' berhasil ditandai sebagai <b>Prioritas Tinggi</b>!` };
+    }
+
     return { status: 'FAILED', message: `Aksi task '${action}' tidak dikenali.` };
 
   } catch (error) {
@@ -377,9 +494,6 @@ async function handleTaskIntent(extractedData, chatId = null) {
     return { status: 'FAILED', message: `❌ Operasi task gagal: ${error.message}` };
   }
 }
-
-// ── PENDING TASK CONFIRM STORE (Backward Compatibility) ─────────
-const pendingTaskCategories = new Map();
 
 function cancelPendingTask(chatId) {
   const pending = pendingTaskCategories.get(chatId);
