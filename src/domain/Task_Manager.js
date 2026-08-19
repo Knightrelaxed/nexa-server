@@ -378,7 +378,50 @@ async function handleTaskIntent(extractedData, chatId = null) {
   }
 }
 
+// ── PENDING TASK CONFIRM STORE (Backward Compatibility) ─────────
+const pendingTaskCategories = new Map();
+
+function cancelPendingTask(chatId) {
+  const pending = pendingTaskCategories.get(chatId);
+  if (!pending) return false;
+  if (pending.timerId) clearTimeout(pending.timerId);
+  pendingTaskCategories.delete(chatId);
+  return true;
+}
+
+async function executePendingTask(chatId, overrideListName = null) {
+  const pending = pendingTaskCategories.get(chatId);
+  if (!pending) return null;
+  if (pending.timerId) clearTimeout(pending.timerId);
+  pendingTaskCategories.delete(chatId);
+
+  return handleTaskIntent({
+    action: 'CREATE',
+    title: pending.title,
+    notes: pending.notes,
+    due_date: pending.dueDate,
+    list_name: overrideListName || pending.listName,
+    sync_calendar: pending.syncCalendar,
+    calendar_start_time: pending.calendarStartTime,
+    duration_minutes: pending.durationMins
+  }, null);
+}
+
+function suggestList(title = '') {
+  const t = title.toLowerCase();
+  if (/\b(kuliah|matkul|tugas|essay|makalah|uas|uts|ujian)\b/i.test(t)) return 'Tugas Kuliah';
+  if (/\b(belanja|beli|toko|beras|minyak|sabun)\b/i.test(t)) return 'Belanja';
+  if (/\b(kerja|meeting|rapat|proyek)\b/i.test(t)) return 'Pekerjaan';
+  if (/\b(baca|buku|artikel|jurnal|riset)\b/i.test(t)) return 'Riset & Baca';
+  if (/\b(bayar|transfer|tagihan|cicilan)\b/i.test(t)) return 'Keuangan';
+  return null;
+}
+
 module.exports = {
   handleTaskIntent,
-  getLastRenderedTasks: () => _lastRenderedTasks
+  getLastRenderedTasks: () => _lastRenderedTasks,
+  pendingTaskCategories,
+  cancelPendingTask,
+  executePendingTask,
+  suggestList
 };

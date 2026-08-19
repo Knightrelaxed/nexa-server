@@ -1909,7 +1909,7 @@ Instruksi untuk AI Router: Jika Tuan Faqih meminta sesuatu terkait gambar, gunak
     // PENDING TASK CATEGORY INTERCEPTOR (AI-Powered)
     // ============================================================
     const chatId = String(message.chat.id);
-    if (taskManager.pendingTaskCategories.has(chatId)) {
+    if (taskManager.pendingTaskCategories && taskManager.pendingTaskCategories.has(chatId)) {
       const pendingTask = taskManager.pendingTaskCategories.get(chatId);
       
       const normalized = textInput.toLowerCase().trim();
