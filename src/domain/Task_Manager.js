@@ -61,11 +61,33 @@ async function _matchBestTasklist(title = '', preferredListName = null) {
 }
 
 /**
+ * Ensure working memory is populated even across server restarts
+ */
+async function _ensureWorkingMemoryTasks() {
+  if (_lastRenderedTasks.length === 0) {
+    try {
+      const active = await googleTasks.getActiveTasks();
+      if (active && active.length > 0) {
+        _lastRenderedTasks = active.map((t, idx) => ({
+          index: idx + 1,
+          id: t.id,
+          title: t.title || '(Tanpa Judul)',
+          listId: t.listId || '@default',
+          due: t.due
+        }));
+      }
+    } catch (_) {}
+  }
+}
+
+/**
  * Resolve single target task from working memory or keyword
  */
-function _resolveSingleTargetTask(searchKeyword = '') {
+async function _resolveSingleTargetTask(searchKeyword = '') {
   const s = String(searchKeyword || '').toLowerCase().trim();
   if (!s) return null;
+
+  await _ensureWorkingMemoryTasks();
 
   // Direct number index check (e.g. "1", "2", "4", "nomor 1", "no 2", "index_1", "tugas 1")
   const numMatch = s.match(/^(?:index_|nomor\s*|no\s*|tugas\s*|tugad\s*|ke-?)?(\d+)$/i);
@@ -111,13 +133,13 @@ function _resolveSingleTargetTask(searchKeyword = '') {
 /**
  * Resolve multiple target tasks from array or comma/number list
  */
-function _resolveTargetTasks(input) {
+async function _resolveTargetTasks(input) {
   if (!input) return [];
 
   if (Array.isArray(input)) {
     const items = [];
     for (const el of input) {
-      const resolved = _resolveTargetTasks(el);
+      const resolved = await _resolveTargetTasks(el);
       items.push(...resolved);
     }
     return items;
@@ -125,6 +147,8 @@ function _resolveTargetTasks(input) {
 
   const s = String(input).trim();
   if (!s) return [];
+
+  await _ensureWorkingMemoryTasks();
 
   // Check if multiple digits separated by comma, space, or 'dan' (e.g. "1,2,4", "1, 2, 4", "1 dan 3", "tugad1,2,4")
   if (/\d+[\s,dan&]+\d+/i.test(s) || /^\d+(?:,\d+)+$/.test(s) || /(?:tugas|tugad)?\s*\d+(?:\s*,\s*\d+)+/i.test(s)) {
@@ -145,13 +169,13 @@ function _resolveTargetTasks(input) {
     const parts = s.split(/,|\bdan\b|\b&\b/).map(p => p.trim()).filter(Boolean);
     const list = [];
     for (const part of parts) {
-      const res = _resolveSingleTargetTask(part);
+      const res = await _resolveSingleTargetTask(part);
       if (res) list.push(res);
     }
     return list;
   }
 
-  const single = _resolveSingleTargetTask(s);
+  const single = await _resolveSingleTargetTask(s);
   return single ? [single] : [];
 }
 
@@ -320,7 +344,7 @@ async function handleTaskIntent(extractedData, chatId = null) {
         return { status: 'FAILED', message: '❌ Sebutkan nama atau nomor tugas yang ingin ditandai selesai.' };
       }
 
-      const resolvedList = _resolveTargetTasks(inputTargets);
+      const resolvedList = await _resolveTargetTasks(inputTargets);
       let matchedTasks = [];
 
       for (const res of resolvedList) {
@@ -381,7 +405,7 @@ async function handleTaskIntent(extractedData, chatId = null) {
         return { status: 'FAILED', message: '❌ Sebutkan nama atau nomor tugas yang ingin dihapus.' };
       }
 
-      const resolvedList = _resolveTargetTasks(inputTargets);
+      const resolvedList = await _resolveTargetTasks(inputTargets);
       let matchedTasks = [];
 
       for (const res of resolvedList) {

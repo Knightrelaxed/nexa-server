@@ -111,23 +111,53 @@ function _parseExplicitDuration(text = '') {
 }
 
 /**
+ * Ensure calendar working memory is populated even across server restarts
+ */
+async function _ensureWorkingMemoryCalendar() {
+  if (_lastRenderedCalendarEvents.length === 0) {
+    try {
+      const active = await googleWorkspace.getTodaysEvents();
+      if (active && active.length > 0) {
+        _lastRenderedCalendarEvents = active.map((e, idx) => ({
+          index: idx + 1,
+          id: e.id,
+          summary: e.summary || '(Tanpa Judul)',
+          start: e.start?.dateTime || e.start?.date,
+          end: e.end?.dateTime || e.end?.date
+        }));
+      }
+    } catch (_) {}
+  }
+}
+
+/**
  * Resolve target event ID or summary from working memory or ordinal references
  */
-function _resolveTargetEvent(searchSummary = '', eventId = null) {
+async function _resolveTargetEvent(searchSummary = '', eventId = null) {
   if (eventId) return { id: eventId, summary: searchSummary };
 
   const s = String(searchSummary || '').toLowerCase().trim();
+  await _ensureWorkingMemoryCalendar();
+
+  // Direct number index check (e.g. "1", "2", "index_1", "jadwal 1")
+  const numMatch = s.match(/^(?:index_|nomor\s*|no\s*|jadwal\s*|ke-?)?(\d+)$/i);
+  if (numMatch && _lastRenderedCalendarEvents.length > 0) {
+    const idx = parseInt(numMatch[1], 10);
+    if (idx >= 1 && idx <= _lastRenderedCalendarEvents.length) {
+      return _lastRenderedCalendarEvents[idx - 1];
+    }
+  }
 
   // 1. Ordinal index resolution: "pertama" / "ke-1" / "INDEX_1"
-  if (/^(index_1|pertama|ke-?1|nomor\s*1|no\s*1|paling\s*atas)$/i.test(s) && _lastRenderedCalendarEvents.length >= 1) {
+  if (/^(index_1|pertama|ke-?1|paling\s*atas)$/i.test(s) && _lastRenderedCalendarEvents.length >= 1) {
     return _lastRenderedCalendarEvents[0];
   }
   // "kedua" / "ke-2" / "INDEX_2"
-  if (/^(index_2|kedua|ke-?2|nomor\s*2|no\s*2)$/i.test(s) && _lastRenderedCalendarEvents.length >= 2) {
+  if (/^(index_2|kedua|ke-?2)$/i.test(s) && _lastRenderedCalendarEvents.length >= 2) {
     return _lastRenderedCalendarEvents[1];
   }
   // "ketiga" / "ke-3" / "INDEX_3"
-  if (/^(index_3|ketiga|ke-?3|nomor\s*3|no\s*3)$/i.test(s) && _lastRenderedCalendarEvents.length >= 3) {
+  if (/^(index_3|ketiga|ke-?3)$/i.test(s) && _lastRenderedCalendarEvents.length >= 3) {
     return _lastRenderedCalendarEvents[2];
   }
   // "terakhir" / "paling bawah"
@@ -287,7 +317,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
     // 2. ACTION: UPDATE (With Ordinal & Relative Support)
     // ════════════════════════════════════════════════════════════════
     else if (action === 'UPDATE') {
-      const resolved = _resolveTargetEvent(summary, eventId);
+      const resolved = await _resolveTargetEvent(summary, eventId);
       let targetEventId = resolved.id;
 
       if (!targetEventId && summary) {
@@ -316,7 +346,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
     // 3. ACTION: DELETE (With Ordinal & Relative Support)
     // ════════════════════════════════════════════════════════════════
     else if (action === 'DELETE') {
-      const resolved = _resolveTargetEvent(summary, eventId);
+      const resolved = await _resolveTargetEvent(summary, eventId);
       let targetEventId = resolved.id;
 
       if (!targetEventId && summary) {
