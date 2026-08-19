@@ -61,6 +61,33 @@ router.post('/wa-logout', security.webhookAuth, async (req, res) => {
   }
 });
 
+// 6. Mobile Bridge Remote Command Dispatcher
+router.post('/bridge/command', security.cliAuth, async (req, res) => {
+  try {
+    const { action, params } = req.body;
+    const adapter = require('./mobile_bridge/adapter');
+    const result = await adapter.execute(action, params || {});
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/bridge/simulate-call', security.cliAuth, async (req, res) => {
+  try {
+    const { callerName, message, playRingtone } = req.body;
+    const adapter = require('./mobile_bridge/adapter');
+    const result = await adapter.simulateIncomingCall(
+      callerName || 'N.E.X.A Assistant',
+      message || 'Tuan Faqih, ada interupsi penting dari N.E.X.A.',
+      playRingtone !== undefined ? playRingtone : true
+    );
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ============================================================
 // EXPORTS
 // ============================================================

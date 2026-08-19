@@ -1,16 +1,22 @@
-const adapter = require('../src/interfaces/mobile_bridge/adapter');
+const axios = require('axios');
+require('dotenv').config();
 
 async function main() {
-  console.log('📞 Memicu panggilan masuk simulasi ke HP Samsung Galaxy A33 5G...');
+  console.log('📞 Mengirim sinyal panggilan simulasi ke PM2 instance...');
+  const token = process.env.NEXA_CLI_SECRET;
   try {
-    const res = await adapter.simulateIncomingCall(
-      'N.E.X.A Assistant',
-      'Selamat pagi Tuan Faqih. Ini adalah uji coba transmisi suara live Google Gemini. Silakan angkat panggilan.',
-      true
-    );
-    console.log('✅ Response dari HP:', res);
+    const res = await axios.post('http://127.0.0.1:3000/webhook/bridge/simulate-call', {
+      callerName: 'N.E.X.A Chief of Staff',
+      message: 'Selamat pagi Tuan Faqih. Ini adalah uji coba transmisi suara live Google Gemini. Silakan angkat panggilan.',
+      playRingtone: true
+    }, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    console.log('✅ Response dari HP:', res.data);
   } catch (e) {
-    console.error('❌ Gagal memicu panggilan:', e.message);
+    console.error('❌ Error response:', e.response ? e.response.data : e.message);
   }
 }
 
