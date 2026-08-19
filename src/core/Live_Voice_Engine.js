@@ -258,8 +258,11 @@ class LiveVoiceSession {
 
       // I. Today's Calendar & Tasks
       let situationalSchedule = '';
-      if (calendarData && typeof calendarData === 'string' && !calendarData.includes('Tidak ada jadwal')) {
-        situationalSchedule += `\n📅 Jadwal Hari Ini: ${calendarData.split('\n').filter(l => l.trim()).slice(1, 4).join(', ')}`;
+      if (Array.isArray(calendarData) && calendarData.length > 0) {
+        situationalSchedule += `\n📅 Jadwal Kalender Hari Ini (${calendarData.length}): ` +
+          calendarData.map(e => e.summary || 'Agenda').slice(0, 3).join(', ');
+      } else if (typeof calendarData === 'string' && !calendarData.includes('Tidak ada jadwal')) {
+        situationalSchedule += `\n📅 Jadwal Hari Ini: ${calendarData}`;
       }
       if (Array.isArray(tasksData) && tasksData.length > 0) {
         situationalSchedule += `\n📋 Tugas Hari Ini (${tasksData.length}): ${tasksData.map(t => t.title).slice(0, 3).join(', ')}`;
