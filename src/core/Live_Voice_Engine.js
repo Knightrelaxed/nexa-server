@@ -106,9 +106,9 @@ class LiveVoiceSession {
     try {
       this.googleWs = new WebSocket(url, wsOptions);
 
-      this.googleWs.on('open', () => {
+      this.googleWs.on('open', async () => {
         console.log(`[LIVE-VOICE] 🌐 Connected to Google WSS. Sending setup payload...`);
-        this._sendSetupPayload();
+        await this._sendSetupPayload();
       });
 
       this.googleWs.on('message', async (data) => {
@@ -134,17 +134,34 @@ class LiveVoiceSession {
     }
   }
 
-  _sendSetupPayload() {
+  async _sendSetupPayload() {
     if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN) return;
 
-    // Get snapshot facts from SACR v3.0 memory
+    // 1. Temporal Anchor (WIB Time & Date)
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+    const temporalContext = `\n\n[WAKTU SEKARANG]: ${dateStr}, pukul ${timeStr} WIB.`;
+
+    // 2. Snapshot facts from SACR v3.0 memory in RAM
     let memoryFacts = '';
     try {
-      const topFacts = geminiVectorCache.getAllSnapshotFacts ? geminiVectorCache.getAllSnapshotFacts().slice(0, 10) : [];
+      const topFacts = geminiVectorCache.getAllSnapshotFacts ? geminiVectorCache.getAllSnapshotFacts().slice(0, 12) : [];
       if (topFacts.length > 0) {
         memoryFacts = '\n\n[MEMORI LIVING FACTS SACR v3.0 TUAN FAQIH]:\n• ' + topFacts.map(f => f.content).join('\n• ');
       }
     } catch (_) {}
+
+    // 3. Recent Chat Context (Cross-Platform Continuity from Telegram / Webhook)
+    let recentChatContext = '';
+    try {
+      const recent = await supabaseMemories.getRecentMemories(4);
+      if (recent && recent.length > 0) {
+        recentChatContext = '\n\n[RIWAYAT PERCAKAPAN TERAKHIR SEBELUM TELEPON]:\n' + recent.map(m => `${m.role === 'user' ? 'Tuan Faqih' : 'N.E.X.A'}: ${m.content.slice(0, 150)}`).join('\n');
+      }
+    } catch (_) {}
+
+    const fullSystemPrompt = `${NEXA_LIVE_SYSTEM_PROMPT}${temporalContext}${memoryFacts}${recentChatContext}`;
 
     const setupPayload = {
       setup: {
@@ -161,7 +178,7 @@ class LiveVoiceSession {
         },
         systemInstruction: {
           parts: [{
-            text: `${NEXA_LIVE_SYSTEM_PROMPT}${memoryFacts}`
+            text: fullSystemPrompt
           }]
         },
         tools: [
