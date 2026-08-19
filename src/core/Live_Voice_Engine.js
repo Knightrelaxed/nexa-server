@@ -11,6 +11,10 @@ const env = require('../config/env');
 const { LIVE_TOOL_DECLARATIONS, executeLiveTool } = require('./Live_Tool_Registry');
 const geminiVectorCache = require('../utils/gemini_vector_cache');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
+const supabaseFinance = require('../infrastructure/Supabase_Finance');
+const googleWorkspace = require('../infrastructure/Google_Workspace');
+const googleTasks = require('../infrastructure/Google_Tasks');
+const financeEngine = require('../domain/Finance_Engine');
 
 // Google AI Studio Keys Pool
 const GOOGLE_KEYS = [
@@ -137,31 +141,122 @@ class LiveVoiceSession {
   async _sendSetupPayload() {
     if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN) return;
 
-    // 1. Temporal Anchor (WIB Time & Date)
+    const startTime = Date.now();
+
+    // 1. Temporal Anchor (Jakarta / WIB Real-Time Clock)
     const now = new Date();
     const dateStr = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-    const temporalContext = `\n\n[WAKTU SEKARANG]: ${dateStr}, pukul ${timeStr} WIB.`;
+    const temporalContext = `\n\n[WAKTU NYATA SAAT INI]: ${dateStr}, pukul ${timeStr} WIB.`;
 
-    // 2. Snapshot facts from SACR v3.0 memory in RAM
-    let memoryFacts = '';
+    // 2. Parallel Fetch of All Supabase Tables + Context Blocks (Zero sequential latency penalty)
+    const [
+      personalFactsRes,
+      selfModelRes,
+      recentChatRes,
+      accountsRes,
+      categoriesRes,
+      recentFinanceRes,
+      calendarRes,
+      tasksRes
+    ] = await Promise.allSettled([
+      // Tabel 1, 2, 3: nexa_user_profile, nexa_core_identity, nexa_vault_items
+      supabaseMemories.getPersonalFacts(),
+      // Tabel 4: nexa_self_model (Top 5 Experiential Insights)
+      supabaseMemories.getSelfModelByLayer ? supabaseMemories.getSelfModelByLayer('BEHAVIORAL_INSIGHT') : Promise.resolve([]),
+      // Tabel 5: nexa_chat_memories (5 Chat Terakhir dari Telegram / Webhook)
+      supabaseMemories.getRecentMemories(5),
+      // Tabel 6: accounts (Akun Bank & Dompet Aktif)
+      supabaseFinance.getAccountsList ? supabaseFinance.getAccountsList() : Promise.resolve([]),
+      // Tabel 7: categories (Kategori Transaksi Aktif)
+      supabaseFinance.getCategoriesList ? supabaseFinance.getCategoriesList() : Promise.resolve([]),
+      // Tabel 8: transactions (3 Transaksi Terkini)
+      financeEngine.getRecentTransactions ? financeEngine.getRecentTransactions(3) : Promise.resolve(null),
+      // Google Calendar: Jadwal Hari Ini
+      googleWorkspace.getTodaysEvents ? googleWorkspace.getTodaysEvents() : Promise.resolve(null),
+      // Google Tasks: Tugas Hari Ini
+      googleTasks.getTasksDueToday ? googleTasks.getTasksDueToday() : Promise.resolve([])
+    ]);
+
+    // ── Build Context Blocks ─────────────────────────────────────
+    let profileFactsBlock = '';
+    let coreIdentityBlock = '';
+    let vaultManifestBlock = '';
+    let selfModelBlock = '';
+    let recentChatBlock = '';
+    let accountsBlock = '';
+    let categoriesBlock = '';
+    let recentFinanceBlock = '';
+    let calendarScheduleBlock = '';
+
+    // A. User Profile & RAM Vector Snapshot (Tabel nexa_user_profile)
     try {
-      const topFacts = geminiVectorCache.getAllSnapshotFacts ? geminiVectorCache.getAllSnapshotFacts().slice(0, 12) : [];
+      const topFacts = geminiVectorCache.getAllSnapshotFacts ? geminiVectorCache.getAllSnapshotFacts().slice(0, 15) : [];
       if (topFacts.length > 0) {
-        memoryFacts = '\n\n[MEMORI LIVING FACTS SACR v3.0 TUAN FAQIH]:\n• ' + topFacts.map(f => f.content).join('\n• ');
+        profileFactsBlock = '\n\n[FAKTA PERMANEN TENTANG TUAN FAQIH (SACR v3.0 RAM MEMORY)]:\n• ' + topFacts.map(f => f.content).join('\n• ');
       }
     } catch (_) {}
 
-    // 3. Recent Chat Context (Cross-Platform Continuity from Telegram / Webhook)
-    let recentChatContext = '';
-    try {
-      const recent = await supabaseMemories.getRecentMemories(4);
-      if (recent && recent.length > 0) {
-        recentChatContext = '\n\n[RIWAYAT PERCAKAPAN TERAKHIR SEBELUM TELEPON]:\n' + recent.map(m => `${m.role === 'user' ? 'Tuan Faqih' : 'N.E.X.A'}: ${m.content.slice(0, 150)}`).join('\n');
-      }
-    } catch (_) {}
+    // B. Core Identity & Rules (Tabel nexa_core_identity)
+    if (personalFactsRes.status === 'fulfilled' && personalFactsRes.value?.coreIdentity?.length > 0) {
+      const idList = personalFactsRes.value.coreIdentity.slice(0, 8);
+      coreIdentityBlock = '\n\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A]:\n• ' + idList.join('\n• ');
+    }
 
-    const fullSystemPrompt = `${NEXA_LIVE_SYSTEM_PROMPT}${temporalContext}${memoryFacts}${recentChatContext}`;
+    // C. Vault Catalog Manifest (Tabel nexa_vault_items / nexa_2nd_brain)
+    if (personalFactsRes.status === 'fulfilled' && personalFactsRes.value?.vaultItems?.length > 0) {
+      const vList = personalFactsRes.value.vaultItems.slice(0, 6).map(item => {
+        const match = String(item).match(/^\[([^\]]+)\]\s*([^\(\[]+)/);
+        return match ? `[${match[1]}] ${match[2].trim()}` : String(item).substring(0, 60);
+      });
+      vaultManifestBlock = '\n\n[ARSIP DOKUMEN 2ND BRAIN VAULT (KATALOG RINGKAS)]:\n• ' + vList.join('\n• ');
+    }
+
+    // D. Self-Model Learned Insights (Tabel nexa_self_model)
+    if (selfModelRes.status === 'fulfilled' && Array.isArray(selfModelRes.value) && selfModelRes.value.length > 0) {
+      const sList = selfModelRes.value.slice(0, 4).map(s => `[${s.layer || 'TRAIT'}] ${s.trait_value}`);
+      selfModelBlock = '\n\n[PEMAHAMAN DIRI N.E.X.A (DIPELAJARI DARI PENGALAMAN)]:\n• ' + sList.join('\n• ');
+    }
+
+    // E. Recent Chat Context (Tabel nexa_chat_memories)
+    if (recentChatRes.status === 'fulfilled' && Array.isArray(recentChatRes.value) && recentChatRes.value.length > 0) {
+      recentChatBlock = '\n\n[RIWAYAT PERCAKAPAN TERAKHIR SEBELUM TELEPON]:\n' +
+        recentChatRes.value.map(m => `${m.role === 'user' ? 'Tuan Faqih' : 'N.E.X.A'}: ${m.content.slice(0, 120)}`).join('\n');
+    }
+
+    // F. Active Financial Accounts (Tabel accounts)
+    if (accountsRes.status === 'fulfilled' && Array.isArray(accountsRes.value) && accountsRes.value.length > 0) {
+      const accList = accountsRes.value.map(a => `${a.name} (${a.type})`).join(', ');
+      accountsBlock = `\n\n[AKUN KEUANGAN AKTIF]: ${accList}`;
+    }
+
+    // G. Active Financial Categories (Tabel categories)
+    if (categoriesRes.status === 'fulfilled' && Array.isArray(categoriesRes.value) && categoriesRes.value.length > 0) {
+      const expenseCats = categoriesRes.value.filter(c => c.type === 'expense').map(c => c.name).slice(0, 12).join(', ');
+      categoriesBlock = `\n\n[KATEGORI PENGELUARAN UTAMA]: ${expenseCats}`;
+    }
+
+    // H. Recent Transactions (Tabel transactions)
+    if (recentFinanceRes.status === 'fulfilled' && recentFinanceRes.value && !recentFinanceRes.value.includes('Tidak ada transaksi')) {
+      recentFinanceBlock = `\n\n[TRANSAKSI KEUANGAN TERKINI]:\n${recentFinanceRes.value}`;
+    }
+
+    // I. Today's Calendar & Tasks
+    let situationalSchedule = '';
+    if (calendarRes.status === 'fulfilled' && calendarRes.value && !calendarRes.value.includes('Tidak ada jadwal')) {
+      situationalSchedule += `\n📅 Jadwal Kalender Hari Ini: ${calendarRes.value.split('\n').filter(l => l.trim()).slice(1, 4).join(', ')}`;
+    }
+    if (tasksRes.status === 'fulfilled' && Array.isArray(tasksRes.value) && tasksRes.value.length > 0) {
+      situationalSchedule += `\n📋 Tugas Hari Ini (${tasksRes.value.length}): ` + tasksRes.value.map(t => t.title).slice(0, 3).join(', ');
+    }
+    if (situationalSchedule) {
+      calendarScheduleBlock = `\n\n[KESADARAN SITUASIONAL HARI INI]:${situationalSchedule}`;
+    }
+
+    const fullSystemPrompt = `${NEXA_LIVE_SYSTEM_PROMPT}${temporalContext}${profileFactsBlock}${coreIdentityBlock}${selfModelBlock}${vaultManifestBlock}${accountsBlock}${categoriesBlock}${recentFinanceBlock}${calendarScheduleBlock}${recentChatBlock}`;
+
+    const elapsed = Date.now() - startTime;
+    console.log(`[LIVE-VOICE] ⚡ Injected 9 Supabase tables & situational blocks into Live systemPrompt (${elapsed}ms parallel).`);
 
     const setupPayload = {
       setup: {
