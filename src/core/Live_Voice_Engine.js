@@ -212,6 +212,7 @@ class LiveVoiceSession {
               functionResponses: [
                 {
                   id: callId,
+                  name: funcName,
                   response: {
                     output: toolResult
                   }
