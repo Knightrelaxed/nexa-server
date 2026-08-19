@@ -360,6 +360,9 @@ OUTPUT JSON FORMAT:
     //   - For READ actions: 'summary' MUST be null or omitted unless user explicitly searched for a specific event title keyword (e.g., "jadwal rapat" -> summary="rapat"). NEVER put date strings or sentences in summary!
     // TASK: { action: "CREATE|CREATE_SUBTASK|CREATE_MULTIPLE|READ|READ_LIST|READ_LISTS|READ_TODAY|READ_TOMORROW|READ_UPCOMING|READ_OVERDUE|READ_DONE|COMPLETE|DELETE|EDIT|MOVE|CLEAR_DONE|SET_PRIORITY", title, due_date: "ISO+07:00|null", notes, search_keyword, list_name, parent_task_keyword, priority: "HIGH|NORMAL", duration_minutes: number|null, tasks: [], sync_calendar: true|false|null, calendar_start_time: "ISO+07:00|null" }
     //   CRITICAL TASK FIELD RULES:
+    //   - READ Triggers: "daftar tugas", "tugas aktif", "cek tugas", "ada tugas apa", "tampilkan semua tugas" -> action="READ" (list_name=null, search_keyword=null).
+    //   - READ_LIST Triggers: "tampilkan list Tugas Kuliah", "tugas list belanja" -> action="READ_LIST", list_name="Tugas Kuliah".
+    //   - READ_LISTS Triggers: "daftar list tugas", "kategori tugas", "apa saja listnya" -> action="READ_LISTS".
     //   - due_date: STRICTLY the task DEADLINE (kapan tugas harus selesai, e.g. "deadline lusa" -> due_date=lusa).
     //   - calendar_start_time: Waktu MULAI BLOK KERJA jika user menyebut jam pengerjaan (e.g. "besok jam 8 malam kerjakan makalah").
     //   - ORDINAL / RELATIVE ACTIONS:

@@ -375,8 +375,26 @@ async function handleTaskIntent(extractedData, chatId = null) {
 
     // ── READ_LIST ────────────────────────────────────────────
     if (action === 'READ_LIST') {
-      const targetList = list_name || search_keyword;
-      if (!targetList) return { status: 'FAILED', message: '❌ Sebutkan nama list yang ingin ditampilkan.' };
+      const targetList = (list_name || search_keyword || '').trim();
+      const isGeneric = !targetList || /^(aktif|semua|daftar|tugas|list|undefined)$/i.test(targetList);
+
+      if (isGeneric) {
+        const taskList = await googleTasks.getActiveTasks();
+        if (!taskList || taskList.length === 0) {
+          return { status: 'SUCCESS', message: `✅ Tidak ada tugas yang tertunda, Tuan. Semuanya bersih! 🎉` };
+        }
+        _lastRenderedTasks = taskList.map((t, idx) => ({
+          index: idx + 1,
+          id: t.id,
+          title: t.title || '(Tanpa Judul)',
+          listId: t.listId || '@default',
+          due: t.due
+        }));
+        let msg = `📋 <b>DAFTAR TUGAS AKTIF (${taskList.length}):</b>\n\n`;
+        msg += taskList.map((t, idx) => formatTask(t, idx)).join('\n\n');
+        return { status: 'SUCCESS', message: msg, tasksCount: taskList.length };
+      }
+
       const taskList = await googleTasks.getTasksFromList(targetList);
       if (taskList.length === 0) return { status: 'SUCCESS', message: `📋 List '<b>${escapeHtml(targetList)}</b>' kosong atau tidak ditemukan.` };
       
