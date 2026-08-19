@@ -107,6 +107,15 @@ class NexaBridgeAdapter {
       try {
         const liveVoice = require('../../core/Live_Voice_Engine');
         const sessionId = callEvent.command_id || `LIVE_CALL_${Date.now()}`;
+
+        // DEDUPLICATION GUARD: If a Live session with this ID is already active, ignore duplicate events.
+        // Android FakeCallActivity may fire CALL_ACCEPTED multiple times (every ~15s retry).
+        const existingSession = liveVoice.getLiveSession(sessionId);
+        if (existingSession && existingSession.isActive) {
+          console.log(`[NEXA-ADAPTER] ⚠️ Ignoring duplicate CALL_ACCEPTED for active session [${sessionId}]`);
+          return;
+        }
+
         console.log(`[NEXA-ADAPTER] ⚡ Starting Gemini Live Voice Session: [${sessionId}] with active client socket`);
         liveVoice.startLiveSession(sessionId, clientWs);
       } catch (err) {
