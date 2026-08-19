@@ -1,6 +1,6 @@
 # 🏛️ N.E.X.A Cloud Core — Unified Google Master OAuth 2.0 Architecture & Migration Blueprint
 
-> **Dokumen Perencanaan Arsitektur, Logika Sistem, & Transisi Infrastruktur Google**  
+> **Dokumen Perencanaan Arsitektur, Logika Sistem, & Fase Implementasi Terstruktur**  
 > **Status:** Planning / Production-Ready Architecture 📋  
 > **Target Rilis:** N.E.X.A Core v3.1  
 > **Waktu Pembuatan:** Rabu, 19 Agustus 2026  
@@ -17,7 +17,12 @@
 6. [Mekanisme Ketahanan, Circuit Breaker, & Token Lifecycle](#6-mekanisme-ketahanan-circuit-breaker--token-lifecycle)
 7. [Reduksi Kompleksitas `.env` & Eliminasi Kunci RSA](#7-reduksi-kompleksitas-env--eliminasi-kunci-rsa)
 8. [Strategi Otorisasi Multi-Environment (Local & Cloud VPS)](#8-strategi-otorisasi-multi-environment-local--cloud-vps)
-9. [Roadmap Implementasi Bertahap (Step-by-Step Refactoring)](#9-roadmap-implementasi-bertahap-step-by-step-refactoring)
+9. [Fase-Fase Implementasi Terstruktur (Step-by-Step Implementation Roadmap)](#9-fase-fase-implementasi-terstruktur-step-by-step-implementation-roadmap)
+   * [Fase 1: Setup GCP Console & Generator Token Master](#fase-1-setup-gcp-console--generator-token-master)
+   * [Fase 2: Pembangunan Core Engine `Google_Master_Client.js`](#fase-2-pembangunan-core-engine-google_master_clientjs)
+   * [Fase 3: Refactoring Modular Facade & Deprikasi Service Account](#fase-3-refactoring-modular-facade--deprikasi-service-account)
+   * [Fase 4: Ekspansi Fitur Domain Baru (Docs, Sheets, Slides, Contacts, Meet)](#fase-4-ekspansi-fitur-domain-baru-docs-sheets-slides-contacts-meet)
+   * [Fase 5: Deployment Azure VPS, Pembersihan `.env`, & Verifikasi Total](#fase-5-deployment-azure-vps-pembersihan-env--verifikasi-total)
 10. [Rancangan Kode Produksi: `Google_Master_Client.js`](#10-rancangan-kode-produksi-google_master_clientjs)
 11. [Rancangan Skrip Otorisasi: `generate_google_master_token.js`](#11-rancangan-skrip-otorisasi-generate_google_master_tokenjs)
 12. [Matriks Pengujian & Verifikasi Kesiapan Operasional](#12-matriks-pengujian--verifikasi-kesiapan-operasional)
@@ -226,23 +231,116 @@ Skrip generator token mendukung 2 mode eksekusi:
 
 ---
 
-## 9. Roadmap Implementasi Bertahap (Step-by-Step Refactoring)
+## 9. Fase-Fase Implementasi Terstruktur (Step-by-Step Implementation Roadmap)
+
+Untuk menjamin proses migrasi berjalan mulus tanpa downtime, eksekusi dibagi menjadi **5 Fase Terurut**:
 
 ```
-[Tahap 1: Setup GCP Console] ──► Tambahkan 14 Scopes & Buat OAuth Client ID (Production)
-       │
-       ▼
-[Tahap 2: Eksekusi Generator] ──► Dapatkan GOOGLE_MASTER_REFRESH_TOKEN
-       │
-       ▼
-[Tahap 3: Implementasi Master Client] ──► Buat src/infrastructure/Google_Master_Client.js
-       │
-       ▼
-[Tahap 4: Modular Facade Refactor] ──► Hubungkan Workspace, Gmail, Tasks ke Master Client
-       │
-       ▼
-[Tahap 5: Update .env & Deploy VPS] ──► SSH ke Azure, git pull, restart PM2 & Verifikasi
+ ┌─────────────────────────────────────────────────────────────────────────────────┐
+ │                   ROADMAP MIGRASI UNIFIED GOOGLE MASTER OAUTH 2.0               │
+ └─────────────────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+ ┌───────────────────┐      ┌─────────────────────────┐      ┌─────────────────────────┐
+ │      FASE 1       │ ───► │         FASE 2          │ ───► │         FASE 3          │
+ │ Setup GCP & Token │      │ Core Master Client & CB │      │ Facade Refactor & Deprec│
+ └───────────────────┘      └─────────────────────────┘      └─────────────────────────┘
+                                                                          │
+                                                                          ▼
+                            ┌─────────────────────────┐      ┌─────────────────────────┐
+                            │         FASE 5          │ ◄─── │         FASE 4          │
+                            │ Deploy VPS & Full Audit │      │ New Domain Capabilities │
+                            └─────────────────────────┘      └─────────────────────────┘
 ```
+
+---
+
+### 🔹 Fase 1: Setup GCP Console & Generator Token Master
+*Tujuan: Mempersiapkan kredensial OAuth 2.0 di Google Cloud Console dan memperoleh Master Refresh Token permanen.*
+
+* **Langkah 1.1:** Buka [Google Cloud Console](https://console.cloud.google.com/).
+* **Langkah 1.2:** Pada menu **OAuth Consent Screen**:
+  * Pilih User Type: **External**.
+  * Ubah Publishing Status ke **Production** *(Krusial: agar token tidak expired dalam 7 hari)*.
+  * Tambahkan 14 Master Scopes (Tasks, Calendar, Meet, Gmail, Contacts, Drive, Docs, Sheets, Slides, Photos, YouTube, UserInfo).
+* **Langkah 1.3:** Pada menu **Credentials**:
+  * Buat **OAuth 2.0 Client ID** bertipe *Web Application* (Redirect URI: `http://localhost:3000/oauth2callback`).
+  * Simpan `GOOGLE_CLIENT_ID` dan `GOOGLE_CLIENT_SECRET`.
+* **Langkah 1.4:** Buat skrip `scripts/generate_google_master_token.js` di codebase.
+* **Langkah 1.5:** Jalankan skrip di terminal ThinkPad, lakukan 1x klik login di browser, centang **Select all**, dan dapatkan string `GOOGLE_MASTER_REFRESH_TOKEN`.
+* **Output Deliverable:** Token master `GOOGLE_MASTER_REFRESH_TOKEN` tersimpan aman di `.env` lokal.
+
+---
+
+### 🔹 Fase 2: Pembangunan Core Engine `Google_Master_Client.js`
+*Tujuan: Membangun modul singleton factory terpusat dengan mekanisme lazy-loading, auto-refresh, dan circuit breaker.*
+
+* **Langkah 2.1:** Buat file baru `src/infrastructure/Google_Master_Client.js`.
+* **Langkah 2.2:** Terapkan Singleton `getOAuth2Client()` dengan listener rotasi token (`_oauth2Client.on('tokens')`).
+* **Langkah 2.3:** Terapkan helper factory `_createServiceClient()` untuk instansiasi lazy-loading:
+  * `getGmail()`, `getTasks()`, `getCalendar()`, `getDrive()`, `getDocs()`, `getSheets()`, `getSlides()`, `getPeople()`, `getYouTube()`.
+* **Langkah 2.4:** Terapkan Circuit Breaker `handleAuthError()` untuk mendeteksi `invalid_grant` dan mengirim peringatan instan ke Telegram tanpa loop spamming.
+* **Langkah 2.5:** Tambahkan unit test verifikasi inisialisasi client di `tests/test_google_master_client.js`.
+* **Output Deliverable:** Modul `Google_Master_Client.js` selesai, lulus uji otentikasi lokal, dan siap dipakai modul lain.
+
+---
+
+### 🔹 Fase 3: Refactoring Modular Facade & Deprikasi Service Account
+*Tujuan: Mengalihkan seluruh modul lama ke Google Master Client tanpa merusak (zero-breaking) pemanggilan yang ada.*
+
+* **Langkah 3.1: Refactor `src/infrastructure/Gmail_Client.js`**
+  * Ganti pembuatan auth OAuth internal dengan `googleMasterClient.getGmail()`.
+  * Pertahankan fungsi helper domain (`getLatestEmails`, `sendEmail`, `createDraft`, dll.).
+* **Langkah 3.2: Refactor `src/infrastructure/Google_Tasks.js`**
+  * Ganti pembuatan auth OAuth internal dengan `googleMasterClient.getTasks()`.
+  * Pertahankan fungsi helper domain (`getTasksDueToday`, `createTask`, `updateTask`, `deleteTask`).
+* **Langkah 3.3: Refactor `src/infrastructure/Google_Workspace.js`**
+  * Ganti instansiasi Service Account RSA (`GoogleAuth`) dengan `googleMasterClient.getCalendar()`, `googleMasterClient.getDrive()`, dan `googleMasterClient.getDocs()`.
+  * Hapus ketergantungan pada `GOOGLE_SERVICE_ACCOUNT_EMAIL` dan `GOOGLE_PRIVATE_KEY`.
+* **Langkah 3.4: Update `src/config/env.js`**
+  * Daftarkan variabel lingkungan baru: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_MASTER_REFRESH_TOKEN`.
+  * Jadikan variabel Service Account lama opsional/deprecated (tidak menyebabkan server crash jika tidak ada).
+* **Output Deliverable:** Seluruh subsistem lama (Finance Polling, Agenda Manager, Task Manager, Vault) berjalan 100% via Master Client.
+
+---
+
+### 🔹 Fase 4: Ekspansi Fitur Domain Baru (Docs, Sheets, Slides, Contacts, Meet)
+*Tujuan: Membuka fitur-fitur baru asisten eksekutif yang sebelumnya tidak bisa dilakukan oleh akun robot.*
+
+* **Langkah 4.1: Google Docs & 2nd Brain Live Writer**
+  * Tambahkan fungsi `createDocument(title, folderId)` dan `appendContent(docId, text)`.
+  * Integrasikan dengan intent `2ND_BRAIN` di `AI_Router.js`.
+* **Langkah 4.2: Google Sheets Financial Spreadsheet Sync**
+  * Tambahkan fungsi `appendExpenseRow(sheetId, txData)` dan `createSpreadsheet(title)`.
+  * Integrasikan ke `Finance_Engine.js` agar selain Supabase, transaksi juga bisa langsung ditulis ke spreadsheet pribadi Tuan.
+* **Langkah 4.3: Google Contacts (People API)**
+  * Tambahkan fungsi `searchContactByName(name)` dan `createContact(name, phone, email)`.
+  * N.E.X.A bisa langsung mencari kontak atau menyimpan nomor baru via chat Telegram.
+* **Langkah 4.4: Google Meet Instant Meeting Room Generator**
+  * Tambahkan parameter `conferenceData` pada `calendar.events.insert()` untuk menghasilkan link Google Meet otomatis saat membuat janji temu.
+* **Output Deliverable:** N.E.X.A memiliki kapabilitas penuh mengelola seluruh dokumen, spreadsheet, kontak, dan rapat Tuan.
+
+---
+
+### 🔹 Fase 5: Deployment Azure VPS, Pembersihan `.env`, & Verifikasi Total
+*Tujuan: Mempublikasikan kode ke server produksi Azure VPS di Jakarta, membersihkan konfigurasi, dan verifikasi menyeluruh.*
+
+* **Langkah 5.1:** Update file `.env` di server Azure VPS:
+  * Hapus baris `GOOGLE_SERVICE_ACCOUNT_EMAIL` dan `GOOGLE_PRIVATE_KEY` (50 baris).
+  * Masukkan baris `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, dan `GOOGLE_MASTER_REFRESH_TOKEN`.
+* **Langkah 5.2:** Commit dan Push seluruh perubahan codebase ke branch `main` GitHub.
+* **Langkah 5.3:** Eksekusi update via SSH ke Azure VPS:
+  ```powershell
+  ssh nexa@48.193.41.76 "cd ~/nexa-server && git pull && pm2 restart nexa-server"
+  ```
+* **Langkah 5.4:** Jalankan **Matriks Pengujian Produksi (6 Skenario)**:
+  1. Uji pemindaian Finance Auto-Sync (Gmail API polling 3 menit).
+  2. Uji pembuatan tugas Google Tasks via Telegram.
+  3. Uji pembuatan jadwal Google Calendar + Google Meet via Telegram.
+  4. Uji upload dokumen Vault ke Google Drive.
+  5. Uji pembuatan draf Google Docs baru.
+  6. Pantau log real-time di PM2 (`pm2 logs nexa-server`) untuk memastikan 0 error otentikasi.
+* **Output Deliverable:** N.E.X.A Cloud Core v3.1 aktif 24/7 di Azure VPS dengan arsitektur Google Master OAuth 2.0 murni.
 
 ---
 
@@ -335,7 +433,6 @@ File: `scripts/generate_google_master_token.js`
 const { google } = require('googleapis');
 const http = require('http');
 const url = require('url');
-const readline = require('readline');
 
 const SCOPES = [
   'openid',
