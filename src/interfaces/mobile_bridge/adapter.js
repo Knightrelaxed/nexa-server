@@ -101,10 +101,40 @@ class NexaBridgeAdapter {
       }
     });
 
-    // Audio Reply Processing (Whisper STT -> AI Router -> Audio/TTS Stream)
+    // 1. Live Voice Stream Session Trigger (Gemini Multimodal Live API)
+    if (callEvent.event === 'CALL_ACCEPTED') {
+      try {
+        const liveVoice = require('../../core/Live_Voice_Engine');
+        const sessionId = callEvent.command_id || `LIVE_CALL_${Date.now()}`;
+        console.log(`[NEXA-ADAPTER] ⚡ Starting Gemini Live Voice Session: [${sessionId}]`);
+        liveVoice.startLiveSession(sessionId, clientWs);
+      } catch (err) {
+        console.error('[NEXA-ADAPTER] Failed to start live voice session:', err.message);
+      }
+      return;
+    }
+
+    // 2. Call Finished / Rejected Cleanup
+    if (callEvent.event === 'CALL_FINISHED' || callEvent.event === 'CALL_REJECTED') {
+      try {
+        const liveVoice = require('../../core/Live_Voice_Engine');
+        const sessionId = callEvent.command_id || '';
+        if (sessionId) {
+          liveVoice.closeLiveSession(sessionId);
+        } else if (clientWs) {
+          const session = liveVoice.getActiveSessionForClient(clientWs);
+          if (session) session.close();
+        }
+      } catch (err) {
+        console.error('[NEXA-ADAPTER] Failed to close live voice session:', err.message);
+      }
+      return;
+    }
+
+    // 3. Audio Reply Processing (Legacy Turn-Based Fallback)
     if (callEvent.event === 'CALL_AUDIO_REPLY' && callEvent.audio_base64) {
       try {
-        console.log(`[NEXA-ADAPTER] 🎙️ Processing Voice Reply (${callEvent.audio_base64.length} chars Base64)...`);
+        console.log(`[NEXA-ADAPTER] 🎙️ Processing Legacy Voice Reply (${callEvent.audio_base64.length} chars Base64)...`);
         // Lazy-load Voice_Engine to transcribe
         const voiceEngine = require('../../core/Voice_Engine');
         const transcription = await voiceEngine.transcribePcmBase64(callEvent.audio_base64);
@@ -122,13 +152,12 @@ class NexaBridgeAdapter {
           let rawReply = typeof aiReply === 'string'
             ? aiReply
             : (aiReply?.reply_message || aiReply?.text || 'Baik Tuan Faqih.');
-          // Strip HTML tags and markdown formatting for natural TTS speech
           const replyText = rawReply.replace(/<[^>]*>/g, '').replace(/[*_`#]/g, '').trim();
           console.log(`[NEXA-ADAPTER] 🗣️ Speaking reply on phone: "${replyText}"`);
           await this.speakText(replyText);
         }
       } catch (err) {
-        console.error('[NEXA-ADAPTER] Error processing call audio reply:', err.message);
+        console.error('[NEXA-ADAPTER] Error processing legacy call audio reply:', err.message);
       }
     }
   }

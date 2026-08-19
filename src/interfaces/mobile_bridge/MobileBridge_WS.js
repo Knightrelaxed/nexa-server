@@ -133,13 +133,30 @@ function initWebSocket(server) {
           return;
         }
 
-        // E. Call Interaction Event (FakeCallActivity v2.0)
+        // E. Call Interaction Event (FakeCallActivity v2.0 & Live Voice API)
         if (payload.type === 'CALL_EVENT') {
           try {
             const adapter = require('./adapter');
-            adapter.handleIncomingCallEvent(payload);
+            adapter.handleIncomingCallEvent(payload, ws);
           } catch (e) {
             console.error('[NEXA-BRIDGE-WS] Call event routing error:', e.message);
+          }
+          return;
+        }
+
+        // E.1. Continuous Live Audio Stream (Gemini Multimodal Live API Relay)
+        if (payload.type === 'CALL_AUDIO_STREAM' || payload.type === 'AUDIO_STREAM') {
+          try {
+            const liveVoice = require('../../core/Live_Voice_Engine');
+            const activeSession = liveVoice.getActiveSessionForClient(ws);
+            if (activeSession) {
+              const pcmData = payload.pcm_chunk || payload.pcm || payload.data;
+              if (pcmData) {
+                activeSession.handleIncomingClientAudio(pcmData);
+              }
+            }
+          } catch (e) {
+            console.error('[NEXA-BRIDGE-WS] Audio stream relay error:', e.message);
           }
           return;
         }
@@ -169,6 +186,15 @@ function initWebSocket(server) {
       if (activeClient === ws) {
         activeClient = null;
       }
+      // Close any active live voice session for this client
+      try {
+        const liveVoice = require('../../core/Live_Voice_Engine');
+        const session = liveVoice.getActiveSessionForClient(ws);
+        if (session) {
+          session.close();
+        }
+      } catch (_) {}
+
       // Purge all pending command promises so event loop never deadlocks
       if (pendingCommands.size > 0) {
         console.warn(`[NEXA-BRIDGE-WS] ⚠️ Clearing ${pendingCommands.size} pending command(s) on disconnect.`);
