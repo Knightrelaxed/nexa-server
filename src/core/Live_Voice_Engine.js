@@ -496,6 +496,16 @@ class LiveVoiceSession {
 
             try {
               const toolResult = await executeLiveTool(funcName, funcArgs);
+
+              // Record structured turn into turnHistory and chat memories for passive learning & Telegram continuity
+              const userActionDesc = `[Aksi Tuan Faqih]: ${funcName}(${JSON.stringify(funcArgs)})`;
+              const assistantReplyDesc = `[Respon N.E.X.A]: ${toolResult?.message || JSON.stringify(toolResult)}`;
+              this.turnHistory.push({ role: 'user', text: userActionDesc });
+              this.turnHistory.push({ role: 'assistant', text: assistantReplyDesc });
+
+              supabaseMemories.saveChatMemory('user', userActionDesc, 'live_call').catch(() => {});
+              supabaseMemories.saveChatMemory('nexa', assistantReplyDesc, 'live_call').catch(() => {});
+
               return {
                 id: callId,
                 name: funcName,
@@ -651,10 +661,9 @@ class LiveVoiceSession {
    * Runs after call close — zero latency impact on voice session
    */
   async _runPassiveLearningPipeline(durationSec) {
-    if (this.turnHistory.length < 2) return; // Not enough turns to learn from
-    if (durationSec < 10) return; // Skip very short calls (< 10 seconds)
+    if (!this.turnHistory || this.turnHistory.length === 0) return;
 
-    console.log(`[LIVE-VOICE] 🧠 Starting End-of-Call Passive Learning Pipeline...`);
+    console.log(`[LIVE-VOICE] 🧠 Starting End-of-Call Passive Learning Pipeline (${this.turnHistory.length} turns, ${durationSec}s)...`);
 
     // Build conversation text for AI analysis
     const conversationText = this.turnHistory
