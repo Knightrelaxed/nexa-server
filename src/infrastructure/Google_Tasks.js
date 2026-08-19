@@ -2,6 +2,9 @@ const { google } = require('googleapis');
 const env = require('../config/env');
 
 let tasksClient = null;
+let _cachedTaskLists = null;
+let _cachedListsTimestamp = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
 
 function getTasksClient() {
   if (tasksClient) return tasksClient;
@@ -29,21 +32,65 @@ function getTasksClient() {
   return tasksClient;
 }
 
-// Default task list = "@default" (My Tasks)
+// Default task list = "@default" (My Tasks / Tugas Saya)
 const DEFAULT_LIST = '@default';
 
 /**
- * Get all task lists
+ * Normalize date string to exact Date-Only UTC midnight for Google Tasks API.
+ * Accurately prevents off-by-one day bugs caused by local WIB (+07:00) conversions.
+ * e.g., "2026-08-20T14:00:00+07:00" -> "2026-08-20T00:00:00.000Z"
  */
-async function getTaskLists() {
-  const client = getTasksClient();
-  if (!client) return [];
-  const res = await client.tasklists.list({ maxResults: 20 });
-  return res.data.items || [];
+function normalizeDateOnly(dateInput) {
+  if (!dateInput) return null;
+  const str = String(dateInput).trim();
+  let datePart = '';
+  if (str.includes('T')) {
+    // If it contains time and offset, convert to Asia/Jakarta date part first
+    try {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        datePart = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Jakarta',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(d);
+      }
+    } catch (_) {}
+  }
+  if (!datePart) {
+    datePart = str.split('T')[0].split(' ')[0];
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    return `${datePart}T00:00:00.000Z`;
+  }
+  return null;
 }
 
 /**
- * Create a new task
+ * Get all task lists with caching to minimize latency and API quota
+ */
+async function getTaskLists(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && _cachedTaskLists && (now - _cachedListsTimestamp < CACHE_TTL_MS)) {
+    return _cachedTaskLists;
+  }
+
+  const client = getTasksClient();
+  if (!client) return [];
+  try {
+    const res = await client.tasklists.list({ maxResults: 50 });
+    _cachedTaskLists = res.data.items || [];
+    _cachedListsTimestamp = now;
+    return _cachedTaskLists;
+  } catch (err) {
+    console.error('[TASKS] Error fetching tasklists:', err.message);
+    return _cachedTaskLists || [];
+  }
+}
+
+/**
+ * Create a new task with normalized due date
  */
 async function createTask({ title, notes = '', dueDate = null, listId = DEFAULT_LIST }) {
   const client = getTasksClient();
@@ -51,11 +98,7 @@ async function createTask({ title, notes = '', dueDate = null, listId = DEFAULT_
   const task = { title, notes };
 
   if (dueDate) {
-    // Google Tasks 'due' field is DATE-ONLY (time is ignored).
-    // To avoid off-by-one timezone errors, extract the local date portion
-    // and always store as midnight UTC of that same calendar date.
-    const localDateStr = dueDate.split('T')[0]; // e.g. "2026-05-09"
-    task.due = `${localDateStr}T00:00:00.000Z`;
+    task.due = normalizeDateOnly(dueDate);
   }
 
   const res = await client.tasks.insert({ tasklist: listId, requestBody: task });
@@ -63,17 +106,7 @@ async function createTask({ title, notes = '', dueDate = null, listId = DEFAULT_
 }
 
 /**
- * Get all task lists
- */
-async function getAllLists() {
-  const client = getTasksClient();
-  if (!client) return [];
-  const res = await client.tasklists.list({ maxResults: 50 });
-  return res.data.items || [];
-}
-
-/**
- * Get all active (incomplete) tasks
+ * Get all active (incomplete) tasks across a specific list or all lists
  */
 async function getActiveTasks(listId = null) {
   const client = getTasksClient();
@@ -92,7 +125,7 @@ async function getActiveTasks(listId = null) {
   }
 
   // Fetch from ALL lists
-  const lists = await getAllLists();
+  const lists = await getTaskLists();
   let allTasks = [];
   for (const list of lists) {
     try {
@@ -103,9 +136,12 @@ async function getActiveTasks(listId = null) {
         maxResults: 50
       });
       const items = res.data.items || [];
-      items.forEach(t => t.listId = list.id);
+      items.forEach(t => {
+        t.listId = list.id;
+        t.listTitle = list.title;
+      });
       allTasks = allTasks.concat(items);
-    } catch (e) {}
+    } catch (_) {}
   }
   return allTasks;
 }
@@ -151,17 +187,16 @@ async function deleteTask(taskId, listId = DEFAULT_LIST) {
 }
 
 /**
- * Edit a task's title or due date
+ * Edit a task's title, notes, or due date
  */
 async function editTask({ taskId, newTitle, newNotes, newDueDate, listId = DEFAULT_LIST }) {
   const client = getTasksClient();
   if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
   const patch = {};
   if (newTitle) patch.title = newTitle;
-  if (newNotes) patch.notes = newNotes;
+  if (newNotes !== undefined) patch.notes = newNotes;
   if (newDueDate) {
-    const localDateStr = String(newDueDate).split('T')[0];
-    patch.due = `${localDateStr}T00:00:00.000Z`;
+    patch.due = normalizeDateOnly(newDueDate);
   }
 
   const res = await client.tasks.patch({
@@ -173,14 +208,15 @@ async function editTask({ taskId, newTitle, newNotes, newDueDate, listId = DEFAU
 }
 
 /**
- * Find tasks by keyword (fuzzy match against title)
+ * Find tasks by keyword (fuzzy match against title or notes)
  */
 async function findTasksByKeyword(keyword, listId = null) {
   const tasks = await getActiveTasks(listId);
   const words = keyword.toLowerCase().split(/\s+/).filter(Boolean);
-  return tasks.filter(t =>
-    words.every(w => (t.title || '').toLowerCase().includes(w))
-  );
+  return tasks.filter(t => {
+    const text = `${t.title || ''} ${t.notes || ''}`.toLowerCase();
+    return words.every(w => text.includes(w));
+  });
 }
 
 /**
@@ -196,11 +232,11 @@ async function clearCompletedTasks(listId = null) {
   }
   
   // Clear completed tasks from ALL lists
-  const lists = await getAllLists();
+  const lists = await getTaskLists();
   for (const list of lists) {
     try {
       await client.tasks.clear({ tasklist: list.id });
-    } catch (e) {}
+    } catch (_) {}
   }
   return true;
 }
@@ -283,31 +319,28 @@ async function getTasksByDateRange(startIso, endIso, listId = null) {
 
 /**
  * Find a task list by name, or create it if it doesn't exist.
- * Returns the list object { id, title }.
  */
 async function findOrCreateList(name) {
-  const client = getTasksClient();
-  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
-  const res = await client.tasklists.list({ maxResults: 50 });
-  const lists = res.data.items || [];
+  const lists = await getTaskLists(true);
   const found = lists.find(l => l.title && l.title.toLowerCase() === name.toLowerCase());
   if (found) return found;
-  // Create new list
+
+  const client = getTasksClient();
+  if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
   const created = await client.tasklists.insert({ requestBody: { title: name } });
+  await getTaskLists(true); // refresh cache
   return created.data;
 }
 
 /**
- * Create a subtask under a parent task.
- * @param {{ title, notes, dueDate, parentId, listId }}
+ * Create a subtask under a parent task
  */
 async function createSubtask({ title, notes = '', dueDate = null, parentId, listId = DEFAULT_LIST }) {
   const client = getTasksClient();
   if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
   const task = { title, notes };
   if (dueDate) {
-    const localDateStr = String(dueDate).split('T')[0];
-    task.due = `${localDateStr}T00:00:00.000Z`;
+    task.due = normalizeDateOnly(dueDate);
   }
   const res = await client.tasks.insert({
     tasklist: listId,
@@ -318,7 +351,7 @@ async function createSubtask({ title, notes = '', dueDate = null, parentId, list
 }
 
 /**
- * Get all subtasks (children) of a given parent task.
+ * Get all subtasks (children) of a given parent task
  */
 async function getSubtasks(parentId, listId = DEFAULT_LIST) {
   const tasks = await getActiveTasks(listId);
@@ -326,13 +359,10 @@ async function getSubtasks(parentId, listId = DEFAULT_LIST) {
 }
 
 /**
- * Get tasks from a specific named list (find list first).
+ * Get tasks from a specific named list
  */
 async function getTasksFromList(listName) {
-  const client = getTasksClient();
-  if (!client) return [];
-  const res = await client.tasklists.list({ maxResults: 50 });
-  const lists = res.data.items || [];
+  const lists = await getTaskLists();
   const found = lists.find(l => l.title && l.title.toLowerCase() === listName.toLowerCase());
   if (!found) return [];
   return getActiveTasks(found.id);
@@ -340,28 +370,18 @@ async function getTasksFromList(listName) {
 
 /**
  * Move a task to a different task list
- * Google Tasks API doesn't have a direct "move" operation, so we:
- * 1. Read the task details
- * 2. Create a new task in the target list
- * 3. Delete the original task
- * @param {string} taskId - The task ID to move
- * @param {string} targetListName - The name of the target list
- * @param {string} sourceListId - The source list ID (optional, defaults to @default)
  */
 async function moveTaskToList(taskId, targetListName, sourceListId = DEFAULT_LIST) {
   const client = getTasksClient();
   if (!client) throw new Error('Google Tasks belum dikonfigurasi.');
 
-  // 1. Get the original task details
   const originalTask = await client.tasks.get({
     tasklist: sourceListId,
     task: taskId
   });
 
-  // 2. Find or create the target list
   const targetList = await findOrCreateList(targetListName);
 
-  // 3. Create the task in the target list
   const newTask = {
     title: originalTask.data.title,
     notes: originalTask.data.notes || '',
@@ -377,7 +397,6 @@ async function moveTaskToList(taskId, targetListName, sourceListId = DEFAULT_LIS
     requestBody: newTask
   });
 
-  // 4. Delete the original task
   await client.tasks.delete({
     tasklist: sourceListId,
     task: taskId
@@ -405,5 +424,6 @@ module.exports = {
   editTask,
   findTasksByKeyword,
   clearCompletedTasks,
-  moveTaskToList
+  moveTaskToList,
+  normalizeDateOnly
 };

@@ -1,11 +1,10 @@
 const googleWorkspace = require('../infrastructure/Google_Workspace');
 const googleTasks = require('../infrastructure/Google_Tasks');
 const env = require('../config/env');
-const { exec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(exec);
 
-const pendingAgendas = new Map();
+// Short-term working memory for rendered calendar events (for ordinal commands like "hapus yang pertama", "ubah yang kedua")
+let _lastRenderedCalendarEvents = [];
+let _lastActionContext = null;
 
 function escapeHtml(value) {
   return String(value || '')
@@ -16,19 +15,62 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * 📊 Bayesian / Probabilistic Semantic Duration Inference Matrix
+ * Infers the most natural event duration in minutes based on keywords and activity context.
+ */
+function inferProbableDuration(summary = '', rawText = '') {
+  const combined = `${summary} ${rawText}`.toLowerCase();
 
+  // 1. Explicit Duration via Natural Language Regex Fast Path
+  const explicitMins = _parseExplicitDuration(combined);
+  if (explicitMins) return explicitMins;
+
+  // 2. Semantic Matrix Heuristics
+  // Academic / Course / Lecture (Standar 2-3 SKS UGM: 100 - 120 menit)
+  if (/\b(kuliah|matkul|mata\s*kuliah|praktikum|kelas|lecture|lab|tutorial|sks)\b/i.test(combined)) {
+    return 100;
+  }
+
+  // Academic Consultation / Thesis Guidance (30 - 45 menit)
+  if (/\b(bimbingan|konsultasi|tatap\s*muka\s*dosen|revisi\s*skripsi|dosen\s*pembimbing|dospem)\b/i.test(combined)) {
+    return 45;
+  }
+
+  // Formal Exam / Defense / Thesis Defense (90 - 120 menit)
+  if (/\b(ujian|uts|uas|sidang|pendadaran|komprehensif|test|evaluasi\s*akhir)\b/i.test(combined)) {
+    return 100;
+  }
+
+  // Social / Casual / Dining / Hangout (90 menit)
+  if (/\b(ngopi|warkop|cafe|makan|lunch|dinner|sarapan|nongkrong|hangout|silaturahmi|buka\s*bersama|bukber)\b/i.test(combined)) {
+    return 90;
+  }
+
+  // Quick Communication / Phone Call / Virtual Meeting (30 menit)
+  if (/\b(telpon|telepon|call|zoom|gmeet|google\s*meet|voice\s*call|video\s*call)\b/i.test(combined)) {
+    return 30;
+  }
+
+  // Meeting / Corporate / Project Discussion (60 menit)
+  if (/\b(rapat|meeting|diskusi|briefing|koordinasi|sync|evaluasi|workshop|webinar|seminar)\b/i.test(combined)) {
+    return 60;
+  }
+
+  // Sports / Exercise / Gym (75 menit)
+  if (/\b(olahraga|gym|fitness|futsal|badminton|bulutangkis|jogging|workout|renang)\b/i.test(combined)) {
+    return 75;
+  }
+
+  // Default Failsafe Duration (60 menit)
+  return 60;
+}
 
 /**
- * Parse natural language duration into minutes.
- * Uses fast regex for obvious cases, then falls back to AI for creative/ambiguous phrasing.
- * Handles: "setengah jam", "sejam", "½ jam", "¾ jam", "dua jam", "kira-kira 2 jam lah",
- *          "sekitar 45 menit", "1 jam 30 menit", "an hour", "30 minutes", bare numbers, etc.
+ * Fast regex parser for explicit duration mentions in Indonesian & English
  */
-async function parseDurationMinutes(text) {
-  if (!text) return null;
+function _parseExplicitDuration(text = '') {
   const t = text.toLowerCase().trim();
-
-  // --- FAST PATH: Obvious regex cases ---
 
   // Unicode fractions: ½ jam, ¼ jam, ¾ jam
   if (t.includes('½') || t.includes('0.5 jam') || t.includes('0,5 jam')) {
@@ -38,58 +80,71 @@ async function parseDurationMinutes(text) {
   if (t.includes('¼ jam') || t.includes('quarter')) return 15;
   if (t.includes('¾ jam')) return 45;
 
-  // "sejam" / "sejaman" (Indonesian shorthand for "satu jam")
+  // "sejam" / "sejaman"
   if (/\bsejam\w*\b/.test(t)) return 60;
 
-  // "setengah jam" / "half hour" / "half an hour"
+  // "setengah jam" / "half hour"
   if (/setengah\s*jam|half[\s-]*(an\s*)?hour/.test(t)) return 30;
 
-  // "X jam Y menit" — e.g. "1 jam 30 menit", "2 jam 15 menit"
+  // "X jam Y menit" — e.g. "1 jam 30 menit"
   const jamMenitMatch = t.match(/(\d+(?:[.,]\d+)?)\s*jam\s*(\d+)\s*menit/);
   if (jamMenitMatch) return Math.round(parseFloat(jamMenitMatch[1].replace(',', '.')) * 60) + parseInt(jamMenitMatch[2]);
 
-  // "X,5 jam" / "X.5 jam" — e.g. "1,5 jam"
+  // "X,5 jam"
   const halfJamMatch = t.match(/(\d+)[.,]5\s*jam/);
   if (halfJamMatch) return parseInt(halfJamMatch[1]) * 60 + 30;
 
-  // "X jam" — e.g. "2 jam", "1 jam"
+  // "X jam"
   const jamMatch = t.match(/(\d+(?:[.,]\d+)?)\s*jam/);
   if (jamMatch) return Math.round(parseFloat(jamMatch[1].replace(',', '.')) * 60);
 
-  // "X menit" / "X minutes" — e.g. "45 menit", "90 minutes"
+  // "X menit"
   const menitMatch = t.match(/(\d+)\s*(menit|minutes?|min)/);
   if (menitMatch) return parseInt(menitMatch[1]);
 
-  // "X hours" / "X hour" (English)
+  // "X hours"
   const hourMatch = t.match(/(\d+(?:[.,]\d+)?)\s*hours?/);
   if (hourMatch) return Math.round(parseFloat(hourMatch[1].replace(',', '.')) * 60);
 
-  // Bare small number (< 360 treated as minutes, e.g. user says "60" or "90")
-  const bareNum = t.match(/^\s*(\d{1,3})\s*$/);
-  if (bareNum && parseInt(bareNum[1]) <= 360) return parseInt(bareNum[1]);
-
-  // --- SLOW PATH: Ask AI to extract duration ---
-  // Guard: only call AI if the text actually LOOKS like a duration answer
-  // Must have a number+unit OR well-known shorthand - NOT just a time reference like "jam 7 malam"
-  const durationPatterns = /\d+\s*(jam|menit|hours?|minutes?|min)|sejam\w*|setengah\s*jam|half[\s-]*(an\s*)?hour|\b\u00bd|\b\u00bc|\b\u00be/i;
-  if (!durationPatterns.test(t)) {
-    return null;
-  }
-
-  try {
-    const aiRouter = require('../core/AI_Router');
-    const prompt = `Ekstrak HANYA jumlah menit dari teks berikut. Jawab HANYA dengan angka bulat, tanpa teks lain. Jika tidak ada durasi waktu kegiatan, jawab 0.\n\nTeks: "${text}"`;
-    const raw = await aiRouter.callAI(prompt);
-    const num = parseInt(String(raw).trim());
-    if (!isNaN(num) && num > 0 && num <= 1440) {
-      console.log(`[AGENDA] AI parsed duration: "${text}" → ${num} menit`);
-      return num;
-    }
-  } catch (e) {
-    console.error('[AGENDA] AI duration parse failed:', e.message);
-  }
-
   return null;
+}
+
+/**
+ * Resolve target event ID or summary from working memory or ordinal references
+ */
+function _resolveTargetEvent(searchSummary = '', eventId = null) {
+  if (eventId) return { id: eventId, summary: searchSummary };
+
+  const s = String(searchSummary || '').toLowerCase().trim();
+
+  // 1. Ordinal index resolution: "pertama" / "ke-1" / "INDEX_1"
+  if (/^(index_1|pertama|ke-?1|nomor\s*1|no\s*1|paling\s*atas)$/i.test(s) && _lastRenderedCalendarEvents.length >= 1) {
+    return _lastRenderedCalendarEvents[0];
+  }
+  // "kedua" / "ke-2" / "INDEX_2"
+  if (/^(index_2|kedua|ke-?2|nomor\s*2|no\s*2)$/i.test(s) && _lastRenderedCalendarEvents.length >= 2) {
+    return _lastRenderedCalendarEvents[1];
+  }
+  // "ketiga" / "ke-3" / "INDEX_3"
+  if (/^(index_3|ketiga|ke-?3|nomor\s*3|no\s*3)$/i.test(s) && _lastRenderedCalendarEvents.length >= 3) {
+    return _lastRenderedCalendarEvents[2];
+  }
+  // "terakhir" / "paling bawah"
+  if (/^(index_last|terakhir|paling\s*bawah)$/i.test(s) && _lastRenderedCalendarEvents.length > 0) {
+    return _lastRenderedCalendarEvents[_lastRenderedCalendarEvents.length - 1];
+  }
+  // "yang tadi" / "barusan" / "LATEST"
+  if (/^(latest|yang\s*tadi|barusan|tadi)$/i.test(s) && _lastActionContext) {
+    return _lastActionContext;
+  }
+
+  // Fallback: match by title substring in working memory
+  if (s && _lastRenderedCalendarEvents.length > 0) {
+    const match = _lastRenderedCalendarEvents.find(e => (e.summary || '').toLowerCase().includes(s));
+    if (match) return match;
+  }
+
+  return { id: null, summary: searchSummary };
 }
 
 async function _tryProactiveTaskSuggestion(summary) {
@@ -97,7 +152,7 @@ async function _tryProactiveTaskSuggestion(summary) {
     const { callAI } = require('../core/AI_Router');
     const aiPrompt = `Acara kalender baru ditambahkan: "${summary}". Apakah acara ini (rapat, seminar, ujian, kuliah, presentasi, tugas kelompok, dll) umumnya membutuhkan 1-2 tugas persiapan yang terukur (seperti menyiapkan dokumen, membaca materi, membuat slide)? Jawab HANYA dengan format ini jika Ya:\nYa, saya rekomendasikan tugas persiapan:\n1. [Tugas 1]\n2. [Tugas 2]\n\nATAU jawab "Tidak" jika acaranya kasual/tidak butuh persiapan. Jangan bertele-tele.`;
     const aiResponse = await callAI(aiPrompt);
-    if (aiResponse.toLowerCase().startsWith('ya')) {
+    if (aiResponse && aiResponse.toLowerCase().startsWith('ya')) {
       const tasks = [];
       const lines = aiResponse.split('\n');
       for (const line of lines) {
@@ -107,140 +162,112 @@ async function _tryProactiveTaskSuggestion(summary) {
         }
       }
       return {
-        text: `\n\n💡 <b>Saran Proaktif N.E.X.A:</b>\n${escapeHtml(aiResponse)}\n<i>(Jika Tuan setuju, balas: "Buatkan tugas untuk persiapan agenda tersebut" atau "Setuju")</i>`,
+        text: `\n\n💡 <b>Saran Proaktif N.E.X.A:</b>\n${escapeHtml(aiResponse)}\n<i>(Balas: "Buatkan tugas persiapan" jika ingin dicatat ke Google Tasks)</i>`,
         tasks
       };
     }
-  } catch (e) {
-    console.warn('[AGENDA] Failed to generate proactive tasks:', e.message);
-  }
+  } catch (_) {}
   return null;
 }
 
+/**
+ * Main handler for Calendar Intent (Zero-Friction & Probabilistic)
+ */
 async function handleCalendarIntent(extractedData, rawUserText = '') {
-  let { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence, color_id } = extractedData;
-  console.log(`[AGENDA] Executing Calendar Intent: ${action}`);
+  let { action, summary, start, end, eventId, description, location, reminder_minutes, recurrence, color_id, with_meet } = extractedData;
+  console.log(`[AGENDA] Executing Calendar Intent: ${action} | summary: "${summary}"`);
 
-  // Sanitize summary against AI hallucinations during READ actions (e.g. AI putting sentences or date descriptions in summary field)
+  // Sanitize hallucinated summaries in READ actions
   if (summary && typeof summary === 'string' && ['READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(action)) {
     const sLower = summary.trim().toLowerCase();
-    if (sLower.length > 25 || /adalah|tidak ada|jadwal|tugas|jatuh tempo|hari besok|hari ini|minggu ini|senin|selasa|rabu|kamis|jumat|sabtu|minggu|juli|agustus|januari|februari|maret|april|mei|juni|september|oktober|november|desember|202[0-9]/i.test(sLower)) {
-      console.warn(`[AGENDA] Hallucinated READ summary ignored: "${summary}"`);
+    if (sLower.length > 25 || /adalah|tidak ada|jadwal|tugas|jatuh tempo|hari besok|hari ini|minggu ini|senin|selasa|rabu|kamis|jumat|sabtu|minggu|juli|agustus|202[0-9]/i.test(sLower)) {
       summary = null;
     }
   }
 
   try {
+    // ════════════════════════════════════════════════════════════════
+    // 1. ACTION: CREATE (Optimistic & Zero Friction)
+    // ════════════════════════════════════════════════════════════════
     if (action === 'CREATE') {
       if (!summary) {
         return { status: 'FAILED', message: '❌ Mohon sebutkan nama kegiatannya, Tuan.' };
       }
       if (!start) {
-        return { status: 'FAILED', message: `❌ Kapan kegiatan '${summary}' ini dilaksanakan, Tuan?` };
+        return { status: 'FAILED', message: `❌ Kapan kegiatan '<b>${escapeHtml(summary)}</b>' ini dilaksanakan, Tuan?` };
       }
+
+      // Check if start has date only (no time)
       const isMidnightUTC = start.includes('T00:00:00.000Z') || start.includes('T00:00:00Z') || start.includes('T17:00:00.000Z') || start.includes('T17:00:00Z');
       if (!start.includes('T') || isMidnightUTC) {
-        return { status: 'FAILED', message: `❌ Tanggal untuk kegiatan '${summary}' sudah saya mengerti, tapi jam berapa pelaksanaannya, Tuan?` };
+        return { status: 'FAILED', message: `❌ Tanggal untuk '<b>${escapeHtml(summary)}</b>' sudah saya mengerti, tapi jam berapa pelaksanaannya, Tuan? (Contoh: "jam 2 siang" atau "14:00")` };
       }
+
+      const startDate = new Date(start);
+      if (isNaN(startDate.getTime())) {
+        return { status: 'FAILED', message: `❌ Format waktu untuk '<b>${escapeHtml(summary)}</b>' tidak valid. Mohon sebutkan ulang jamnya, Tuan.` };
+      }
+
+      // ── Calculate End Time via Probabilistic Duration Matrix ──────
+      let durationMins = null;
       if (!end) {
-        // Validate start before doing any date math
-        const startDate = new Date(start);
-        if (isNaN(startDate.getTime())) {
-          return { status: 'FAILED', message: `❌ Format waktu untuk kegiatan '${summary}' tidak valid. Mohon sebutkan ulang waktunya, Tuan? (Contoh: "jam 7 malam" atau "19:00")` };
-        }
-
-        // Try to extract duration from rawUserText (for follow-up answers like "setengah jam")
-        const durationMins = await parseDurationMinutes(rawUserText);
-        if (durationMins) {
-          startDate.setMinutes(startDate.getMinutes() + durationMins);
-          const computedEnd = startDate.toISOString();
-
-          // Check for conflicts before creating
-          const conflicts = await googleWorkspace.checkCalendarConflicts(start, computedEnd);
-          if (conflicts.length > 0) {
-            const conflictList = conflicts.map(c => {
-              const sTime = new Date(c.start).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-              const eTime = new Date(c.end).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-              return `   ⚠️ ${sTime}-${eTime}: ${c.summary}${c.location ? ` (${c.location})` : ''}`;
-            }).join('\n');
-            return {
-              status: 'CONFLICT_DETECTED',
-              message: `⚠️ <b>Konflik Jadwal Terdeteksi!</b>\n\nKegiatan '<b>${escapeHtml(summary)}</b>' bentrok dengan:\n${conflictList}\n\nApakah tetap ingin ditambahkan? (Balas: "ya" untuk lanjut, "batal" untuk membatalkan)`,
-              conflicts: conflicts,
-              pendingEvent: { summary, start, end: computedEnd, description, location, reminder_minutes, recurrence, color_id }
-            };
-          }
-
-          const result = await googleWorkspace.createCalendarEvent(summary, start, computedEnd, description || '', location || '', reminder_minutes || [], recurrence || '', color_id || '');
-          let successMsg = `✅ Jadwal '<b>${escapeHtml(summary)}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).`;
-          if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
-          if (recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
-          if (color_id) successMsg += `\n🎨 Warna event disesuaikan.`;
-
-          const proactive = await _tryProactiveTaskSuggestion(summary);
-          let proactiveTasks = null;
-          if (proactive) {
-            successMsg += proactive.text;
-            if (proactive.tasks && proactive.tasks.length > 0) {
-              proactiveTasks = { summary, tasks: proactive.tasks };
-            }
-          }
-
-          return { status: 'SUCCESS', message: successMsg, eventId: result.id, proactiveTasks };
-        }
-
-        // No duration in text → return PENDING_END and schedule auto-create after 15 min
-        const pendingId = `${summary}_${start}`;
-        if (!pendingAgendas.has(pendingId)) {
-          const autoEnd = new Date(startDate.getTime() + 60 * 60 * 1000).toISOString();
-          const timer = setTimeout(async () => {
-            if (pendingAgendas.has(pendingId)) {
-              try {
-                const d = pendingAgendas.get(pendingId);
-                await googleWorkspace.createCalendarEvent(d.summary, d.start, d.end, d.description || '', d.location || '', d.reminder_minutes || [], d.recurrence || '', d.color_id || '');
-                const { sendTelegramOutbound } = require('../interfaces/webhook');
-                sendTelegramOutbound(`⏳ Waktu konfirmasi habis! Jadwal '<b>${escapeHtml(d.summary)}</b>' otomatis ditambahkan ke kalender (durasi standar 1 jam).`);
-              } catch (e) { console.error('[AGENDA] Auto-create failed:', e); }
-              pendingAgendas.delete(pendingId);
-            }
-          }, 15 * 60 * 1000);
-          pendingAgendas.set(pendingId, { summary, start, end: autoEnd, description, location, reminder_minutes, recurrence, color_id, timer });
-        }
-        return { status: 'PENDING_END', message: `❓ Kira-kira berapa lama durasi untuk '<b>${escapeHtml(summary)}</b>' ini, Tuan?
-
-<i>(Jika tidak ada jawaban dalam 15 menit, N.E.X.A akan otomatis menambahkannya dengan durasi standar 1 jam)</i>` };
-      }
-
-      // end is provided — clear any matching pending
-      for (const [id, data] of pendingAgendas.entries()) {
-        if (data.summary.toLowerCase() === summary.toLowerCase()) {
-          clearTimeout(data.timer);
-          pendingAgendas.delete(id);
+        durationMins = inferProbableDuration(summary, rawUserText);
+        const endDate = new Date(startDate.getTime() + durationMins * 60000);
+        end = endDate.toISOString();
+      } else {
+        const endDate = new Date(end);
+        if (!isNaN(endDate.getTime())) {
+          durationMins = Math.max(15, Math.round((endDate.getTime() - startDate.getTime()) / 60000));
+        } else {
+          durationMins = 60;
+          end = new Date(startDate.getTime() + 60 * 60000).toISOString();
         }
       }
 
-      // Check for conflicts before creating when end is provided
+      // ── Conflict Check ──────────────────────────────────────────
       const conflicts = await googleWorkspace.checkCalendarConflicts(start, end);
-      if (conflicts.length > 0) {
+      if (conflicts && conflicts.length > 0) {
         const conflictList = conflicts.map(c => {
           const sTime = new Date(c.start).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
           const eTime = new Date(c.end).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-          return `   ⚠️ ${sTime}-${eTime}: ${c.summary}${c.location ? ` (${c.location})` : ''}`;
+          return `   ⚠️ ${sTime}–${eTime}: <b>${escapeHtml(c.summary)}</b>${c.location ? ` (📍 ${escapeHtml(c.location)})` : ''}`;
         }).join('\n');
         return {
           status: 'CONFLICT_DETECTED',
-          message: `⚠️ <b>Konflik Jadwal Terdeteksi!</b>\n\nKegiatan '<b>${escapeHtml(summary)}</b>' bentrok dengan:\n${conflictList}\n\nApakah tetap ingin ditambahkan? (Balas: "ya" untuk lanjut, "batal" untuk membatalkan)`,
-          conflicts: conflicts,
-          pendingEvent: { summary, start, end, description, location, reminder_minutes, recurrence, color_id }
+          message: `⚠️ <b>Konflik Jadwal Terdeteksi!</b>\n\nKegiatan '<b>${escapeHtml(summary)}</b>' bertabrakan dengan jadwal aktif:\n${conflictList}\n\nApakah tetap ingin ditambahkan? (Balas: "<i>ya</i>" untuk lanjut, "<i>batal</i>" untuk batalkan)`,
+          conflicts,
+          pendingEvent: { summary, start, end, description, location, reminder_minutes, recurrence, color_id, with_meet }
         };
       }
 
-      const result = await googleWorkspace.createCalendarEvent(summary, start, end, description || '', location || '', reminder_minutes || [], recurrence || '', color_id || '');
-      let successMsg = `✅ Jadwal '${escapeHtml(summary)}' berhasil ditambahkan ke kalender.`;
-      if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
-      if (recurrence) successMsg += `\n🔄 Dijadwalkan berulang.`;
-      if (color_id) successMsg += `\n🎨 Warna event disesuaikan.`;
+      // ── Instant Calendar Event Creation ─────────────────────────
+      const result = await googleWorkspace.createCalendarEvent(
+        summary,
+        start,
+        end,
+        description || '',
+        location || '',
+        reminder_minutes || [30],
+        recurrence || '',
+        color_id || ''
+      );
 
+      // Cache as last action
+      _lastActionContext = { id: result.id, summary, start, end };
+
+      // Format elegant confirmation
+      const sDateStr = startDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+      const sTimeStr = startDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+      const eTimeStr = new Date(end).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+
+      let successMsg = `✅ Jadwal '<b>${escapeHtml(summary)}</b>' berhasil dicatat di Kalender!\n` +
+        `📅 <b>${sDateStr}</b>\n` +
+        `⏰ <b>${sTimeStr} – ${eTimeStr} WIB</b> (durasi <b>${durationMins} menit</b>)`;
+
+      if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
+      if (recurrence) successMsg += `\n🔄 Terjadwal berulang.`;
+
+      // Proactive Task Suggestion (Non-blocking)
       const proactive = await _tryProactiveTaskSuggestion(summary);
       let proactiveTasks = null;
       if (proactive) {
@@ -248,465 +275,175 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         if (proactive.tasks && proactive.tasks.length > 0) {
           proactiveTasks = { summary, tasks: proactive.tasks };
         }
+      } else {
+        successMsg += `\n<i>(Balas jika ingin mengubah jam atau durasi, Tuan)</i>`;
       }
 
       return { status: 'SUCCESS', message: successMsg, eventId: result.id, proactiveTasks };
     }
+
+    // ════════════════════════════════════════════════════════════════
+    // 2. ACTION: UPDATE (With Ordinal & Relative Support)
+    // ════════════════════════════════════════════════════════════════
     else if (action === 'UPDATE') {
-      // If we have eventId directly from AI, use it. Otherwise, find the event by title.
-      let targetEventId = eventId;
+      const resolved = _resolveTargetEvent(summary, eventId);
+      let targetEventId = resolved.id;
+
       if (!targetEventId && summary) {
         const found = await googleWorkspace.findEventByTitle(summary);
-        if (found.length > 0) targetEventId = found[0].id;
-      }
-      if (!targetEventId) {
-        return { status: 'FAILED', message: 'Tidak bisa memperbarui jadwal karena event tidak ditemukan. Coba sebutkan judul acaranya lebih spesifik.' };
-      }
-      // Guard: only update time if at least one is provided
-      if (start && !end) {
-        return { status: 'FAILED', message: `❌ Tuan merubah jam mulainya. Kira-kira akan selesai jam berapa acaranya?` };
-      } else if (!start && end) {
-        return { status: 'FAILED', message: `❌ Tuan merubah jam selesainya. Kira-kira acaranya dimulai jam berapa?` };
+        if (found.length > 0) {
+          targetEventId = found[0].id;
+          resolved.summary = found[0].summary;
+        }
       }
 
-      await googleWorkspace.updateCalendarEvent(targetEventId, summary, start, end, description || '');
-      return { status: 'SUCCESS', message: `✅ Jadwal '${escapeHtml(summary)}' berhasil diperbarui di kalender.` };
+      if (!targetEventId) {
+        return { status: 'FAILED', message: '❌ Tidak menemukan jadwal yang dimaksud. Coba sebutkan judul acaranya lebih spesifik.' };
+      }
+
+      // If user changed start time but not end time, apply probabilistic duration
+      if (start && !end) {
+        const dur = inferProbableDuration(resolved.summary || summary, rawUserText);
+        end = new Date(new Date(start).getTime() + dur * 60000).toISOString();
+      }
+
+      await googleWorkspace.updateCalendarEvent(targetEventId, summary || resolved.summary, start, end, description || '');
+      return { status: 'SUCCESS', message: `✅ Jadwal '<b>${escapeHtml(resolved.summary || summary)}</b>' berhasil diperbarui di kalender.` };
     }
+
+    // ════════════════════════════════════════════════════════════════
+    // 3. ACTION: DELETE (With Ordinal & Relative Support)
+    // ════════════════════════════════════════════════════════════════
     else if (action === 'DELETE') {
-      // Try to find by eventId first, then by title
-      let targetEventId = eventId;
+      const resolved = _resolveTargetEvent(summary, eventId);
+      let targetEventId = resolved.id;
+
       if (!targetEventId && summary) {
         const found = await googleWorkspace.findEventByTitle(summary);
-        if (found.length > 0) targetEventId = found[0].id;
+        if (found.length > 0) {
+          targetEventId = found[0].id;
+          resolved.summary = found[0].summary;
+        }
       }
+
       if (!targetEventId) {
-        return { status: 'FAILED', message: `Gagal menghapus: event '${escapeHtml(summary || '(tanpa judul)')}' tidak ditemukan di kalender.` };
+        return { status: 'FAILED', message: `❌ Gagal menghapus: event '<b>${escapeHtml(summary || '(tanpa judul)')}</b>' tidak ditemukan di kalender.` };
       }
+
+      await googleWorkspace.deleteCalendarEvent(targetEventId, 'THIS_ONLY');
       
-      // Default to deleting THIS_ONLY to avoid accidentally nuking the entire series of a recurring event.
-      const res = await googleWorkspace.deleteCalendarEvent(targetEventId, 'THIS_ONLY');
-      const extraMsg = res.mode === 'ALL' ? ' beserta seluruh jadwal ulangannya (jika ada)' : '';
-      return { status: 'SUCCESS', message: `Jadwal '${escapeHtml(summary || targetEventId)}'${extraMsg} berhasil dihapus dari kalender.` };
+      // Remove from working memory
+      _lastRenderedCalendarEvents = _lastRenderedCalendarEvents.filter(e => e.id !== targetEventId);
+
+      return { status: 'SUCCESS', message: `🗑️ Jadwal '<b>${escapeHtml(resolved.summary || summary || targetEventId)}</b>' berhasil dihapus dari kalender.` };
     }
-    else if (action === 'READ') {
-      let events;
+
+    // ════════════════════════════════════════════════════════════════
+    // 4. ACTION: READ / READ_TODAY / READ_TOMORROW
+    // ════════════════════════════════════════════════════════════════
+    else if (action === 'READ' || action === 'READ_TODAY' || action === 'READ_TOMORROW' || action === 'READ_UPCOMING') {
+      let events = [];
       let tasks = [];
-      
-      // Determine the dashboard title and fetch data
-      let dashboardTitle = 'DASHBOARD AGENDA';
       let dateLabel = '';
-      
-      if (start && end) {
-        events = await googleWorkspace.getEventsByDateRange(start, end);
-        tasks = await googleTasks.getTasksByDateRange(start, end);
-        const sDate = new Date(start).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-        const eDate = new Date(end).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-        dateLabel = sDate === eDate ? sDate : `Dari ${sDate} sampai ${eDate}`;
-      } else if (start) {
-        const startDate = new Date(start);
-        const endDate = new Date(startDate);
-        endDate.setHours(23, 59, 59, 999);
-        events = await googleWorkspace.getEventsByDateRange(start, endDate.toISOString());
-        tasks = await googleTasks.getTasksByDateRange(start, endDate.toISOString());
-        dateLabel = startDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-      } else {
-        // Fallback to today if no date provided
+      let dashboardTitle = 'DASHBOARD AGENDA';
+
+      const now = new Date();
+
+      if (action === 'READ_TODAY' || (!start && !end && action === 'READ')) {
         events = await googleWorkspace.getTodaysEvents();
         tasks = await googleTasks.getTasksDueToday();
-        dateLabel = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        dateLabel = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
         dashboardTitle = 'DASHBOARD HARI INI';
-      }
-
-      // Automatically refine dashboard title for single-day queries (today, tomorrow, lusa)
-      if (start && (!end || new Date(start).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }) === new Date(end).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }))) {
-        const now = new Date();
-        const jakartaTodayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-        const jakartaStartStr = new Date(start).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      } else if (action === 'READ_TOMORROW') {
         const tmrw = new Date(now.getTime() + 86400000);
-        const jakartaTmrwStr = tmrw.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-        const lusa = new Date(now.getTime() + 2 * 86400000);
-        const jakartaLusaStr = lusa.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-        
-        if (jakartaStartStr === jakartaTodayStr) {
-          dashboardTitle = 'DASHBOARD HARI INI';
-        } else if (jakartaStartStr === jakartaTmrwStr) {
-          dashboardTitle = 'DASHBOARD BESOK';
-        } else if (jakartaStartStr === jakartaLusaStr) {
-          dashboardTitle = 'DASHBOARD LUSA';
-        } else {
-          dashboardTitle = 'DASHBOARD AGENDA';
-        }
+        const s = new Date(tmrw.setHours(0, 0, 0, 0)).toISOString();
+        const e = new Date(tmrw.setHours(23, 59, 59, 999)).toISOString();
+        events = await googleWorkspace.getEventsByDateRange(s, e);
+        tasks = await googleTasks.getTasksDueTomorrow();
+        dateLabel = tmrw.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        dashboardTitle = 'DASHBOARD BESOK';
+      } else if (action === 'READ_UPCOMING') {
+        events = await googleWorkspace.getUpcomingEvents(7 * 24 * 60, 20);
+        tasks = await googleTasks.getUpcomingTasks(7);
+        dateLabel = '7 Hari ke Depan';
+        dashboardTitle = 'AGENDA MINGGU INI';
+      } else if (start && end) {
+        events = await googleWorkspace.getEventsByDateRange(start, end);
+        tasks = await googleTasks.getTasksByDateRange(start, end);
+        const sDate = new Date(start).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' });
+        const eDate = new Date(end).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        dateLabel = sDate === eDate ? sDate : `${sDate} – ${eDate}`;
+      } else if (start) {
+        const sD = new Date(start);
+        const eD = new Date(sD);
+        eD.setHours(23, 59, 59, 999);
+        events = await googleWorkspace.getEventsByDateRange(start, eD.toISOString());
+        tasks = await googleTasks.getTasksByDateRange(start, eD.toISOString());
+        dateLabel = sD.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
       }
 
-      // If a summary search keyword was provided, filter the events (not tasks, as summary applies to calendar)
+      // Filter by summary keyword if provided
       if (summary) {
-        const keyword = summary.toLowerCase();
-        events = events.filter(e => (e.summary || '').toLowerCase().includes(keyword));
-        dashboardTitle = `HASIL PENCARIAN: '${summary.toUpperCase()}'`;
+        const kw = summary.toLowerCase();
+        events = events.filter(e => (e.summary || '').toLowerCase().includes(kw));
+        dashboardTitle = `PENCARIAN: '${summary.toUpperCase()}'`;
       }
-      
+
+      // Update Working Memory Cache
+      _lastRenderedCalendarEvents = events.map((e, idx) => ({
+        index: idx + 1,
+        id: e.id,
+        summary: e.summary || '(Tanpa Judul)',
+        start: e.start?.dateTime || e.start?.date,
+        end: e.end?.dateTime || e.end?.date
+      }));
+
       let msg = `🗓️ <b>${dashboardTitle}</b>\n<i>${dateLabel}</i>\n`;
 
-      // 1. Calendar Events
+      // Format Calendar Events
       if (events && events.length > 0) {
-        msg += `\n📅 <b>JADWAL (${events.length}):</b>\n`;
-        const eventLines = await Promise.all(events.map(async (e) => {
-          const startRaw = e.start?.dateTime || e.start?.date;
-          const endRaw = e.end?.dateTime || e.end?.date;
+        msg += `\n📅 <b>JADWAL ACARA (${events.length}):</b>\n`;
+        const lines = events.map((e, idx) => {
+          const sRaw = e.start?.dateTime || e.start?.date;
+          const eRaw = e.end?.dateTime || e.end?.date;
           let timeLabel = 'Sepanjang hari';
           if (e.start?.dateTime && e.end?.dateTime) {
-            const sTime = new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-            const eTime = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-            // Check if it spans multiple days
-            const sDate = new Date(startRaw).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-            const eDate = new Date(endRaw).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-            if (sDate !== eDate) {
-               timeLabel = `${sDate} ${sTime} - ${eDate} ${eTime}`;
-            } else {
-               timeLabel = `${sTime} - ${eTime}`;
-            }
-          } else {
-             const sDate = new Date(startRaw).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-             timeLabel = `${sDate} (Sepanjang hari)`;
+            const sT = new Date(sRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+            const eT = new Date(eRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+            timeLabel = `${sT}–${eT}`;
           }
-          
-          let line = `   ▸ ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
-
-          // [PREDICTIVE CONTEXT ENGINE]
-          const lowerSummary = (e.summary || '').toLowerCase();
-          const importantKeywords = ['rapat', 'meeting', 'seminar', 'ujian', 'proyek', 'presentasi', 'kuliah', 'tugas', 'sidang', 'bimbingan'];
-          const isImportant = importantKeywords.some(kw => lowerSummary.includes(kw));
-          
-          if (isImportant) {
-            try {
-              const { readDatabaseTable } = require('../infrastructure/Supabase_Memories');
-              let searchKw = lowerSummary;
-              for (const kw of importantKeywords) { searchKw = searchKw.replace(kw, '').trim(); }
-              if (searchKw.length >= 3) {
-                const vaultRes = await readDatabaseTable('nexa_vault_items', { searchKeyword: searchKw, limit: 1 });
-                const hasVault = vaultRes.success && vaultRes.rows && vaultRes.rows.length > 0;
-                const brainRes = await readDatabaseTable('nexa_2nd_brain', { searchKeyword: searchKw, limit: 1 });
-                const hasBrain = brainRes.success && brainRes.rows && brainRes.rows.length > 0;
-                
-                if (hasVault || hasBrain) {
-                  const foundItems = [];
-                  if (hasVault) foundItems.push(`Dokumen Vault`);
-                  if (hasBrain) foundItems.push(`Catatan Memori`);
-                  line += `\n     🔗 <i>(Konteks Tersedia: ${foundItems.join(' & ')} terkait '${searchKw}')</i>`;
-                }
-              }
-            } catch (err) { }
-          }
-          return line;
-        }));
-        msg += eventLines.join('\n');
+          let itemLine = `   <b>${idx + 1}.</b> [${timeLabel}] <b>${escapeHtml(e.summary || '(Tanpa Judul)')}</b>`;
+          if (e.location) itemLine += `\n      📍 ${escapeHtml(e.location)}`;
+          if (e.hangoutLink) itemLine += `\n      🎥 <a href="${e.hangoutLink}">Google Meet</a>`;
+          return itemLine;
+        });
+        msg += lines.join('\n');
       } else {
-        msg += `\n📅 <b>JADWAL:</b> Tidak ada jadwal.\n`;
+        msg += `\n📅 <b>JADWAL ACARA:</b> Tidak ada jadwal tercatat.\n`;
       }
 
-      // 2. Tasks Due
+      // Format Google Tasks
       if (tasks && tasks.length > 0) {
-        msg += `\n\n🟡 <b>TUGAS JATUH TEMPO (${tasks.length}):</b>\n`;
-        msg += tasks.map(t => `   🔲 ${t.title}${t.notes ? `\n      📝 ${t.notes.split('\n')[0]}` : ''}`).join('\n');
-      } else {
-        msg += `\n\n📋 <b>TUGAS:</b> Tidak ada tugas yang jatuh tempo pada periode ini.`;
+        msg += `\n\n📋 <b>TUGAS JATUH TEMPO (${tasks.length}):</b>\n`;
+        msg += tasks.map((t, idx) => {
+          let tLine = `   🔲 <b>${idx + 1}.</b> ${escapeHtml(t.title || '(Tanpa Judul)')}`;
+          if (t.notes) tLine += `\n      📝 ${escapeHtml(t.notes.split('\n')[0])}`;
+          return tLine;
+        }).join('\n');
       }
 
-      return { status: 'SUCCESS', message: msg };
+      return { status: 'SUCCESS', message: msg, eventsCount: events.length, tasksCount: tasks.length };
     }
-    else if (action === 'READ_TODAY') {
-      // ── UNIFIED DAILY DASHBOARD: Calendar + Tasks ─────────
-      const todayLabel = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-      let msg = `🗓️ <b>DASHBOARD HARI INI</b>\n<i>${todayLabel}</i>\n`;
 
-      // 1. Calendar events today
-      try {
-        const events = await googleWorkspace.getTodaysEvents();
-        if (events && events.length > 0) {
-          msg += `\n📅 <b>JADWAL (${events.length}):</b>\n`;
-          const eventLines = await Promise.all(events.map(async (e) => {
-            const startRaw = e.start?.dateTime || e.start?.date;
-            const endRaw = e.end?.dateTime || e.end?.date;
-            let timeLabel = 'Sepanjang hari';
-            if (e.start?.dateTime && e.end?.dateTime) {
-              const s = new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-              const en = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-              timeLabel = `${s} - ${en}`;
-            }
-            
-            let line = `   ▸ ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
-
-            // [PREDICTIVE CONTEXT ENGINE]
-            const lowerSummary = (e.summary || '').toLowerCase();
-            const importantKeywords = ['rapat', 'meeting', 'seminar', 'ujian', 'proyek', 'presentasi', 'kuliah', 'tugas', 'sidang', 'bimbingan'];
-            const isImportant = importantKeywords.some(kw => lowerSummary.includes(kw));
-            
-            if (isImportant) {
-              try {
-                const { readDatabaseTable } = require('../infrastructure/Supabase_Memories');
-                
-                let searchKw = lowerSummary;
-                for (const kw of importantKeywords) {
-                  searchKw = searchKw.replace(kw, '').trim();
-                }
-                
-                if (searchKw.length >= 3) {
-                  const vaultRes = await readDatabaseTable('nexa_vault_items', { searchKeyword: searchKw, limit: 1 });
-                  const hasVault = vaultRes.success && vaultRes.rows && vaultRes.rows.length > 0;
-                  
-                  const brainRes = await readDatabaseTable('nexa_2nd_brain', { searchKeyword: searchKw, limit: 1 });
-                  const hasBrain = brainRes.success && brainRes.rows && brainRes.rows.length > 0;
-                  
-                  if (hasVault || hasBrain) {
-                    const foundItems = [];
-                    if (hasVault) foundItems.push(`Dokumen Vault`);
-                    if (hasBrain) foundItems.push(`Catatan Memori`);
-                    line += `\n     🔗 <i>(Konteks Tersedia: ${foundItems.join(' & ')} terkait '${searchKw}')</i>`;
-                  }
-                }
-              } catch (err) {
-                console.error('[AGENDA] Context prediction failed:', err.message);
-              }
-            }
-            return line;
-          }));
-          msg += eventLines.join('\n');
-        } else {
-          msg += `\n📅 <b>JADWAL:</b> Tidak ada jadwal hari ini.\n`;
-        }
-      } catch (e) {
-        msg += `\n📅 <b>JADWAL:</b> Gagal memuat (${e.message})\n`;
-      }
-
-      // 2. Overdue tasks alert
-      try {
-        const overdue = await googleTasks.getOverdueTasks();
-        if (overdue.length > 0) {
-          msg += `\n🔴 <b>TUGAS TERLAMBAT (${overdue.length}):</b>\n`;
-          msg += overdue.map(t => {
-            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-            const dueStr = t.due.split('T')[0];
-            const days = Math.floor((new Date() - new Date(dueStr + 'T00:00:00+07:00')) / (1000 * 60 * 60 * 24));
-            return `   🔴 ${t.title} <i>(terlambat ${days} hari)</i>`;
-          }).join('\n');
-        }
-      } catch (e) { /* ignore */ }
-
-      // 3. Tasks due today
-      try {
-        const todayTasks = await googleTasks.getTasksDueToday();
-        if (todayTasks.length > 0) {
-          msg += `\n\n🟡 <b>TUGAS HARI INI (${todayTasks.length}):</b>\n`;
-          msg += todayTasks.map(t => `   🔲 ${t.title}${t.notes ? `\n      📝 ${t.notes.split('\n')[0]}` : ''}`).join('\n');
-        } else {
-          msg += `\n\n📋 <b>TUGAS HARI INI:</b> Tidak ada tugas jatuh tempo hari ini.`;
-        }
-      } catch (e) { /* ignore */ }
-
-      return { status: 'SUCCESS', message: msg };
-    }
-    else if (action === 'READ_TOMORROW') {
-      // ── UNIFIED DAILY DASHBOARD (TOMORROW): Calendar + Tasks ─────────
-      const tmrw = new Date(Date.now() + 86400000);
-      const tmrwLabel = tmrw.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-      let msg = `🗓️ <b>DASHBOARD BESOK</b>\n<i>${tmrwLabel}</i>\n`;
-
-      // 1. Calendar events tomorrow
-      try {
-        const events = await googleWorkspace.getTomorrowsEvents();
-        if (events && events.length > 0) {
-          msg += `\n📅 <b>JADWAL (${events.length}):</b>\n`;
-          const eventLines = await Promise.all(events.map(async (e) => {
-            const startRaw = e.start?.dateTime || e.start?.date;
-            const endRaw = e.end?.dateTime || e.end?.date;
-            let timeLabel = 'Sepanjang hari';
-            if (e.start?.dateTime && e.end?.dateTime) {
-              const s = new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-              const en = new Date(endRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-              timeLabel = `${s} - ${en}`;
-            }
-            
-            let line = `   ▸ ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
-
-            // [PREDICTIVE CONTEXT ENGINE]
-            const lowerSummary = (e.summary || '').toLowerCase();
-            const importantKeywords = ['rapat', 'meeting', 'seminar', 'ujian', 'proyek', 'presentasi', 'kuliah', 'tugas', 'sidang', 'bimbingan'];
-            const isImportant = importantKeywords.some(kw => lowerSummary.includes(kw));
-            
-            if (isImportant) {
-              try {
-                const { readDatabaseTable } = require('../infrastructure/Supabase_Memories');
-                
-                let searchKw = lowerSummary;
-                for (const kw of importantKeywords) {
-                  searchKw = searchKw.replace(kw, '').trim();
-                }
-                
-                if (searchKw.length >= 3) {
-                  const vaultRes = await readDatabaseTable('nexa_vault_items', { searchKeyword: searchKw, limit: 1 });
-                  const hasVault = vaultRes.success && vaultRes.rows && vaultRes.rows.length > 0;
-                  
-                  const brainRes = await readDatabaseTable('nexa_2nd_brain', { searchKeyword: searchKw, limit: 1 });
-                  const hasBrain = brainRes.success && brainRes.rows && brainRes.rows.length > 0;
-                  
-                  if (hasVault || hasBrain) {
-                    const foundItems = [];
-                    if (hasVault) foundItems.push(`Dokumen Vault`);
-                    if (hasBrain) foundItems.push(`Catatan Memori`);
-                    line += `\n     🔗 <i>(Konteks Tersedia: ${foundItems.join(' & ')} terkait '${searchKw}')</i>`;
-                  }
-                }
-              } catch (err) {
-                console.error('[AGENDA] Context prediction failed:', err.message);
-              }
-            }
-            return line;
-          }));
-          msg += eventLines.join('\n');
-        } else {
-          msg += `\n📅 <b>JADWAL:</b> Tidak ada jadwal besok.\n`;
-        }
-      } catch (e) {
-        msg += `\n📅 <b>JADWAL:</b> Gagal memuat (${e.message})\n`;
-      }
-
-      // 2. Tasks due tomorrow
-      try {
-        const tomorrowTasks = await googleTasks.getTasksDueTomorrow();
-        if (tomorrowTasks.length > 0) {
-          msg += `\n\n🟡 <b>TUGAS BESOK (${tomorrowTasks.length}):</b>\n`;
-          msg += tomorrowTasks.map(t => `   🔲 ${t.title}${t.notes ? `\n      📝 ${t.notes.split('\n')[0]}` : ''}`).join('\n');
-        } else {
-          msg += `\n\n📋 <b>TUGAS BESOK:</b> Tidak ada tugas jatuh tempo besok.`;
-        }
-      } catch (e) { /* ignore */ }
-
-      return { status: 'SUCCESS', message: msg };
-    }
-    else if (action === 'READ_UPCOMING') {
-      // ── 7-DAY FORWARD VIEW: Calendar + Tasks ──────────────
-      // Robust locale-aware date calculation for Jakarta timezone
-      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-      const futureStr = new Date(Date.now() + 7 * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-      
-      const timeMin = `${todayStr}T00:00:00+07:00`;
-      const timeMax = `${futureStr}T23:59:59+07:00`;
-
-      const startLabel = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-      const endLabel = new Date(Date.now() + 7 * 86400000).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-      let msg = `🗓️ <b>DASHBOARD 7 HARI KE DEPAN</b>\n<i>Dari ${startLabel} sampai ${endLabel}</i>\n`;
-
-      // Calendar events
-      try {
-        const events = await googleWorkspace.getEventsByDateRange(timeMin, timeMax);
-        if (events && events.length > 0) {
-          msg += `\n📅 <b>JADWAL (${events.length} acara):</b>\n`;
-          msg += events.map(e => {
-            const startRaw = e.start?.dateTime || e.start?.date;
-            const dayLabel = new Date(startRaw).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
-            const timeStr = e.start?.dateTime ? new Date(startRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '';
-            return `   ▸ ${dayLabel}${timeStr ? ' ' + timeStr : ''} — ${e.summary || '(Tanpa judul)'}`;
-          }).join('\n');
-        } else {
-          msg += `\n📅 Tidak ada jadwal dalam 7 hari ke depan.\n`;
-        }
-      } catch (e) { msg += `\n📅 Gagal memuat jadwal (${e.message})\n`; }
-
-      // Upcoming tasks
-      try {
-        const upTasks = await googleTasks.getUpcomingTasks(7);
-        if (upTasks.length > 0) {
-          msg += `\n\n📋 <b>TUGAS MENDATANG (${upTasks.length}):</b>\n`;
-          const byDate = {};
-          for (const t of upTasks) {
-            const d = (t.due || '').split('T')[0];
-            if (!byDate[d]) byDate[d] = [];
-            byDate[d].push(t);
-          }
-          for (const [date, group] of Object.entries(byDate).sort()) {
-            const label = new Date(date + 'T00:00:00+07:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-            msg += `   📌 <b>${label}:</b> ${group.map(t => t.title).join(', ')}\n`;
-          }
-        } else {
-          msg += `\n\n📋 Tidak ada tugas dalam 7 hari ke depan.`;
-        }
-      } catch (e) { /* ignore */ }
-
-      return { status: 'SUCCESS', message: msg };
-    }
-    else {
-      return { status: 'FAILED', message: `Aksi kalender tidak dikenali: ${action}` };
-    }
-  } catch (error) {
-    console.error('[AGENDA] Failed to manipulate calendar:', error.message);
-    // Return structured error instead of throwing — prevents webhook.js from crashing
-    return { status: 'FAILED', message: `Operasi kalender gagal: ${error.message}` };
+    return { status: 'FAILED', message: `Aksi kalender '${action}' tidak dikenali.` };
+  } catch (err) {
+    console.error('[AGENDA] Calendar handler error:', err);
+    return { status: 'ERROR', message: `❌ Terjadi kendala pada Kalender: ${err.message}` };
   }
 }
 
-/**
- * Try to resolve a pending calendar event using the user's follow-up text.
- * Returns a result object if resolved, or null if text is not a recognizable duration.
- * @param {string} userText
- * @param {{ summary: string, start: string }} pendingCtx
- */
-async function tryResolvePending(userText, pendingCtx) {
-  const durationMins = await parseDurationMinutes(userText);
-  if (!durationMins) return null; // Not a duration answer, let AI Router handle it
-
-  try {
-    const startDate = new Date(pendingCtx.start);
-    if (isNaN(startDate.getTime())) {
-      // start stored in context is invalid — ask the user to re-state the full event
-      return {
-        status: 'FAILED',
-        message: `❌ Maaf Tuan, saya kehilangan informasi waktu mulai untuk '<b>${escapeHtml(pendingCtx.summary)}</b>'. Mohon ulangi perintahnya lengkap ya, contoh: "<i>Tambahkan makan malam jam 7 malam, durasi 2 jam</i>"`
-      };
-    }
-    startDate.setMinutes(startDate.getMinutes() + durationMins);
-    const computedEnd = startDate.toISOString();
-    
-    // Check for conflicts
-    const conflicts = await googleWorkspace.checkCalendarConflicts(pendingCtx.start, computedEnd);
-    if (conflicts.length > 0) {
-      const conflictList = conflicts.map(c => {
-        const sTime = new Date(c.start).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-        const eTime = new Date(c.end).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-        return `   ⚠️ ${sTime}-${eTime}: ${c.summary}${c.location ? ` (${c.location})` : ''}`;
-      }).join('\n');
-      
-      const summary = pendingCtx.summary;
-      const start = pendingCtx.start;
-      const end = computedEnd;
-      
-      return {
-        status: 'CONFLICT_DETECTED',
-        message: `⚠️ <b>Konflik Jadwal Terdeteksi!</b>\n\nKegiatan '<b>${escapeHtml(summary)}</b>' bentrok dengan:\n${conflictList}\n\nApakah tetap ingin ditambahkan? (Balas: "ya" untuk lanjut, "batal" untuk membatalkan)`,
-        conflicts: conflicts,
-        pendingEvent: { summary, start, end }
-      };
-    }
-
-    await googleWorkspace.createCalendarEvent(pendingCtx.summary, pendingCtx.start, computedEnd, '');
-    return { status: 'SUCCESS', message: `✅ Jadwal '<b>${escapeHtml(pendingCtx.summary)}</b>' berhasil ditambahkan ke kalender (durasi <b>${durationMins} menit</b>).` };
-  } catch (e) {
-    console.error('[AGENDA] tryResolvePending error:', e.message);
-    return { status: 'FAILED', message: `❌ Gagal menyimpan jadwal: ${e.message}` };
-  }
-}
-
-/**
- * Cancel the 15-minute auto-create timer for a pending event by summary name.
- * @param {string} summary
- */
-function cancelPending(summary) {
-  for (const [id, data] of pendingAgendas.entries()) {
-    if (data.summary.toLowerCase() === summary.toLowerCase()) {
-      clearTimeout(data.timer);
-      pendingAgendas.delete(id);
-      console.log(`[AGENDA] Pending timer for '${summary}' cancelled.`);
-    }
-  }
-}
-
-module.exports = { handleCalendarIntent, tryResolvePending, cancelPending };
+module.exports = {
+  handleCalendarIntent,
+  inferProbableDuration,
+  getLastRenderedCalendarEvents: () => _lastRenderedCalendarEvents
+};
