@@ -466,7 +466,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
 
           const evColor = ev.color_id || color_id || '7'; // Default 7 = Peacock (Academic Blue)
           const evLocation = ev.location || '';
-          const evDesc = ev.description || (rrule ? `Jadwal Berulang Perkuliahan: ${evSummary}` : '');
+          const evDesc = ev.description || (rrule ? `Jadwal Berulang: ${evSummary}` : '');
 
           await googleWorkspace.createCalendarEvent(
             evSummary,
@@ -483,21 +483,14 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
           const sTimeFmt = sDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
           const eTimeFmt = new Date(evEnd).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
 
-          const isCollegeContext = /kuliah|matkul|semester|krs|dosen|kampus/i.test(rawUserText || '') || /kuliah|matkul/i.test(evSummary);
-          const isPiketContext = /piket|kebersihan|adzan|imam|masjid|sapu|pel|jaga|shift/i.test(rawUserText || '') || /piket|sapu|pel|adzan|imam|galon/i.test(evSummary);
-          const itemIcon = isCollegeContext ? '📚' : (isPiketContext ? '📌' : '🗓️');
-
-          createdResults.push(`   • ${itemIcon} <b>${escapeHtml(evSummary)}</b>: ${sDayName}, ${sTimeFmt}–${eTimeFmt} WIB${evLocation ? ` (📍 ${escapeHtml(evLocation)})` : ''}`);
+          createdResults.push(`   • 📅 <b>${escapeHtml(evSummary)}</b>: ${sDayName}, ${sTimeFmt}–${eTimeFmt} WIB${evLocation ? ` (📍 ${escapeHtml(evLocation)})` : ''}`);
         } catch (e) {
           createdResults.push(`   • ❌ Gagal (${escapeHtml(ev.summary || 'Jadwal')}): ${e.message}`);
         }
       }
 
-      const isCollegeGlobal = /kuliah|matkul|semester|krs|kampus/i.test(rawUserText || '');
-      const isPiketGlobal = /piket|kebersihan|adzan|imam|masjid|roster|shift/i.test(rawUserText || '');
-      const categoryLabel = isCollegeGlobal ? 'Jadwal Perkuliahan' : (isPiketGlobal ? 'Jadwal Tugas & Piket' : 'Jadwal Kegiatan');
-
-      let responseMsg = `🗓️ <b>${createdResults.length} ${categoryLabel} Berhasil Dibuat di Kalender!</b>\n\n${createdResults.join('\n')}`;
+      const headerTitle = extractedData.title || (extractedData.category ? `Jadwal ${extractedData.category}` : 'Jadwal');
+      let responseMsg = `🗓️ <b>${createdResults.length} ${escapeHtml(headerTitle)} Berhasil Dibuat di Kalender!</b>\n\n${createdResults.join('\n')}`;
       if (semEnd) {
         const untilFmt = new Date(semEnd).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
         responseMsg += `\n\n🔄 <i>Terjadwal berulang setiap minggu hingga <b>${untilFmt}</b>.</i>`;
