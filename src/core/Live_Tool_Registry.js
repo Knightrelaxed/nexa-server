@@ -70,11 +70,11 @@ const LIVE_TOOL_DECLARATIONS = [
       type: 'OBJECT',
       properties: {
         title: { type: 'STRING', description: 'Judul atau nama kegiatan (contoh: "Kuliah Nahwu", "Rapat BEM", "Bimbingan Skripsi")' },
-        date: { type: 'STRING', description: 'Tanggal kegiatan (contoh: "today", "tomorrow", "besok", "2026-08-20")' },
+        date: { type: 'STRING', description: 'Tanggal kegiatan format YYYY-MM-DD atau kata seperti "today", "tomorrow", "besok"' },
         startTime: { type: 'STRING', description: 'Jam mulai kegiatan format HH:mm (contoh: "09:00", "14:30")' },
-        endTime: { type: 'STRING', description: 'Jam selesai kegiatan format HH:mm (opsional, otomatis dihitung jika kosong)' },
-        location: { type: 'STRING', description: 'Lokasi kegiatan jika ada (contoh: "Gedung Soegondo UGM", "Ruang Rapat 2")' },
-        description: { type: 'STRING', description: 'Deskripsi atau catatan tambahan agenda' }
+        endTime: { type: 'STRING', description: 'Jam selesai kegiatan format HH:mm (opsional)' },
+        location: { type: 'STRING', description: 'Lokasi kegiatan jika ada' },
+        description: { type: 'STRING', description: 'Catatan tambahan agenda' }
       },
       required: ['title', 'startTime']
     }
@@ -113,7 +113,7 @@ const LIVE_TOOL_DECLARATIONS = [
       type: 'OBJECT',
       properties: {
         listName: { type: 'STRING', description: 'Filter nama daftar tugas (opsional)' },
-        status: { type: 'STRING', description: 'Status tugas: "pending", "overdue", "all"' }
+        status: { type: 'STRING', description: 'Status tugas: "pending", "overdue", "today", "tomorrow", "all"' }
       }
     }
   },
@@ -164,7 +164,7 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 6. WEB SEARCH & LIVE INTELLIGENCE ──────────────────────────
   {
     name: 'searchWeb',
-    description: 'Mencari informasi terkini dari internet (berita, cuaca, informasi umum, harga pasar, kurs, dll.)',
+    description: 'Mencari informasi terkini dari internet secara cepat (berita, cuaca, informasi umum, harga pasar, kurs, dll.)',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -205,6 +205,8 @@ async function executeLiveTool(toolName, args = {}) {
         if (args.date === 'yesterday' || args.date === 'kemarin') {
           const y = new Date(now.getTime() - 24 * 60 * 60 * 1000);
           targetDate = y.toISOString().split('T')[0];
+        } else if (args.date && /^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
+          targetDate = args.date;
         }
 
         const hours = String(now.getHours()).padStart(2, '0');
@@ -212,21 +214,21 @@ async function executeLiveTool(toolName, args = {}) {
         const timeHHMM = `${hours}:${minutes}`;
 
         const writeRes = await supabaseFinance.writeTransaction({
-          amount: nominal,
-          type: 'EXPENSE',
-          category,
+          txType: 'EXPENSE',
+          nominal: nominal,
+          categoryName: category,
+          accountName: method,
           description: desc,
-          source: 'LIVE_VOICE_CALL',
-          paymentMethod: method,
-          date: targetDate,
-          timeHHMM
+          dateISO: targetDate,
+          timeHHMM: timeHHMM,
+          paymentMethod: method
         });
 
         const elapsed = Date.now() - startTime;
-        console.log(`[LIVE-TOOL] ✅ Expense recorded in ${elapsed}ms: Rp${nominal.toLocaleString('id-ID')} (${desc})`);
+        console.log(`[LIVE-TOOL] ✅ Expense recorded in ${elapsed}ms: Rp${nominal.toLocaleString('id-ID')} (${desc}) -> Status: ${writeRes.status}`);
 
         return {
-          status: 'SUCCESS',
+          status: writeRes.status === 'SUCCESS' ? 'SUCCESS' : 'SAVED',
           message: `Pengeluaran Rp${nominal.toLocaleString('id-ID')} untuk ${desc} (Kategori: ${category}) berhasil dicatat menggunakan metode ${method}.`,
           amount: nominal,
           description: desc,
@@ -255,18 +257,18 @@ async function executeLiveTool(toolName, args = {}) {
         const timeHHMM = `${hours}:${minutes}`;
 
         const writeRes = await supabaseFinance.writeTransaction({
-          amount: nominal,
-          type: 'INCOME',
-          category: 'Pemasukan',
+          txType: 'INCOME',
+          nominal: nominal,
+          categoryName: 'Pemasukan',
+          accountName: account,
           description: desc,
-          source: 'LIVE_VOICE_CALL',
-          paymentMethod: account,
-          date: dateStr,
-          timeHHMM
+          dateISO: dateStr,
+          timeHHMM: timeHHMM,
+          paymentMethod: 'Transfer bank'
         });
 
         return {
-          status: 'SUCCESS',
+          status: writeRes.status === 'SUCCESS' ? 'SUCCESS' : 'SAVED',
           message: `Pemasukan Rp${nominal.toLocaleString('id-ID')} (${desc}) berhasil dicatat masuk ke rekening ${account}.`,
           amount: nominal,
           destinationAccount: account,
@@ -304,23 +306,41 @@ async function executeLiveTool(toolName, args = {}) {
       // ─────────────────────────────────────────────────────────────
       case 'createCalendarEvent': {
         const title = String(args.title || 'Agenda Baru').trim();
-        const startTime = args.startTime;
+        const startTime = args.startTime || '09:00';
         let dateStr = args.date || 'today';
         
+        const now = new Date();
+        let targetDateISO = now.toISOString().split('T')[0];
+        if (dateStr === 'tomorrow' || dateStr === 'besok') {
+          const tmrw = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+          targetDateISO = tmrw.toISOString().split('T')[0];
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          targetDateISO = dateStr;
+        }
+
+        // Format start ISO with +07:00 (Jakarta)
+        const cleanTime = startTime.includes(':') ? startTime : `${startTime.padStart(2, '0')}:00`;
+        const startISO = `${targetDateISO}T${cleanTime}:00+07:00`;
+
+        let endISO = null;
+        if (args.endTime) {
+          const cleanEndTime = args.endTime.includes(':') ? args.endTime : `${args.endTime.padStart(2, '0')}:00`;
+          endISO = `${targetDateISO}T${cleanEndTime}:00+07:00`;
+        }
+
         const res = await agendaManager.handleCalendarIntent({
           action: 'CREATE',
           summary: title,
-          date_raw: dateStr,
-          start_time: startTime,
-          end_time: args.endTime || null,
-          duration_minutes: args.durationMinutes || null,
+          start: startISO,
+          end: endISO,
           location: args.location || null,
           description: args.description || null
-        }, null);
+        }, title);
 
+        const cleanMessage = res.message ? res.message.replace(/<[^>]+>/g, '') : `Agenda "${title}" berhasil dicatat di Kalender.`;
         return {
           status: res.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
-          message: res.message ? res.message.replace(/<[^>]+>/g, '') : `Agenda "${title}" diproses.`
+          message: cleanMessage
         };
       }
 
@@ -329,12 +349,16 @@ async function executeLiveTool(toolName, args = {}) {
       // ─────────────────────────────────────────────────────────────
       case 'queryCalendarAgenda': {
         const timeframe = args.timeframe || 'today';
-        let dateQuery = args.date || (timeframe === 'tomorrow' || timeframe === 'besok' ? 'besok' : 'hari ini');
+        let action = 'READ_TODAY';
+        if (timeframe === 'tomorrow' || timeframe === 'besok') {
+          action = 'READ_TOMORROW';
+        } else if (timeframe === 'upcoming' || timeframe === 'this_week') {
+          action = 'READ_UPCOMING';
+        }
 
         const res = await agendaManager.handleCalendarIntent({
-          action: 'LIST',
-          date_raw: dateQuery
-        }, null);
+          action: action
+        }, '');
 
         const cleanMessage = res.message ? res.message.replace(/<[^>]+>/g, '') : 'Tidak ada agenda terjadwal.';
         return {
@@ -358,7 +382,7 @@ async function executeLiveTool(toolName, args = {}) {
           due_date: dueDate,
           list_name: listName,
           notes: args.notes || null
-        }, null);
+        }, title);
 
         const cleanMessage = res.message ? res.message.replace(/<[^>]+>/g, '') : `Tugas "${title}" berhasil dicatat.`;
         return {
@@ -372,10 +396,17 @@ async function executeLiveTool(toolName, args = {}) {
       // ─────────────────────────────────────────────────────────────
       case 'queryTasks': {
         const listName = args.listName || null;
+        const status = args.status || 'pending';
+        let action = 'READ';
+        if (status === 'today' || status === 'hari ini') action = 'READ_TODAY';
+        else if (status === 'tomorrow' || status === 'besok') action = 'READ_TOMORROW';
+        else if (status === 'overdue' || status === 'terlambat') action = 'READ_OVERDUE';
+        else if (status === 'upcoming') action = 'READ_UPCOMING';
+
         const res = await taskManager.handleTaskIntent({
-          action: 'LIST',
+          action: action,
           list_name: listName
-        }, null);
+        }, '');
 
         const cleanMessage = res.message ? res.message.replace(/<[^>]+>/g, '') : 'Tidak ada tugas yang tertunda.';
         return {
@@ -412,8 +443,6 @@ async function executeLiveTool(toolName, args = {}) {
       // ─────────────────────────────────────────────────────────────
       case 'savePersonalFact': {
         const fact = String(args.fact || '').trim();
-        const category = String(args.category || 'USER_PROFILE').toUpperCase();
-
         if (!fact) {
           return { status: 'ERROR', message: 'Fakta tidak boleh kosong.' };
         }
@@ -487,7 +516,7 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 11. WEB SEARCH: LIVE SEARCH
+      // 11. WEB SEARCH: FAST LIVE SEARCH
       // ─────────────────────────────────────────────────────────────
       case 'searchWeb': {
         const query = String(args.query || '').trim();
@@ -495,8 +524,15 @@ async function executeLiveTool(toolName, args = {}) {
           return { status: 'ERROR', message: 'Query pencarian tidak boleh kosong.' };
         }
 
-        const searchResult = await webSearch.searchWeb(query);
-        const cleanResult = typeof searchResult === 'string' ? searchResult.replace(/<[^>]+>/g, '').slice(0, 800) : JSON.stringify(searchResult).slice(0, 800);
+        // Use fast direct web search for real-time voice latency (<1.5s)
+        let searchResult = null;
+        try {
+          searchResult = await webSearch.searchWeb(query);
+        } catch (e) {
+          console.warn('[LIVE-TOOL] searchWeb error:', e.message);
+        }
+
+        const cleanResult = typeof searchResult === 'string' ? searchResult.replace(/<[^>]+>/g, '').slice(0, 800) : (searchResult ? JSON.stringify(searchResult).slice(0, 800) : 'Tidak ada data ditemukan.');
 
         return {
           status: 'SUCCESS',

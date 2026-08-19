@@ -217,35 +217,49 @@ class LiveVoiceSession {
         }
       }
 
-      // 3. Tool Calls (Function Execution)
-      if (msg.toolCall && msg.toolCall.functionCalls) {
-        for (const fc of msg.toolCall.functionCalls) {
-          const callId = fc.id;
-          const funcName = fc.name;
-          const funcArgs = fc.args || {};
+      // 3. Tool Calls (Function Execution - Parallel Batching)
+      if (msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0) {
+        const functionCalls = msg.toolCall.functionCalls;
+        console.log(`[LIVE-VOICE] 🛠️ Processing ${functionCalls.length} tool call(s) in parallel...`);
 
-          console.log(`[LIVE-VOICE] 🛠️ Received Live Tool Call: ${funcName} [${callId}]`);
-          const toolResult = await executeLiveTool(funcName, funcArgs);
+        const responses = await Promise.all(
+          functionCalls.map(async (fc) => {
+            const callId = fc.id;
+            const funcName = fc.name;
+            const funcArgs = fc.args || {};
+            console.log(`[LIVE-VOICE] 🛠️ Executing Live Tool: ${funcName} [${callId}]`);
 
-          // Send toolResponse back to Google
-          const toolResponsePayload = {
-            toolResponse: {
-              functionResponses: [
-                {
-                  id: callId,
-                  name: funcName,
-                  response: {
-                    output: toolResult
-                  }
+            try {
+              const toolResult = await executeLiveTool(funcName, funcArgs);
+              return {
+                id: callId,
+                name: funcName,
+                response: {
+                  output: toolResult
                 }
-              ]
+              };
+            } catch (err) {
+              console.error(`[LIVE-TOOL] ❌ Execution error in ${funcName}:`, err.message);
+              return {
+                id: callId,
+                name: funcName,
+                response: {
+                  output: { status: 'ERROR', message: err.message }
+                }
+              };
             }
-          };
+          })
+        );
 
-          if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
-            this.googleWs.send(JSON.stringify(toolResponsePayload));
-            console.log(`[LIVE-VOICE] 📤 Sent Tool Response back to Google for [${funcName}]`);
+        const toolResponsePayload = {
+          toolResponse: {
+            functionResponses: responses
           }
+        };
+
+        if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
+          this.googleWs.send(JSON.stringify(toolResponsePayload));
+          console.log(`[LIVE-VOICE] 📤 Sent ${responses.length} Tool Response(s) back to Google.`);
         }
       }
     } catch (err) {
