@@ -18,11 +18,23 @@ let _oauthDriveClients = null;
 function getClients() {
   if (_clients) return _clients;
 
-  if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_PRIVATE_KEY) {
-    throw new Error('[GOOGLE] Service Account credentials not configured. Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in HF Secrets.');
+  const googleMaster = require('./Google_Master_Client');
+  const auth = googleMaster.getAuthClient();
+  if (auth) {
+    _clients = {
+      calendar: googleMaster.getCalendar(),
+      docs: googleMaster.getDocs(),
+      drive: googleMaster.getDrive(),
+      driveV2: google.drive({ version: 'v2', auth })
+    };
+    return _clients;
   }
 
-  const auth = new google.auth.GoogleAuth({
+  if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_PRIVATE_KEY) {
+    throw new Error('[GOOGLE] Google Master OAuth / Service Account credentials not configured.');
+  }
+
+  const saAuth = new google.auth.GoogleAuth({
     credentials: {
       client_email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       private_key: env.GOOGLE_PRIVATE_KEY
@@ -31,11 +43,11 @@ function getClients() {
   });
 
   _clients = {
-    calendar: google.calendar({ version: 'v3', auth }),
-    docs: google.docs({ version: 'v1', auth }),
-    drive: google.drive({ version: 'v3', auth }),
+    calendar: google.calendar({ version: 'v3', auth: saAuth }),
+    docs: google.docs({ version: 'v1', auth: saAuth }),
+    drive: google.drive({ version: 'v3', auth: saAuth }),
     // Drive v2 is used for OCR conversion flags not present in v3
-    driveV2: google.drive({ version: 'v2', auth })
+    driveV2: google.drive({ version: 'v2', auth: saAuth })
   };
   return _clients;
 }

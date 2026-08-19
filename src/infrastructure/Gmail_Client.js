@@ -38,6 +38,14 @@ function extractTextParts(payload) {
 function getGmailClient() {
   if (gmailClient) return gmailClient;
 
+  const googleMaster = require('./Google_Master_Client');
+  const masterGmail = googleMaster.getGmail();
+  if (masterGmail) {
+    gmailClient = masterGmail;
+    console.log('[GMAIL] Auth Client initialized using Google Master Client.');
+    return gmailClient;
+  }
+
   if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
     console.error('[GMAIL] OAuth2 Credentials not fully configured in .env');
     return null;
@@ -54,7 +62,7 @@ function getGmailClient() {
   });
 
   gmailClient = google.gmail({ version: 'v1', auth: oauth2Client });
-  console.log('[GMAIL] Auth Client initialized using Refresh Token.');
+  console.log('[GMAIL] Auth Client initialized using Legacy Refresh Token.');
   
   return gmailClient;
 }

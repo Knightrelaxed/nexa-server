@@ -6,6 +6,13 @@ let tasksClient = null;
 function getTasksClient() {
   if (tasksClient) return tasksClient;
 
+  const googleMaster = require('./Google_Master_Client');
+  const masterTasks = googleMaster.getTasks();
+  if (masterTasks) {
+    tasksClient = masterTasks;
+    return tasksClient;
+  }
+
   if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.TASKS_REFRESH_TOKEN) {
     console.error('[TASKS] OAuth2 credentials not fully configured.');
     return null;
@@ -14,7 +21,7 @@ function getTasksClient() {
   const oauth2Client = new google.auth.OAuth2(
     env.GMAIL_CLIENT_ID,
     env.GMAIL_CLIENT_SECRET,
-    'http://localhost:3001/oauth2callback'
+    'http://localhost:3000/oauth2callback'
   );
 
   oauth2Client.setCredentials({ refresh_token: env.TASKS_REFRESH_TOKEN });

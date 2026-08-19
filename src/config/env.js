@@ -69,12 +69,17 @@ module.exports = {
   GOOGLE_VAULT_FOLDER_ID: process.env.GOOGLE_VAULT_FOLDER_ID || process.env.GOOGLE_DRIVE_FOLDER_ID, // Dedicated Vault folder
   GOOGLE_DOCS_IDEA_ID: process.env.GOOGLE_DOCS_IDEA_ID, // 2nd Brain master ideation doc
 
-  // OAuth2 Refresh Tokens (Gmail, Drive, Tasks)
-  GMAIL_CLIENT_ID: process.env.GMAIL_CLIENT_ID,
-  GMAIL_CLIENT_SECRET: process.env.GMAIL_CLIENT_SECRET,
-  GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN,
-  TASKS_REFRESH_TOKEN: process.env.TASKS_REFRESH_TOKEN,
-  GOOGLE_DRIVE_REFRESH_TOKEN: process.env.GOOGLE_DRIVE_REFRESH_TOKEN,
+  // Unified Google Master OAuth2 Credentials (All-in-One: Tasks, Calendar, Meet, Gmail, Drive, Docs, Sheets, Slides, Contacts, Photos, YouTube)
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || process.env.GMAIL_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || process.env.GMAIL_CLIENT_SECRET,
+  GOOGLE_MASTER_REFRESH_TOKEN: process.env.GOOGLE_MASTER_REFRESH_TOKEN || process.env.GMAIL_REFRESH_TOKEN,
+
+  // Legacy OAuth2 Refresh Tokens (Backward Compatibility Fallback)
+  GMAIL_CLIENT_ID: process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID,
+  GMAIL_CLIENT_SECRET: process.env.GMAIL_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET,
+  GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN || process.env.GOOGLE_MASTER_REFRESH_TOKEN,
+  TASKS_REFRESH_TOKEN: process.env.TASKS_REFRESH_TOKEN || process.env.GOOGLE_MASTER_REFRESH_TOKEN,
+  GOOGLE_DRIVE_REFRESH_TOKEN: process.env.GOOGLE_DRIVE_REFRESH_TOKEN || process.env.GOOGLE_MASTER_REFRESH_TOKEN,
 
   // ============================================================
   // 6. SEARCH ENGINES & THIRD-PARTY APIS
