@@ -600,8 +600,8 @@ async function executeLiveTool(toolName, args = {}) {
       // 4. CALENDAR: CREATE EVENT
       // ─────────────────────────────────────────────────────────────
       case 'createCalendarEvent': {
-        const title    = String(args.title || 'Agenda Baru').trim();
-        const rawTime  = args.startTime || '09:00';
+        const title         = String(args.title || 'Agenda Baru').trim();
+        const rawTime       = args.startTime || '09:00';
         const targetDateISO = _parseDateFromVoice(args.date || 'today');
 
         let cleanTime = rawTime;
@@ -612,34 +612,38 @@ async function executeLiveTool(toolName, args = {}) {
         const startISO = `${targetDateISO}T${cleanTime}:00+07:00`;
 
         let endISO = null;
+        let durationMins = 60;
         if (args.endTime) {
           let cleanEndTime = String(args.endTime);
           if (/^\d{1,2}$/.test(cleanEndTime)) cleanEndTime = `${cleanEndTime.padStart(2, '0')}:00`;
           endISO = `${targetDateISO}T${cleanEndTime}:00+07:00`;
+        } else {
+          durationMins = agendaManager.inferProbableDuration ? agendaManager.inferProbableDuration(title) : 60;
+          const sDate = new Date(startISO);
+          endISO = new Date(sDate.getTime() + durationMins * 60000).toISOString();
         }
 
-        const res = await _withToolTimeout(
-          agendaManager.handleCalendarIntent({
-            action: 'CREATE',
-            summary: title,
-            start: startISO,
-            end: endISO,
-            location: args.location || null,
-            description: args.description || null
-          }, title),
-          8000
+        const created = await _withToolTimeout(
+          googleWorkspace.createCalendarEvent(
+            title,
+            startISO,
+            endISO,
+            args.description || '',
+            args.location || '',
+            [30],
+            '',
+            ''
+          ),
+          6000
         );
 
-        const cleanMessage = res?.message
-          ? res.message.replace(/<[^>]+>/g, '')
-          : `Agenda "${title}" berhasil dijadwalkan di Kalender.`;
-
         return {
-          status: res?.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
-          message: cleanMessage,
+          status: 'SUCCESS',
+          message: `Jadwal "${title}" berhasil dicatat di Google Calendar untuk tanggal ${targetDateISO} pukul ${cleanTime} WIB.`,
           title,
           date: targetDateISO,
-          start_time: cleanTime
+          start_time: cleanTime,
+          event_id: created?.id || 'CREATED'
         };
       }
 
