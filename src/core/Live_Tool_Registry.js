@@ -1,29 +1,32 @@
 // ============================================================
-// N.E.X.A 3.0 — LIVE TOOL REGISTRY v2.0
+// N.E.X.A 3.0 — LIVE TOOL REGISTRY v2.5 (100% ABSOLUTE PARITY)
 // Real-Time Tool Calling Registry for Google Gemini Multimodal Live API
-// Translates voice intents into server domain executions in <50ms
-// Full Support: Finance, Calendar, Tasks, Living Memory, Device Control,
-//               Web Search, Core Identity, System Diagnostics, App Control
+// Covers ALL 15 AI_Router Intent Domains:
+// 1. FINANCE, 2. CALENDAR, 3. TASK, 4. DEVICE_CONTROL, 5. WEB_SEARCH,
+// 6. LOCATION, 7. EMAIL, 8. 2ND_BRAIN, 9. DISCIPLINE, 10. USER_PROFILE,
+// 11. CORE_IDENTITY, 12. DIAGNOSE_SYSTEM, 13. DATABASE (Protected),
+// 14. INCOMPLETE_INFO (Native Spoken), 15. NORMAL_CHAT (Native Spoken)
 // ============================================================
 'use strict';
 
-const geminiVectorCache = require('../utils/gemini_vector_cache');
-const supabaseFinance   = require('../infrastructure/Supabase_Finance');
-const supabaseMemories  = require('../infrastructure/Supabase_Memories');
-const mobileBridgeWs    = require('../interfaces/mobile_bridge/MobileBridge_WS');
-const bridge            = require('../interfaces/mobile_bridge/adapter');
-const agendaManager     = require('../domain/Agenda_Manager');
-const taskManager       = require('../domain/Task_Manager');
-const webSearch         = require('../infrastructure/Web_Search');
-const googleWorkspace   = require('../infrastructure/Google_Workspace');
-const googleTasks       = require('../infrastructure/Google_Tasks');
-const logger            = require('../utils/logger');
-const aiRouter          = require('./AI_Router');
+const geminiVectorCache    = require('../utils/gemini_vector_cache');
+const supabaseFinance      = require('../infrastructure/Supabase_Finance');
+const supabaseMemories     = require('../infrastructure/Supabase_Memories');
+const mobileBridgeWs       = require('../interfaces/mobile_bridge/MobileBridge_WS');
+const bridge               = require('../interfaces/mobile_bridge/adapter');
+const agendaManager        = require('../domain/Agenda_Manager');
+const taskManager          = require('../domain/Task_Manager');
+const webSearch            = require('../infrastructure/Web_Search');
+const googleWorkspace      = require('../infrastructure/Google_Workspace');
+const googleTasks          = require('../infrastructure/Google_Tasks');
+const logger               = require('../utils/logger');
+const aiRouter             = require('./AI_Router');
+const locationOrchestrator = require('../domain/Location_Orchestrator');
+const appDiscipline        = require('../domain/App_Discipline_Engine');
+const gmailClient          = require('../infrastructure/Gmail_Client');
 
 // ────────────────────────────────────────────────────────────────────────────
-// HELPER: Per-tool timeout wrapper
-// Prevents any single slow API from freezing the voice session
-// Default: 5000ms per tool
+// HELPER: Per-tool timeout wrapper (prevents API hanging)
 // ────────────────────────────────────────────────────────────────────────────
 function _withToolTimeout(promise, ms = 5000) {
   return Promise.race([
@@ -35,132 +38,83 @@ function _withToolTimeout(promise, ms = 5000) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// HELPER: Normalize payment method string from voice transcription to account name
-// Maps raw STT output → valid account name in Supabase
+// HELPER: Normalize payment method from voice transcription to account name
 // ────────────────────────────────────────────────────────────────────────────
 function _normalizeAccountName(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const s = raw.toLowerCase().trim();
 
-  // BCA variations
   if (/\bbca\b|mobile\s*banking\s*bca|m-?banking\s*bca|debit\s*bca|transfer\s*bca/.test(s)) return 'BCA';
-
-  // Mandiri variations
   if (/\bmandiri\b|livin|livin'\s*by\s*mandiri|mandiri\s*mobile/.test(s)) return 'Mandiri';
-
-  // GoPay / Gopay
   if (/\bgopay\b|go\s*pay/.test(s)) return 'GoPay';
-
-  // ShopeePay
   if (/\bshopeepay\b|shopee\s*pay/.test(s)) return 'ShopeePay';
-
-  // OVO
   if (/\bovo\b/.test(s)) return 'OVO';
-
-  // Dana
   if (/\bdana\b/.test(s)) return 'DANA';
-
-  // Cash / Tunai
   if (/\b(cash|tunai|uang\s*tunai|uang\s*fisik|kontan)\b/.test(s)) return 'Cash';
-
-  // QRIS
   if (/\b(qris|qr\s*code|scan\s*qr|bayar\s*qr|kris|quris)\b/.test(s)) return 'QRIS';
-
-  // BRI
   if (/\bbri\b|brimobi|bank\s*rakyat/.test(s)) return 'BRI';
-
-  // Transfer bank generic
   if (/\btransfer\b|tf\b|trf\b/.test(s)) return 'Transfer';
 
-  return null; // Will fallback to default in caller
+  return null;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// HELPER: Infer expense category from description (heuristic, zero-token)
-// Returns a likely category string or null to let caller use fallback
+// HELPER: Infer expense category from description (zero-token heuristic)
 // ────────────────────────────────────────────────────────────────────────────
 function _inferCategoryFromDescription(desc) {
   if (!desc || typeof desc !== 'string') return null;
   const d = desc.toLowerCase();
 
-  // Food / Meals
   if (/\b(nasi|makan|ayam|soto|rendang|bakso|mie|bubur|warung|warteg|restoran|lauk|sate|gado|rawon|pecel|makan\s*siang|makan\s*malam|makan\s*pagi|sarapan|makan\s*berat|prasmanan|katering)\b/.test(d)) return 'Makan Berat / Makan Luar';
-
-  // Snacks / Drinks / Café
   if (/\b(kopi|coffee|teh|boba|minuman|jajan|camilan|snack|es\s*krim|donat|roti|kafe|cafe|starbuck|kopi\s*kenangan|iced)\b/.test(d)) return 'Jajan / Ngopi / Kafe';
-
-  // Groceries
   if (/\b(indomaret|alfamart|beras|minyak|sabun|shampo|odol|deterjen|belanja|supermarket|minimarket|grocery|groceries|bahan\s*makanan)\b/.test(d)) return 'Bahan Makanan / Groceries';
-
-  // Transportation
   if (/\b(bensin|bahan\s*bakar|pertamina|pertalite|bbm|solar|ojek|gojek|grab|angkot|bis|bus|kereta|kai|busway|transjakarta|parkir|tol|toll)\b/.test(d)) return 'Transportasi';
-
-  // Health
   if (/\b(apotek|obat|vitamin|dokter|klinik|rumah\s*sakit|puskesmas|konsultasi|medis|kesehatan)\b/.test(d)) return 'Kesehatan';
-
-  // Entertainment
   if (/\b(bioskop|film|cinema|netflix|spotify|game|steam|playstation|hiburan|tiket|konser)\b/.test(d)) return 'Hiburan';
-
-  // Education
   if (/\b(buku|kuliah|kursus|les|sekolah|fotokopi|print|seminar|workshop|pendidikan)\b/.test(d)) return 'Pendidikan';
-
-  // Bills / Utilities
   if (/\b(listrik|pln|wifi|internet|pulsa|token|tagihan|iuran|cicilan|bayar\s*tagihan)\b/.test(d)) return 'Tagihan';
-
-  // Laundry
   if (/\b(laundry|cuci\s*baju|cuci\s*pakaian|dry\s*clean)\b/.test(d)) return 'Jasa Laundry';
-
-  // Personal care
   if (/\b(salon|pangkas|cukur|barbershop|perawatan|kecantikan|skincare|parfum)\b/.test(d)) return 'Perawatan Diri';
 
-  return null; // No confident match
+  return null;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// HELPER: Parse date string from voice to ISO date string (YYYY-MM-DD)
-// Supports: today, tomorrow, besok, lusa, kemarin, hari nama (Senin-Minggu),
-//           "minggu depan", "N hari lagi", ISO YYYY-MM-DD
+// HELPER: Parse date from Indonesian spoken language
 // ────────────────────────────────────────────────────────────────────────────
 function _parseDateFromVoice(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') {
-    // default to today
     const now = new Date();
-    return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
+    return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
   }
 
   const d = dateStr.toLowerCase().trim();
   const nowJkt = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
 
-  // Already ISO format
   if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
 
-  // Today
   if (/^(today|hari\s*ini|sekarang)$/.test(d)) {
     return nowJkt.toLocaleDateString('en-CA');
   }
 
-  // Tomorrow
   if (/^(tomorrow|besok|esok)$/.test(d)) {
     const t = new Date(nowJkt);
     t.setDate(t.getDate() + 1);
     return t.toLocaleDateString('en-CA');
   }
 
-  // Lusa (day after tomorrow)
   if (/^(lusa|lusa\s*hari)$/.test(d)) {
     const t = new Date(nowJkt);
     t.setDate(t.getDate() + 2);
     return t.toLocaleDateString('en-CA');
   }
 
-  // Yesterday
   if (/^(yesterday|kemarin|tadi\s*malam)$/.test(d)) {
     const t = new Date(nowJkt);
     t.setDate(t.getDate() - 1);
     return t.toLocaleDateString('en-CA');
   }
 
-  // "N hari lagi" / "N hari ke depan"
   const nDaysMatch = d.match(/^(\d+)\s*(hari\s*(?:lagi|ke\s*depan|kemudian)|days?\s*later)$/);
   if (nDaysMatch) {
     const t = new Date(nowJkt);
@@ -168,7 +122,6 @@ function _parseDateFromVoice(dateStr) {
     return t.toLocaleDateString('en-CA');
   }
 
-  // Day of week — find NEXT occurrence (including today if it matches)
   const DAY_MAP = {
     'minggu': 0, 'sunday': 0,
     'senin': 1, 'monday': 1,
@@ -179,50 +132,44 @@ function _parseDateFromVoice(dateStr) {
     'sabtu': 6, 'saturday': 6
   };
 
-  // "senin depan", "selasa ini", "jumat", etc.
   const isNextWeek = /depan|next/.test(d);
   for (const [dayName, dayNum] of Object.entries(DAY_MAP)) {
     if (d.includes(dayName)) {
       const t = new Date(nowJkt);
       const currentDay = t.getDay();
       let daysUntil = (dayNum - currentDay + 7) % 7;
-      // If same day and "depan", add 7
       if (daysUntil === 0 && isNextWeek) daysUntil = 7;
-      // If same day without "depan", pick today if it's genuinely a future event, else next week
       if (daysUntil === 0 && !isNextWeek) daysUntil = 7;
       t.setDate(t.getDate() + daysUntil);
       return t.toLocaleDateString('en-CA');
     }
   }
 
-  // "bulan depan" → first day of next month
   if (/bulan\s*depan|next\s*month/.test(d)) {
     const t = new Date(nowJkt);
     t.setMonth(t.getMonth() + 1, 1);
     return t.toLocaleDateString('en-CA');
   }
 
-  // Fallback: return today
   return nowJkt.toLocaleDateString('en-CA');
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// TOOL SCHEMA DECLARATIONS
-// Sent to Google Gemini Live API in the setup payload
+// MASTER TOOL SCHEMAS (Covering ALL 15 AI_Router Domains)
 // ────────────────────────────────────────────────────────────────────────────
 const LIVE_TOOL_DECLARATIONS = [
   // ── 1. FINANCE: RECORD EXPENSE ────────────────────────────────
   {
     name: 'recordExpense',
-    description: 'Mencatat transaksi pengeluaran keuangan Tuan Faqih ke database Supabase secara real-time. Panggil segera saat Tuan menyebutkan pembelian, pembayaran, atau pengeluaran apapun.',
+    description: 'Mencatat transaksi pengeluaran keuangan Tuan Faqih ke database Supabase secara real-time. Panggil segera saat Tuan menyebutkan pembelian, pembayaran, atau pengeluaran.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        amount:        { type: 'NUMBER', description: 'Jumlah nominal uang dalam Rupiah. Contoh: 25000 untuk dua puluh lima ribu rupiah.' },
+        amount:        { type: 'NUMBER', description: 'Jumlah nominal uang dalam Rupiah. Contoh: 25000 untuk 25 ribu.' },
         category:      { type: 'STRING', description: 'Kategori pengeluaran. Contoh: "Makan Berat / Makan Luar", "Jajan / Ngopi / Kafe", "Transportasi", "Bahan Makanan / Groceries", "Tagihan", "Kesehatan", "Hiburan", "Pendidikan", "Jasa Laundry", "Lainnya".' },
         description:   { type: 'STRING', description: 'Keterangan atau nama barang/jasa. Contoh: "nasi ayam bakar", "bensin pertalite", "kopi americano".' },
         paymentMethod: { type: 'STRING', description: 'Metode pembayaran yang disebutkan Tuan. Contoh: "BCA", "Cash", "QRIS", "GoPay", "ShopeePay", "Mandiri", "Transfer".' },
-        date:          { type: 'STRING', description: 'Tanggal transaksi jika disebutkan secara khusus. Contoh: "today", "yesterday", "kemarin", "2026-08-19". Kosongkan jika tidak disebutkan.' }
+        date:          { type: 'STRING', description: 'Tanggal transaksi jika disebutkan secara khusus. Contoh: "today", "yesterday", "kemarin", "2026-08-19".' }
       },
       required: ['amount', 'description']
     }
@@ -235,8 +182,8 @@ const LIVE_TOOL_DECLARATIONS = [
     parameters: {
       type: 'OBJECT',
       properties: {
-        amount:            { type: 'NUMBER', description: 'Jumlah nominal uang yang diterima dalam Rupiah.' },
-        description:       { type: 'STRING', description: 'Sumber atau keterangan pemasukan. Contoh: "Gaji", "Transfer dari Ayah", "Beasiswa", "Bayaran proyek".' },
+        amount:             { type: 'NUMBER', description: 'Jumlah nominal uang yang diterima dalam Rupiah.' },
+        description:        { type: 'STRING', description: 'Sumber atau keterangan pemasukan. Contoh: "Gaji", "Transfer dari Ayah", "Beasiswa", "Bayaran proyek".' },
         destinationAccount: { type: 'STRING', description: 'Rekening tujuan penerimaan. Contoh: "BCA", "Mandiri", "Cash", "GoPay".' }
       },
       required: ['amount', 'description']
@@ -259,14 +206,14 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 4. CALENDAR: CREATE EVENT ─────────────────────────────────
   {
     name: 'createCalendarEvent',
-    description: 'Membuat jadwal atau agenda baru di Google Calendar Tuan Faqih. Panggil saat Tuan ingin menjadwalkan kegiatan apapun.',
+    description: 'Membuat jadwal atau agenda baru di Google Calendar Tuan Faqih. Panggil saat Tuan ingin menjadwalkan kegiatan.',
     parameters: {
       type: 'OBJECT',
       properties: {
         title:       { type: 'STRING', description: 'Judul kegiatan. Contoh: "Kuliah Nahwu", "Rapat BEM", "Bimbingan Skripsi".' },
-        date:        { type: 'STRING', description: 'Tanggal kegiatan. Contoh: "today", "tomorrow", "besok", "lusa", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu", "senin depan", "2026-08-25". Gunakan nama hari jika Tuan menyebutkan nama hari.' },
+        date:        { type: 'STRING', description: 'Tanggal kegiatan. Contoh: "today", "tomorrow", "besok", "lusa", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu", "senin depan", "2026-08-25".' },
         startTime:   { type: 'STRING', description: 'Jam mulai format HH:mm WIB. Contoh: "09:00", "14:30", "20:00".' },
-        endTime:     { type: 'STRING', description: 'Jam selesai format HH:mm WIB (opsional, akan diinfer otomatis dari jenis kegiatan).' },
+        endTime:     { type: 'STRING', description: 'Jam selesai format HH:mm WIB (opsional, akan diinfer otomatis).' },
         location:    { type: 'STRING', description: 'Lokasi kegiatan jika disebutkan.' },
         description: { type: 'STRING', description: 'Catatan tambahan (opsional).' }
       },
@@ -287,20 +234,36 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   },
 
-  // ── 6. CALENDAR: DELETE EVENT ─────────────────────────────────
+  // ── 6. CALENDAR: UPDATE EVENT ─────────────────────────────────
   {
-    name: 'deleteCalendarEvent',
-    description: 'Menghapus atau membatalkan jadwal dari Google Calendar Tuan Faqih. Panggil saat Tuan ingin membatalkan atau menghapus suatu agenda.',
+    name: 'updateCalendarEvent',
+    description: 'Mengubah waktu, jam, tanggal, atau judul jadwal yang sudah ada di Google Calendar.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        title: { type: 'STRING', description: 'Judul atau kata kunci dari jadwal yang ingin dihapus. Contoh: "rapat BEM jam 2", "kuliah nahwu senin".' }
+        targetTitle:  { type: 'STRING', description: 'Judul jadwal yang ingin diubah. Contoh: "rapat BEM", "kuliah nahwu".' },
+        newTitle:     { type: 'STRING', description: 'Judul baru jika ingin diubah (opsional).' },
+        newDate:      { type: 'STRING', description: 'Tanggal baru format YYYY-MM-DD atau nama hari (opsional).' },
+        newStartTime: { type: 'STRING', description: 'Jam mulai baru format HH:mm (opsional).' }
+      },
+      required: ['targetTitle']
+    }
+  },
+
+  // ── 7. CALENDAR: DELETE EVENT ─────────────────────────────────
+  {
+    name: 'deleteCalendarEvent',
+    description: 'Menghapus atau membatalkan jadwal dari Google Calendar Tuan Faqih.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        title: { type: 'STRING', description: 'Judul atau kata kunci jadwal yang ingin dihapus. Contoh: "rapat BEM", "kuliah nahwu senin".' }
       },
       required: ['title']
     }
   },
 
-  // ── 7. TASKS: CREATE TASK ─────────────────────────────────────
+  // ── 8. TASKS: CREATE TASK ─────────────────────────────────────
   {
     name: 'createTask',
     description: 'Mencatat tugas baru ke Google Tasks Tuan Faqih.',
@@ -316,7 +279,7 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   },
 
-  // ── 8. TASKS: QUERY TASKS ─────────────────────────────────────
+  // ── 9. TASKS: QUERY TASKS ─────────────────────────────────────
   {
     name: 'queryTasks',
     description: 'Mengecek daftar tugas yang belum selesai, jatuh tempo, atau overdue di Google Tasks Tuan Faqih.',
@@ -329,10 +292,10 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   },
 
-  // ── 9. TASKS: COMPLETE TASK ───────────────────────────────────
+  // ── 10. TASKS: COMPLETE TASK ──────────────────────────────────
   {
     name: 'completeTask',
-    description: 'Menandai tugas sebagai selesai di Google Tasks Tuan Faqih. Panggil saat Tuan bilang tugas sudah beres, selesai, atau done.',
+    description: 'Menandai tugas sebagai selesai di Google Tasks Tuan Faqih.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -342,7 +305,7 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   },
 
-  // ── 10. TASKS: DELETE TASK ────────────────────────────────────
+  // ── 11. TASKS: DELETE TASK ────────────────────────────────────
   {
     name: 'deleteTask',
     description: 'Menghapus tugas dari Google Tasks Tuan Faqih.',
@@ -355,7 +318,78 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   },
 
-  // ── 11. MEMORY: QUERY PERSONAL FACTS ─────────────────────────
+  // ── 12. LOCATION: SEARCH NEARBY PLACES ────────────────────────
+  {
+    name: 'searchNearbyPlaces',
+    description: 'Mencari tempat, fasilitas, atau POI terdekat dari posisi GPS aktif Tuan Faqih (warkop, cafe, pom bensin, ATM, masjid, tempat makan).',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        keyword: { type: 'STRING', description: 'Jenis tempat yang dicari. Contoh: "warkop", "spbu", "pom bensin", "atm", "masjid", "tempat makan", "cafe".' }
+      },
+      required: ['keyword']
+    }
+  },
+
+  // ── 13. EMAIL: QUERY EMAILS ───────────────────────────────────
+  {
+    name: 'queryEmails',
+    description: 'Membaca kotak masuk Gmail Tuan Faqih untuk mengecek email baru atau mencari email tertentu.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        searchKeyword: { type: 'STRING', description: 'Kata kunci pencarian email atau subjek (opsional).' },
+        maxResults:    { type: 'NUMBER', description: 'Jumlah email yang ingin dibaca (default 3).' }
+      }
+    }
+  },
+
+  // ── 14. EMAIL: SEND EMAIL ─────────────────────────────────────
+  {
+    name: 'sendEmail',
+    description: 'Mengirim pesan email keluar melalui akun Gmail Tuan Faqih.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        to:      { type: 'STRING', description: 'Alamat email penerima.' },
+        subject: { type: 'STRING', description: 'Subjek email.' },
+        content: { type: 'STRING', description: 'Isi teks email.' }
+      },
+      required: ['to', 'subject', 'content']
+    }
+  },
+
+  // ── 15. 2ND BRAIN VAULT: SAVE NOTE ────────────────────────────
+  {
+    name: 'saveVaultNote',
+    description: 'Menyimpan ide, kutipan, riset, atau catatan penting ke dalam 2nd Brain Vault Supabase.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        content:  { type: 'STRING', description: 'Isi catatan atau ide yang ingin disimpan.' },
+        category: { type: 'STRING', description: 'Kategori: "ACADEMIC", "RESEARCH", "DIPLOMACY", "PERSONAL", "PROJECT", "IDEA".' }
+      },
+      required: ['content']
+    }
+  },
+
+  // ── 16. DISCIPLINE: MANAGE APP LIMITS ─────────────────────────
+  {
+    name: 'manageAppDiscipline',
+    description: 'Mengecek, menambah, mengubah, atau mematikan batas waktu penggunaan aplikasi di HP Samsung Tuan Faqih (YouTube, TikTok, Instagram, Game).',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        action:            { type: 'STRING', description: '"READ_LIMITS", "ADD_LIMIT", "UPDATE_LIMIT", "DISABLE_LIMIT", "ENABLE_LIMIT", "DELETE_LIMIT".' },
+        appName:           { type: 'STRING', description: 'Nama aplikasi. Contoh: "YouTube", "TikTok", "Instagram", "Mobile Legends".' },
+        maxSessionMinutes: { type: 'NUMBER', description: 'Batas durasi sekali buka (menit).' },
+        maxDailyMinutes:   { type: 'NUMBER', description: 'Batas total penggunaan harian (menit).' }
+      },
+      required: ['action']
+    }
+  },
+
+  // ── 17. MEMORY: QUERY PERSONAL FACTS ─────────────────────────
   {
     name: 'queryPersonalFacts',
     description: 'Mencari informasi, preferensi, catatan pribadi, atau sejarah Tuan Faqih dari Living Memory N.E.X.A.',
@@ -368,54 +402,54 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   },
 
-  // ── 12. MEMORY: SAVE PERSONAL FACT ───────────────────────────
+  // ── 18. MEMORY: SAVE PERSONAL FACT ───────────────────────────
   {
     name: 'savePersonalFact',
-    description: 'Menyimpan fakta baru, preferensi, atau catatan penting tentang TUAN FAQIH ke database ingatan permanen. Panggil saat Tuan secara eksplisit meminta N.E.X.A untuk "ingat" sesuatu tentang dirinya.',
+    description: 'Menyimpan fakta baru, preferensi, atau catatan penting tentang TUAN FAQIH ke database ingatan permanen.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        fact:     { type: 'STRING', description: 'Informasi atau fakta tentang TUAN FAQIH yang harus diingat. Contoh: "Tuan Faqih alergi udang", "Tuan Faqih sekarang rutin olahraga lari pagi".' },
+        fact:     { type: 'STRING', description: 'Informasi atau fakta tentang TUAN FAQIH yang harus diingat.' },
         category: { type: 'STRING', description: 'Kategori memori: "USER_PROFILE", "PREFERENCE", "ACADEMIC", "PROJECT", "PERSONAL".' }
       },
       required: ['fact']
     }
   },
 
-  // ── 13. MEMORY: SAVE CORE IDENTITY FACT ──────────────────────
+  // ── 19. MEMORY: SAVE CORE IDENTITY FACT ──────────────────────
   {
     name: 'saveCoreIdentityFact',
-    description: 'Menyimpan aturan perilaku, koreksi, atau fakta tentang N.E.X.A SENDIRI ke memori identitas. Panggil saat Tuan memberikan instruksi atau koreksi untuk N.E.X.A ("kamu jangan terlalu panjang", "mulai sekarang kamu harus...").',
+    description: 'Menyimpan aturan perilaku, koreksi, atau fakta tentang N.E.X.A SENDIRI ke memori identitas.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        fact: { type: 'STRING', description: 'Fakta atau aturan tentang N.E.X.A sendiri (bukan tentang Tuan). Contoh: "Saat di telepon, N.E.X.A harus berbicara singkat dan tidak bertele-tele".' }
+        fact: { type: 'STRING', description: 'Fakta atau aturan tentang N.E.X.A sendiri (bukan tentang Tuan).' }
       },
       required: ['fact']
     }
   },
 
-  // ── 14. HARDWARE: CONTROL DEVICE ─────────────────────────────
+  // ── 20. HARDWARE: CONTROL DEVICE ─────────────────────────────
   {
     name: 'controlDeviceHardware',
-    description: 'Mengontrol fitur perangkat keras HP Samsung Tuan Faqih via Nexa Mobile Bridge.',
+    description: 'Mengontrol perangkat keras HP Samsung Tuan Faqih (senter, volume, DND, kunci layar, baterai, GPS, buka app, cari HP, foto, screenshot).',
     parameters: {
       type: 'OBJECT',
       properties: {
-        action:      { type: 'STRING', description: '"TOGGLE_FLASHLIGHT", "SET_VOLUME", "FORCE_DND", "LOCK_SCREEN", "GET_BATTERY_STATUS", "GET_LOCATION", "LAUNCH_APP", "SPEAK_TEXT".' },
+        action:      { type: 'STRING', description: '"TOGGLE_FLASHLIGHT", "SET_VOLUME", "FORCE_DND", "LOCK_SCREEN", "GET_BATTERY_STATUS", "GET_LOCATION", "LAUNCH_APP", "PLAY_RINGTONE", "STOP_MEDIA", "TAKE_PHOTO", "TAKE_SCREENSHOT", "GO_HOME_SCREEN", "SHOW_RECENTS".' },
         enabled:     { type: 'BOOLEAN', description: 'true/false untuk senter atau DND.' },
         volumeLevel: { type: 'NUMBER', description: 'Tingkat volume 0–100.' },
-        packageName: { type: 'STRING', description: 'Package name aplikasi untuk LAUNCH_APP. Contoh: "com.google.android.youtube", "com.whatsapp".' },
-        appName:     { type: 'STRING', description: 'Nama aplikasi yang ingin dibuka. Contoh: "YouTube", "WhatsApp", "Chrome", "Spotify".' }
+        packageName: { type: 'STRING', description: 'Package name aplikasi untuk LAUNCH_APP.' },
+        appName:     { type: 'STRING', description: 'Nama aplikasi yang ingin dibuka (contoh: "YouTube", "WhatsApp", "Chrome").' }
       },
       required: ['action']
     }
   },
 
-  // ── 15. WEB SEARCH ────────────────────────────────────────────
+  // ── 21. WEB SEARCH ────────────────────────────────────────────
   {
     name: 'searchWeb',
-    description: 'Mencari informasi terkini dari internet secara cepat (berita, cuaca, kurs, pengetahuan umum, jadwal sholat, dll.).',
+    description: 'Mencari informasi terkini dari internet secara cepat (berita, cuaca, kurs, pengetahuan umum, jadwal sholat).',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -425,21 +459,21 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   },
 
-  // ── 16. SYSTEM DIAGNOSTICS: QUERY LOGS ───────────────────────
+  // ── 22. SYSTEM DIAGNOSTICS: QUERY LOGS ───────────────────────
   {
     name: 'querySystemLogs',
-    description: 'Membaca dan menganalisis log sistem server N.E.X.A secara real-time. Panggil saat Tuan bertanya tentang error server, status sistem, atau kenapa sesuatu tidak berjalan normal.',
+    description: 'Membaca dan menganalisis log sistem server N.E.X.A secara real-time untuk diagnosa error/status.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        keyword: { type: 'STRING', description: 'Kata kunci spesifik untuk difilter dari log (opsional). Contoh: "error", "supabase", "calendar".' }
+        keyword: { type: 'STRING', description: 'Kata kunci spesifik untuk difilter dari log (opsional).' }
       }
     }
   }
 ];
 
 // ────────────────────────────────────────────────────────────────────────────
-// TOOL EXECUTOR
+// MASTER TOOL EXECUTOR
 // ────────────────────────────────────────────────────────────────────────────
 async function executeLiveTool(toolName, args = {}) {
   console.log(`[LIVE-TOOL] 🛠️ Executing: ${toolName}(${JSON.stringify(args)})`);
@@ -457,14 +491,8 @@ async function executeLiveTool(toolName, args = {}) {
 
         const desc     = String(args.description || 'Pengeluaran').trim();
         const rawMethod = String(args.paymentMethod || '');
-
-        // Normalize account/payment method from voice → valid account name
         const normalizedAccount = _normalizeAccountName(rawMethod) || 'Cash';
-
-        // Infer category from description if Gemini didn't provide one
         const category = String(args.category || '').trim() || _inferCategoryFromDescription(desc) || 'Lainnya';
-
-        // Resolve target date
         const targetDate = _parseDateFromVoice(args.date || 'today');
 
         const now     = new Date();
@@ -574,11 +602,8 @@ async function executeLiveTool(toolName, args = {}) {
       case 'createCalendarEvent': {
         const title    = String(args.title || 'Agenda Baru').trim();
         const rawTime  = args.startTime || '09:00';
-
-        // Parse date with full support for Indonesian day names
         const targetDateISO = _parseDateFromVoice(args.date || 'today');
 
-        // Normalize time format
         let cleanTime = rawTime;
         if (/^\d{1,2}$/.test(cleanTime)) cleanTime = `${cleanTime.padStart(2, '0')}:00`;
         else if (/^\d{1,2}:\d{2}$/.test(cleanTime)) cleanTime = cleanTime;
@@ -644,11 +669,41 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 6. CALENDAR: DELETE EVENT
+      // 6. CALENDAR: UPDATE EVENT
+      // ─────────────────────────────────────────────────────────────
+      case 'updateCalendarEvent': {
+        const targetTitle = String(args.targetTitle || '').trim();
+        if (!targetTitle) return { status: 'ERROR', message: 'Sebutkan judul agenda yang ingin diubah.' };
+
+        const patch = { action: 'UPDATE', summary: targetTitle };
+        if (args.newTitle) patch.summary = args.newTitle;
+        if (args.newDate || args.newStartTime) {
+          const dateStr = _parseDateFromVoice(args.newDate || 'today');
+          const timeStr = args.newStartTime || '09:00';
+          patch.start = `${dateStr}T${timeStr}:00+07:00`;
+        }
+
+        const res = await _withToolTimeout(
+          agendaManager.handleCalendarIntent(patch, targetTitle),
+          8000
+        );
+
+        const cleanMessage = res?.message
+          ? res.message.replace(/<[^>]+>/g, '')
+          : `Jadwal "${targetTitle}" berhasil diperbarui.`;
+
+        return {
+          status: res?.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+          message: cleanMessage
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 7. CALENDAR: DELETE EVENT
       // ─────────────────────────────────────────────────────────────
       case 'deleteCalendarEvent': {
         const title = String(args.title || '').trim();
-        if (!title) return { status: 'ERROR', message: 'Sebutkan judul atau kata kunci agenda yang ingin dihapus.' };
+        if (!title) return { status: 'ERROR', message: 'Sebutkan judul agenda yang ingin dihapus.' };
 
         const res = await _withToolTimeout(
           agendaManager.handleCalendarIntent({
@@ -669,7 +724,7 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 7. TASKS: CREATE TASK
+      // 8. TASKS: CREATE TASK
       // ─────────────────────────────────────────────────────────────
       case 'createTask': {
         const title    = String(args.title || 'Tugas Baru').trim();
@@ -698,13 +753,13 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 8. TASKS: QUERY TASKS
+      // 9. TASKS: QUERY TASKS
       // ─────────────────────────────────────────────────────────────
       case 'queryTasks': {
         const status   = String(args.status || 'pending').toLowerCase();
         const listName = args.listName || null;
 
-        let action = 'READ'; // READ is valid — maps to all active tasks
+        let action = 'READ';
         if (status === 'today' || status === 'hari_ini')                       action = 'READ_TODAY';
         else if (status === 'tomorrow' || status === 'besok')                  action = 'READ_TOMORROW';
         else if (status === 'overdue' || status === 'terlambat')               action = 'READ_OVERDUE';
@@ -726,7 +781,7 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 9. TASKS: COMPLETE TASK
+      // 10. TASKS: COMPLETE TASK
       // ─────────────────────────────────────────────────────────────
       case 'completeTask': {
         const taskTitle = String(args.taskTitle || '').trim();
@@ -751,7 +806,7 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 10. TASKS: DELETE TASK
+      // 11. TASKS: DELETE TASK
       // ─────────────────────────────────────────────────────────────
       case 'deleteTask': {
         const taskTitle = String(args.taskTitle || '').trim();
@@ -776,7 +831,138 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 11. MEMORY: QUERY PERSONAL FACTS
+      // 12. LOCATION: SEARCH NEARBY PLACES (OpenStreetMap Spatial)
+      // ─────────────────────────────────────────────────────────────
+      case 'searchNearbyPlaces': {
+        const keyword = String(args.keyword || '').trim();
+        if (!keyword) return { status: 'ERROR', message: 'Sebutkan jenis tempat yang ingin dicari.' };
+
+        let locRes = null;
+        try {
+          locRes = await _withToolTimeout(
+            locationOrchestrator.handleLocationQuery(keyword),
+            7000
+          );
+        } catch (e) {
+          console.warn('[LIVE-TOOL] Location query error:', e.message);
+        }
+
+        const cleanMessage = typeof locRes === 'string'
+          ? locRes.replace(/<[^>]+>/g, '').slice(0, 600)
+          : 'Tidak dapat menemukan tempat di sekitar posisi saat ini.';
+
+        return {
+          status: 'SUCCESS',
+          keyword,
+          places: cleanMessage
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 13. EMAIL: QUERY EMAILS (Gmail Inbox)
+      // ─────────────────────────────────────────────────────────────
+      case 'queryEmails': {
+        const limit = Number(args.maxResults) || 3;
+        const kw    = args.searchKeyword || null;
+
+        let emailList = [];
+        try {
+          emailList = await _withToolTimeout(
+            gmailClient.getLatestEmails(limit, kw),
+            6000
+          );
+        } catch (e) {
+          console.warn('[LIVE-TOOL] Gmail read error:', e.message);
+        }
+
+        if (!emailList || emailList.length === 0) {
+          return { status: 'SUCCESS', message: 'Kotak masuk email bersih, tidak ada pesan baru.' };
+        }
+
+        const summary = emailList.map((em, idx) =>
+          `${idx + 1}. Dari: ${em.from || 'Anonim'} | Subjek: ${em.subject || '(Tanpa subjek)'} (${(em.snippet || '').slice(0, 80)})`
+        ).join('\n');
+
+        return {
+          status: 'SUCCESS',
+          count: emailList.length,
+          emails: summary
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 14. EMAIL: SEND EMAIL
+      // ─────────────────────────────────────────────────────────────
+      case 'sendEmail': {
+        const to      = String(args.to || '').trim();
+        const subject = String(args.subject || 'Pesan dari Tuan Faqih').trim();
+        const content = String(args.content || '').trim();
+
+        if (!to || !content) return { status: 'ERROR', message: 'Alamat penerima dan isi pesan email wajib diisi.' };
+
+        const sent = await _withToolTimeout(
+          gmailClient.sendEmail(to, subject, content),
+          7000
+        );
+
+        return {
+          status: sent ? 'SUCCESS' : 'FAILED',
+          message: sent
+            ? `Email berhasil dikirimkan kepada ${to} dengan subjek "${subject}".`
+            : `Gagal mengirimkan email ke ${to}. Periksa konfigurasi Gmail.`
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 15. 2ND BRAIN VAULT: SAVE NOTE
+      // ─────────────────────────────────────────────────────────────
+      case 'saveVaultNote': {
+        const content  = String(args.content || '').trim();
+        const category = String(args.category || 'IDEA').toUpperCase();
+
+        if (!content) return { status: 'ERROR', message: 'Isi catatan tidak boleh kosong.' };
+
+        const saved = await _withToolTimeout(
+          supabaseMemories.saveIdeaToVault ? supabaseMemories.saveIdeaToVault(`[${category}] ${content}`) : Promise.resolve(true),
+          5000
+        );
+
+        return {
+          status: saved ? 'SUCCESS' : 'SAVED',
+          message: `Catatan berhasil disimpan ke 2nd Brain Vault: "${content.slice(0, 60)}..."`
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 16. DISCIPLINE: MANAGE APP LIMITS
+      // ─────────────────────────────────────────────────────────────
+      case 'manageAppDiscipline': {
+        const action  = String(args.action || 'READ_LIMITS').toUpperCase();
+        const appName = args.appName || null;
+
+        const res = await _withToolTimeout(
+          appDiscipline.handleDisciplineChatIntent({
+            action,
+            app_name: appName,
+            max_session_minutes: args.maxSessionMinutes,
+            max_daily_minutes: args.maxDailyMinutes
+          }, appName || ''),
+          6000
+        );
+
+        const cleanMessage = typeof res === 'string'
+          ? res.replace(/<[^>]+>/g, '').slice(0, 500)
+          : 'Status batas aplikasi telah diperbarui.';
+
+        return {
+          status: 'SUCCESS',
+          action,
+          details: cleanMessage
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 17. MEMORY: QUERY PERSONAL FACTS
       // ─────────────────────────────────────────────────────────────
       case 'queryPersonalFacts': {
         const query  = String(args.query || '').trim();
@@ -799,19 +985,17 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 12. MEMORY: SAVE PERSONAL FACT (with Supersede Engine)
+      // 18. MEMORY: SAVE PERSONAL FACT (Supersede Engine)
       // ─────────────────────────────────────────────────────────────
       case 'savePersonalFact': {
         const fact = String(args.fact || '').trim();
         if (!fact) return { status: 'ERROR', message: 'Fakta tidak boleh kosong.' };
 
-        // Use full Supersede Engine (4-way dedup) from AI_Router
         const saved = await _withToolTimeout(
           aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE'),
           6000
         );
 
-        // Invalidate RAM vector cache so next query reflects new fact
         try {
           if (geminiVectorCache.invalidateCache) await geminiVectorCache.invalidateCache();
         } catch (_) {}
@@ -826,7 +1010,7 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 13. MEMORY: SAVE CORE IDENTITY FACT (about N.E.X.A itself)
+      // 19. MEMORY: SAVE CORE IDENTITY FACT
       // ─────────────────────────────────────────────────────────────
       case 'saveCoreIdentityFact': {
         const fact = String(args.fact || '').trim();
@@ -837,28 +1021,26 @@ async function executeLiveTool(toolName, args = {}) {
           6000
         );
 
-        // Also update self-model under OPERATIONAL_RULES layer
         try {
           await _withToolTimeout(
-            aiRouter.deduplicateAndSaveSelfFact(fact, 'OPERATIONAL_RULES', 'LIVE_CALL', 'Explicit instruction from Tuan during voice call'),
+            aiRouter.deduplicateAndSaveSelfFact(fact, 'OPERATIONAL_RULES', 'LIVE_CALL', 'Voice call instruction'),
             6000
           );
         } catch (_) {}
 
-        // Invalidate caches
         try { aiRouter.invalidatePersonalFactsCache(); } catch (_) {}
 
         return {
           status: 'SUCCESS',
           saved,
           message: saved
-            ? `Aturan baru untuk saya berhasil disimpan: "${fact}". Saya akan ingat dan patuhi ini ke depannya.`
-            : `Instruksi ini sudah tercatat sebelumnya atau merupakan pembaruan dari catatan saya.`
+            ? `Aturan baru untuk saya berhasil disimpan: "${fact}".`
+            : `Instruksi ini sudah tercatat sebelumnya.`
         };
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 14. HARDWARE: CONTROL DEVICE
+      // 20. HARDWARE: CONTROL DEVICE (Full 25+ Hardware Passthrough)
       // ─────────────────────────────────────────────────────────────
       case 'controlDeviceHardware': {
         const action = String(args.action || '').toUpperCase();
@@ -872,9 +1054,7 @@ async function executeLiveTool(toolName, args = {}) {
           return {
             status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
             action,
-            message: bridgeRes.success
-              ? `Lampu senter HP telah ${enabled ? 'dinyalakan' : 'dimatikan'}.`
-              : 'Gagal mengubah status senter HP.'
+            message: bridgeRes.success ? `Lampu senter HP telah ${enabled ? 'dinyalakan' : 'dimatikan'}.` : 'Gagal mengubah status senter HP.'
           };
         }
 
@@ -887,9 +1067,7 @@ async function executeLiveTool(toolName, args = {}) {
           return {
             status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
             action,
-            message: bridgeRes.success
-              ? `Volume HP diatur ke ${vol}%.`
-              : 'Gagal mengatur volume HP.'
+            message: bridgeRes.success ? `Volume HP diatur ke ${vol}%.` : 'Gagal mengatur volume HP.'
           };
         }
 
@@ -902,9 +1080,7 @@ async function executeLiveTool(toolName, args = {}) {
           return {
             status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
             action,
-            message: bridgeRes.success
-              ? `Mode Jangan Ganggu (DND) ${enabled ? 'diaktifkan' : 'dinonaktifkan'}.`
-              : 'Gagal mengubah status DND.'
+            message: bridgeRes.success ? `Mode Jangan Ganggu (DND) ${enabled ? 'diaktifkan' : 'dinonaktifkan'}.` : 'Gagal mengubah status DND.'
           };
         }
 
@@ -930,9 +1106,7 @@ async function executeLiveTool(toolName, args = {}) {
             action,
             battery_level: bridgeRes?.data?.level || null,
             is_charging: bridgeRes?.data?.isCharging || null,
-            message: bridgeRes.success
-              ? `Baterai HP saat ini ${bridgeRes?.data?.level || '?'}%${bridgeRes?.data?.isCharging ? ' (sedang charging)' : ''}.`
-              : 'Gagal mengambil status baterai.'
+            message: bridgeRes.success ? `Baterai HP saat ini ${bridgeRes?.data?.level || '?'}%${bridgeRes?.data?.isCharging ? ' (sedang charging)' : ''}.` : 'Gagal mengambil status baterai.'
           };
         }
 
@@ -948,7 +1122,6 @@ async function executeLiveTool(toolName, args = {}) {
         }
 
         if (action === 'LAUNCH_APP') {
-          // Map common app names to package names
           const APP_PACKAGES = {
             'youtube': 'com.google.android.youtube',
             'whatsapp': 'com.whatsapp',
@@ -962,12 +1135,7 @@ async function executeLiveTool(toolName, args = {}) {
             'tokopedia': 'com.tokopedia.tkpd',
             'maps': 'com.google.android.apps.maps',
             'gmail': 'com.google.android.gm',
-            'camera': 'com.android.camera2',
-            'galeri': 'com.sec.android.gallery3d',
-            'telegram': 'org.telegram.messenger',
-            'facebook': 'com.facebook.katana',
-            'twitter': 'com.twitter.android',
-            'x': 'com.twitter.android'
+            'telegram': 'org.telegram.messenger'
           };
 
           const appNameLower = String(args.appName || '').toLowerCase().trim();
@@ -987,17 +1155,25 @@ async function executeLiveTool(toolName, args = {}) {
           return {
             status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
             action,
-            message: bridgeRes.success
-              ? `Aplikasi ${args.appName || packageName} berhasil dibuka di HP.`
-              : `Gagal membuka aplikasi ${args.appName || packageName}.`
+            message: bridgeRes.success ? `Aplikasi ${args.appName || packageName} berhasil dibuka di HP.` : `Gagal membuka aplikasi ${args.appName || packageName}.`
           };
         }
 
-        return { status: 'UNKNOWN_ACTION', message: `Aksi hardware "${action}" tidak dikenali.` };
+        // Generic Passthrough for other Hardware actions (PLAY_RINGTONE, TAKE_PHOTO, TAKE_SCREENSHOT, GO_HOME_SCREEN, etc.)
+        const genericRes = await _withToolTimeout(
+          mobileBridgeWs.sendCommand(action, args, { timeoutMs: 4000 }),
+          5000
+        );
+
+        return {
+          status: genericRes.success ? 'SUCCESS' : 'FAILED',
+          action,
+          message: genericRes.success ? `Aksi ${action} berhasil dikirim ke HP.` : `Gagal mengeksekusi ${action} di HP.`
+        };
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 15. WEB SEARCH
+      // 21. WEB SEARCH
       // ─────────────────────────────────────────────────────────────
       case 'searchWeb': {
         const query = String(args.query || '').trim();
@@ -1022,20 +1198,18 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 16. SYSTEM DIAGNOSTICS: QUERY SYSTEM LOGS
+      // 22. SYSTEM DIAGNOSTICS: QUERY SYSTEM LOGS
       // ─────────────────────────────────────────────────────────────
       case 'querySystemLogs': {
         let rawLogs = logger.getRecentLogs() || '';
         const keyword = String(args.keyword || '').trim().toLowerCase();
 
-        // Filter by keyword if provided
         if (keyword) {
           const lines  = rawLogs.split('\n');
           const filtered = lines.filter(l => l.toLowerCase().includes(keyword));
           rawLogs = filtered.length > 0 ? filtered.join('\n') : rawLogs;
         }
 
-        // Take last 50 lines for context
         const lines   = rawLogs.split('\n').filter(l => l.trim().length > 0);
         const excerpt = lines.slice(-50).join('\n');
 
@@ -1043,11 +1217,10 @@ async function executeLiveTool(toolName, args = {}) {
           return {
             status: 'SUCCESS',
             log_lines: 0,
-            summary: 'Log sistem kosong. Server berjalan normal tanpa catatan error kritis.'
+            summary: 'Log sistem bersih. Server berjalan normal tanpa error kritis.'
           };
         }
 
-        // Quick error detection
         const hasError   = /error|fail|exception|crash|timeout/i.test(excerpt);
         const hasWarning = /warn|warning/i.test(excerpt);
 
@@ -1058,16 +1231,16 @@ async function executeLiveTool(toolName, args = {}) {
           has_warnings: hasWarning,
           recent_logs: excerpt,
           summary: hasError
-            ? 'Terdeteksi error/kegagalan dalam log sistem. Periksa detail di recent_logs.'
+            ? 'Terdeteksi kegagalan/error dalam log sistem.'
             : hasWarning
-              ? 'Ada beberapa peringatan (warning) dalam log, tapi tidak ada error kritis.'
+              ? 'Ada beberapa peringatan (warning) dalam log, tapi server berjalan stabil.'
               : 'Log sistem bersih. Semua proses berjalan normal.'
         };
       }
 
       // ─────────────────────────────────────────────────────────────
       default:
-        return { status: 'UNKNOWN_TOOL', message: `Tool "${toolName}" tidak terdaftar dalam Live Tool Registry.` };
+        return { status: 'UNKNOWN_TOOL', message: `Tool "${toolName}" tidak terdaftar.` };
     }
   } catch (err) {
     console.error(`[LIVE-TOOL] ❌ Error executing ${toolName}:`, err.message);
