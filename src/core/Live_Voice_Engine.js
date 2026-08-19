@@ -172,7 +172,27 @@ class LiveVoiceSession {
       if (msg.setupComplete) {
         this.isSetupComplete = true;
         this.reconnectAttempts = 0;
-        console.log(`[LIVE-VOICE] ✅ Session Setup Confirmed by Google. Ready for audio stream!`);
+        console.log(`[LIVE-VOICE] ✅ Session Setup Confirmed by Google. Triggering initial vocal greeting...`);
+
+        // Trigger immediate vocal greeting from N.E.X.A
+        try {
+          const greetingTrigger = {
+            clientContent: {
+              turns: [
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      text: "Halo Nexa! Saya mengangkat telepon."
+                    }
+                  ]
+                }
+              ],
+              turnComplete: true
+            }
+          };
+          this.googleWs.send(JSON.stringify(greetingTrigger));
+        } catch (_) {}
 
         // Notify Android client that live session is open
         this._sendToClient({

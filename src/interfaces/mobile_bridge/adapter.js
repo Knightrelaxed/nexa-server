@@ -90,8 +90,9 @@ class NexaBridgeAdapter {
    * Handle incoming CALL_EVENT from FakeCallActivity (Call Interaction v2.0).
    * Events: CALL_ACCEPTED, CALL_REJECTED, CALL_AUDIO_REPLY.
    * @param {Object} callEvent 
+   * @param {WebSocket} clientWs
    */
-  async handleIncomingCallEvent(callEvent) {
+  async handleIncomingCallEvent(callEvent, clientWs) {
     console.log(`[NEXA-ADAPTER] 📞 Call Event Received: [${callEvent.event}] (Command: ${callEvent.command_id || 'N/A'})`);
 
     // Notify registered call listeners
@@ -106,7 +107,7 @@ class NexaBridgeAdapter {
       try {
         const liveVoice = require('../../core/Live_Voice_Engine');
         const sessionId = callEvent.command_id || `LIVE_CALL_${Date.now()}`;
-        console.log(`[NEXA-ADAPTER] ⚡ Starting Gemini Live Voice Session: [${sessionId}]`);
+        console.log(`[NEXA-ADAPTER] ⚡ Starting Gemini Live Voice Session: [${sessionId}] with active client socket`);
         liveVoice.startLiveSession(sessionId, clientWs);
       } catch (err) {
         console.error('[NEXA-ADAPTER] Failed to start live voice session:', err.message);
