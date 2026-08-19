@@ -365,13 +365,15 @@ OUTPUT JSON FORMAT:
     //   - READ_LISTS Triggers: "daftar list tugas", "kategori tugas", "apa saja listnya" -> action="READ_LISTS".
     //   - due_date: STRICTLY the task DEADLINE (kapan tugas harus selesai, e.g. "deadline lusa" -> due_date=lusa).
     //   - calendar_start_time: Waktu MULAI BLOK KERJA jika user menyebut jam pengerjaan (e.g. "besok jam 8 malam kerjakan makalah").
-    //   - ORDINAL / RELATIVE ACTIONS:
+    //   - ORDINAL / MULTI-INDEX / RELATIVE ACTIONS:
+    //     * "tandai tugas 1, 2, 4 selesai" / "tandai tugad1,2,4 selesai" / "selesaikan 1 dan 3" -> action="COMPLETE", search_keyword="1,2,4" (or tasks=["1","2","4"]). NEVER map completion to CREATE_MULTIPLE!
+    //     * "hapus tugas 1, 3" / "hapus tugas 2 dan 4" -> action="DELETE", search_keyword="1,3"
     //     * "tandai yang pertama/ke-1/nomor 1 selesai" -> action="COMPLETE", search_keyword="INDEX_1"
     //     * "tandai yang kedua/ke-2/nomor 2 selesai" -> action="COMPLETE", search_keyword="INDEX_2"
     //     * "hapus tugas nomor 1 / tugas pertama" -> action="DELETE", search_keyword="INDEX_1"
     //     * "hapus tugas yang tadi/barusan" -> action="DELETE", search_keyword="LATEST"
-    //   - COMPLETE Trigger: "tandai tugas essay selesai", "selesaikan tugas 1"
-    //   - DELETE Trigger: "hapus tugas essay Arab", "hapus tugas kedua"
+    //   - COMPLETE Trigger: "tandai tugas essay selesai", "selesaikan tugas 1", "tugas 1 beres", "tandai 1,2 selesai"
+    //   - DELETE Trigger: "hapus tugas essay Arab", "hapus tugas kedua", "hapus tugas 1 dan 3"
     //   - EDIT Trigger: "ubah deadline tugas essay jadi Senin"
     //   - MOVE Trigger: "pindahkan tugas essay ke list Tugas Kuliah"
     // EMAIL: { action: "READ|SEND|DELETE", search_keyword, max_results, to, subject, content }

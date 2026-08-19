@@ -25,7 +25,7 @@ async function _matchBestTasklist(title = '', preferredListName = null) {
     return { name: preferredListName, isExplicit: true };
   }
 
-  const t = (title || '').toLowerCase();
+  const t = String(title || '').toLowerCase();
   try {
     const liveLists = await googleTasks.getTaskLists();
     if (liveLists && liveLists.length > 0) {
@@ -61,39 +61,98 @@ async function _matchBestTasklist(title = '', preferredListName = null) {
 }
 
 /**
- * Resolve target task ID or title from working memory or ordinal references
+ * Resolve single target task from working memory or keyword
  */
-function _resolveTargetTask(searchKeyword = '') {
+function _resolveSingleTargetTask(searchKeyword = '') {
   const s = String(searchKeyword || '').toLowerCase().trim();
+  if (!s) return null;
 
-  // 1. Ordinal index resolution: "pertama" / "ke-1" / "INDEX_1"
-  if (/^(index_1|pertama|ke-?1|nomor\s*1|no\s*1|paling\s*atas)$/i.test(s) && _lastRenderedTasks.length >= 1) {
+  // Direct number index check (e.g. "1", "2", "4", "nomor 1", "no 2", "index_1", "tugas 1")
+  const numMatch = s.match(/^(?:index_|nomor\s*|no\s*|tugas\s*|tugad\s*|ke-?)?(\d+)$/i);
+  if (numMatch && _lastRenderedTasks.length > 0) {
+    const idx = parseInt(numMatch[1], 10);
+    if (idx >= 1 && idx <= _lastRenderedTasks.length) {
+      return _lastRenderedTasks[idx - 1];
+    }
+  }
+
+  // 1. Ordinal text resolution: "pertama", "kedua", "ketiga", "keempat", "kelima"
+  if (/^(index_1|pertama|ke-?1|paling\s*atas)$/i.test(s) && _lastRenderedTasks.length >= 1) {
     return _lastRenderedTasks[0];
   }
-  // "kedua" / "ke-2" / "INDEX_2"
-  if (/^(index_2|kedua|ke-?2|nomor\s*2|no\s*2)$/i.test(s) && _lastRenderedTasks.length >= 2) {
+  if (/^(index_2|kedua|ke-?2)$/i.test(s) && _lastRenderedTasks.length >= 2) {
     return _lastRenderedTasks[1];
   }
-  // "ketiga" / "ke-3" / "INDEX_3"
-  if (/^(index_3|ketiga|ke-?3|nomor\s*3|no\s*3)$/i.test(s) && _lastRenderedTasks.length >= 3) {
+  if (/^(index_3|ketiga|ke-?3)$/i.test(s) && _lastRenderedTasks.length >= 3) {
     return _lastRenderedTasks[2];
   }
-  // "terakhir" / "paling bawah"
+  if (/^(index_4|keempat|ke-?4)$/i.test(s) && _lastRenderedTasks.length >= 4) {
+    return _lastRenderedTasks[3];
+  }
+  if (/^(index_5|kelima|ke-?5)$/i.test(s) && _lastRenderedTasks.length >= 5) {
+    return _lastRenderedTasks[4];
+  }
   if (/^(index_last|terakhir|paling\s*bawah)$/i.test(s) && _lastRenderedTasks.length > 0) {
     return _lastRenderedTasks[_lastRenderedTasks.length - 1];
   }
-  // "yang tadi" / "barusan" / "LATEST"
   if (/^(latest|yang\s*tadi|barusan|tadi)$/i.test(s) && _lastActionTask) {
     return _lastActionTask;
   }
 
   // Fallback: match by title substring in working memory
-  if (s && _lastRenderedTasks.length > 0) {
+  if (_lastRenderedTasks.length > 0) {
     const match = _lastRenderedTasks.find(t => (t.title || '').toLowerCase().includes(s));
     if (match) return match;
   }
 
   return { id: null, title: searchKeyword };
+}
+
+/**
+ * Resolve multiple target tasks from array or comma/number list
+ */
+function _resolveTargetTasks(input) {
+  if (!input) return [];
+
+  if (Array.isArray(input)) {
+    const items = [];
+    for (const el of input) {
+      const resolved = _resolveTargetTasks(el);
+      items.push(...resolved);
+    }
+    return items;
+  }
+
+  const s = String(input).trim();
+  if (!s) return [];
+
+  // Check if multiple digits separated by comma, space, or 'dan' (e.g. "1,2,4", "1, 2, 4", "1 dan 3", "tugad1,2,4")
+  if (/\d+[\s,dan&]+\d+/i.test(s) || /^\d+(?:,\d+)+$/.test(s) || /(?:tugas|tugad)?\s*\d+(?:\s*,\s*\d+)+/i.test(s)) {
+    const numbers = Array.from(s.matchAll(/\d+/g)).map(m => parseInt(m[0], 10));
+    if (numbers.length > 0 && _lastRenderedTasks.length > 0) {
+      const list = [];
+      for (const num of numbers) {
+        if (num >= 1 && num <= _lastRenderedTasks.length) {
+          list.push(_lastRenderedTasks[num - 1]);
+        }
+      }
+      if (list.length > 0) return list;
+    }
+  }
+
+  // Comma or 'dan' separated words
+  if (s.includes(',') || s.includes(' dan ')) {
+    const parts = s.split(/,|\bdan\b|\b&\b/).map(p => p.trim()).filter(Boolean);
+    const list = [];
+    for (const part of parts) {
+      const res = _resolveSingleTargetTask(part);
+      if (res) list.push(res);
+    }
+    return list;
+  }
+
+  const single = _resolveSingleTargetTask(s);
+  return single ? [single] : [];
 }
 
 /**
@@ -230,11 +289,11 @@ async function handleTaskIntent(extractedData, chatId = null) {
       const results = [];
       for (const t of taskListToCreate) {
         try {
-          const taskTitle = t.title || t;
+          const taskTitle = typeof t === 'string' ? t : (t.title || (typeof t === 'object' ? JSON.stringify(t) : String(t)));
           if (!taskTitle) continue;
-          const taskNotes = t.notes || '';
-          const taskDue = t.due_date || null;
-          const matched = await _matchBestTasklist(taskTitle, t.list_name);
+          const taskNotes = (t && t.notes) ? String(t.notes) : '';
+          const taskDue = (t && t.due_date) ? String(t.due_date) : null;
+          const matched = await _matchBestTasklist(taskTitle, t ? t.list_name : null);
 
           let listId = '@default';
           if (matched.name && matched.name !== 'Tugas Saya') {
@@ -253,26 +312,43 @@ async function handleTaskIntent(extractedData, chatId = null) {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 4. ACTION: COMPLETE (With Ordinal & Relative Support)
+    // 4. ACTION: COMPLETE (With Multi-Index & Ordinal Support)
     // ════════════════════════════════════════════════════════════════
     if (action === 'COMPLETE') {
-      const keyword = search_keyword || title;
-      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama atau nomor tugas yang ingin ditandai selesai.' };
-
-      const resolved = _resolveTargetTask(keyword);
-      let matches = [];
-
-      if (resolved.id) {
-        matches = [{ id: resolved.id, title: resolved.title, listId: resolved.listId || '@default' }];
-      } else {
-        matches = await googleTasks.findTasksByKeyword(resolved.title || keyword);
+      const inputTargets = tasks || search_keyword || title;
+      if (!inputTargets || (Array.isArray(inputTargets) && inputTargets.length === 0)) {
+        return { status: 'FAILED', message: '❌ Sebutkan nama atau nomor tugas yang ingin ditandai selesai.' };
       }
 
-      if (matches.length === 0) {
-        return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
+      const resolvedList = _resolveTargetTasks(inputTargets);
+      let matchedTasks = [];
+
+      for (const res of resolvedList) {
+        if (res.id) {
+          matchedTasks.push({ id: res.id, title: res.title, listId: res.listId || '@default' });
+        } else if (res.title) {
+          const found = await googleTasks.findTasksByKeyword(res.title);
+          if (found && found.length > 0) {
+            matchedTasks.push(...found);
+          }
+        }
       }
 
-      for (const t of matches) {
+      // Deduplicate matched tasks by ID
+      const uniqueMatched = [];
+      const seenIds = new Set();
+      for (const t of matchedTasks) {
+        if (!seenIds.has(t.id)) {
+          seenIds.add(t.id);
+          uniqueMatched.push(t);
+        }
+      }
+
+      if (uniqueMatched.length === 0) {
+        return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan target yang disebutkan.` };
+      }
+
+      for (const t of uniqueMatched) {
         await googleTasks.completeTask(t.id, t.listId || '@default');
         notionClient.completeTask(t.title).catch(() => {});
 
@@ -286,33 +362,53 @@ async function handleTaskIntent(extractedData, chatId = null) {
       }
 
       // Remove from working memory
-      _lastRenderedTasks = _lastRenderedTasks.filter(t => !matches.some(m => m.id === t.id));
+      _lastRenderedTasks = _lastRenderedTasks.filter(t => !uniqueMatched.some(m => m.id === t.id));
 
-      const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
-      return { status: 'SUCCESS', message: `✅ Tugas ${names} berhasil ditandai <b>Selesai</b>! 🎉` };
+      if (uniqueMatched.length === 1) {
+        return { status: 'SUCCESS', message: `✅ Tugas '<b>${escapeHtml(uniqueMatched[0].title)}</b>' berhasil ditandai <b>Selesai</b>! 🎉` };
+      } else {
+        const names = uniqueMatched.map((t, idx) => `   <b>${idx + 1}.</b> ✅ <b>${escapeHtml(t.title)}</b>`).join('\n');
+        return { status: 'SUCCESS', message: `✅ <b>${uniqueMatched.length} Tugas Berhasil Ditandai Selesai!</b> 🎉\n\n${names}` };
+      }
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 5. ACTION: DELETE (With Ordinal & Relative Support)
+    // 5. ACTION: DELETE (With Multi-Index & Ordinal Support)
     // ════════════════════════════════════════════════════════════════
     if (action === 'DELETE') {
-      const keyword = search_keyword || title;
-      if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama atau nomor tugas yang ingin dihapus.' };
-
-      const resolved = _resolveTargetTask(keyword);
-      let matches = [];
-
-      if (resolved.id) {
-        matches = [{ id: resolved.id, title: resolved.title, listId: resolved.listId || '@default' }];
-      } else {
-        matches = await googleTasks.findTasksByKeyword(resolved.title || keyword);
+      const inputTargets = tasks || search_keyword || title;
+      if (!inputTargets || (Array.isArray(inputTargets) && inputTargets.length === 0)) {
+        return { status: 'FAILED', message: '❌ Sebutkan nama atau nomor tugas yang ingin dihapus.' };
       }
 
-      if (matches.length === 0) {
-        return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan "<b>${escapeHtml(keyword)}</b>".` };
+      const resolvedList = _resolveTargetTasks(inputTargets);
+      let matchedTasks = [];
+
+      for (const res of resolvedList) {
+        if (res.id) {
+          matchedTasks.push({ id: res.id, title: res.title, listId: res.listId || '@default' });
+        } else if (res.title) {
+          const found = await googleTasks.findTasksByKeyword(res.title);
+          if (found && found.length > 0) {
+            matchedTasks.push(...found);
+          }
+        }
       }
 
-      for (const t of matches) {
+      const uniqueMatched = [];
+      const seenIds = new Set();
+      for (const t of matchedTasks) {
+        if (!seenIds.has(t.id)) {
+          seenIds.add(t.id);
+          uniqueMatched.push(t);
+        }
+      }
+
+      if (uniqueMatched.length === 0) {
+        return { status: 'FAILED', message: `❌ Tidak ditemukan tugas yang cocok dengan target yang disebutkan.` };
+      }
+
+      for (const t of uniqueMatched) {
         await googleTasks.deleteTask(t.id, t.listId || '@default');
         notionClient.deleteTask(t.title).catch(() => {});
 
@@ -324,10 +420,14 @@ async function handleTaskIntent(extractedData, chatId = null) {
         } catch (_) {}
       }
 
-      _lastRenderedTasks = _lastRenderedTasks.filter(t => !matches.some(m => m.id === t.id));
+      _lastRenderedTasks = _lastRenderedTasks.filter(t => !uniqueMatched.some(m => m.id === t.id));
 
-      const names = matches.map(t => `'<b>${escapeHtml(t.title)}</b>'`).join(', ');
-      return { status: 'SUCCESS', message: `🗑️ Tugas ${names} berhasil dihapus dari Google Tasks.` };
+      if (uniqueMatched.length === 1) {
+        return { status: 'SUCCESS', message: `🗑️ Tugas '<b>${escapeHtml(uniqueMatched[0].title)}</b>' berhasil dihapus dari Google Tasks.` };
+      } else {
+        const names = uniqueMatched.map((t, idx) => `   <b>${idx + 1}.</b> 🗑️ <b>${escapeHtml(t.title)}</b>`).join('\n');
+        return { status: 'SUCCESS', message: `🗑️ <b>${uniqueMatched.length} Tugas Berhasil Dihapus!</b>\n\n${names}` };
+      }
     }
 
     // ════════════════════════════════════════════════════════════════
