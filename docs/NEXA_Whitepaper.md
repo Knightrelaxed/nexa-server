@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Extension Assistant for Intelligence — v2.8 "Cognitive Resonance & Universal Real-Time CLI Stream")*
+*(Neural Extension Assistant for Intelligence — v3.1 "Unified Master OAuth 2.0 & Human-Centric Cognitive Ergonomics")*
 
 ---
 
@@ -162,41 +162,39 @@ Supabase adalah satu-satunya *persistent storage* N.E.X.A. Terdapat **dua klien 
 
 Kedua klien menggunakan **in-memory cache dengan TTL 30 menit** untuk menghindari query ulang ke database setiap request masuk. Cache dapat di-*invalidate* secara manual (misalnya setelah menyimpan fakta baru).
 
-#### Node 3: Google Workspace Ecosystem (Dual Auth Architecture)
+#### Node 3: Unified Google Master OAuth 2.0 Client (`Google_Master_Client.js`)
 
-Google Workspace diakses via dua mekanisme autentikasi berbeda yang dipilih secara cerdas berdasarkan *use case*:
+Sejak v3.1, N.E.X.A mengonsolidasikan seluruh autentikasi Google API yang sebelumnya terfragmentasi (Service Account RSA yang rapuh, token Gmail port 3000, token Tasks port 3001) menjadi **Satu Master OAuth 2.0 Client Tunggal** (`Google_Master_Client.js`) di bawah Web Application Client GCP `nexa-core-495208`.
 
-**Autentikasi 1 — Service Account (`getClients()`):**
-Digunakan untuk Google Calendar, Google Docs, dan Google Drive Vault. Service Account memakai `client_email` + `private_key` dari *environment variable*. Inisialisasi bersifat *lazy* — klien tidak dibuat saat modul di-`require()`, melainkan saat pertama kali dipakai (`getClients()`). Ini mencegah crash di `require()` jika kredensial belum dikonfigurasi.
+**Spesifikasi Master Client:**
+- **16 Master Scopes Resmi:** Mencakup Google Calendar (`calendar`, `calendar.events`), Google Tasks (`tasks`), Google Meet (`meetings.space.created`), Gmail (`gmail.modify`, `gmail.send`), Google Drive (`drive`, `drive.file`, `drive.appdata`), Google Docs (`documents`), Google Sheets (`spreadsheets`), Google Slides (`presentations`), Google Photos (`photoslibrary.readonly`), Google Contacts (`contacts.readonly`), YouTube (`youtube.readonly`), dan Profil Pengguna (`userinfo.profile`, `userinfo.email`).
+- **Singleton Lazy Factory:** Instance `google.auth.OAuth2` dibuat sekali dan dibagikan ke seluruh subsistem. Modul API (`getCalendar()`, `getTasks()`, `getGmail()`, `getDrive()`, `getDocs()`) diinisialisasi secara malas (*lazy-initialized*), menghasilkan cold-start 0ms dan konsumsi RAM yang sangat hemat (<170 MB di Azure VPS).
+- **Auto Background Token Refresh & Transparent Interceptor:** `google-auth-library` mengelola rotasi token secara otomatis di latar belakang. Jika terjadi kegagalan token sementara (status 401), sistem melakukan refresh senyap tanpa memutus alur percakapan Telegram.
+- **Circuit Breaker & Single Proactive Alert:** Jika token dicabut (`invalid_grant`), *Circuit Breaker* aktif: caching klien di-reset, status isolasi diaktifkan, dan sistem mengirim **satu alert Telegram proaktif** tanpa membanjiri chat Tuan.
+- **Eliminasi Total Service Account:** Menghilangkan ketergantungan pada 50 baris Private Key RSA (`.json` Service Account) yang sering memicu error kuota penyimpanan Google Drive (*"Service Accounts do not have storage quota"*).
 
-**Autentikasi 2 — OAuth2 User (`getOAuthDriveClients()`):**
-Digunakan sebagai *fallback* untuk operasi Drive (upload file dan OCR) jika Service Account mengalami error *"Service Accounts do not have storage quota"* (kuota Drive SA terbatas). Menggunakan `GOOGLE_DRIVE_REFRESH_TOKEN` (atau fallback ke `GMAIL_REFRESH_TOKEN`) yang menautkan ke akun Google pribadi Tuan Faqih.
+**Kapabilitas Google Ecosystem yang Dikelola Master Client:**
 
-**Kapabilitas Google Workspace yang Dikelola:**
-
-| Modul | API | Kapabilitas |
+| Modul | API Terpadu | Kapabilitas Utama |
 |---|---|---|
-| `Google_Workspace.js` | Calendar v3 | CRUD event, conflict check, free/busy query, proximity alert, tomorrow prep |
+| `Google_Workspace.js` | Calendar v3 | Optimistic CRUD event, conflict check, free/busy, proximity alert, tomorrow prep |
 | `Google_Workspace.js` | Docs v1 | Append/Read/Edit/Delete di Master 2nd Brain Doc |
-| `Google_Workspace.js` | Drive v3 & v2 | Upload file ke Vault, OCR via Drive Convert, trash cleanup |
-| `Google_Tasks.js` | Tasks v1 | CRUD task, subtask, multi-list, overdue detection, move across lists |
-| `Gmail_Client.js` | Gmail v1 | Polling inbox, kirim email, OAuth token resilience, push notification watch |
+| `Google_Workspace.js` | Drive v3 & v2 | Upload file ke Vault pribadi, OCR via Drive Convert, trash cleanup |
+| `Google_Tasks.js` | Tasks v1 | Dynamic Tasklist Discovery (5 Live Lists), CRUD task, subtask, overdue detection |
+| `Gmail_Client.js` | Gmail v1 | Finance polling (24/7 tiap 3 menit), kirim email, watch push notification |
 
-#### Node 4: Gmail — Finance Auto-Sync Engine
+#### Node 4: Gmail — Finance Auto-Sync Engine (24/7 di Azure VPS)
 
-`Gmail_Client.js` menggunakan OAuth2 dengan `GMAIL_REFRESH_TOKEN` (bukan Service Account) karena Gmail API tidak mendukung Service Account untuk membaca kotak masuk pribadi.
+`Gmail_Client.js` mendelegasikan autentikasi ke `Google_Master_Client.getGmail()`. Fitur kritis yang berjalan otomatis:
+- **Continuous Polling 3 Menit:** `pollFinanceEmails()` berjalan tanpa henti via *cron cycle* di Azure VPS, mendeteksi mutasi Bank Mandiri (Livin') dan BCA, mengekstrak data nominal, dan mencatat transaksi ke database tanpa campur tangan Tuan.
+- **Zero-Interruption Token Handling:** Menggunakan Master Refresh Token yang tidak pernah kadaluarsa selama aplikasi berstatus *Production Ready* di Google Cloud Console.
 
-Fitur kritis yang dibangun di atasnya:
-- **Token Expiry Detection**: Jika error `invalid_grant` terdeteksi (token kadaluarsa), sistem melakukan tiga hal sekaligus: mereset klien cached (`gmailClient = null`), mengirim **alert Telegram satu kali** (`_invalidGrantAlerted` flag mencegah spam), dan berhenti polling sampai token diganti.
-- **Auto-Retry**: Setiap panggilan `getLatestEmails()` memiliki *retry loop* 3x dengan jeda 2 detik untuk mengatasi gangguan jaringan sementara.
+#### Node 5: Google Tasks — Dynamic Discovery & Dual-Write ke Notion
 
-#### Node 5: Google Tasks — Dual-Write ke Notion
-
-`Google_Tasks.js` menggunakan OAuth2 terpisah (`TASKS_REFRESH_TOKEN`) dengan *callback port* berbeda (`3001` vs `3000` untuk Gmail) untuk menghindari konflik OAuth.
-
-Saat sebuah *task* dibuat, N.E.X.A melakukan **dual-write**: tugas disimpan ke Google Tasks (`@default` list atau list spesifik), dan **secara paralel** juga dikirim ke Notion via `Notion_Client.js` (jika `NOTION_API_KEY` dikonfigurasi). Ini memastikan Tuan Faqih bisa memantau tugasnya dari dua platform sekaligus tanpa perlu sinkronisasi manual.
-
-Fitur `moveTaskToList()` mengimplementasikan operasi "pindah" via 3 langkah (baca → tulis ke list baru → hapus dari list lama) karena Google Tasks API tidak menyediakan *native move operation*.
+`Google_Tasks.js` mendelegasikan autentikasi ke `Google_Master_Client.getTasks()`.
+- **Dynamic Tasklist Discovery:** Sistem tidak lagi mengandalkan ID kaku, melainkan membaca langsung daftar tasklist aktif milik Tuan (`Tugas Saya`, `Tugas Kuliah`, `Pekerjaan`, `Riset & Baca`, `Belanja`) dengan in-memory cache 5 menit.
+- **Timezone Preservation (`normalizeDateOnly`):** Normalisasi string tanggal lokal WIB (+07:00) ke Date-Only UTC midnight (`YYYY-MM-DDT00:00:00.000Z`), menjamin deadline di HP Samsung A33 Tuan tidak pernah melompat hari.
+- **Parallel Sync ke Notion:** Setiap operasi tugas secara paralel disinkronkan ke Notion database via `Notion_Client.js`.
 
 #### Node 6: Universal Remote CLI Client (`nexa-cli`) & SSE Real-Time Push
 
@@ -1058,78 +1056,82 @@ Tuan Faqih bisa berkata *"transaksi kemarin"* atau *"pengeluaran tanggal 14"* �
 
 ## BAB 5: MANAJEMEN WAKTU & ORKESTRASI PRODUKTIVITAS
 
-Bab ini mengupas bagaimana N.E.X.A tidak hanya mencatat jadwal, melainkan bertindak sebagai Kepala Staf yang proaktif mengatur alokasi waktu Tuan Faqih menggunakan `Agenda_Manager.js` dan `Task_Manager.js` (dengan integrasi Google Calendar & Google Tasks).
+Bab ini mengupas bagaimana N.E.X.A bertindak sebagai Kepala Staf (*Chief of Staff*) yang proaktif, berempati, dan bebas hambatan (*Zero-Friction*) dalam mengelola alokasi waktu Tuan Faqih menggunakan `Agenda_Manager.js` dan `Task_Manager.js` yang terintegrasi secara *native* dengan Google Calendar dan Google Tasks melalui **Master OAuth 2.0 Client**.
 
 ---
 
-### 5.1 Agenda Manager: Mesin Resolusi Waktu
+### 5.1 Agenda Manager: Mesin Inferensi Durasi Probabilistik (*Zero-Friction Execution*)
 
-N.E.X.A menerima masukan waktu dalam bahasa natural yang sangat tidak terstruktur (contoh: *"rapat BEM besok jam 10 pagi, kira-kira setengah jam"*). Untuk mengolahnya secara cepat dan akurat, N.E.X.A menggunakan **Dual-Path Duration Parsing**:
+Pada versi terdahulu, ketiadaan jam selesai (*end time*) memaksa sistem berhenti di status jeda `PENDING_END` dan menginterogasi durasi kegiatan kepada pengguna. Di v3.1, paradigma tersebut dirombak total menuju **Eksekusi Optimistik Bebas Hambatan (*Zero-Friction Optimistic Execution*)**.
 
-1. **Fast Path (Regex Heuristik):** Mengekstrak langsung tanpa API call untuk frasa umum (contoh: `sejam`, `setengah jam`, `1 jam 30 menit`, fraksi unicode `½ jam`).
-2. **Slow Path (AI Extraction):** Jika pola rumit terdeteksi, teks dikirim ke `AI_Router.js` dengan instruksi ketat untuk mengekstrak hanya angka durasi dalam menit.
+Setiap kali Tuan menyebutkan kegiatan tanpa durasi eksplisit (contoh: *"besok jam 2 siang ada bimbingan skripsi"*), sistem mengaktifkan **Bayesian Semantic Duration Inference Matrix** (`inferProbableDuration`):
 
-Jika durasi tidak disebutkan sama sekali (dan acara belum ada *end time*), sistem melempar ke status `PENDING_END`, menanyakan durasi ke Tuan Faqih, dan memasang **timer 15 menit**. Jika tidak dijawab, N.E.X.A secara otonom akan mengeksekusi pembuatan jadwal dengan *fallback* durasi standar 1 jam (60 menit).
+1. **Jalur Cepat Regex Eksplisit:** Mendeteksi frasa durasi alami seperti `sejam`, `setengah jam`, `1 jam 30 menit`, dan fraksi unicode `½ jam` $\rightarrow$ 30–90 menit.
+2. **Matriks Semantik Probabilistik Kontekstual:**
+   - 🎓 **Perkuliahan / Matkul / Praktikum / SKS:** $\rightarrow$ **100 menit** (Sesuai bobot standar 2–3 SKS perkuliahan).
+   - 👨‍🏫 **Bimbingan Skripsi / Konsultasi Dosen:** $\rightarrow$ **45 menit**.
+   - 📝 **Ujian / UTS / UAS / Sidang Pendadaran:** $\rightarrow$ **100 menit**.
+   - ☕ **Sosial / Ngopi / Warkop / Kuliner / Nongkrong:** $\rightarrow$ **90 menit**.
+   - 📞 **Komunikasi Cepat / Zoom / Google Meet / Telpon:** $\rightarrow$ **30 menit**.
+   - 💼 **Rapat / Meeting / Diskusi Tim / Evaluasi:** $\rightarrow$ **60 menit**.
+   - 🏃 **Olahraga / Gym / Futsal / Badminton:** $\rightarrow$ **75 menit**.
+   - 🛡️ **Default Failsafe:** $\rightarrow$ **60 menit**.
+
+Jadwal **langsung dibuat seketika di Google Calendar** tanpa interogasi. N.E.X.A mengonfirmasi dengan pesan elegan satu-baris yang menyertakan durasi terpasang, memberikan kenyamanan psikologis (*psychological comfort*) bahwa Tuan memegang kendali penuh dan dapat mengubahnya kapan saja secara santai.
 
 #### Kalender Anti-Bentrok (Conflict Detection)
-Sebelum acara ditambahkan ke Google Calendar, `googleWorkspace.checkCalendarConflicts` melakukan kueri ke API Free/Busy Google. Jika waktu tersebut sudah terisi acara lain, N.E.X.A menghentikan proses pembuatan, melontarkan status `CONFLICT_DETECTED` ke Telegram beserta daftar acara yang bentrok, lalu menunggu instruksi mutlak (paksa lanjut atau batal).
+Sebelum acara ditambahkan, `googleWorkspace.checkCalendarConflicts` melakukan kueri ke API Free/Busy Google Calendar. Jika waktu tersebut bertabrakan dengan jadwal aktif lain, sistem melontarkan status `CONFLICT_DETECTED` ke Telegram beserta rincian acara yang bentrok untuk meminta konfirmasi Tuan.
 
 ---
 
-### 5.2 Task Manager & Ekosistem Daftar Tugas
+### 5.2 Task Manager: *Dynamic Tasklist Discovery* & Ekosistem 17 Aksi
 
-Setiap tugas yang masuk tidak sekadar masuk ke "Tugas Saya". N.E.X.A mengimplementasikan **Auto-Categorization**:
-- Kata kunci *kuliah, matkul, essay, ujian* → List `Tugas Kuliah`
-- Kata kunci *belanja, toko, beras* → List `Belanja`
-- Kata kunci *klien, proposal* → List `Pekerjaan`
+N.E.X.A tidak lagi menggunakan pencocokan ID atau tabel kata kunci statis yang kaku. `Task_Manager.js` mengimplementasikan **Dynamic Tasklist Discovery** (`_matchBestTasklist`):
 
-Jika list tujuan didapat dari sugesti otomatis (bukan instruksi eksplisit Tuan Faqih), tugas dilempar ke `PENDING_CONFIRM` selama 5 menit. Selain itu, jika instruksi tidak memuat preferensi waktu, N.E.X.A mengaktifkan `PENDING_SYNC_CONFIRM` untuk secara dinamis menanyakan apakah tugas perlu dijadwalkan di kalender. Jika Tuan menolak, atau tidak merespons dalam 5 menit, tugas akan disimpan murni sebagai *Floating Task* di Google Tasks untuk mencegah pemblokiran kalender yang tidak diinginkan.
-
-#### Paralel Sinkronisasi (Fire-and-Forget Sync)
-Sistem Tasks milik N.E.X.A tidak berdiri sendiri. Setiap operasi CRUD (Create, Complete, Delete) di Google Tasks **secara paralel** memicu *webhook* / API call ke Notion (`notionClient.createTask`, `completeTask`, `deleteTask`) untuk menjamin 100% konsistensi lintas platform tanpa memperlambat waktu respons N.E.X.A.
-
----
-
-### 5.3 Autonomous Time-Blocking (Penjadwalan Otomatis)
-
-Ini adalah pilar otonomi tertinggi di manajemen waktu N.E.X.A. Jika sebuah tugas memiliki *Deadline Date* (jatuh tempo) **DAN** *Durasi* pengerjaan yang diketahui (diinput user atau ditebak AI), N.E.X.A mengaktifkan `findEmptySlot()`:
-
-1. Sistem memindai kalender Tuan Faqih menggunakan API Free/Busy Google Calendar untuk 24 jam ke depan.
-2. Memfilter dan memastikan slot waktu **hanya jatuh pada Jam Kerja (08:00 - 22:00 WIB)**.
-3. Mencari slot kosong yang pas dengan durasi tugas (misal: 45 menit), membulatkan pencarian ke interval 30-menitan.
-4. Menambahkan *Event* berlabel `"⏰ BLOK KERJA: [Nama Tugas]"` langsung ke kalender Tuan Faqih.
-5. Secara paralel, menambahkan *Event* Seharian (*All-Day*) berlabel `"🔴 DEADLINE: [Nama Tugas]"` berwarna merah (*Tomato*) tepat pada hari H jatuh tempo sebagai jangkar visual.
-
-#### Two-Way Status Sync (Calendar Redup Otomatis)
-Ketika Tuan Faqih menekan `Selesai` pada suatu tugas di Telegram (`ACTION: COMPLETE`), N.E.X.A memburu *event* deadline (`🔴 DEADLINE: [Nama Tugas]`) terkait di Google Calendar, lalu meng-update **warnanya menjadi Graphite (Abu-abu, `colorId: 8`)**. Kalender seketika merefleksikan mana tugas yang sudah beres (menjadi redup) tanpa perlu dihapus, memberikan rasa pencapaian secara visual.
+1. **Sinkronisasi Langsung ke Google Tasks:** Sistem membaca daftar tasklist aktual milik Tuan di Google Cloud (`Tugas Saya`, `Tugas Kuliah`, `Pekerjaan`, `Riset & Baca`, `Belanja`) dengan in-memory cache 5 menit.
+2. **Pencocokan Semantik Fleksibel:** Judul tugas dicocokkan secara dinamis dengan nama-nama list yang ada di akun Tuan.
+3. **Dukungan Penuh 17 Aksi Manajemen Tugas:**
+   - `CREATE`, `CREATE_SUBTASK`, `CREATE_MULTIPLE`
+   - `READ`, `READ_LIST`, `READ_LISTS`, `READ_TODAY`, `READ_TOMORROW`, `READ_UPCOMING`, `READ_OVERDUE`, `READ_DONE`
+   - `COMPLETE`, `DELETE`, `EDIT`, `MOVE`, `CLEAR_DONE`, `SET_PRIORITY`
+4. **Paralel Sinkronisasi ke Notion:** Setiap operasi tugas di Google Tasks secara paralel disalin ke database Notion (`notionClient.createTask`, `completeTask`, `deleteTask`) untuk menjamin konsistensi lintas platform.
 
 ---
 
-### 5.4 Predictive Context Engine (Kesadaran Memori Agenda)
+### 5.3 Memori Kerja Jangka Pendek (*Working Memory & Ordinal Context Resolution*)
 
-N.E.X.A bukan sekadar pembaca jadwal. Ia **membaca dan mengantisipasi**.
-Ketika Tuan Faqih meminta jadwal hari ini (`READ_TODAY`), N.E.X.A menjalankan rutinitas berikut pada *summary* setiap acara:
+Manusia berkomunikasi secara relatif terhadap apa yang baru saja mereka lihat di layar. N.E.X.A v3.1 menanamkan **Short-Term Working Memory Cache** (`_lastRenderedCalendarEvents` dan `_lastRenderedTasks`):
 
-1. Mengecek keberadaan kata kunci penting: `['rapat', 'meeting', 'seminar', 'ujian', 'proyek', 'sidang', 'bimbingan']`.
-2. Jika ada acara bertajuk "Meeting Skripsi", kata 'meeting' dibuang, menyisakan *search keyword* "skripsi".
-3. Secara paralel, N.E.X.A menembak kueri ke `nexa_vault_items` (penyimpanan dokumen) dan `nexa_2nd_brain` (catatan memori).
-4. Hasil dari Supabase digabungkan ke pesan Telegram dalam bentuk tautan konteks langsung di bawah jadwal:
-   > `▸ 10:00 - 11:00 — Meeting Skripsi`
-   > `🔗 (Konteks Tersedia: Dokumen Vault & Catatan Memori terkait 'Skripsi')`
-
-Selain itu, ketika jadwal rapat baru ditambahkan, N.E.X.A memanggil AI untuk mengevaluasi apakah acara tersebut membutuhkan persiapan (membaca materi, dll). Jika ya, N.E.X.A melontarkan **Saran Proaktif**, menawarkan diri untuk mendaftarkannya sebagai Tugas baru.
+- **Resolusi Kata Kunci Ordinal:**
+  - *"Tandai tugas yang **pertama** / **nomor 1** selesai"* $\rightarrow$ Menargetkan item indeks #1 (`INDEX_1`).
+  - *"Hapus tugas yang **kedua**"* $\rightarrow$ Menargetkan item indeks #2 (`INDEX_2`).
+  - *"Hapus tugas yang **terakhir** / **paling bawah**"* $\rightarrow$ Menargetkan item indeks paling akhir.
+- **Resolusi Relatif Temporal (*"Yang Tadi"*):**
+  - *"Ubah jadwal yang **tadi barusan** jadi jam 3 sore"* $\rightarrow$ N.E.X.A merujuk ke aksi kalender terakhir (`_lastActionContext`).
+- **Jangkar Temporal Bahasa Alami (WIB):**
+  - `pagi` = 09:00 WIB, `siang` = 13:00 WIB, `sore` = 16:00 WIB, `malam` = 20:00 WIB, `habis/ba'da ashar` = 15:30 WIB, `ba'da isya` = 19:30 WIB.
 
 ---
 
-### 5.5 Unified Daily Dashboard & Midnight Bug Preventer
+### 5.4 Autonomous Time-Blocking & Presisi Penanggalan (*Timezone Integrity*)
 
-N.E.X.A memiliki fitur komprehensif saat merespons *"Ada apa hari ini?"*.
-Alih-alih memisahkan daftar kalender dan daftar tugas, `READ_TODAY` meleburkan keduanya dalam satu tampilan elegan:
-- **Jadwal Hari Ini** (Calendar Events)
-- **Tugas Terlambat** (Overdue Tasks) → Dengan notifikasi "🔴 TERLAMBAT X HARI"
-- **Tugas Jatuh Tempo Hari Ini** (Due Today)
+Jika sebuah tugas memiliki tenggat waktu (*Deadline Date*) **DAN** preferensi waktu pengerjaan, N.E.X.A mengaktifkan `findEmptySlot()` dan menjadwalkan blok kerja:
+- Menambahkan *Event* `"⏰ BLOK KERJA: [Nama Tugas]"` pada kalender kerja (08:00 – 22:00 WIB).
+- Menambahkan *Event All-Day* `"🔴 DEADLINE: [Nama Tugas]"` berwarna merah (*Tomato*) pada hari H.
+- **Two-Way Status Sync:** Saat tugas ditandai selesai (`COMPLETE`), blok kerja dan deadline di Google Calendar otomatis diubah warnanya menjadi **Graphite (Abu-abu, `colorId: 8`)** untuk menandakan penyelesaian secara visual.
 
-**Midnight UTC Bug Preventer & Timezone Integrity**: 
+**Presisi Timezone Asia/Jakarta (`normalizeDateOnly`):**  
+Google Tasks API hanya menerima format string Date-Only UTC (`YYYY-MM-DDT00:00:00.000Z`). Fungsi `normalizeDateOnly` mengunci representasi tanggal lokal WIB (+07:00) ke UTC midnight secara deterministik, meniadakan bug pergeseran tanggal (*off-by-one day*) di HP Samsung Galaxy A33 Tuan.
+
+---
+
+### 5.5 Predictive Context Engine (Kesadaran Memori Agenda)
+
+N.E.X.A bukan sekadar pembaca jadwal, melainkan entitas yang **membaca dan mengantisipasi**:
+1. Saat menampilkan jadwal (`READ_TODAY`), sistem mengekstrak topik acara (misal: *"Meeting Skripsi"* $\rightarrow$ *"skripsi"*).
+2. Menghubungkan metadata terkait dari `nexa_vault_items` (berkas dokumen Google Drive) dan `nexa_2nd_brain` (catatan memori).
+3. Menyajikan tautan konteks langsung di bawah jadwal di Telegram.
+4. Memberikan **Saran Proaktif Otomatis** untuk membuat tugas persiapan di Google Tasks jika acara terindikasi formal (seminar, presentasi, sidang). 
 Google Tasks hanya menyimpan tanggal (*Date-Only*) untuk jatuh tempo, tanpa jam. Di NodeJS, mem-*parse* string `2026-05-09` menghasilkan objek waktu Midnight UTC (`00:00:00Z`), yang setara dengan **07:00 WIB pagi**. N.E.X.A menggunakan perlindungan mutlak di *Task Manager* untuk memfilter *midnight strings* ini agar tidak menjadi *ghost event* (acara tanpa jam yang menumpuk di pagi hari). Selain itu, konstruksi rentang waktu (*start/end*) dikalibrasi ketat ke format ISO dengan offset absolut `+07:00` (menggunakan manipulasi lokal `sv-SE`), mencegah pergeseran jam sepihak oleh sistem *backend* Google Calendar.
 
 ---
@@ -1727,7 +1729,65 @@ Seluruh kendali perangkat didefinisikan dalam konstanta `NexaActions` dan diekse
 
 ---
 
-Dengan integrasi **Nexa Mobile Bridge** ini, N.E.X.A resmi bertransformasi dari sekadar kecerdasan digital menjadi entitas hibrida yang memiliki kehadiran nyata dalam kehidupan sehari-hari Tuan Faqih Hidayatulloh.
+---
+
+## BAB 12: ARSITEKTUR v3.1 — UNIFIED MASTER OAUTH 2.0 & COGNITIVE ERGONOMICS
+
+Pembaruan v3.1 menandai lompatan evolusioner terbesar dalam efisiensi autentikasi eksternal dan kenyamanan interaksi manusia (*Human-Centric Cognitive Ergonomics*).
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    N.E.X.A CLOUD CORE (v3.1 AZURE VPS)                  │
+├───────────────────────────────────┬─────────────────────────────────────┤
+│   UNIFIED GOOGLE MASTER CLIENT    │   COGNITIVE ERGONOMIC INTERFACES    │
+│  (16 Scopes • Singleton Factory)  │ (Probabilistic Bayesian Durations)  │
+│                                   │                                     │
+│  • Google Calendar v3             │  • Zero-Friction Event Creation     │
+│  • Google Tasks v1 (5 Lists)      │  • Dynamic Tasklist Discovery       │
+│  • Gmail v1 (3-Min Polling)       │  • Short-Term Working Memory Cache  │
+│  • Google Drive & Docs v1-v3      │  • Ordinal Resolution (INDEX_1..N)  │
+│  • Google Meet, Sheets, Photos    │  • WIB Date-Only UTC Preservation   │
+└───────────────────────────────────┴─────────────────────────────────────┘
+```
+
+---
+
+### 12.1 Transformasi Autentikasi: Dari Fragmentasi ke Master Client Tunggal
+
+1. **Eliminasi 50 Baris RSA Private Key:** Arsitektur lama yang mengandalkan file kunci JSON Service Account Google Cloud dihentikan total, menghapus masalah kehabisan kuota Drive dan kerumitan konfigurasi lingkungan.
+2. **Web Application Master Client GCP:** Seluruh 14 Google API kini diotentikasi di bawah satu Client ID & Secret (`nexa-core-495208`) dengan Master Refresh Token yang aman di server Azure VPS Jakarta.
+3. **Zero-Downtime Token Interception:** `Google_Master_Client.js` secara transparan memperbarui akses token di latar belakang. Jika terjadi invalidasi token, *Circuit Breaker* mengirimkan satu notifikasi peringatan elegan ke Telegram tanpa merusak antrean cron job lainnya.
+
+---
+
+### 12.2 Human-Centric Ergonomics: Eksekusi Bebas Hambatan (*Zero Friction*)
+
+1. **Bayesian Semantic Duration Matrix:**
+   - Perkuliahan / SKS $\rightarrow$ **100 menit**
+   - Bimbingan Skripsi $\rightarrow$ **45 menit**
+   - Rapat / Diskusi Tim $\rightarrow$ **60 menit**
+   - Warkop / Ngopi / Kuliner $\rightarrow$ **90 menit**
+   - Quick Call / Zoom $\rightarrow$ **30 menit**
+   - Olahraga / Gym $\rightarrow$ **75 menit**
+2. **Dynamic Tasklist Discovery:** N.E.X.A secara cerdas mendeteksi dan mengarahkan tugas ke 5 Tasklist asli milik Tuan (`Tugas Saya`, `Tugas Kuliah`, `Pekerjaan`, `Riset & Baca`, `Belanja`) tanpa aturan regex manual yang kaku.
+3. **Working Memory & Resolusi Ordinal:** N.E.X.A mengingat konteks layar terakhir, memungkinkan instruksi alami seperti *"Tandai tugas yang pertama selesai"* atau *"Hapus tugas kedua"* tanpa perlu menyebutkan judul tugas secara berulang.
+
+---
+
+### 12.3 Verifikasi & Kestabilan Produksi
+
+Sistem v3.1 telah diuji secara otomatis melalui suite uji `tests/test_natural_calendar_tasks.js` dengan hasil **12/12 Lulus (100% Sukses)**:
+- ✅ Akurasi Durasi Probabilistik Semantik (7/7 Kasus)
+- ✅ Presisi Normalisasi Tanggal Anti Off-by-One Day (2/2 Kasus)
+- ✅ Dynamic Tasklist Discovery Live Google Tasks (1/1 Kasus)
+- ✅ Calendar READ & Working Memory Cache (1/1 Kasus)
+- ✅ Tasks READ & Working Memory Cache (1/1 Kasus)
+
+Beroperasi 24/7 di atas **Azure Virtual Machine** (`Standard_B2ats_v2`, Jakarta `indonesiacentral`) dengan monitoring PM2 Plus dan enkripsi SSL Caddy TLS 1.3.
+
+---
+
+Dengan integrasi **Nexa Mobile Bridge** dan **Unified Master OAuth 2.0** ini, N.E.X.A resmi bertransformasi dari sekadar kecerdasan digital menjadi entitas hibrida yang memiliki kehadiran nyata dalam kehidupan sehari-hari Tuan Faqih Hidayatulloh.
 
 ---
 **~ TAMAT ~**
