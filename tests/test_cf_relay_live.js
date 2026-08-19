@@ -38,19 +38,34 @@ ws.on('open', () => {
 ws.on('message', (data) => {
   console.log('📩 [2/2] RESPONSE DITERIMA DARI GOOGLE VIA CLOUDFLARE RELAY:');
   const msg = JSON.parse(data.toString());
-  console.log(msg);
+  console.log(JSON.stringify(msg));
 
   if (msg.setupComplete) {
-    console.log('Sending test 16kHz audio chunk in new format (realtimeInput.audio)...');
-    const dummyPcm = Buffer.alloc(1024).toString('base64');
+    console.log('Sending initial text prompt to trigger immediate voice reply...');
     ws.send(JSON.stringify({
-      realtimeInput: {
-        audio: {
-          mimeType: "audio/pcm;rate=16000",
-          data: dummyPcm
-        }
+      clientContent: {
+        turns: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: "Halo Nexa! Sapa saya sekarang."
+              }
+            ]
+          }
+        ],
+        turnComplete: true
       }
     }));
+  }
+
+  if (msg.serverContent?.modelTurn?.parts) {
+    console.log('🎵 AUDIO PARTS RECEIVED FROM GOOGLE!');
+    for (const p of msg.serverContent.modelTurn.parts) {
+      if (p.inlineData?.data) {
+        console.log(`🎵 Audio chunk received (${p.inlineData.data.length} chars Base64 PCM)`);
+      }
+    }
   }
 });
 
