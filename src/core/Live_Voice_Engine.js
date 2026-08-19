@@ -187,12 +187,8 @@ class LiveVoiceSession {
 
       // 2. Server Content: Audio Chunks & Barge-In
       if (msg.serverContent) {
-        // Interruption Event (Barge-In)
         if (msg.serverContent.interrupted) {
-          console.log(`[LIVE-VOICE] ⚡ Google Detected User Interruption (Barge-In). Muting client buffer.`);
-          this._sendToClient({
-            type: 'CALL_AUDIO_INTERRUPTED'
-          });
+          console.log(`[LIVE-VOICE] ⚡ Google detected turn transition / barge-in flag.`);
         }
 
         // Streaming Model Turn
