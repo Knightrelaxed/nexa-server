@@ -74,9 +74,11 @@ class LiveVoiceSession {
 
   async _connectGoogleWs() {
     const apiKey = this._getApiKey();
-    const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+    const rawBase = process.env.GEMINI_BASE_URL || 'https://nexa-relay.dazatulloh2.workers.dev';
+    const cleanHost = rawBase.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const url = `wss://${cleanHost}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
-    console.log(`[LIVE-VOICE] 🔌 Connecting to Google Live API (Key index: ${this.currentKeyIndex}, Model: ${this.currentModel})...`);
+    console.log(`[LIVE-VOICE] 🔌 Connecting to Google Live API via Cloudflare Relay (${cleanHost}, Key index: ${this.currentKeyIndex}, Model: ${this.currentModel})...`);
 
     const wsOptions = {
       handshakeTimeout: 10000
