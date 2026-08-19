@@ -78,8 +78,22 @@ class LiveVoiceSession {
 
     console.log(`[LIVE-VOICE] 🔌 Connecting to Google Live API (Key index: ${this.currentKeyIndex}, Model: ${this.currentModel})...`);
 
+    const wsOptions = {
+      handshakeTimeout: 10000
+    };
+
+    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.WS_PROXY;
+    if (proxyUrl) {
+      try {
+        const { SocksProxyAgent } = require('socks-proxy-agent');
+        if (proxyUrl.startsWith('socks')) {
+          wsOptions.agent = new SocksProxyAgent(proxyUrl);
+        }
+      } catch (_) {}
+    }
+
     try {
-      this.googleWs = new WebSocket(url);
+      this.googleWs = new WebSocket(url, wsOptions);
 
       this.googleWs.on('open', () => {
         console.log(`[LIVE-VOICE] 🌐 Connected to Google WSS. Sending setup payload...`);
