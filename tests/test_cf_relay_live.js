@@ -37,11 +37,21 @@ ws.on('open', () => {
 
 ws.on('message', (data) => {
   console.log('📩 [2/2] RESPONSE DITERIMA DARI GOOGLE VIA CLOUDFLARE RELAY:');
-  console.log(data.toString());
-  setTimeout(() => {
-    ws.close(1000);
-    process.exit(0);
-  }, 2000);
+  const msg = JSON.parse(data.toString());
+  console.log(msg);
+
+  if (msg.setupComplete) {
+    console.log('Sending test 16kHz audio chunk in new format (realtimeInput.audio)...');
+    const dummyPcm = Buffer.alloc(1024).toString('base64');
+    ws.send(JSON.stringify({
+      realtimeInput: {
+        audio: {
+          mimeType: "audio/pcm;rate=16000",
+          data: dummyPcm
+        }
+      }
+    }));
+  }
 });
 
 ws.on('error', (err) => {
