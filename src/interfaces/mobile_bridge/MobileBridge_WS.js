@@ -230,6 +230,18 @@ function sendCommand(action, params = {}, options = {}) {
       return resolve({ success: false, status: 'OFFLINE', message: 'Nexa Bridge is offline' });
     }
 
+    // CONCURRENCY GUARD: Do not trigger incoming call if a live voice session is already active
+    if (action === 'SIMULATE_INCOMING_CALL' || action === 'incoming_call') {
+      try {
+        const liveVoice = require('../../core/Live_Voice_Engine');
+        const activeSession = liveVoice.getActiveSessionForClient(activeClient);
+        if (activeSession && activeSession.isActive) {
+          console.warn('[NEXA-BRIDGE-WS] ⚠️ Rejecting SIMULATE_INCOMING_CALL: Live Voice session is already active!');
+          return resolve({ success: true, message: 'Call already active, ignored duplicate.' });
+        }
+      } catch (_) {}
+    }
+
     const timestamp = Date.now();
     const commandId = `cmd_${timestamp}_${Math.random().toString(36).substring(2, 8)}`;
 
