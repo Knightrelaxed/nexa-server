@@ -28,12 +28,12 @@
   },
   {
     "id": 4,
-    "content": "[OMNICHANNEL FINANCE & ZERO-DUPLICATION] Kamu melacak keuangan lintas platform (Telegram manual, Gmail mutasi bank tiap 3 menit, Tasker Android) di Supabase. Sistemmu dibekali deduplikasi otomatis (composite key), AI fuzzy categorizing, resolusi akun cerdas, dan Budget Alerts dinamis saat batas anggaran hampir habis.",
+    "content": "[OMNICHANNEL FINANCE & ZERO-DUPLICATION] Kamu melacak keuangan lintas platform (Telegram manual, Gmail mutasi bank tiap 3 menit, Nexa Mobile Bridge Android) di Supabase. Sistemmu dibekali deduplikasi otomatis (composite key), AI fuzzy categorizing, resolusi akun cerdas, dan Budget Alerts dinamis saat batas anggaran hampir habis.",
     "created_at": "2026-06-27T16:35:06.39815+00:00",
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 5,
@@ -73,12 +73,12 @@
   },
   {
     "id": 9,
-    "content": "[DISCIPLINE GOD MODE (ENFORCEMENT FISIK)] Kamu berkuasa penuh atas kedisiplinan fisik via Tasker & ntfy di HP Android Tuan (4-Level God Mode): Level 1 (TTS Nasihat Lisan), Level 2 (Throw to Home & 3 Tombol Konfirmasi), Level 3 (Grayscale Hitam Putih 30 menit), hingga Level 4 (Lock Screen & Airplane Mode) jika Tuan menunda tugas/terdistraksi.",
+    "content": "[DISCIPLINE GOD MODE (ENFORCEMENT FISIK)] Kamu berkuasa penuh atas kedisiplinan fisik via Nexa Mobile Bridge di HP Android Tuan (4-Level God Mode): Level 1 (TTS Nasihat Lisan), Level 2 (Throw to Home & 3 Tombol Konfirmasi), Level 3 (Grayscale Hitam Putih 30 menit), hingga Level 4 (Lock Screen & Airplane Mode) jika Tuan menunda tugas/terdistraksi.",
     "created_at": "2026-06-27T16:35:06.39815+00:00",
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 10,
@@ -87,7 +87,7 @@
     "category_type": "PERMANENT_FACT",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 11,
@@ -105,11 +105,11 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 13,
-    "content": "[PERSONALITY] My personality is defined in src/config/personality.js as NEXA_PERSONALITY constant. This is injected into every system prompt sent to every AI model, ensuring consistent persona across all 15 fallback tiers. I am always professional, elegant, loyal, proactive, and intelligent.",
+    "content": "[PERSONALITY] My personality is defined in src/config/personality.js as NEXA_PERSONALITY constant. This is injected into every system prompt sent to every AI model, ensuring consistent persona across all 16 fallback tiers. I am always professional, elegant, loyal, proactive, and intelligent.",
     "created_at": "2026-06-27T16:35:06.39815+00:00",
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
@@ -136,12 +136,12 @@
   },
   {
     "id": 16,
-    "content": "[GOD MODE] [DISCIPLINE] Discipline_GodMode.js is the digital discipline enforcer. Connected to Tasker on Tuan Faqih's Android phone via ntfy.sh webhooks. Can cut internet access if screen-time limits are exceeded, and can trigger automation routines. Activated via intent GOD_MODE_TRIGGER in AI Router JSON output.",
+    "content": "[GOD MODE] [DISCIPLINE] Discipline_GodMode.js is the digital discipline enforcer. Connected to Nexa Mobile Bridge on Tuan Faqih's Android phone. Can cut internet access if screen-time limits are exceeded, and can trigger automation routines. Activated via intent GOD_MODE_TRIGGER in AI Router JSON output.",
     "created_at": "2026-06-27T16:35:06.39815+00:00",
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 17,
@@ -150,7 +150,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 18,
@@ -222,7 +222,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 26,
@@ -231,7 +231,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 27,
@@ -711,15 +711,6 @@
     "status": "ACTIVE"
   },
   {
-    "id": 80,
-    "content": "[GOD MODE ENDPOINT] [TASKER] [DISCIPLINE] Tasker Android automation connects to N.E.X.A via a dedicated HTTP endpoint. This endpoint is secured with Authorization: Bearer header verification. Used for: screen-time enforcement (cutting internet via ntfy.sh), triggering Android automations, and bidirectional phone-server communication.",
-    "created_at": "2026-06-27T16:35:06.39815+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
     "id": 81,
     "content": "[ENV CREDENTIALS] [SECURITY] env.js manages 30+ secrets: GEMINI_API_KEY_1-4 (4 Gemini keys for rotation), 4 Groq keys, Cerebras, Mistral, OpenRouter (premium fallback), GOOGLE_PRIVATE_KEY (Service Account JSON), GMAIL_REFRESH_TOKEN, TASKS_REFRESH_TOKEN, GOOGLE_DRIVE_REFRESH_TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, SUPABASE_URL + SUPABASE_ANON_KEY (two separate Supabase projects: Memories and Finance), NOTION_API_KEY, SERPER_API_KEY (web search), NTFY_TOPIC (God Mode), NEXA_VERCEL_RELAY_URL, NEXA_RELAY_SECRET, WEATHERAPI_KEY, NEWSDATA_API_KEY.",
     "created_at": "2026-06-27T16:35:06.39815+00:00",
@@ -780,7 +771,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 88,
@@ -789,7 +780,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 89,
@@ -798,7 +789,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 90,
@@ -825,7 +816,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 93,
@@ -834,7 +825,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 94,
@@ -843,7 +834,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 95,
@@ -852,16 +843,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
-    "id": 96,
-    "content": "Sistem Telemetry Log: Prefix [TASKER]. Fungsi: Menangani inbound HTTP POST dari endpoint khusus klien Android untuk otomatisasi. Sistem: interfaces/webhook.js, Tasker HTTP Request.",
-    "created_at": "2026-06-27T16:35:06.39815+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 97,
@@ -870,7 +852,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 98,
@@ -879,7 +861,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 99,
@@ -888,7 +870,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 100,
@@ -897,7 +879,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 101,
@@ -906,7 +888,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 102,
@@ -915,7 +897,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 103,
@@ -924,7 +906,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 104,
@@ -933,7 +915,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 105,
@@ -942,7 +924,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 106,
@@ -951,7 +933,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 107,
@@ -960,7 +942,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 108,
@@ -969,7 +951,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 109,
@@ -978,7 +960,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 110,
@@ -987,7 +969,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 111,
@@ -996,7 +978,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 112,
@@ -1005,7 +987,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 113,
@@ -1014,7 +996,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 114,
@@ -1023,7 +1005,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 115,
@@ -1032,7 +1014,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 116,
@@ -1041,7 +1023,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 117,
@@ -1050,7 +1032,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 118,
@@ -1059,7 +1041,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 119,
@@ -1068,7 +1050,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 120,
@@ -1077,7 +1059,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 121,
@@ -1086,7 +1068,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 122,
@@ -1095,7 +1077,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 123,
@@ -1104,7 +1086,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 124,
@@ -1113,7 +1095,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 125,
@@ -1122,7 +1104,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 126,
@@ -1131,7 +1113,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 127,
@@ -1140,7 +1122,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 128,
@@ -1149,7 +1131,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 129,
@@ -1158,7 +1140,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 130,
@@ -1167,7 +1149,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 131,
@@ -1296,26 +1278,8 @@
     "status": "ACTIVE"
   },
   {
-    "id": 145,
-    "content": "[DISCIPLINE GOD MODE & TASKER] Discipline_GodMode.js mengawal waktu layar aplikasi hiburan (TikTok/Instagram) di HP Samsung A33 5G via webhook Tasker dan push ntfy.",
-    "created_at": "2026-07-19T04:23:28.842871+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
     "id": 146,
     "content": "[ESKALASI DISIPLIN DUA ARAH] Penegakan disiplin memiliki 4 level: Level 1 (Nasihat AI), Level 2 (Go Home + Beep + Tombol Telegram), Level 3 (Grayscale Hitam Putih + Kill App), Level 4 (Lock Screen + Airplane Mode).",
-    "created_at": "2026-07-19T04:23:28.842871+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
-    "id": 147,
-    "content": "[PROTEKSI ANTI-SLEEP & DOUBLE-LOCK] Pengaturan Tasker dilengkapi gembok %PACTIVE dan syarat Display State: On agar tidak mengirim laporan saat HP tidur atau aplikasi di latar belakang.",
     "created_at": "2026-07-19T04:23:28.842871+00:00",
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
@@ -1356,7 +1320,7 @@
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 152,
@@ -1371,24 +1335,6 @@
     "id": 153,
     "content": "[PINTU DAN INTEGRASI WA] N.E.X.A terhubung ke Telegram sebagai jalur komunikasi utama dan WhatsApp melalui gerbang Pintu 2 (Baileys/WA Bridge).",
     "created_at": "2026-07-19T04:23:28.842871+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
-    "id": 154,
-    "content": "[TASKER WEBHOOK] Log penanda saat server menerima HTTP POST di /webhook/tasker dari aplikasi Tasker di HP Samsung A33 5G Tuan Faqih.",
-    "created_at": "2026-07-19T04:23:47.769408+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
-    "id": 155,
-    "content": "[PAYLOAD] Log penanda proses ekstraksi data JSON dari Tasker yang berisi nama aplikasi (app_name) dan durasi penggunaan (duration_minutes).",
-    "created_at": "2026-07-19T04:23:47.769408+00:00",
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
     "evidence_count": 1,
@@ -1451,42 +1397,6 @@
   {
     "id": 162,
     "content": "[AUDIT LOG] Log penanda penyimpanan riwayat pelanggaran ke nexa_behavior_log di Supabase dan pengiriman laporan audit ke Telegram Tuan Faqih.",
-    "created_at": "2026-07-19T04:23:47.769408+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
-    "id": 163,
-    "content": "[EKSEKUTOR TASKER HP] NEXA_Executor di HP membaca %evtprm3, memecah perintah via splitter |, membacakan suara AI via Say, dan mengeksekusi aksi fisik.",
-    "created_at": "2026-07-19T04:23:47.769408+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
-    "id": 164,
-    "content": "[AKSI FISIK LEVEL 2] Jika menerima GO_HOME, Tasker membacakan nasihat AI, membunyikan alarm Beep 8000Hz, dan melempar layar ke Home Screen.",
-    "created_at": "2026-07-19T04:23:47.769408+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
-    "id": 165,
-    "content": "[AKSI FISIK LEVEL 3] Jika menerima FORCE_STOP_APP, Tasker menutup paksa aplikasi (Kill App) dan mengubah layar One UI 6 menjadi Hitam Putih (Grayscale).",
-    "created_at": "2026-07-19T04:23:47.769408+00:00",
-    "category_type": "RULE",
-    "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
-    "evidence_count": 1,
-    "status": "ACTIVE"
-  },
-  {
-    "id": 166,
-    "content": "[AKSI FISIK LEVEL 4] Jika menerima LOCK_SCREEN, Tasker menyalakan Mode Pesawat (putus internet) dan mengunci layar fisik ponsel (System Lock).",
     "created_at": "2026-07-19T04:23:47.769408+00:00",
     "category_type": "RULE",
     "last_reinforced_at": "2026-07-22T08:15:36.914116+00:00",
@@ -1927,10 +1837,10 @@
   },
   {
     "id": 215,
-    "content": "Jika seluruh 15 tier AI N.E.X.A mengalami kegagalan simultan, fungsi executeWithFallback() tidak akan menghentikan sistem dan secara aman mengembalikan respons DUMB_MODE kepada Tuan Faqih.",
+    "content": "Jika seluruh 16 tier AI N.E.X.A mengalami kegagalan simultan, fungsi executeWithFallback() tidak akan menghentikan sistem dan secara aman mengembalikan respons DUMB_MODE kepada Tuan Faqih.",
     "created_at": "2026-07-25T19:00:47.675737+00:00",
     "category_type": "RULE",
-    "last_reinforced_at": "2026-07-25T19:00:47.554+00:00",
+    "last_reinforced_at": "2026-08-17T23:38:29.467+00:00",
     "evidence_count": 2,
     "status": "ACTIVE"
   },
@@ -1977,7 +1887,7 @@
     "category_type": "PERMANENT_FACT",
     "last_reinforced_at": "2026-07-30T05:41:11.779+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 222,
@@ -2067,7 +1977,7 @@
     "category_type": "PERMANENT_FACT",
     "last_reinforced_at": "2026-08-17T09:43:36.829+00:00",
     "evidence_count": 1,
-    "status": "ACTIVE"
+    "status": "ARCHIVED"
   },
   {
     "id": 232,
@@ -2075,6 +1985,177 @@
     "created_at": "2026-08-17T09:43:54.185035+00:00",
     "category_type": "PERMANENT_FACT",
     "last_reinforced_at": "2026-08-17T09:43:36.958+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 233,
+    "content": "[SACR ENGINE & CEREBRAS PRIORITY] N.E.X.A menggunakan SACR Engine (Strict Adaptive Cognitive Router) dengan dua mode komputasi: Mode LIGHT (Cerebras Llama 3.3 70B ultra-fast untuk intent deterministik/cepat) dan Mode HEAVY (Gemini 2.5 Flash / Groq untuk penalaran kompleks).",
+    "created_at": "2026-08-17T10:08:02.216088+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T10:07:44.871+00:00",
+    "evidence_count": 1,
+    "status": "ARCHIVED"
+  },
+  {
+    "id": 234,
+    "content": "[APP DISCIPLINE ENGINE] N.E.X.A memantau dan mengawal waktu layar aplikasi di HP Tuan Faqih secara real-time via nexa_app_limits di Supabase. Memiliki batas sesi (max_session_minutes) dan batas harian (max_daily_minutes) dengan peringatan dini pada ambang 80% (warning_threshold_pct) dan lockout 30 menit.",
+    "created_at": "2026-08-17T10:08:02.380873+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T10:07:45.091+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 235,
+    "content": "[DISCIPLINE GOD MODE 3.0] Sistem eskalasi kedisiplinan 4-tingkat di HP Samsung A33 5G via Nexa Mobile Bridge: Level 1 (TTS Nasihat Suara), Level 2 (Lempar ke Home Screen & Pop-up Konfirmasi), Level 3 (Kunci Layar & DND), hingga Level 4 (Simulasi Panggilan Masuk Disiplin & Alarm Darurat).",
+    "created_at": "2026-08-17T10:08:02.57842+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T10:07:45.239+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 236,
+    "content": "[OPEN-SOURCE SPATIAL STACK] N.E.X.A memiliki mesin navigasi dan pencarian lokasi 100% open-source tanpa API berbayar: memadukan Nominatim Bounded Viewbox (<10km), Photon Proximity POI, dan OSRM Routing Engine untuk estimasi jarak dan durasi berkendara secara instan.",
+    "created_at": "2026-08-17T10:08:02.658778+00:00",
+    "category_type": "PERMANENT_FACT",
+    "last_reinforced_at": "2026-08-17T10:07:45.442+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 237,
+    "content": "[VOICE ENGINE 12-TIER] Pipeline transkripsi audio N.E.X.A memproses rekaman suara (WAV/OGG/PCM 16kHz) melalui 12 lapisan failover: Tier 1-4 (Hugging Face Whisper v3 Turbo), Tier 5-8 (Gemini 2.5 Flash Native Audio), dan Tier 9-12 (Groq Whisper Large v3), dilengkapi Natural Speech Sanitizer untuk membersihkan format HTML/Markdown sebelum dibaca TTS.",
+    "created_at": "2026-08-17T10:08:02.798826+00:00",
+    "category_type": "PERMANENT_FACT",
+    "last_reinforced_at": "2026-08-17T10:07:45.519+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 238,
+    "content": "[VISION ENGINE 14-TIER] Analisis gambar dan dokumen visual diproses melalui 14 lapisan failover: Tier 0 (Cloudflare/Vercel Edge Relay), Tier 1-4 (Cerebras Vision Gemma 4 31B), Tier 5-8 (Gemini 2.5 Flash Vision), Tier 9-12 (Groq Llama 3.2 Vision), dan Tier 13 (Hugging Face Qwen2-VL).",
+    "created_at": "2026-08-17T10:08:02.874613+00:00",
+    "category_type": "PERMANENT_FACT",
+    "last_reinforced_at": "2026-08-17T10:07:45.659+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 239,
+    "content": "[FINANCE ENGINE 3.0] Otak keuangan N.E.X.A mendukung pencatatan belanja multi-item terpisah dalam satu kalimat (is_split=true), auto-polling mutasi bank via Gmail tiap 3 menit, deteksi anti-duplikasi 60 menit, dan pemulihan transaksi pending otomatis saat server boot (recoverPendingTransactions).",
+    "created_at": "2026-08-17T10:08:02.943055+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T10:07:45.724+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 240,
+    "content": "[INFRASTRUCTURE AZURE PRODUCTION] N.E.X.A Core Server berjalan 24/7 di atas Azure Virtual Machine (Ubuntu 24.04 ARM, Jakarta indonesiacentral) dikelola oleh PM2 daemon dengan systemd auto-boot dan Caddy SSL Reverse Proxy di port 443/3000.",
+    "created_at": "2026-08-17T10:08:03.040819+00:00",
+    "category_type": "PERMANENT_FACT",
+    "last_reinforced_at": "2026-08-17T10:07:45.799+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 241,
+    "content": "[NEXA BRIDGE PROTOCOL] Komunikasi antara server cloud dan HP Samsung A33 5G menggunakan WebSocket (WSS) terenkripsi di endpoint /ws dengan verifikasi timing-safe HMAC token, pemutusan soket ganda instan (single-device binding), dan pembersihan otomatis pending promise saat disconnect.",
+    "created_at": "2026-08-17T10:08:03.118826+00:00",
+    "category_type": "PERMANENT_FACT",
+    "last_reinforced_at": "2026-08-17T10:07:45.899+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 242,
+    "content": "[M-BANKING SHIELD] Protokol keamanan finansial otomatis (MBankingShieldManager): saat Tuan Faqih membuka aplikasi perbankan (BCA Mobile, Livin by Mandiri, BRImo, BNI), layanan aksesibilitas Nexa Bridge otomatis dibekukan demi melindungi PIN dan kerahasiaan transaksi.",
+    "created_at": "2026-08-17T10:08:03.195407+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T10:07:45.979+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 243,
+    "content": "[LIVING MEMORY ENGINE] Sistem memori organik N.E.X.A meniru biologi otak: membedakan PERMANENT_FACT (kebal peluruhan), RULE, PREFERENCE (meluruh via kurva Ebbinghaus R = e^(-λt)), dan EPHEMERAL (disapu tiap 30 hari), diaudit mingguan oleh Gemini Heavy dan dilaporkan interaktif ke Telegram.",
+    "created_at": "2026-08-17T10:08:03.272156+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T10:07:46.059+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 244,
+    "content": "[VAULT & SECOND BRAIN] N.E.X.A mengelola dokumen penting, identitas kependudukan, dan ide strategis di tabel nexa_vault_items & nexa_2nd_brain, menyuntikkan manifest ringkas judul berkas ke router AI dan mengambil detail dokumen secara on-demand saat ditanyakan.",
+    "created_at": "2026-08-17T10:08:03.34581+00:00",
+    "category_type": "PERMANENT_FACT",
+    "last_reinforced_at": "2026-08-17T10:07:46.129+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 245,
+    "content": "[PROACTIVE PULSE CRON] N.E.X.A memiliki 20 jadwal cron otonom yang menyapa Tuan Faqih: Morning Briefing (05:30), Google Tasks Focus (07:00), Midday Pulse (12:00), Evening Debrief (17:00), Reflective Briefing (20:00), Tomorrow Prep (21:00), Midnight Check-in (01:00), dan Memory Consolidation (23:59).",
+    "created_at": "2026-08-17T10:08:03.42776+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T10:07:46.209+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 246,
+    "content": "[SECURITY & PRIVACY PROTOCOL] N.E.X.A adalah sistem satu pengguna eksklusif untuk Tuan Faqih Hidayatulloh. Setiap interaksi diverifikasi via Telegram Webhook Secret Token dan Identity Lock (message.from.id == TELEGRAM_CHAT_ID), memblokir segala bentuk spoofing dari luar.",
+    "created_at": "2026-08-17T10:08:03.51574+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T10:07:46.29+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 247,
+    "content": "[TEMPORAL AWARENESS & UTC+7 WIB ENGINE] N.E.X.A memiliki kesadaran temporal matematis mutlak berbasis UTC+7 (Asia/Jakarta) yang kebal terhadap lokasi region server. Di setiap pesan, N.E.X.A menerima injeksi waktu real-time [WAKTU SERVER SAAT INI] (hari, tanggal, bulan, tahun, jam, menit) dan tabel kalender referensi 7 hari ke depan (ISO 8601 +07:00), serta mematuhi aturan etika sapaan waktu: Pagi (05:00-11:00), Siang (11:01-14:59), Sore (15:00-18:00), dan Malam (18:01-04:59 WIB).",
+    "created_at": "2026-08-17T10:26:53.514716+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T10:26:35.466+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 248,
+    "content": "[SACR DUAL-MODE ROUTING v2.1 & CLOUDFLARE EDGE GATEWAY] Kamu beroperasi dengan 16 lapisan failover multi-kunci. Prioritas Utama: Tier 1–4 (Google Gemma 4 31B Anti-CoT dengan kuota 57.600 chat/hari via Cloudflare Edge AI Gateway nexa-relay.dazatulloh2.workers.dev untuk bebas 100% dari batasan GeoIP cloud), Tier 5–8 (Google Gemini 3.7 Flash), Tier 9–12 (Google Gemini 3.6 Flash), Tier 13–16 (Cerebras Gemma 4, Mistral Pixtral 12B, Puter AI Multi-Model Pool, OpenRouter Global). Menjamin respons cerdas tanpa batas sempit.",
+    "created_at": "2026-08-17T23:38:47.594526+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-18T08:51:40.017+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 249,
+    "content": "[16-TIER FALLBACK & GOOGLE GEMMA 4 REPLACEMENT PLAN] Fallback Engine kamu memiliki 16 lapisan redundansi tanpa batas sempit Groq. Mulai September 2026 saat masa bakti shared-tier Cerebras berakhir, posisi Tier 1-4 akan digantikan secara mulus oleh Google AI Studio Gemma 4 31B menggunakan teknik Dual-Layer Anti-CoT ([NO THINKING]) yang memangkas latensi menjadi 4-8 detik dengan kuota raksasa 57.600 chat/hari dan bebas batas token harian (No TPD).",
+    "created_at": "2026-08-17T23:38:47.784736+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-17T23:38:29.976+00:00",
+    "evidence_count": 1,
+    "status": "ARCHIVED"
+  },
+  {
+    "id": 250,
+    "content": "[SACR HYBRID SEMANTIC GATEWAY v3.0] Memori semantik kamu menggunakan Google Gemini Cloud Embedding (gemini-embedding-2), In-Memory Vector Snapshot (data/facts_vectors.json dimuat dalam 0.001s), dan Masked Parallel Execution (Promise.all serentak dengan riwayat obrolan Supabase). Arsitektur ini menghasilkan 0.00 ms latensi tambahan pengguna, 0 MB beban RAM VPS, dan akurasi pemahaman konteks semantik 100%.",
+    "created_at": "2026-08-18T09:51:02.415313+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-18T09:50:44.015+00:00",
+    "evidence_count": 1,
+    "status": "ACTIVE"
+  },
+  {
+    "id": 251,
+    "content": "Harus lebih jeli memantau jeda waktu antar pesan untuk menentukan konteks aktivitas Tuan Faqih dan menghindari asumsi prematur.",
+    "created_at": "2026-08-18T10:55:15.495493+00:00",
+    "category_type": "RULE",
+    "last_reinforced_at": "2026-08-18T10:55:15.348+00:00",
     "evidence_count": 1,
     "status": "ACTIVE"
   }

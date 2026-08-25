@@ -60,7 +60,7 @@ N.E.X.A tidak sekadar menunggu instruksi, tetapi menyapa duluan:
 - **Proximity Alert:** Mengingatkan 30 menit sebelum jadwal kalender dimulai.
 
 ### 6. God Mode & Digital Discipline
-Bekerja sama erat dengan aplikasi **Tasker** di Android pengguna. N.E.X.A bertindak sebagai polisi disiplin. Jika terdeteksi pengguna membuka aplikasi hiburan (TikTok/Instagram) > 30 menit, N.E.X.A mengirim *webhook* darurat untuk mematikan koneksi internet dan mengunci layar ponsel pengguna.
+Bekerja sama erat dengan aplikasi native **N.E.X.A Mobile Bridge** di Android pengguna. N.E.X.A bertindak sebagai polisi disiplin. Jika terdeteksi pengguna membuka aplikasi hiburan (TikTok/Instagram) melebihi batas waktu produktif, N.E.X.A mengeksekusi penegakan disiplin fisik multi-tier (Speech TTS, Throw to Home, Grayscale Screen, hingga Lock Screen).
 
 ---
 
@@ -98,7 +98,7 @@ Terletak di dalam direktori `nexa-finance-web/`, ini adalah antarmuka visual mod
 | `GEMINI_API_KEY_1`..`4` | API Key Google Gemini (Primary & Backup) |
 | `GROQ_API_KEY_1`..`4` | API Key Groq (Whisper & Llama Fallback) |
 | `HF_TOKEN` | Token akses HuggingFace API |
-| `NEXA_GODMODE_SECRET` | Bearer token untuk autentikasi rute `/webhook/tasker` |
+| `NEXA_GODMODE_SECRET` | Bearer token untuk autentikasi rute `/api/bridge` & God Mode |
 | `SUPABASE_URL` | URL project Supabase |
 | `SUPABASE_KEY` | Anon key Supabase |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Email robot Service Account Google |
@@ -108,11 +108,11 @@ Terletak di dalam direktori `nexa-finance-web/`, ini adalah antarmuka visual mod
 
 ---
 
-## 🛡️ Immortality Protocol v2.7
+## 🛡️ Immortality Protocol v3.0
 
-Untuk memastikan server di Hugging Face tidak pernah "tertidur" (*sleep*):
-1. **UptimeRobot / cron-job.org** melakukan ping berkala ke endpoint `GET /health`.
-2. **Tasker Watchdog** mengirim sinyal ping dari Android setiap 2 jam via Telegram/Webhook.
-3. **Tasker Buffer System** menampung transaksi finansial sementara secara lokal di HP jika server N.E.X.A kebetulan sedang *restart* atau lambat, lalu mengirim ulang (`[BUFFER]`) saat server online kembali.
+Untuk memastikan server selalu aktif (*resilient & immortal*):
+1. **Uptime Monitoring** melakukan ping berkala ke endpoint `GET /health`.
+2. **Nexa Mobile Bridge Watchdog** memantau status server dari Android dan mensinkronkan data sensor latar belakang.
+3. **Mobile Bridge Offline Buffer** menampung transaksi finansial & telemetry sementara secara lokal di HP jika server N.E.X.A kebetulan sedang *restart* atau lambat, lalu mengirim ulang saat server online kembali.
 
 

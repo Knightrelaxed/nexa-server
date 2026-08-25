@@ -32,7 +32,6 @@ flowchart TD
         SEC_GATE --> TG_ID[Telegram Identity Lock: Chat ID 6798861902 Only]
         SEC_GATE --> TG_SEC[Telegram Webhook Secret Token Header]
         SEC_GATE --> CLI_TOK[CLI Console Bearer Auth: NEXA_CLI_SECRET]
-        SEC_GATE --> TSK_HMAC[Tasker GodMode: Bearer + HMAC SHA-256]
         SEC_GATE --> WS_AUTH[Mobile Bridge WSS: Bearer Token Handshake]
         SEC_GATE --> WA_LOCK[WhatsApp Owner JID Lock]
     end
@@ -139,7 +138,6 @@ app.use(cors({
 | **Telegram Bot** | **Identity Lock** | Hanya mengizinkan Chat ID sah Tuan Faqih (**`6798861902`**). Semua akun asing ditolak seketika (`403 Forbidden`) dan dicatat log forensiknya. |
 | **Telegram Webhook** | **Secret Token Header** | Memverifikasi header `X-Telegram-Bot-Api-Secret-Token` murni dari Telegram API. |
 | **NEXA CLI Console** | **Bearer Auth Token** | Mewajibkan header `Authorization: Bearer <NEXA_CLI_SECRET>` pada setiap permintaan POST & stream SSE. |
-| **Tasker Android** | **Bearer Auth + HMAC SHA-256** | Menggunakan token rahasia `NEXA_GODMODE_SECRET` + validasi signature digital waktu-nyata untuk perintah eskalasi. |
 | **Mobile Bridge WebSocket** | **Handshake Bearer + Constant-Time** | Memverifikasi `NEXA_DEVICE_SECRET` pada koneksi `wss://` dengan `crypto.timingSafeEqual`. |
 | **WhatsApp Bridge** | **Owner JID Lock** | Memverifikasi JID dan nomor telepon terdaftar milik Tuan Faqih. |
 | **Gmail Webhook (Pub/Sub)** | **Token Query Verification** | Memverifikasi parameter `?token=<SECRET>` dengan `timingSafeEqual`. |

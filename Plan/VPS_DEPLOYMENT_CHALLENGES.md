@@ -78,7 +78,7 @@ Dokumen ini mencatat secara menyeluruh hasil riset, uji coba *deployment*, serta
 * **Kendala Fatal untuk Production:**
   1. **Temporary URL (Limitasi 60 Menit):** Back4App Free Tier hanya memberikan URL subdomain publik aktif selama **60 menit**:
      > *"Temporary URL Active — URL is temporary and will be live for 60 minutes. Upgrade for a Permanent URL."*
-  2. **Inkompatibilitas Webhook:** Karena URL berubah/mati setiap 60 menit, Webhook Telegram dan Webhook Tasker tidak dapat mempertahankan koneksi permanen.
+  2. **Inkompatibilitas Webhook:** Karena URL berubah/mati setiap 60 menit, Webhook Telegram dan Nexa Mobile Bridge tidak dapat mempertahankan koneksi permanen.
   3. **Manajemen Environment Variables:** Tidak tersedianya endpoint REST API terbuka untuk *bulk upload* puluhan kunci API sekaligus dari terminal lokal (harus diinput satu per satu atau via prompt AI chat).
 
 ---
@@ -88,7 +88,7 @@ Dokumen ini mencatat secara menyeluruh hasil riset, uji coba *deployment*, serta
 1. **Pengetatan Free-Tier Global:** Sejak 2024–2026, hampir seluruh penyedia infrastruktur cloud global (PaaS/VPS) telah menutup akses *pure-anonymous free tier* untuk mencegah botnet dan penyalahgunaan AI scraping. Kartu debit/kredit dijadikan instrumen utama verifikasi identitas (KYC).
 2. **Kebutuhan Nyata N.E.X.A:**
    * N.E.X.A Core **hanya membutuhkan daya komputasi ringan** (~70MB RAM, 0.1 vCPU).
-   * Namun N.E.X.A **memerlukan URL HTTPS Statis Permanen** agar webhook dua arah (Telegram Bot, Tasker Android, dan Cron Health Check) dapat bekerja tanpa putus.
+   * Namun N.E.X.A **memerlukan URL HTTPS Statis Permanen** agar webhook dua arah (Telegram Bot, Nexa Mobile Bridge Android, dan Cron Health Check) dapat bekerja tanpa putus.
 
 ---
 

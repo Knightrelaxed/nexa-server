@@ -177,7 +177,7 @@ graph TD
     subgraph Client Interfaces
         TG[Telegram Bot UI]
         CLI[NEXA CLI Console - NPM]
-        TSK[Tasker Android Client]
+        NMB[Nexa Mobile Bridge Android]
     end
 
     subgraph Azure Cloud - Indonesia Central Jakarta
@@ -200,7 +200,7 @@ graph TD
 
     TG -->|Webhook HTTPS| CAD
     CLI -->|Dual Channel HTTP + SSE| CAD
-    TSK -->|GodMode Violation Alert| CAD
+    NMB -->|WebSocket Telemetry & Discipline| CAD
     
     CAD -->|localhost:3000| PM2
     PM2 --> CORE
@@ -254,7 +254,7 @@ graph TD
 | **Production Domain** | `https://nexa-server.indonesiacentral.cloudapp.azure.com` |
 | **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~18.6 MB) |
 | **Primary Database & Vault** | Supabase PostgreSQL Cloud (ACID Relational Memory, 10 Dedicated Tables) |
-| **Interface Ecosystem** | Multi-Channel Parity (Telegram Bot + NPM CLI `nexa-assistant-console` + Android Tasker) |
+| **Interface Ecosystem** | Multi-Channel Parity (Telegram Bot + NPM CLI `nexa-assistant-console` + Nexa Mobile Bridge Android) |
 | **Cognitive Memory Architecture** | The Living Memory Engine (Ebbinghaus Decay + Supersede v2 + Weekly Hygiene) |
 | **DevOps & Access Protocol** | Ed25519 Asymmetric Cryptographic Keypair (Autonomous AI Maintenance) |
 | **Primary Beneficiary** | **Tuan Faqih Hidayatulloh** |
