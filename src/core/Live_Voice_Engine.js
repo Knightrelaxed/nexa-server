@@ -468,6 +468,11 @@ class LiveVoiceSession {
               type: 'CALL_AUDIO_PLAY',
               pcm_chunk: p.inlineData.data
             });
+            // Update HUD to Mentransmisikan..
+            this._sendToClient({
+              type: 'CALL_STATUS_UPDATE',
+              status: 'SPEAKING'
+            });
           }
           // Text transcript from model
           if (p.text) {
@@ -480,6 +485,14 @@ class LiveVoiceSession {
           this.turnHistory.push({ role: 'assistant', text: turnText });
           // Async persist to nexa_chat_memories (non-blocking — never delay audio)
           supabaseMemories.saveChatMemory('nexa', turnText.slice(0, 800), 'live_call').catch(() => {});
+        }
+
+        // If turnComplete is reached, return state to LISTENING
+        if (msg.serverContent.turnComplete && !this.isEndingCall) {
+          this._sendToClient({
+            type: 'CALL_STATUS_UPDATE',
+            status: 'LISTENING'
+          });
         }
 
         // If turnComplete is reached AND call is marked to end:
@@ -496,6 +509,12 @@ class LiveVoiceSession {
 
       // ── 3. Tool Calls (Function Execution — Parallel Batching) ──────────
       if (msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0) {
+        // Notify HUD that tools are executing (Memproses..)
+        this._sendToClient({
+          type: 'CALL_STATUS_UPDATE',
+          status: 'PROCESSING'
+        });
+
         const functionCalls = msg.toolCall.functionCalls;
         console.log(`[LIVE-VOICE] 🛠️ Processing ${functionCalls.length} tool call(s) in parallel...`);
 
