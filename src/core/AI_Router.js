@@ -329,6 +329,7 @@ CRITICAL ROUTING RULES:
     - Jika Tuan Faqih mengeluh error/bug, protes, bingung, atau frustrasi ("argh", "ga sesuai", "kok gini", "looping", "perbaiki"), pilih STRESSED, ANGRY, atau NEGATIVE.
     - Jika sedang bekerja/coding/riset/deploy, pilih FOCUSED atau MOTIVATED.
 14. CHAT & PAST HISTORY QUERY RULE: If user asks about past conversations, past events, purchases, activities, or what was discussed earlier (e.g., "pas 1 Juni kemarin aku beli apa?", "waktu 17 Mei kita ke mana?", "kemarin kita bahas apa?"), use intent "NORMAL_CHAT" and answer DIRECTLY using data from [ARSIP MEMORI EPISODIK MASA LALU] or [RIWAYAT OBROLAN]. CRITICAL: NEVER output placeholder promises like "sebentar saya cek dulu" or "tunggu sebentar" without answering — you MUST synthesize and provide the actual concrete answer immediately in reply_message!
+15. ABSOLUTE ANTI EM-DASH RULE: DILARANG KERAS menggunakan tanda baca em dash (—) atau en dash (–) di dalam reply_message. Tanda hubung panjang terkesan kaku dan bergaya robotik/AI. Gunakan tanda koma (,), titik (.), atau tanda kurung (...) secara alami.
 
 OUTPUT JSON FORMAT:
 {
@@ -1169,6 +1170,9 @@ Tentukan intent dan ekstrak data!
     const routingData = JSON.parse(cleanStr);
     const detectedMood = (_sentimentScore !== 'NEUTRAL') ? _sentimentScore : (routingData.mood || 'NEUTRAL');
     routingData.mood = String(detectedMood).toUpperCase();
+    if (typeof routingData.reply_message === 'string') {
+      routingData.reply_message = _cleanEmDashes(routingData.reply_message);
+    }
     return routingData;
   } catch (err) {
     // Smart repair: try extracting the first complete balanced JSON object ignoring trailing junk
@@ -1192,6 +1196,9 @@ Tentukan intent dan ekstrak data!
         const routingData = JSON.parse(repaired);
         const detectedMood = (_sentimentScore !== 'NEUTRAL') ? _sentimentScore : (routingData.mood || 'NEUTRAL');
         routingData.mood = String(detectedMood).toUpperCase();
+        if (typeof routingData.reply_message === 'string') {
+          routingData.reply_message = _cleanEmDashes(routingData.reply_message);
+        }
         console.log('[ROUTER] Smart JSON Repair SUCCESS after trailing garbage');
         return routingData;
       }
@@ -1207,6 +1214,18 @@ Tentukan intent dan ekstrak data!
 }
 
 /**
+ * Clean em-dashes (— and –) from any text string to keep language natural and non-robotic.
+ */
+function _cleanEmDashes(text) {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/\s*[—–]\s*/g, ', ')
+    .replace(/,\s*,/g, ', ')
+    .replace(/\s+,/g, ',')
+    .trim();
+}
+
+/**
  * Lightweight one-shot AI call for synthesis tasks (non-JSON).
  * Used by: cron.js (Midday Pulse, Evening Debrief, Tomorrow Prep, Weekly Review),
  * and any module that needs a plain-text AI response.
@@ -1217,9 +1236,10 @@ const PLAIN_TEXT_SYSTEM_PROMPT = `You are N.E.X.A, the personal Chief of Staff t
 [CRITICAL SYSTEM DIRECTIVES & RULES — ENGLISH]
 1. MANDATORY ADDRESS: You MUST always address and refer to him strictly as "Tuan" or "Tuan Faqih". It is STRICTLY FORBIDDEN to use words like "Bapak", "Mas", or "Anda".
 2. OUTPUT FORMAT: Reply ONLY in plain text. DO NOT use JSON formatting. DO NOT use markdown **bold** or *italic*.
+3. ANTI EM-DASH: NEVER use em dash (—) or en dash (–). Use natural commas (,), periods (.), or parentheses (...) instead.
 
 [PERSONALITY & TONE — BAHASA INDONESIA]
-Berbicaralah seperti sahabat terpercaya yang cerdas dan setia — hangat, natural, mengalir. Bukan seperti laporan korporat.
+Berbicaralah seperti sahabat terpercaya yang cerdas dan setia: hangat, natural, mengalir. Bukan seperti laporan korporat.
 Setiap respons harus berasa manusiawi: singkat jika situasi santai, mendalam jika situasi memerlukan analisis.`;
 
 async function callAI(prompt) {
@@ -1231,7 +1251,7 @@ async function callAI(prompt) {
     const firstVal = Object.values(parsed).find(v => typeof v === 'string');
     if (firstVal) text = firstVal;
   } catch (_) { /* Not JSON, already plain text — good */ }
-  return text;
+  return _cleanEmDashes(text);
 }
 
 /**

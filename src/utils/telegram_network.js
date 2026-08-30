@@ -266,6 +266,12 @@ function formatTelegramHtml(text) {
   if (!text) return '';
   let str = String(text);
 
+  // 0. Eliminate artificial AI em-dashes (— and –) to keep output natural
+  str = str
+    .replace(/\s*[—–]\s*/g, ', ')
+    .replace(/,\s*,/g, ', ')
+    .replace(/\s+,/g, ',');
+
   // 1. Convert common HTML breaks and block elements from LLM to clean linebreaks
   str = str.replace(/<br\s*\/?>/gi, '\n');
   str = str.replace(/<\/?p>/gi, '\n\n');
@@ -273,7 +279,7 @@ function formatTelegramHtml(text) {
   str = str.replace(/<h[1-6]>(.*?)<\/h[1-6]>/gi, '<b>$1</b>\n');
   str = str.replace(/<\/?(ul|ol)>/gi, '\n');
   str = str.replace(/<li>(.*?)<\/li>/gi, '• $1\n');
-  str = str.replace(/<hr\s*\/?>/gi, '\n— — — — —\n');
+  str = str.replace(/<hr\s*\/?>/gi, '\n──────────────\n');
 
   // 2. Convert standard markdown syntax to Telegram HTML
   str = str.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
