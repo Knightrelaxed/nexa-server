@@ -285,7 +285,7 @@ function _buildIdentityContextBlock(identityModel, topicContext) {
 
   if (lines.length === 0) return '';
 
-  return `\n[COGNITIVE IDENTITY MODEL — PEMAHAMAN MENDALAM TUAN FAQIH (Phase 6)]\n` +
+  return `\n[COGNITIVE IDENTITY MODEL — PEMAHAMAN MENDALAM TUAN FAQIH]\n` +
     `Gunakan pemahaman ini untuk merespons dengan sangat kontekstual dan personal:\n` +
     lines.join('\n\n') + '\n';
 }
@@ -986,7 +986,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const _identityContextBlock = _buildIdentityContextBlock(_identityModel, _topicContext);
   if (_identityContextBlock) {
     factsContext += _identityContextBlock;
-    console.log(`[ROUTER] [Phase 6] Identity injection: context=${_topicContext}, layers=${Object.keys(_identityModel).filter(l => _identityContextBlock.includes(l)).join(',')}`);
+    console.log(`[ROUTER] Identity injection: context=${_topicContext}, layers=${Object.keys(_identityModel).filter(l => _identityContextBlock.includes(l)).join(',')}`);
   }
 
   // 3.5. Inject Current Jakarta Time — 100% pure UTC+7 math (immune to OS/HuggingFace timezone bugs)

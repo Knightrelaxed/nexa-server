@@ -279,7 +279,7 @@ Output: teks naratif langsung, BUKAN JSON.
 // Menggantikan format lama yang hanya laporan agenda esok
 // ============================================================
 async function generateEveningBriefing() {
-  console.log('[INTELLIGENCE] Generating Evening Briefing (Phase 6 — Reflective Diary)...');
+  console.log('[INTELLIGENCE] Generating Evening Briefing (Reflective Diary)...');
 
   // Ambil agenda esok
   // [BUG FIX #3] Sebelumnya memanggil getTodaysEvents() — data hari INI yang sudah berlalu.

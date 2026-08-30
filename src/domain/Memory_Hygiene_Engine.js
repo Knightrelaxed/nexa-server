@@ -199,7 +199,7 @@ async function reportStagedForPruning(sendTelegramFn, stats = {}) {
 
 // ORCHESTRATOR
 async function runFullHygienePipeline() {
-  console.log('[HYGIENE] Memory Hygiene Pipeline starting (Phase 9)...');
+  console.log('[HYGIENE] Memory Hygiene Pipeline starting...');
   const startTime = Date.now();
   const stats = { ephemeralArchived: 0, decayAutoArchived: 0, decayStaged: 0, merged: 0, errors: 0 };
   try { const s1 = await runEphemeralSweep(); stats.ephemeralArchived = s1.archived; } catch (e) { console.error('[HYGIENE] Step 1 failed:', e.message); }

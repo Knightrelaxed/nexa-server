@@ -809,7 +809,7 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   console.log('[CRON] 🛡️ Telegram Alert Watchdog active (90s interval).');
-  console.log('[CRON-P6] ✅ Phase 6 Proactive Crons active: Proximity, Midday, Evening, Tomorrow, Weekly Review.');
+  console.log('[CRON-PROACTIVE] ✅ Proactive Crons active: Proximity, Midday, Evening, Tomorrow, Weekly Review.');
   console.log('[CRON-MEM] 🧠 Memory Consolidation active (23:59 WIB).');
   console.log('[CRON-BUDGET] 📊 Budget Recaps active (End of Week & Month).');
   console.log('[CRON-DISCIPLINE] ⚡ Discipline Auto-Escalation active (1m interval).');
