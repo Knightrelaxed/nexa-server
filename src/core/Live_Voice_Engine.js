@@ -105,6 +105,7 @@ class LiveVoiceSession {
     this.currentModel      = LIVE_MODELS.TIER_1_SPEED;
     this.isActive          = false;
     this.isSetupComplete   = false;
+    this.isEndingCall      = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 4;
     this.turnHistory       = [];   // { role: 'user'|'assistant', text: string }
@@ -480,6 +481,17 @@ class LiveVoiceSession {
           // Async persist to nexa_chat_memories (non-blocking — never delay audio)
           supabaseMemories.saveChatMemory('nexa', turnText.slice(0, 800), 'live_call').catch(() => {});
         }
+
+        // If turnComplete is reached AND call is marked to end:
+        if (msg.serverContent.turnComplete && this.isEndingCall) {
+          console.log(`[LIVE-VOICE] 🏁 Closing turn completed. Allowing 2.5s audio buffer drain before ending call...`);
+          setTimeout(() => {
+            if (this.isActive) {
+              this._sendToClient({ type: 'CALL_REPLY_COMPLETE' });
+              this.close();
+            }
+          }, 2500);
+        }
       }
 
       // ── 3. Tool Calls (Function Execution — Parallel Batching) ──────────
@@ -824,6 +836,13 @@ function closeLiveSession(sessionId) {
   }
 }
 
+function markEndingCall() {
+  console.log(`[LIVE-VOICE] 📞 Marking active live sessions to end after current speech turn finishes...`);
+  for (const session of activeSessions.values()) {
+    session.isEndingCall = true;
+  }
+}
+
 function closeAllLiveSessions() {
   console.log(`[LIVE-VOICE] 🛑 Closing all active live voice sessions (${activeSessions.size} active)...`);
   for (const [id, session] of activeSessions.entries()) {
@@ -840,6 +859,8 @@ module.exports = {
   getLiveSession,
   getActiveSessionForClient,
   closeLiveSession,
-  closeAllLiveSessions
+  closeAllLiveSessions,
+  markEndingCall
 };
+
 

@@ -1258,24 +1258,25 @@ async function executeLiveTool(toolName, args = {}) {
       // 23. CALL MANAGEMENT: END CALL / HANG UP
       // ─────────────────────────────────────────────────────────────
       case 'endCall': {
-        console.log(`[LIVE-TOOL] 📞 Autonomous Call Hangup triggered: "${args.reason || 'Requested by user'}"`);
+        console.log(`[LIVE-TOOL] 📞 Autonomous Call Hangup requested: "${args.reason || 'Requested by user'}"`);
 
-        // Send END_CALL command to Android client to terminate FakeCallActivity UI
-        mobileBridgeWs.sendCommand('END_CALL', { reason: args.reason || 'User requested hangup' }, { timeoutMs: 3000 }).catch(() => {});
-
-        // Schedule closing of the Live Voice WebSocket session after final vocal response finishes
+        // Schedule closing of the Live Voice WebSocket session and sending END_CALL after speech finishes
         try {
           const liveVoice = require('./Live_Voice_Engine');
+          liveVoice.markEndingCall();
+
+          // Safety fallback: ensure session terminates after 5 seconds even if turnComplete is delayed
           setTimeout(() => {
+            mobileBridgeWs.sendCommand('END_CALL', { reason: args.reason || 'User requested hangup' }, { timeoutMs: 3000 }).catch(() => {});
             liveVoice.closeAllLiveSessions();
-          }, 2000);
+          }, 5000);
         } catch (e) {
           console.warn('[LIVE-TOOL] Failed to schedule live session close:', e.message);
         }
 
         return {
           status: 'SUCCESS',
-          message: 'Panggilan telepon telah berhasil diakhiri dan ditutup.'
+          message: 'Panggilan telepon siap diakhiri. Ucapkan kalimat perpisahan singkat yang ramah dan hangat kepada Tuan Faqih (contoh: "Baik Tuan Faqih, panggilan saya akhiri. Sampai jumpa.").'
         };
       }
 
