@@ -786,12 +786,35 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
+  // 15. [PHASE 11] Daily Chrono-Consolidation (03:30 WIB)
+  // Mengompresi chat mentah yang berusia > 90 hari menjadi 1 narasi harian bersudut pandang N.E.X.A
+  cron.schedule('30 3 * * *', async () => {
+    console.log('[CRON-CHRONO] Daily Chrono-Consolidation triggered (03:30 WIB)...');
+    try {
+      const chrono = require('../domain/Chrono_Consolidator');
+      const results = await chrono.runDailyChronoConsolidation({ dryRun: false, maxDaysPerRun: 7, olderThanDays: 90 });
+      if (results.savedNarratives > 0) {
+        console.log(`[CRON-CHRONO] Successfully consolidated ${results.savedNarratives} days (${results.totalChatsCompressed} raw chats pruned).`);
+        if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+          const { sendTelegramOutbound } = require('./webhook');
+          await sendTelegramOutbound(
+            `📜 <b>Chrono-Consolidation N.E.X.A</b>\n` +
+            `Berhasil mengompresi <b>${results.savedNarratives} hari</b> obrolan lampau (${results.totalChatsCompressed} pesan mentah) menjadi catatan narasi harian permanen.`
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[CRON-CHRONO] Daily Chrono-Consolidation failed:', e.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   console.log('[CRON] 🛡️ Telegram Alert Watchdog active (90s interval).');
   console.log('[CRON-P6] ✅ Phase 6 Proactive Crons active: Proximity, Midday, Evening, Tomorrow, Weekly Review.');
   console.log('[CRON-MEM] 🧠 Memory Consolidation active (23:59 WIB).');
   console.log('[CRON-BUDGET] 📊 Budget Recaps active (End of Week & Month).');
   console.log('[CRON-DISCIPLINE] ⚡ Discipline Auto-Escalation active (1m interval).');
   console.log('[CRON-HYGIENE] 🧹 Memory Hygiene Pipeline active (Minggu 02:00 WIB).');
+  console.log('[CRON-CHRONO] 📜 Chrono-Consolidation active (03:30 WIB).');
 }
 
 module.exports = { initCronJobs };

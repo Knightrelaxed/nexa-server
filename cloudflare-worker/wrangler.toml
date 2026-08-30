@@ -1,0 +1,4 @@
+name = "nexa-relay"
+main = "nexa-relay.js"
+compatibility_date = "2024-01-01"
+account_id = "461ff3f300cf18e333b420a9f6dd0b27"

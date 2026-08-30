@@ -328,7 +328,7 @@ CRITICAL ROUTING RULES:
     WAJIB evaluasi nada emosi dari pesan Tuan Faqih. Pilih 1 dari: "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD".
     - Jika Tuan Faqih mengeluh error/bug, protes, bingung, atau frustrasi ("argh", "ga sesuai", "kok gini", "looping", "perbaiki"), pilih STRESSED, ANGRY, atau NEGATIVE.
     - Jika sedang bekerja/coding/riset/deploy, pilih FOCUSED atau MOTIVATED.
-14. CHAT HISTORY QUERY RULE: If user asks about past conversations, previous chat times, or what was discussed earlier (e.g., "kapan terakhir aku chat di Telegram?", "kemarin kita bahas apa?", "kapan kita ngobrol"), STRICTLY use intent "NORMAL_CHAT". DO NOT use DIAGNOSE_SYSTEM. Answer directly by inspecting [RIWAYAT OBROLAN].
+14. CHAT & PAST HISTORY QUERY RULE: If user asks about past conversations, past events, purchases, activities, or what was discussed earlier (e.g., "pas 1 Juni kemarin aku beli apa?", "waktu 17 Mei kita ke mana?", "kemarin kita bahas apa?"), use intent "NORMAL_CHAT" and answer DIRECTLY using data from [ARSIP MEMORI EPISODIK MASA LALU] or [RIWAYAT OBROLAN]. CRITICAL: NEVER output placeholder promises like "sebentar saya cek dulu" or "tunggu sebentar" without answering — you MUST synthesize and provide the actual concrete answer immediately in reply_message!
 
 OUTPUT JSON FORMAT:
 {
@@ -959,6 +959,24 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     if (_selectedVault.length > 0) {
       factsContext += `\n[ARSIP DOKUMEN DIGITAL TERSIMPAN (KATALOG RINGKAS — DETAIL DIMUAT ON-DEMAND)]\n${_selectedVault.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
     }
+  }
+
+  // [PHASE 11] Episodic Memory Context Injection (>90 hari)
+  try {
+    const episodicRecall = require('../domain/Episodic_Recall');
+    // Universal Retrospective Query Pattern: Retrospective markers, natural dates (12 months), relative time, or nostalgic questions
+    const RETROSPECTIVE_QUERY_REGEX = /\b(dulu|waktu itu|kala itu|tempo hari|lampau|masa lalu|sebelumnya|pernah|ingat|inget|kenang|riwayat|catatan lama|arsip|obrolan lama|chat lama|percakapan lama|bulan lalu|tahun lalu|minggu lalu|kemarin lusa|waktu kita|pas kita|waktu aku|pas aku|kapan kita|kapan aku)\b|\b\d{1,2}\s+(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|may|jun|jul|ags|agu|sep|okt|nov|des)\b|\b\d+\s+(hari|minggu|bulan|tahun)\s+(lalu|kemarin|yang lalu)\b|\b(202\d-\d{2}-\d{2})\b/i;
+    
+    if (RETROSPECTIVE_QUERY_REGEX.test(textInput)) {
+      const recalled = await episodicRecall.searchMemories(textInput, 3);
+      if (recalled && recalled.length > 0) {
+        const recLines = recalled.map(r => `• [${r.narrative_date} (${r.day_name})]: ${r.narrative}`);
+        factsContext += `\n[ARSIP MEMORI EPISODIK MASA LALU (>90 HARI) — GUNAKAN UNTUK MENJAWAB PERTANYAAN MASA LALU]\n${recLines.join('\n\n')}\n`;
+        console.log(`[ROUTER] Injected ${recalled.length} episodic memory narrative(s) for query: "${textInput.substring(0, 40)}"`);
+      }
+    }
+  } catch (epErr) {
+    // Non-blocking
   }
 
   // [PHASE 6] 3.5. Build Targeted Identity Layer Injection

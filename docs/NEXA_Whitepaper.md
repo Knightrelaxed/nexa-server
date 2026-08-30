@@ -1787,7 +1787,151 @@ Beroperasi 24/7 di atas **Azure Virtual Machine** (`Standard_B2ats_v2`, Jakarta 
 
 ---
 
-Dengan integrasi **Nexa Mobile Bridge** dan **Unified Master OAuth 2.0** ini, N.E.X.A resmi bertransformasi dari sekadar kecerdasan digital menjadi entitas hibrida yang memiliki kehadiran nyata dalam kehidupan sehari-hari Tuan Faqih Hidayatulloh.
+## BAB 13: DILEMA KOGNITIF ENTERPRISE — PROMPT BLOAT, ATTENTION SALIENCE & ARSITEKTUR LEAN ROUTER
+
+### 13.1 The Enterprise Frontier: Dilema Antara "Full Context Awareness" vs "Prompt Bloat"
+
+Dalam evolusi menuju asisten AI otonom (*Chief of Staff*), sistem dihadapkan pada salah satu tantangan rekayasa kecerdasan buatan paling rumit di tingkat *frontier/enterprise*: **Trade-off antara Kesadaran Konteks Total (*Omnipresent Context*) dan Efisiensi Komputasi (*Inference & Token Efficiency*)**.
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        DILEMA KOGNITIF: MEGA-PROMPT vs SLIM-ROUTER                     │
+├───────────────────────────────────────────┬────────────────────────────────────────────┤
+│ EKSTREM A: MEGA-PROMPT MONOLITIK          │ EKSTREM B: AGGRESSIVE FILTERING (SLIM)     │
+├───────────────────────────────────────────┼────────────────────────────────────────────┤
+│ • Injeksi SEMUA data (Kalender, Finansial,│ • Menyaring ketat data sebelum ke LLM      │
+│   Profil, Identitas, Vault, Akun, Chat).  │ • Prompt sangat kecil (< 1.500 char)       │
+│ • Ukuran Prompt: ~45.000 char (11K Token).│ • Respon instan (0.3s), hemat kuota        │
+│ ⚠️ Resiko: Cognitive overload, instruction │ ⚠️ Resiko: "Kebutaan Konteks", gagal paham │
+│   neglect, rate-limit 429, latensi tinggi.│   pesan implisit, hilang sentuhan proaktif.│
+└───────────────────────────────────────────┴────────────────────────────────────────────┘
+```
+
+#### Anatomi Ketimpangan Payload Saat Ini:
+Pada arsitektur `AI_Router.js`, setiap pesan singkat (misal: *"Beli es teh 5rb"* atau *"Pagi Nexa"* yang hanya berukuran ~15 karakter) direspons dengan menyusun prompt raksasa sebesar **~45.000 karakter (~11.000 token)**:
+1. **Aturan Dasar & Persona (`NEXA_PERSONALITY`):** ~12.000 karakter.
+2. **Spesifikasi Skema 15 Intent & 27 Aksi Device:** ~15.000 karakter.
+3. **Katalog Kategori Keuangan Pemasukan & Pengeluaran (100+ entitas):** ~4.500 karakter.
+4. **Daftar Akun Bank/Dompet & 3 Transaksi Terakhir:** ~1.500 karakter.
+5. **Kalender Referensi 7 Hari & Agenda Mendatang:** ~1.200 karakter.
+6. **Profil Pengguna, Core Identity, & 7-Layer Cognitive Model:** ~6.500 karakter.
+7. **Riwayat Chat History (12–20 Pesan):** ~8.000 karakter.
+
+Rasio efisiensi muatan pesan pengguna terhadap konteks yang disodorkan adalah **1 : 3.000**. Ini membebani *Tokens Per Minute* (TPM) pada penyedia inference cepat (Cerebras/Groq) dan menimbulkan fenomena *Lost in the Middle* (penurunan daya tangkap LLM terhadap instruksi di tengah teks panjang).
+
+---
+
+### 13.2 Paradigma "Asisten Manusiawi Sejati": Kesegaran Data vs Ketepatan Momen (*Salience*)
+
+Merujuk pada wawasan fundamental dalam perancangan agen kognitif:
+
+> *"Proaktif dan manusiawi tidak sama dengan melakukan fetch dan dump semua data di setiap pesan. Asisten pribadi manusia yang andal tidak menghitung ulang saldo rekening dan mengecek seluruh agenda setiap kali Anda menyapa 'Pagi'. Yang membuatnya terasa 'selalu ingat' adalah ia sudah memiliki **Working Mental Model** di kepalanya, dan ia baru menyuarakan informasi tersebut ketika momennya memang **Salient (Relevan dan Penting)**."*
+
+Rasa proaktif dan kecerdasan manusiawi bersumber dari dua pilar yang terpisah:
+1. **Kesegaran Informasi (*Data Freshness*):**
+   Dicapai melalui sinkronisasi latar belakang (*asynchronous background sync*) dan *short-term RAM cache*, bukan dengan query langsung ke database di setiap putaran obrolan.
+2. **Ketepatan Momen (*Salience Logic*):**
+   Kemampuan kognitif untuk menentukan **kapan suatu data layak dimunculkan ke ruang kesadaran**, bukan menumpahkan seluruh isi memori ke dalam satu prompt.
+
+---
+
+### 13.3 Analisis Kritis: 5 Titik Rawan (*Failure Modes*) & Mitigasi
+
+Penyederhanaan atau penyaringan prompt yang tidak dirancang dengan hati-hati dapat memicu titik kegagalan (*vulnerabilities*) baru:
+
+```
+               ┌────────────────────────────────────────────────────────────┐
+               │         5 TITIK RAWAN ARSITEKTUR KOGNITIF & MITIGASINYA    │
+               └─────────────────────────────┬──────────────────────────────┘
+                                             │
+      ┌──────────────────┬───────────────────┼──────────────────┬──────────────────┐
+      ▼                  ▼                   ▼                  ▼                  ▼
+[Kebutaan Konteks]  [State Drift]       [Race Condition]   [Kehilangan     [Overhead & Bug
+ (False Negative)    (Memori Basi)       (Async Amnesia)   Proaktivitas]   Maintenance]
+   Pesan implisit     Data Web/HP beda    Pesan beruntun    Tidak ada korelasi  State sync
+   kehilangan tool.   dgn cache RAM.      baca state lama.  lintas-domain.      makin rumit.
+```
+
+1. **Kebutaan Konteks pada Pesan Implisit (*False Negative Gating*):**
+   - *Masalah:* Jika filter kata kunci/heuristik menyaring konteks sebelum ke LLM, pesan multitafsir seperti *"Tolong pisahin yang kemarin beli di minimarket buat jajan sama kosan"* akan kehilangan daftar kategori keuangan karena tidak menyebut angka.
+   - *Mitigasi:* Menggunakan **Micro-Summary Injection** (menyuntikkan ringkasan 1 baris tentang saldo dan agenda aktif, bukan membuang konteks sama sekali) serta fallback **Native Tool Calling**.
+2. **Kerentanan Memori Basi (*Working Memory Drift*):**
+   - *Masalah:* Snapshot status di RAM bisa tertinggal jika data diubah dari luar (misal input via Next.js Web Dashboard atau Google Calendar langsung).
+   - *Mitigasi:* Event-driven cache invalidation dan TTL pendek (3–5 menit) untuk data dinamis.
+3. **Race Condition pada Pembelajaran Asinkron (*Async Amnesia*):**
+   - *Masalah:* Jika ekstraksi preferensi baru dilakukan secara asinkron di background, pesan susulan yang dikirim 2 detik kemudian bisa dieksekusi dengan memori lama.
+   - *Mitigasi:* **Write-Through In-Memory Cache**: preferensi yang terdeteksi langsung memperbarui state RAM secara instan sebelum commit database selesai.
+4. **Kehilangan Serendipitas Proaktif Lintas Domain:**
+   - *Masalah:* Pemisahan domain yang terlalu kaku membuat AI kehilangan celetukan cerdas (misal: mengaitkan rasa lapar Tuan dengan sisa budget harian dan jadwal kuliah 30 menit lagi).
+   - *Mitigasi:* Mempertahankan *Global Situational Awareness Context* (~50 token) yang merangkum kesehatan finansial dan waktu secara konstan.
+5. **Kerapuhan Tumpukan Regex (*Brittle Heuristics Anti-Pattern*):**
+   - *Masalah:* Menumpuk ratusan baris kamus kata kasar, sinonim, dan stemmer bahasa Indonesia membuat sistem mudah patah oleh typo atau bahasa gaul baru.
+   - *Mitigasi:* Beralih penuh ke **Semantic Vector Embeddings (Cosine Similarity)** dan **Native Function Calling LLM**.
+
+---
+
+### 13.4 Blueprint Arsitektur v3.2: *The Lean Cognitive Router*
+
+Berdasarkan *Agentic Design Patterns* (Google Cloud / Springer) dan evaluasi di atas, N.E.X.A v3.2 mengadopsi arsitektur Router modular:
+
+```
+[ Pesan Masuk Tuan Faqih ]
+            │
+            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  1. COMPACT SITUATIONAL STATE (Working Memory di RAM ~0ms)  │
+│  Snapshot ringkas kesadaran situasi (~50 token):            │
+│  - Jam/Hari: Selasa, 14:30 WIB                              │
+│  - Status: Di Kampus / Mode Fokus                           │
+│  - Situasi: Baru mencatat makan siang, agenda 16:00 Kuliah  │
+│  - Pending: (Transaksi/Jadwal tertunda jika ada)            │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  2. NATIVE FUNCTION CALLING & SEMANTIC TOOL BINDING         │
+│  Model secara native memilih alat yang dibutuhkan:          │
+│  • record_transaction()                                     │
+│  • schedule_calendar_event()                                │
+│  • manage_task()                                            │
+│  • control_mobile_device()                                  │
+│  (Mengeliminasi Mega-JSON Schema di system prompt!)         │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  3. SINGLE-TURN UNIFIED EXECUTION (~4.000 char prompt)      │
+│  • Model: Cerebras Gemma 31B / Gemini 3.7 Flash             │
+│  • Latensi: 0.3s – 0.6s (Super Cepat, Bebas Rate-Limit)     │
+│  • Menghasilkan: Tindakan Presisi + Balasan Bahasa Alami    │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼ (Asinkron di Latar Belakang)
+┌─────────────────────────────────────────────────────────────┐
+│  4. ASYNC PASSIVE LEARNING WORKER                           │
+│  Ekstraksi fakta baru & konsolidasi memori dieksekusi       │
+│  di latar belakang tanpa menahan jalur pesan utama.         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 13.5 Matriks Evaluasi & Target Performa
+
+| Parameter Teknis | Arsitektur v3.1 (Lama) | Arsitektur v3.2 (Lean Cognitive) |
+|---|---|---|
+| **Ukuran Prompt Rata-rata** | ~45.000 karakter | **~4.000 – 6.500 karakter** (📉 -85%) |
+| **Konsumsi Token per Pesan** | ~11.000 token | **~1.000 – 1.500 token** (📉 -88%) |
+| **Latensi Respons (Round-Trip)** | 2.5 – 4.2 detik | **⚡ 0.4 – 0.8 detik** |
+| **Resiko Rate-Limit (Groq/Cerebras)**| Tinggi (mendekati 12K TPM) | **🛡️ Nol (Sangat Aman)** |
+| **Ketahanan terhadap Typo/Slang** | Rendah (Ketergantungan Regex) | **🎯 Tinggi (Native Semantic & Embeddings)** |
+| **Kepribadian & Proaktivitas** | Sering kaku terbebani data | **❤️ Alami, fokus, dan relevan** |
+
+---
+
+Dengan formalisasi **Bab 13** ini ke dalam Whitepaper, N.E.X.A mengukuhkan komitmen desainnya: menjadi asisten cerdas yang tidak hanya tangguh dalam otomasi fisik dan finansial, tetapi juga memiliki arsitektur kognitif yang ramping, elegan, dan setara dengan standar riset AI enterprise global.
+
+---
 
 ---
 **~ TAMAT ~**

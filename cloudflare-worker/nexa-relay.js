@@ -36,6 +36,44 @@ export default {
     const url = new URL(request.url);
 
     // ================================================================
+    // MODE 0: GOOGLE AI STUDIO / GEMINI GATEWAY
+    // Proxy otomatis untuk bypass geo-blocking Google AI Studio & Gemma
+    // ================================================================
+    if (url.pathname.startsWith('/v1beta') || url.pathname.startsWith('/v1')) {
+      try {
+        const targetGoogleUrl = `https://generativelanguage.googleapis.com${url.pathname}${url.search}`;
+        const forwardHeaders = new Headers();
+        forwardHeaders.set('Content-Type', request.headers.get('Content-Type') || 'application/json');
+        
+        const googKey = request.headers.get('x-goog-api-key') || request.headers.get('Authorization');
+        if (googKey) {
+          forwardHeaders.set('x-goog-api-key', googKey.replace(/^Bearer\s+/i, ''));
+        }
+
+        const bodyData = (request.method !== 'GET' && request.method !== 'HEAD')
+          ? await request.arrayBuffer()
+          : undefined;
+
+        const googleResp = await fetch(targetGoogleUrl, {
+          method: request.method,
+          headers: forwardHeaders,
+          body: bodyData
+        });
+
+        const respHeaders = new Headers(corsHeaders());
+        const ct = googleResp.headers.get('Content-Type');
+        if (ct) respHeaders.set('Content-Type', ct);
+
+        return new Response(googleResp.body, {
+          status: googleResp.status,
+          headers: respHeaders
+        });
+      } catch (gErr) {
+        return jsonResponse({ ok: false, error: `Google Gateway error: ${gErr.message}` }, 502);
+      }
+    }
+
+    // ================================================================
     // MODE 2: POST /transcribe
     // Download audio dari Telegram → kirim ke Groq Whisper → return teks
     // N.E.X.A tidak perlu menerima file biner sama sekali!
