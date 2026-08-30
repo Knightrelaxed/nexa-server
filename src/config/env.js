@@ -30,7 +30,7 @@ module.exports = {
   GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2,
   GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3,
   GEMINI_API_KEY_4: process.env.GEMINI_API_KEY_4,
-  GEMINI_LIVE_VOICE: process.env.GEMINI_LIVE_VOICE || 'Pegasus',
+  GEMINI_LIVE_VOICE: process.env.GEMINI_LIVE_VOICE || 'Lyra',
 
   // Groq Llama Accounts (1 to 4)
   GROQ_API_KEY_1: process.env.GROQ_API_KEY_1,
