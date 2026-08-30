@@ -218,7 +218,7 @@ class LiveVoiceSession {
       ] = await Promise.all([
         withTimeout(supabaseMemories.getPersonalFacts(), 3000, { userProfile: [], coreIdentity: [], vaultItems: [] }),
         withTimeout(
-          supabaseMemories.getSelfModelByLayer ? supabaseMemories.getSelfModelByLayer('BEHAVIORAL_INSIGHT') : Promise.resolve([]),
+          supabaseMemories.getSelfModel ? supabaseMemories.getSelfModel(4) : Promise.resolve([]),
           2000, []
         ),
         withTimeout(
@@ -701,6 +701,42 @@ class LiveVoiceSession {
       .map(t => `${t.role === 'user' ? 'Tuan Faqih' : 'N.E.X.A'}: ${t.text}`)
       .join('\n');
 
+    // Helper to robustly parse extracted facts across JSON array, single string, or bullet list
+    const parseLearnedFacts = (rawOutput) => {
+      if (!rawOutput) return [];
+      const cleanStr = String(rawOutput || '').trim().replace(/^```json|```$/gi, '').trim();
+      if (!cleanStr || cleanStr.length < 5 || cleanStr === '[]' || cleanStr.toLowerCase() === 'none') return [];
+
+      // 1. Try JSON Array parsing
+      try {
+        const firstBracket = cleanStr.indexOf('[');
+        const lastBracket  = cleanStr.lastIndexOf(']');
+        if (firstBracket !== -1 && lastBracket > firstBracket) {
+          const parsed = JSON.parse(cleanStr.substring(firstBracket, lastBracket + 1));
+          if (Array.isArray(parsed)) {
+            return parsed
+              .map(s => String(s || '').trim().replace(/^[-*•0-9.)\s]+/, ''))
+              .filter(s => s.length > 5 && !s.toLowerCase().includes('tidak ada'));
+          }
+        }
+      } catch (_) {}
+
+      // 2. If bullet list or multi-line output
+      if (cleanStr.includes('\n')) {
+        return cleanStr
+          .split('\n')
+          .map(l => l.replace(/^[-*•0-9.)\s]+/, '').trim())
+          .filter(l => l.length > 5 && !l.toLowerCase().startsWith('tidak ada') && !l.startsWith('[') && !l.startsWith('{'));
+      }
+
+      // 3. Single fact string (e.g. from callAI)
+      if (cleanStr.length > 5 && !cleanStr.startsWith('{') && !cleanStr.toLowerCase().includes('tidak ada fakta')) {
+        return [cleanStr.replace(/^[-*•0-9.)\s]+/, '').trim()];
+      }
+
+      return [];
+    };
+
     // ── B1. Extract learned_user_facts about Tuan Faqih ─────────────────
     try {
       const userFactsPrompt = `Berikut adalah transkrip percakapan telepon suara antara Tuan Faqih dan N.E.X.A:
@@ -716,19 +752,9 @@ Balas HANYA dengan JSON array string. Contoh:
 Jika tidak ada fakta baru, balas dengan: []`;
 
       const userFactsRaw = await callAI(userFactsPrompt);
+      const userFacts = parseLearnedFacts(userFactsRaw);
 
-      // Parse JSON array safely
-      let userFacts = [];
-      try {
-        const cleanStr = String(userFactsRaw || '').trim().replace(/^```json|```$/gi, '').trim();
-        const firstBracket = cleanStr.indexOf('[');
-        const lastBracket  = cleanStr.lastIndexOf(']');
-        if (firstBracket !== -1 && lastBracket > firstBracket) {
-          userFacts = JSON.parse(cleanStr.substring(firstBracket, lastBracket + 1));
-        }
-      } catch (_) {}
-
-      if (Array.isArray(userFacts) && userFacts.length > 0) {
+      if (userFacts.length > 0) {
         console.log(`[LIVE-VOICE] 🧠 Passive Learning: ${userFacts.length} user facts detected. Saving via Supersede Engine...`);
         for (const fact of userFacts) {
           if (typeof fact === 'string' && fact.trim().length > 5) {
@@ -760,18 +786,9 @@ Balas HANYA dengan JSON array string. Contoh:
 Jika tidak ada, balas dengan: []`;
 
       const coreIdRaw = await callAI(coreIdPrompt);
+      const coreIds = parseLearnedFacts(coreIdRaw);
 
-      let coreIds = [];
-      try {
-        const cleanStr = String(coreIdRaw || '').trim().replace(/^```json|```$/gi, '').trim();
-        const firstBracket = cleanStr.indexOf('[');
-        const lastBracket  = cleanStr.lastIndexOf(']');
-        if (firstBracket !== -1 && lastBracket > firstBracket) {
-          coreIds = JSON.parse(cleanStr.substring(firstBracket, lastBracket + 1));
-        }
-      } catch (_) {}
-
-      if (Array.isArray(coreIds) && coreIds.length > 0) {
+      if (coreIds.length > 0) {
         console.log(`[LIVE-VOICE] 🧠 Passive Learning: ${coreIds.length} N.E.X.A identity facts. Saving...`);
         for (const fact of coreIds) {
           if (typeof fact === 'string' && fact.trim().length > 5) {
@@ -797,16 +814,16 @@ Balas HANYA dengan 1 kalimat refleksi diri N.E.X.A (atau balas "NONE" jika tidak
 Contoh: "N.E.X.A berhasil mengeksekusi pencatatan keuangan dan kalender via suara dalam satu sesi telepon tanpa hambatan."`;
 
       const selfReflection = await callAI(selfModelPrompt);
-      const cleanReflection = String(selfReflection || '').trim();
+      const cleanReflection = String(selfReflection || '').trim().replace(/^```json|```$/gi, '').trim();
 
-      if (cleanReflection && cleanReflection !== 'NONE' && cleanReflection.length > 10) {
+      if (cleanReflection && cleanReflection !== 'NONE' && !cleanReflection.toLowerCase().includes('tidak ada') && cleanReflection.length > 10) {
         await deduplicateAndSaveSelfFact(
           cleanReflection,
-          'BEHAVIORAL_INSIGHT',
-          'LIVE_CALL_REFLECTION',
+          'COMMUNICATION_STYLE',
+          'PASSIVE_LEARNING',
           `Live call session ${this.sessionId} — ${durationSec}s`
         ).catch(() => {});
-        console.log(`[LIVE-VOICE] ✅ Self-model reflection saved: ${cleanReflection.substring(0, 80)}...`);
+        console.log(`[LIVE-VOICE] ✅ Self-model reflection saved in COMMUNICATION_STYLE: ${cleanReflection.substring(0, 80)}...`);
       }
     } catch (err) {
       console.warn(`[LIVE-VOICE] Self-model update error:`, err.message);
