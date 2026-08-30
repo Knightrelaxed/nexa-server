@@ -387,7 +387,7 @@ class LiveVoiceSession {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: 'Fenrir'
+                voiceName: env.GEMINI_LIVE_VOICE || 'Lyra'
               }
             }
           }
