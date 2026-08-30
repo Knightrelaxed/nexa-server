@@ -824,9 +824,22 @@ function closeLiveSession(sessionId) {
   }
 }
 
+function closeAllLiveSessions() {
+  console.log(`[LIVE-VOICE] 🛑 Closing all active live voice sessions (${activeSessions.size} active)...`);
+  for (const [id, session] of activeSessions.entries()) {
+    try {
+      session._sendToClient({ type: 'CALL_REPLY_COMPLETE' });
+      session.close();
+    } catch (_) {}
+  }
+  activeSessions.clear();
+}
+
 module.exports = {
   startLiveSession,
   getLiveSession,
   getActiveSessionForClient,
-  closeLiveSession
+  closeLiveSession,
+  closeAllLiveSessions
 };
+

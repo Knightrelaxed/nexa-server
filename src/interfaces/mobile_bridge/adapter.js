@@ -321,6 +321,14 @@ class NexaBridgeAdapter {
     }, { timeoutMs: 12000 });
   }
 
+  async endCall() {
+    try {
+      const liveVoice = require('../../core/Live_Voice_Engine');
+      liveVoice.closeAllLiveSessions();
+    } catch (_) {}
+    return this.execute('END_CALL', {}, { timeoutMs: 3000 });
+  }
+
   async playAudioStream(audioBase64, format = 'PCM_16BIT_16KHZ_MONO') {
     return this.execute('PLAY_AUDIO_STREAM', {
       audio_base64: audioBase64,

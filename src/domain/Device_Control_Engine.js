@@ -377,6 +377,21 @@ class DeviceControlEngine {
           };
         }
 
+        case 'END_CALL':
+        case 'HANGUP':
+        case 'CLOSE_CALL': {
+          result = await bridge.execute('END_CALL', data, { timeoutMs: 3000 });
+          try {
+            const liveVoice = require('../core/Live_Voice_Engine');
+            liveVoice.closeAllLiveSessions();
+          } catch (_) {}
+          if (!result.success && result.status === 'OFFLINE') return this._formatOfflineResult(rawAction);
+          return {
+            success: true,
+            message: `📞 Panggilan telepon telah berhasil diakhiri dan ditutup.`
+          };
+        }
+
         // ── 7. Geofencing ──────────────────────────────────────────────
         case 'SET_GEOFENCE': {
           result = await bridge.execute('SET_GEOFENCE', data);

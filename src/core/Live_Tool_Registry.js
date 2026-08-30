@@ -432,11 +432,11 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 20. HARDWARE: CONTROL DEVICE ─────────────────────────────
   {
     name: 'controlDeviceHardware',
-    description: 'Mengontrol perangkat keras HP Samsung Tuan Faqih (senter, volume, DND, kunci layar, baterai, GPS, buka app, cari HP, foto, screenshot).',
+    description: 'Mengontrol perangkat keras HP Samsung Tuan Faqih (senter, volume, DND, kunci layar, baterai, GPS, buka app, cari HP, foto, screenshot, matikan panggilan).',
     parameters: {
       type: 'OBJECT',
       properties: {
-        action:      { type: 'STRING', description: '"TOGGLE_FLASHLIGHT", "SET_VOLUME", "FORCE_DND", "LOCK_SCREEN", "GET_BATTERY_STATUS", "GET_LOCATION", "LAUNCH_APP", "PLAY_RINGTONE", "STOP_MEDIA", "TAKE_PHOTO", "TAKE_SCREENSHOT", "GO_HOME_SCREEN", "SHOW_RECENTS".' },
+        action:      { type: 'STRING', description: '"TOGGLE_FLASHLIGHT", "SET_VOLUME", "FORCE_DND", "LOCK_SCREEN", "GET_BATTERY_STATUS", "GET_LOCATION", "LAUNCH_APP", "PLAY_RINGTONE", "STOP_MEDIA", "TAKE_PHOTO", "TAKE_SCREENSHOT", "GO_HOME_SCREEN", "SHOW_RECENTS", "END_CALL".' },
         enabled:     { type: 'BOOLEAN', description: 'true/false untuk senter atau DND.' },
         volumeLevel: { type: 'NUMBER', description: 'Tingkat volume 0–100.' },
         packageName: { type: 'STRING', description: 'Package name aplikasi untuk LAUNCH_APP.' },
@@ -446,7 +446,19 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   },
 
-  // ── 21. WEB SEARCH ────────────────────────────────────────────
+  // ── 21. CALL: END CALL / HANG UP ──────────────────────────────
+  {
+    name: 'endCall',
+    description: 'Mematikan, mengakhiri, atau menutup sesi panggilan telepon secara otomatis. Panggil fungsi ini jika Tuan Faqih meminta untuk menutup/mematikan telepon ("sudah ya", "tutup teleponnya", "matikan panggilannya", "akhiri panggilan", "sampai jumpa", "bye nexa", "cukup nexa"), atau setelah Anda selesai mengucapkan salam perpisahan.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        reason: { type: 'STRING', description: 'Alasan penutupan panggilan. Contoh: "User requested hangup", "Conversation completed".' }
+      }
+    }
+  },
+
+  // ── 22. WEB SEARCH ────────────────────────────────────────────
   {
     name: 'searchWeb',
     description: 'Mencari informasi terkini dari internet secara cepat (berita, cuaca, kurs, pengetahuan umum, jadwal sholat).',
@@ -1239,6 +1251,31 @@ async function executeLiveTool(toolName, args = {}) {
             : hasWarning
               ? 'Ada beberapa peringatan (warning) dalam log, tapi server berjalan stabil.'
               : 'Log sistem bersih. Semua proses berjalan normal.'
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 23. CALL MANAGEMENT: END CALL / HANG UP
+      // ─────────────────────────────────────────────────────────────
+      case 'endCall': {
+        console.log(`[LIVE-TOOL] 📞 Autonomous Call Hangup triggered: "${args.reason || 'Requested by user'}"`);
+
+        // Send END_CALL command to Android client to terminate FakeCallActivity UI
+        mobileBridgeWs.sendCommand('END_CALL', { reason: args.reason || 'User requested hangup' }, { timeoutMs: 3000 }).catch(() => {});
+
+        // Schedule closing of the Live Voice WebSocket session after final vocal response finishes
+        try {
+          const liveVoice = require('./Live_Voice_Engine');
+          setTimeout(() => {
+            liveVoice.closeAllLiveSessions();
+          }, 2000);
+        } catch (e) {
+          console.warn('[LIVE-TOOL] Failed to schedule live session close:', e.message);
+        }
+
+        return {
+          status: 'SUCCESS',
+          message: 'Panggilan telepon telah berhasil diakhiri dan ditutup.'
         };
       }
 
