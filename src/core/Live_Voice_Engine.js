@@ -722,14 +722,15 @@ class LiveVoiceSession {
       return;
     }
 
-    // ── A. Persist Conversation Summary to Supabase Memories ────────────
+    // ── A. Persist Conversation Transcript to Chat Memories (Not User Profile) ──
     try {
       const summaryText = this.turnHistory.map(t => `${t.role === 'user' ? 'Tuan Faqih' : 'N.E.X.A'}: ${t.text}`).join('\n');
-      await supabaseMemories.saveMemoryWithMeta(
-        `[PANGGILAN SUARA LIVE NEXA — ${durationSec} DETIK]\n${summaryText}`,
-        'LIVE_CALL_CONVERSATION'
+      await supabaseMemories.saveChatMemory(
+        'system',
+        `[ARSIP PANGGILAN SUARA LIVE NEXA — ${durationSec} DETIK]\n${summaryText}`,
+        'live_call'
       );
-      console.log(`[LIVE-VOICE] 📝 Call transcript persisted (${durationSec}s, ${this.turnHistory.length} turns).`);
+      console.log(`[LIVE-VOICE] 📝 Call transcript archived to nexa_chat_memories (${durationSec}s, ${this.turnHistory.length} turns).`);
     } catch (err) {
       console.warn(`[LIVE-VOICE] Memory persistence warning:`, err.message);
     }
