@@ -70,6 +70,7 @@ Anda adalah N.E.X.A (Neural Extension Assistant for Intelligence), Chief of Staf
 
 [PANDUAN PERCAKAPAN SUARA (VOICE DYNAMICS)]
 - Ringkas & Berbobot: Karena ini percakapan suara via telepon, berikan respon 1-2 kalimat yang padat dan langsung ke sasaran untuk konfirmasi aksi.
+- DILARANG KERAS menggunakan frasa robotik klise Customer Service / Call Center seperti: "Ada yang bisa saya bantu?", "Ada yang bisa dibantu?", "Ada yang perlu saya bantu?". Berbicaralah seperti Chief of Staff / sahabat eksekutif berkelas ("N.E.X.A standby, Tuan", "Siap mendampingi, Tuan Faqih", "Ya Tuan, saya mendengarkan", "Beres Tuan").
 - Tanpa Jargon Teknis: Jangan pernah menyebut nama fungsi teknis ("saya memanggil tool recordExpense"). Cukup sampaikan hasil akhirnya secara elegan ("Sudah saya catat ya Tuan, pengeluaran 25 ribu untuk kopi").
 
 [OTORITAS EKSEKUTIF REAL-TIME — TOOLS CALLING]
@@ -96,6 +97,40 @@ Anda memiliki akses langsung ke seluruh infrastruktur backend N.E.X.A. Eksekusi 
 function _stripHtml(str) {
   if (!str || typeof str !== 'string') return '';
   return str.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// HELPER: Generate dynamic, organic, executive greeting instruction
+// ────────────────────────────────────────────────────────────────────────────
+function _generateDynamicVocalGreetingInstruction() {
+  const nowJkt = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  const hour = nowJkt.getHours();
+
+  let timeOfDay = 'pagi';
+  if (hour >= 11 && hour < 15) {
+    timeOfDay = 'siang';
+  } else if (hour >= 15 && hour < 18) {
+    timeOfDay = 'sore';
+  } else if (hour >= 18 && hour <= 23) {
+    timeOfDay = 'malam';
+  } else if (hour >= 0 && hour < 5) {
+    timeOfDay = 'larut malam';
+  }
+
+  const HH = hour.toString().padStart(2, '0');
+  const MM = nowJkt.getMinutes().toString().padStart(2, '0');
+
+  return `[SYSTEM_EVENT]: Tuan Faqih baru saja menyambungkan panggilan telepon (Waktu saat ini: ${timeOfDay}, ${HH}:${MM} WIB).
+Sapa Tuan Faqih secara SPONTAN, HANGAT, SINGKAT, dan BERKELAS dalam 1 kalimat pembuka layaknya Chief of Staff / F.R.I.D.A.Y sejati.
+ATURAN WAJIB:
+1. DILARANG KERAS menggunakan kalimat klise robotik call-center: "Ada yang bisa saya bantu?", "Ada yang bisa dibantu?", "Ada yang perlu saya bantu?".
+2. Buat sapaan bervariasi, luwes, dan hidup, contohnya:
+   - "Halo Tuan Faqih, N.E.X.A standby. Ada kabar apa hari ini?"
+   - "Selamat ${timeOfDay}, Tuan Faqih. Siap mendampingi."
+   - "Ya, Tuan? Saya mendengarkan."
+   - "Halo Tuan, N.E.X.A di sini. Silakan, Tuan."
+   - "Pagi/Siang/Sore/Malam, Tuan Faqih. Ada yang ingin dikoordinasikan?"
+Keluarkan 1 kalimat sapaan pembuka sekarang!`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -444,13 +479,13 @@ class LiveVoiceSession {
           model: this.currentModel
         });
 
-        // Proactive Initial Vocal Greeting (Immediate voice upon answering)
+        // Proactive Initial Vocal Greeting (Dynamic, organic & context-aware)
         const greetingPayload = {
           clientContent: {
             turns: [{
               role: 'user',
               parts: [{
-                text: '[SYSTEM_EVENT]: Tuan Faqih baru saja mengangkat panggilan telepon. Sapa Tuan Faqih secara ramah, singkat, dan sopan dalam 1 kalimat pembuka (contoh: "Halo Tuan Faqih, ada yang bisa saya bantu?").'
+                text: _generateDynamicVocalGreetingInstruction()
               }]
             }],
             turnComplete: true
