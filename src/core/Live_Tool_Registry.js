@@ -432,11 +432,11 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 20. HARDWARE: CONTROL DEVICE ─────────────────────────────
   {
     name: 'controlDeviceHardware',
-    description: 'Mengontrol perangkat keras HP Samsung Tuan Faqih (senter, volume, DND, kunci layar, baterai, GPS, buka app, cari HP, foto, screenshot, matikan panggilan).',
+    description: 'Mengontrol perangkat keras HP Samsung Tuan Faqih (senter, volume, DND, kunci layar, baterai, GPS, buka app, cari HP, foto, screenshot).',
     parameters: {
       type: 'OBJECT',
       properties: {
-        action:      { type: 'STRING', description: '"TOGGLE_FLASHLIGHT", "SET_VOLUME", "FORCE_DND", "LOCK_SCREEN", "GET_BATTERY_STATUS", "GET_LOCATION", "LAUNCH_APP", "PLAY_RINGTONE", "STOP_MEDIA", "TAKE_PHOTO", "TAKE_SCREENSHOT", "GO_HOME_SCREEN", "SHOW_RECENTS", "END_CALL".' },
+        action:      { type: 'STRING', description: '"TOGGLE_FLASHLIGHT", "SET_VOLUME", "FORCE_DND", "LOCK_SCREEN", "GET_BATTERY_STATUS", "GET_LOCATION", "LAUNCH_APP", "PLAY_RINGTONE", "STOP_MEDIA", "TAKE_PHOTO", "TAKE_SCREENSHOT", "GO_HOME_SCREEN", "SHOW_RECENTS".' },
         enabled:     { type: 'BOOLEAN', description: 'true/false untuk senter atau DND.' },
         volumeLevel: { type: 'NUMBER', description: 'Tingkat volume 0–100.' },
         packageName: { type: 'STRING', description: 'Package name aplikasi untuk LAUNCH_APP.' },
@@ -449,7 +449,7 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 21. CALL: END CALL / HANG UP ──────────────────────────────
   {
     name: 'endCall',
-    description: 'Mematikan, mengakhiri, atau menutup sesi panggilan telepon secara otomatis. Panggil fungsi ini jika Tuan Faqih meminta untuk menutup/mematikan telepon ("sudah ya", "tutup teleponnya", "matikan panggilannya", "akhiri panggilan", "sampai jumpa", "bye nexa", "cukup nexa"), atau setelah Anda selesai mengucapkan salam perpisahan.',
+    description: 'Mengakhiri atau menutup sesi panggilan telepon saat Tuan Faqih berpamitan atau meminta mematikan panggilan ("sudah ya", "tutup teleponnya", "matikan panggilannya", "akhiri panggilan", "sampai jumpa", "bye nexa", "cukup nexa"). PANGGIL TOOL INI dan Anda WAJIB mengucapkan salam perpisahan yang hangat dan ramah ("Baik Tuan Faqih, panggilan saya akhiri. Sampai jumpa!") dalam kalimat suara Anda.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -1175,6 +1175,10 @@ async function executeLiveTool(toolName, args = {}) {
           };
         }
 
+        if (action === 'END_CALL' || action === 'HANGUP') {
+          return await executeLiveTool('endCall', args);
+        }
+
         // Generic Passthrough for other Hardware actions (PLAY_RINGTONE, TAKE_PHOTO, TAKE_SCREENSHOT, GO_HOME_SCREEN, etc.)
         const genericRes = await _withToolTimeout(
           mobileBridgeWs.sendCommand(action, args, { timeoutMs: 4000 }),
@@ -1265,18 +1269,18 @@ async function executeLiveTool(toolName, args = {}) {
           const liveVoice = require('./Live_Voice_Engine');
           liveVoice.markEndingCall();
 
-          // Safety fallback: ensure session terminates after 5 seconds even if turnComplete is delayed
+          // Safety fallback: ensure session terminates after 8 seconds even if turnComplete is delayed
           setTimeout(() => {
             mobileBridgeWs.sendCommand('END_CALL', { reason: args.reason || 'User requested hangup' }, { timeoutMs: 3000 }).catch(() => {});
             liveVoice.closeAllLiveSessions();
-          }, 5000);
+          }, 8000);
         } catch (e) {
           console.warn('[LIVE-TOOL] Failed to schedule live session close:', e.message);
         }
 
         return {
           status: 'SUCCESS',
-          message: 'Panggilan telepon siap diakhiri. Ucapkan kalimat perpisahan singkat yang ramah dan hangat kepada Tuan Faqih (contoh: "Baik Tuan Faqih, panggilan saya akhiri. Sampai jumpa.").'
+          message: 'Panggilan telepon siap diakhiri. Sampaikan salam perpisahan yang ramah dan hangat kepada Tuan Faqih sekarang (contoh: "Baik Tuan Faqih, panggilan saya akhiri. Sampai jumpa!").'
         };
       }
 
