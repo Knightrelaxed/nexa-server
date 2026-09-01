@@ -536,7 +536,7 @@ class LiveVoiceSession {
           supabaseMemories.saveChatMemory('nexa', turnText.slice(0, 800), 'live_call').catch(() => {});
         }
 
-        // If turnComplete is reached, return state to LISTENING
+        // If turnComplete is reached, return state to LISTENING (only if call is not ending)
         if (msg.serverContent.turnComplete && !this.isEndingCall) {
           this._sendToClient({
             type: 'CALL_STATUS_UPDATE',
@@ -546,13 +546,19 @@ class LiveVoiceSession {
 
         // If turnComplete is reached AND call is marked to end:
         if (msg.serverContent.turnComplete && this.isEndingCall) {
-          console.log(`[LIVE-VOICE] 🏁 Closing turn completed. Allowing 2.5s audio buffer drain before ending call...`);
+          console.log(`[LIVE-VOICE] 🏁 Farewell speech turn completed. Signaling client to finish cleanly after audio playback.`);
+          this._sendToClient({
+            type: 'CALL_STATUS_UPDATE',
+            status: 'DISCONNECTING'
+          });
+          this._sendToClient({ type: 'CALL_REPLY_COMPLETE' });
+
+          // Clean up server session in background
           setTimeout(() => {
             if (this.isActive) {
-              this._sendToClient({ type: 'CALL_REPLY_COMPLETE' });
               this.close();
             }
-          }, 2500);
+          }, 3000);
         }
       }
 
