@@ -546,13 +546,13 @@ class LiveVoiceSession {
 
         // If turnComplete is reached AND call is marked to end:
         if (msg.serverContent.turnComplete && this.isEndingCall) {
-          console.log(`[LIVE-VOICE] 🏁 Closing turn completed. Allowing 3.5s audio buffer drain before ending call...`);
+          console.log(`[LIVE-VOICE] 🏁 Closing turn completed. Allowing 2.5s audio buffer drain before ending call...`);
           setTimeout(() => {
             if (this.isActive) {
               this._sendToClient({ type: 'CALL_REPLY_COMPLETE' });
               this.close();
             }
-          }, 3500);
+          }, 2500);
         }
       }
 
