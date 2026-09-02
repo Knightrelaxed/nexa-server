@@ -2285,16 +2285,16 @@ PERINGATAN KRITIS UNTUK AI ROUTER:
       if (typeof invalidateSelfModelCache === 'function') invalidateSelfModelCache();
     }
 
-    // [PHASE 7 — M2] Stated-vs-Revealed Reconciler + Decision Journal
+    // Stated-vs-Revealed Reconciler + Decision Journal
     // Fire-and-forget: tidak memblokir respons webhook
     if (textInput && textInput.length >= 10) {
       const intentionEngine = require("../../domain/Intention_Engine");
       intentionEngine.detectAndSaveIntention(textInput, routingData).catch(() => {});
+      intentionEngine.autoReconcileIntentions(textInput).catch(() => {});
 
       // Deteksi keputusan penting untuk intent yang relevan
-      const DECISION_INTENTS = new Set(['FINANCE', 'DISCIPLINE', 'CALENDAR', 'ADVICE', 'NORMAL_CHAT']);
+      const DECISION_INTENTS = new Set(['DISCIPLINE', 'CALENDAR', 'ADVICE', 'NORMAL_CHAT']);
       if (DECISION_INTENTS.has(String(routingData.intent || '').toUpperCase())) {
-        // Ambil emotional state dari mood yang terdeteksi jika ada
         const detectedMood = routingData.detected_mood || 'NEUTRAL';
         intentionEngine.detectAndSaveDecision(textInput, routingData, detectedMood).catch(() => {});
       }

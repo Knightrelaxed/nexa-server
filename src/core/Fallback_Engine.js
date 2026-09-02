@@ -41,11 +41,18 @@ const cerebrasKeys = [
   env.CEREBRAS_API_KEY_4
 ];
 
+const groqKeys = [
+  env.GROQ_API_KEY_1,
+  env.GROQ_API_KEY_2,
+  env.GROQ_API_KEY_3,
+  env.GROQ_API_KEY_4
+];
+
 // ============================================================
-// SMART ADAPTIVE CONTEXT ROUTING (SACR) — v2.0
+// SMART ADAPTIVE CONTEXT ROUTING (SACR) — v2.5
 // Memilah beban konteks secara otomatis:
-//   MODE LIGHT ⚡ : Cerebras (Tier 1-4) -> Gemini 3.7 (Tier 5-8) -> Gemini 3.6 (Tier 9-12)
-//   MODE HEAVY 🧠 : Gemini 3.7 (Tier 1-4) -> Gemini 3.6 (Tier 5-8) -> Google Gemma 4 Skip-CoT (Tier 9-12)
+//   MODE LIGHT ⚡ : Google Gemma 4 31B (Tier 1-4) -> Gemini 3.7 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
+//   MODE HEAVY 🧠 : Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 31B (Tier 9-12)
 // ============================================================
 
 /** Batas panjang karakter (prompt + systemInstruction) untuk trigger MODE HEAVY */
@@ -245,10 +252,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       : isHeavyContext(prompt, systemInstruction, options);
 
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
-  // [SACR v2.4 DUAL-MODE ADAPTIVE MATRIX]
+  // [SACR v2.5 DUAL-MODE ADAPTIVE MATRIX]
   // MODE LIGHT ⚡ : Google Gemma 4 31B (Tier 1-4) -> Gemini 3.7 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
   // MODE HEAVY 🧠 : Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 31B (Tier 9-12)
-  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY 🧠 [Gemini 3.7 -> Gemini 3.6 -> Gemma 4 31B]' : 'LIGHT ⚡ [Gemma 4 31B -> Gemini 3.7 -> Gemini 3.6]'} | Total chars: ${inputChars}`);
+  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY 🧠 [Gemini 3.7 -> Gemini 3.6 -> Gemma 4 31B]' : 'LIGHT ⚡ [Google Gemma 4 -> Gemini 3.7 -> Gemini 3.6]'} | Total chars: ${inputChars}`);
 
   // 1. Google AI Studio Gemma 4 31B (Anti-CoT) (4 Keys - 57.6K RPD Free Quota, Ultra-Natural Persona)
   const googleGemmaBlock = googleApiKeys
@@ -274,7 +281,15 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 4. Cerebras (4 Keys - PayGo / Fallback)
+  // 4. Groq LPU Qwen 3.8 27B (4 Keys - Dense 27B Fast Secondary Engine)
+  const groqQwenBlock = groqKeys
+    .filter(Boolean)
+    .map((key, i) => ({
+      name: `Tier X (Groq Qwen 3.8 27B Key ${i + 1})`,
+      fn: () => callGroqQwen(key, prompt, systemInstruction, temperature, jsonMode)
+    }));
+
+  // 5. Cerebras (4 Keys - PayGo / Fallback)
   const cerebrasBlock = cerebrasKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -283,6 +298,8 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }));
 
   // Penataan Dinamis Top 12 Tiers Sesuai Mode Kognitif:
+  // LIGHT ⚡: Google Gemma 4 31B (Tier 1-4) -> Gemini 3.7 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
+  // HEAVY 🧠: Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 31B (Tier 9-12)
   const top12Block = heavy
     ? [...gemini37Block, ...gemini36Block, ...googleGemmaBlock]
     : [...googleGemmaBlock, ...gemini37Block, ...gemini36Block];
@@ -508,6 +525,47 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
       return response.data.choices[0].message.content;
     } catch (e) {
       if (attempt === retries) throw e;
+    }
+  }
+}
+
+/**
+ * callGroqQwen — Groq LPU + Qwen 3.8 27B (Dense Architecture)
+ * Digunakan sebagai Tier 1-4 pada MODE LIGHT SACR v2.5.
+ * - Model Dense 27B: seluruh 27B parameter aktif per token (5x lebih padat dari GPT-OSS 120B per token)
+ * - Latency: ~1 Detik untuk percakapan normal N.E.X.A
+ * - Batas: 8.000 TPM per key (4 key = 32.000 TPM efektif dengan round-robin fallback)
+ * - Tidak ada reasoning tokens — output langsung, hemat kuota, dan ultra-efisien
+ */
+async function callGroqQwen(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
+  if (!apiKey) throw new Error('No Groq API key provided');
+
+  const safeSysInst = (jsonMode && !/json/i.test(systemInstruction + prompt))
+    ? `${systemInstruction}\nRespond ONLY in valid JSON format.`
+    : systemInstruction;
+
+  const requestBody = {
+    model: 'qwen/qwen3.8-27b',
+    messages: [
+      { role: 'system', content: safeSysInst },
+      { role: 'user', content: prompt }
+    ],
+    temperature,
+    max_tokens: 1500
+  };
+  if (jsonMode) requestBody.response_format = { type: 'json_object' };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', requestBody, {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        // Groq LPU sangat cepat. Timeout 5000ms memberi toleransi antrean tanpa memperlambat fallback.
+        timeout: 5000
+      });
+      return response.data.choices[0].message.content;
+    } catch (e) {
+      if (attempt === retries) throw e;
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 }

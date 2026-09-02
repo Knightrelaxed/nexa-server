@@ -1,4 +1,7 @@
-/**
+﻿const fs = require('fs');
+const path = require('path');
+
+const code = `/**
  * ============================================================
  * INTENTION ENGINE — Intention_Engine.js
  * ============================================================
@@ -47,69 +50,69 @@ const MAX_OUTCOMES_PER_PASS   = 1;    // MAKSIMAL 1 outcome check per pagi
 function _cleanUserText(rawText) {
   if (!rawText || typeof rawText !== 'string') return '';
   // Buang blok kutipan Telegram seperti [KONTEKS_REFERENSI ...] atau [KONTEKS_AKSI ...]
-  let text = rawText.replace(/\[KONTEKS_[A-Z]+[\s\S]*?\]/gi, '').trim();
+  let text = rawText.replace(/\\[KONTEKS_[A-Z]+[\\s\\S]*?\\]/gi, '').trim();
   return text;
 }
 
 // ── 2. Filter Negatif Mutlak (Exclusions) ────────────────────────
 const INTENTION_EXCLUSIONS = [
-  /\bnexa\b/i,         // Perintah ke N.E.X.A bukan niat
-  /\bkamu\b/i,         // Tentang orang lain
-  /\bdia\b/i,
-  /\bmereka\b/i,
-  /\bapakah\b/i,       // Kalimat tanya
-  /\bapa\b/i,
-  /\bkenapa\b/i,
-  /\bgimana\b/i,
-  /\b\?\s*$/m,         // Kalimat tanya dengan tanda tanya
-  /\bcatat\b/i,        // Perintah catat bukan niat
-  /\bingatkan\b/i,
-  /\btolong\b/i,
-  /\bhapus\b/i,
-  /\bcek\b/i,
+  /\\bnexa\\b/i,         // Perintah ke N.E.X.A bukan niat
+  /\\bkamu\\b/i,         // Tentang orang lain
+  /\\bdia\\b/i,
+  /\\bmereka\\b/i,
+  /\\bapakah\\b/i,       // Kalimat tanya
+  /\\bapa\\b/i,
+  /\\bkenapa\\b/i,
+  /\\bgimana\\b/i,
+  /\\b\\?\\s*$/m,         // Kalimat tanya dengan tanda tanya
+  /\\bcatat\\b/i,        // Perintah catat bukan niat
+  /\\bingatkan\\b/i,
+  /\\btolong\\b/i,
+  /\\bhapus\\b/i,
+  /\\bcek\\b/i,
 ];
 
 // Kata kerja & aktivitas rutin instan (EPHEMERAL MICRO-ACTIONS)
 // Ini adalah aktivitas berdurasi < 2 jam yang TIDAK BOLEH ditagih 14 hari kemudian!
 const EPHEMERAL_EXCLUSIONS = [
-  /\b(makan|minum|sarapan|maksi|makan siang|makan malam|jajan|ngemil|beli makan)\b/i,
-  /\b(tidur|istirahat|rebahan|merem|tidur siang|bobo|rehat)\b/i,
-  /\b(sholat|shalat|solat|jumatan|mengaji|tpa)\b/i,
-  /\b(mandi|cuci|bebersih|nyapu|ngepel)\b/i,
-  /\b(ngobrol|chat|curhat|bicara|tanya|nanya|kasih tau|ngasih tau|bilang|dengar)\b/i,
-  /\b(nongkrong|jalan-jalan|keluar sebentar|pulang|cabut|berangkat|otw|balik)\b/i,
-  /\b(cek|periksa fitur|coba|nyoba|tes|testing|login|logout|buka|tutup)\b/i,
-  /\b(santai|rebahan dulu|istirahat dulu|ngopi)\b/i,
-  /\b(nonton|main game|scrolling|tiktok|yt|youtube)\b/i,
-  /\b(jadwal kalender|jadwalnya|hari ini|besok senin|besok selasa|besok rabu|besok kamis|besok jumat|besok sabtu|besok minggu)\b/i,
+  /\\b(makan|minum|sarapan|maksi|makan siang|makan malam|jajan|ngemil|beli makan)\\b/i,
+  /\\b(tidur|istirahat|rebahan|merem|tidur siang|bobo|rehat)\\b/i,
+  /\\b(sholat|shalat|solat|jumatan|mengaji|tpa)\\b/i,
+  /\\b(mandi|cuci|bebersih|nyapu|ngepel)\\b/i,
+  /\\b(ngobrol|chat|curhat|bicara|tanya|nanya|kasih tau|ngasih tau|bilang|dengar)\\b/i,
+  /\\b(nongkrong|jalan-jalan|keluar sebentar|pulang|cabut|berangkat|otw|balik)\\b/i,
+  /\\b(cek|periksa fitur|coba|nyoba|tes|testing|login|logout|buka|tutup)\\b/i,
+  /\\b(santai|rebahan dulu|istirahat dulu|ngopi)\\b/i,
+  /\\b(nonton|main game|scrolling|tiktok|yt|youtube)\\b/i,
+  /\\b(jadwal kalender|jadwalnya|hari ini|besok senin|besok selasa|besok rabu|besok kamis|besok jumat|besok sabtu|besok minggu)\\b/i,
 ];
 
 // ── 3. Syarat Domain Substantif (Significant Goal Requirement) ───
 // Niat yang layak disimpan untuk 14 hari wajib menyentuh salah satu domain nyata ini:
-const SUBSTANTIVE_DOMAIN_REGEX = /\b(beasiswa|skripsi|tesis|makalah|penelitian|riset|jurnal|kuliah|matkul|dosen|kampus|ugm|sastra arab|pkm|lomba|mun|model un|toefl|ielts|magang|internship|kerja|lamar|apply|lowongan|portofolio|cv|kemenlu|diplomat|organisasi|komunitas|kepanitiaan|motor|mobil|laptop|pc|komputer|hp|ipad|tablet|kamera|nabung|menabung|investasi|tabungan|buka rekening|kartu debit|kartu kredit|oracle cloud|vps|server baru|proyek|project|aplikasi|website|web|fitur|periksa ke dokter|ke rumah sakit|ke klinik|spesialis|cek darah|terapi|gym|fitness|olahraga rutin|diet)\b/i;
+const SUBSTANTIVE_DOMAIN_REGEX = /\\b(beasiswa|skripsi|tesis|makalah|penelitian|riset|jurnal|kuliah|matkul|dosen|kampus|ugm|sastra arab|pkm|lomba|mun|model un|toefl|ielts|magang|internship|kerja|lamar|apply|lowongan|portofolio|cv|kemenlu|diplomat|organisasi|komunitas|kepanitiaan|motor|mobil|laptop|pc|komputer|hp|ipad|tablet|kamera|nabung|menabung|investasi|tabungan|buka rekening|kartu debit|kartu kredit|oracle cloud|vps|server baru|proyek|project|aplikasi|website|web|fitur|periksa ke dokter|ke rumah sakit|ke klinik|spesialis|cek darah|terapi|gym|fitness|olahraga rutin|diet)\\b/i;
 
 // Pola struktur niat
 const INTENTION_PATTERNS = [
-  /\b(aku|saya|gue|kami)\s+(akan|mau|bakal|berencana|hendak|ingin)\s+(?:mulai\s+)?([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\s]{4,60})/i,
-  /\brencana(?:ku|saya|nya)?\s+(?:mau\s+|akan\s+)?([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\s]{4,60})/i,
-  /\b(pengen|pingin|niat(?:nya)?)\s+(?:mulai\s+|nanti\s+)?([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\s]{4,60})/i,
+  /\\b(aku|saya|gue|kami)\\s+(akan|mau|bakal|berencana|hendak|ingin)\\s+(?:mulai\\s+)?([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\\s]{4,60})/i,
+  /\\brencana(?:ku|saya|nya)?\\s+(?:mau\\s+|akan\\s+)?([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\\s]{4,60})/i,
+  /\\b(pengen|pingin|niat(?:nya)?)\\s+(?:mulai\\s+|nanti\\s+)?([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\\s]{4,60})/i,
 ];
 
 // ── 4. Pola Keputusan Penting ───────────────────────────────────
 const DECISION_PATTERNS = [
-  /\b(memutuskan|sudah memutuskan|udah mutusin|akhirnya fix|keputusan final)\s+(?:untuk\s+)?([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\s]{5,60})/i,
-  /\b(ambil beasiswa|resign|keluar dari|pindah jurusan|daftar magang|beli motor|beli laptop|investasi)\s+([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\s]{3,50})/i,
+  /\\b(memutuskan|sudah memutuskan|udah mutusin|akhirnya fix|keputusan final)\\s+(?:untuk\\s+)?([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\\s]{5,60})/i,
+  /\\b(ambil beasiswa|resign|keluar dari|pindah jurusan|daftar magang|beli motor|beli laptop|investasi)\\s+([a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9\\s]{3,50})/i,
 ];
 
 const FINANCE_TRANSACTION_EXCLUSIONS = [
-  /\bcatat\b/i,
-  /\bstruk\b/i,
-  /\bnota\b/i,
-  /\btransfer\b/i,
-  /\blivin\b/i,
-  /^split\b/i,
-  /\bgofood\b|\bshopee\b|\btokopedia\b|\bqris\b/i,
-  /\bbensin\b|\bobat\b|\bmakanan\b|\bnescafe\b|\bpulsa\b/i,
+  /\\bcatat\\b/i,
+  /\\bstruk\\b/i,
+  /\\bnota\\b/i,
+  /\\btransfer\\b/i,
+  /\\blivin\\b/i,
+  /^split\\b/i,
+  /\\bgofood\\b|\\bshopee\\b|\\btokopedia\\b|\\bqris\\b/i,
+  /\\bbensin\\b|\\bobat\\b|\\bmakanan\\b|\\bnescafe\\b|\\bpulsa\\b/i,
 ];
 
 // ============================================================
@@ -148,12 +151,12 @@ function _detectIntention(rawText, routingData = {}) {
 
       // Bersihkan kata sambung/filler di awal
       intentionText = intentionText
-        .replace(/^(?:kan|tapi|itu|ya|deng|oh iya|nah|jadi|sebenernya|aslinya|dulu)\s+/i, '')
+        .replace(/^(?:kan|tapi|itu|ya|deng|oh iya|nah|jadi|sebenernya|aslinya|dulu)\\s+/i, '')
         .replace(/[.,!?;:]+$/, '')
         .trim();
 
       // Validasi panjang: minimal 2 kata dan >= 8 karakter
-      const wordCount = intentionText.split(/\s+/).length;
+      const wordCount = intentionText.split(/\\s+/).length;
       if (wordCount >= 2 && intentionText.length >= 8) {
         return intentionText.charAt(0).toUpperCase() + intentionText.slice(1);
       }
@@ -192,7 +195,7 @@ async function detectAndSaveIntention(rawText, routingData = {}) {
     });
 
     if (isDuplicate) {
-      console.log(`[INTENTION] Skipped duplicate intention: "${intentionText}"`);
+      console.log(\`[INTENTION] Skipped duplicate intention: "\${intentionText}"\`);
       return false;
     }
 
@@ -211,7 +214,7 @@ async function detectAndSaveIntention(rawText, routingData = {}) {
       return false;
     }
 
-    console.log(`[INTENTION] 🎯 Saved substantive intention: "${intentionText}" (due ${deadlineAt.substring(0, 10)})`);
+    console.log(\`[INTENTION] 🎯 Saved substantive intention: "\${intentionText}" (due \${deadlineAt.substring(0, 10)})\`);
     return true;
   } catch (err) {
     console.warn('[INTENTION] Unexpected error saving intention:', err.message);
@@ -284,7 +287,7 @@ async function detectAndSaveDecision(rawText, routingData = {}, emotionalState =
       return false;
     }
 
-    console.log(`[INTENTION] 📋 Saved decision: "${decisionText}" (outcome due ${outcomeCheckAt.substring(0, 10)})`);
+    console.log(\`[INTENTION] 📋 Saved decision: "\${decisionText}" (outcome due \${outcomeCheckAt.substring(0, 10)})\`);
     return true;
   } catch (err) {
     console.warn('[INTENTION] Unexpected error detecting decision:', err.message);
@@ -306,7 +309,7 @@ async function autoReconcileIntentions(rawText) {
   const text = _cleanUserText(rawText).toLowerCase();
   if (text.length < 8) return;
 
-  const completionRegex = /\b(sudah|udah|tadi udah|alhamdulillah udah|selesai|beres|kelar|cair|keterima|lolos|kebeli|terwujud|lunas|jadi daftar|berhasil daftar)\b/i;
+  const completionRegex = /\\b(sudah|udah|tadi udah|alhamdulillah udah|selesai|beres|kelar|cair|keterima|lolos|kebeli|terwujud|lunas|jadi daftar|berhasil daftar)\\b/i;
   if (!completionRegex.test(text)) return;
 
   try {
@@ -321,7 +324,7 @@ async function autoReconcileIntentions(rawText) {
     for (const item of activeIntentions) {
       const keywords = item.intention
         .toLowerCase()
-        .split(/\s+/)
+        .split(/\\s+/)
         .filter(w => w.length >= 4 && !['akan', 'mau', 'ingin', 'bakal', 'rencananya'].includes(w));
 
       const matched = keywords.some(k => text.includes(k));
@@ -334,7 +337,7 @@ async function autoReconcileIntentions(rawText) {
           })
           .eq('id', item.id);
 
-        console.log(`[INTENTION] 🟢 Cognitive Loop Closed: "${item.intention}" auto-reconciled as FULFILLED.`);
+        console.log(\`[INTENTION] 🟢 Cognitive Loop Closed: "\${item.intention}" auto-reconciled as FULFILLED.\`);
         break;
       }
     }
@@ -382,18 +385,18 @@ async function runIntentionCheckPass() {
 
       // Susun pesan ramah, manusiawi, dan tanpa em-dash
       const frictionMsg = [
-        `🔁 <b>Kilas Balik Rencana</b>`,
-        ``,
-        `Sekitar ${daysAgo} hari lalu, Tuan sempat berencana:`,
-        `<i>"${item.intention}"</i>`,
-        ``,
-        `Bagaimana perkembangannya sekarang, Tuan? Apakah rencana ini masih berjalan atau sudah terwujud?`
-      ].join('\n');
+        \`🔁 <b>Kilas Balik Rencana</b>\`,
+        \`\`,
+        \`Sekitar \${daysAgo} hari lalu, Tuan sempat berencana:\`,
+        \`<i>"\${item.intention}"</i>\`,
+        \`\`,
+        \`Bagaimana perkembangannya sekarang, Tuan? Apakah rencana ini masih berjalan atau sudah terwujud?\`
+      ].join('\\n');
 
       if (webhookModule?.sendTelegramOutbound) {
         await webhookModule.sendTelegramOutbound(frictionMsg, true);
         stats.sent++;
-        console.log(`[INTENTION] Follow-up sent for: "${item.intention}"`);
+        console.log(\`[INTENTION] Follow-up sent for: "\${item.intention}"\`);
       }
 
       await sb
@@ -402,11 +405,11 @@ async function runIntentionCheckPass() {
         .eq('id', item.id);
 
     } catch (itemErr) {
-      console.warn(`[INTENTION] Error processing intention #${item.id}:`, itemErr.message);
+      console.warn(\`[INTENTION] Error processing intention #\${item.id}:\`, itemErr.message);
       stats.errors++;
     }
 
-    console.log(`[INTENTION] ── Intention Pass Done: sent=${stats.sent}`);
+    console.log(\`[INTENTION] ── Intention Pass Done: sent=\${stats.sent}\`);
     return stats;
   } catch (err) {
     console.error('[INTENTION] Critical error in Intention Pass:', err.message);
@@ -452,18 +455,18 @@ async function runOutcomeCheckPass() {
       );
 
       const outcomeMsg = [
-        `📋 <b>Catatan Keputusan</b>`,
-        ``,
-        `Sekitar ${daysAgo} hari lalu, Tuan sempat memutuskan:`,
-        `<i>"${item.decision}"</i>`,
-        ``,
-        `Apakah keputusan tersebut sudah terasa hasilnya, Tuan? Satu kalimat singkat pun sudah cukup untuk catatan kita.`
-      ].join('\n');
+        \`📋 <b>Catatan Keputusan</b>\`,
+        \`\`,
+        \`Sekitar \${daysAgo} hari lalu, Tuan sempat memutuskan:\`,
+        \`<i>"\${item.decision}"</i>\`,
+        \`\`,
+        \`Apakah keputusan tersebut sudah terasa hasilnya, Tuan? Satu kalimat singkat pun sudah cukup untuk catatan kita.\`
+      ].join('\\n');
 
       if (webhookModule?.sendTelegramOutbound) {
         await webhookModule.sendTelegramOutbound(outcomeMsg, true);
         stats.sent++;
-        console.log(`[INTENTION] Outcome check sent for: "${item.decision}"`);
+        console.log(\`[INTENTION] Outcome check sent for: "\${item.decision}"\`);
       }
 
       await sb
@@ -472,7 +475,7 @@ async function runOutcomeCheckPass() {
         .eq('id', item.id);
 
     } catch (itemErr) {
-      console.warn(`[INTENTION] Error processing decision #${item.id}:`, itemErr.message);
+      console.warn(\`[INTENTION] Error processing decision #\${item.id}:\`, itemErr.message);
       stats.errors++;
     }
 
@@ -497,3 +500,7 @@ module.exports = {
   _detectIntention,
   _cleanUserText,
 };
+`;
+
+fs.writeFileSync(path.join(__dirname, '../src/domain/Intention_Engine.js'), code, 'utf8');
+console.log('✅ Successfully rewritten Intention_Engine.js');
