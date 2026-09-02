@@ -461,11 +461,11 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 22. WEB SEARCH ────────────────────────────────────────────
   {
     name: 'searchWeb',
-    description: 'Mencari informasi terkini dari internet secara cepat (berita, cuaca, kurs, pengetahuan umum, jadwal sholat).',
+    description: 'Mencari informasi terkini dari internet. WAJIB DIPANGGIL untuk: (1) berita terkini, (2) cuaca hari ini, (3) kurs mata uang, (4) harga barang/tiket, (5) jadwal sholat, (6) informasi yang mungkin sudah berubah sejak training data, (7) nama orang/perusahaan/produk/model AI yang kurang familiar, (8) apapun yang bersifat "hari ini", "sekarang", "terbaru", "terkini", "update". JANGAN jawab dari memori internal jika ada unsur waktu atau kebaruan — langsung panggil tool ini segera tanpa ragu.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        query: { type: 'STRING', description: 'Pertanyaan atau kata kunci pencarian.' }
+        query: { type: 'STRING', description: 'Kata kunci pencarian yang jelas dan spesifik dalam bahasa Indonesia atau Inggris. Contoh: "cuaca Yogyakarta hari ini", "kurs dollar ke rupiah hari ini", "jadwal sholat Jogja 2 September 2026", "harga tiket kereta Jogja Jakarta".' }
       },
       required: ['query']
     }
@@ -1195,19 +1195,33 @@ async function executeLiveTool(toolName, args = {}) {
 
         let searchResult = null;
         try {
-          searchResult = await _withToolTimeout(webSearch.searchWeb(query), 6000);
+          // Gunakan searchWebLive (TANPA AI reformulasi) — target < 3 detik
+          searchResult = await _withToolTimeout(webSearch.searchWebLive(query), 10000);
         } catch (e) {
           console.warn('[LIVE-TOOL] searchWeb error:', e.message);
         }
 
-        const cleanResult = typeof searchResult === 'string'
-          ? searchResult.replace(/<[^>]+>/g, '').slice(0, 800)
-          : (searchResult ? JSON.stringify(searchResult).slice(0, 800) : 'Tidak ada data ditemukan.');
+        if (!searchResult || searchResult.includes('Tidak ada hasil')) {
+          return {
+            status: 'NOT_FOUND',
+            query,
+            result: `Tidak ada hasil pencarian ditemukan untuk "${query}". Coba gunakan kata kunci yang lebih spesifik.`
+          };
+        }
+
+        // Bersihkan HTML tags dan format URL agar cocok untuk dibacakan suara
+        const voiceFriendly = searchResult
+          .replace(/<[^>]+>/g, '')             // hapus semua HTML tag
+          .replace(/🔗\s*https?:\/\/\S+/g, '') // hapus baris URL
+          .replace(/https?:\/\/\S+/g, '')       // hapus sisa URL
+          .replace(/\n{3,}/g, '\n\n')           // rapikan baris kosong
+          .trim()
+          .slice(0, 900);                        // batas karakter aman untuk suara
 
         return {
           status: 'SUCCESS',
           query,
-          result: cleanResult
+          result: voiceFriendly
         };
       }
 

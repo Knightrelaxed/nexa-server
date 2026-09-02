@@ -211,4 +211,68 @@ async function searchWeb(query, type = 'search', mode = 'fast') {
   return result.trim() || '⚠️ Tidak ada hasil penelusuran yang relevan ditemukan.';
 }
 
-module.exports = { searchWeb, reformulateQuery, fetchTavilyDeep };
+/**
+ * [LIVE CALL OPTIMIZED] Ultra-fast web search that SKIPS AI query reformulation.
+ * Directly hits Serper API in parallel (Indonesian + English). Target: ~2-3 seconds.
+ * Used exclusively by Live_Tool_Registry.js to avoid timeout during voice calls.
+ * @param {string} query - Raw query from voice transcription
+ * @returns {Promise<string>} - Plain-text formatted results (voice-ready)
+ */
+async function searchWebLive(query) {
+  if (!env.SERPER_API_KEY) {
+    return 'Maaf Tuan, layanan pencarian web belum dikonfigurasi.';
+  }
+
+  const cleanInput = String(query || '').trim();
+  if (!cleanInput) return 'Query pencarian kosong.';
+
+  console.log(`[WEB_SEARCH] [LIVE-MODE] Direct query: "${cleanInput}"`);
+
+  // Hit Serper dua kali secara paralel: versi asli (ID) + terjemahan sederhana (EN)
+  // Tidak ada AI reformulation — langsung ke Serper
+  const [localData, globalData] = await Promise.all([
+    fetchSerper('https://google.serper.dev/search', { q: cleanInput, gl: 'id', hl: 'id', num: 5 }),
+    fetchSerper('https://google.serper.dev/search', { q: cleanInput, gl: 'us', hl: 'en', num: 5 })
+  ]);
+
+  let result = '';
+
+  // Jawaban langsung (Answer Box) — paling berguna untuk suara
+  const answerBox = localData?.answerBox || globalData?.answerBox;
+  if (answerBox) {
+    const ans = answerBox.answer || answerBox.snippet || '';
+    if (ans) result += `${ans}\n\n`;
+  }
+
+  // Knowledge Graph
+  const kg = localData?.knowledgeGraph || globalData?.knowledgeGraph;
+  if (kg?.title && kg?.description) {
+    result += `${kg.title}: ${kg.description}\n\n`;
+  }
+
+  // Kumpulkan hasil organik & berita, deduplikasi
+  const seenLinks = new Set();
+  const items = [];
+  const addItem = (item, label) => {
+    if (!item?.link || seenLinks.has(item.link)) return;
+    seenLinks.add(item.link);
+    items.push({ title: item.title, snippet: item.snippet, label });
+  };
+
+  (localData?.answerBox?.news || []).forEach(n => addItem(n, 'Lokal'));
+  (localData?.organic || []).forEach(o => addItem(o, 'Lokal'));
+  (localData?.news || []).forEach(n => addItem(n, 'Berita'));
+  (globalData?.organic || []).forEach(o => addItem(o, 'Global'));
+
+  if (items.length > 0) {
+    items.slice(0, 4).forEach((item, i) => {
+      result += `${i + 1}. ${item.title}\n`;
+      if (item.snippet) result += `   ${item.snippet}\n`;
+      result += '\n';
+    });
+  }
+
+  return result.trim() || 'Tidak ada hasil penelusuran yang ditemukan. Coba gunakan kata kunci yang lebih spesifik.';
+}
+
+module.exports = { searchWeb, searchWebLive, reformulateQuery, fetchTavilyDeep };
