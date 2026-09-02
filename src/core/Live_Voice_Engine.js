@@ -683,22 +683,27 @@ class LiveVoiceSession {
     this.reconnectAttempts++;
     console.warn(`[LIVE-VOICE] ⚠️ Failover triggered (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}): Code ${code} — ${reason}`);
 
+    this._sendToClient({
+      type: 'CALL_STATUS_UPDATE',
+      status: 'RECONNECTING'
+    });
+
     if (this.reconnectAttempts <= this.maxReconnectAttempts) {
       this.currentKeyIndex = (this.currentKeyIndex + 1) % (GOOGLE_KEYS.length || 1);
 
-      if (this.currentKeyIndex === 0 && this.currentModel === LIVE_MODELS.TIER_1_SPEED) {
+      if (this.reconnectAttempts >= 3 && this.currentModel === LIVE_MODELS.TIER_1_SPEED) {
         console.log(`[LIVE-VOICE] 🔄 Switching to Tier 2 Marathon: ${LIVE_MODELS.TIER_2_MARATHON}`);
         this.currentModel = LIVE_MODELS.TIER_2_MARATHON;
       }
 
       console.log(`[LIVE-VOICE] 🔄 Reconnecting with Key Index ${this.currentKeyIndex}...`);
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 600));
       await this._connectGoogleWs();
     } else {
       console.error(`[LIVE-VOICE] 🚨 All failover tiers exhausted.`);
       this._sendToClient({
         type: 'CALL_ERROR',
-        message: 'Koneksi suara live mengalami gangguan. Mengalihkan ke mode suara standar.'
+        message: 'Koneksi suara live mengalami gangguan.'
       });
       this.close();
     }
@@ -708,6 +713,8 @@ class LiveVoiceSession {
   // CLOSE SESSION — Persist memory & run End-of-Call Passive Learning
   // ──────────────────────────────────────────────────────────────────────────
   async close() {
+    if (this.isClosed) return;
+    this.isClosed = true;
     this.isActive = false;
     const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
     console.log(`[LIVE-VOICE] 🛑 Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);

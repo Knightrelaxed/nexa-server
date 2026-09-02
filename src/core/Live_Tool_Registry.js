@@ -1001,57 +1001,51 @@ async function executeLiveTool(toolName, args = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 18. MEMORY: SAVE PERSONAL FACT (Supersede Engine)
+      // 18. MEMORY: SAVE PERSONAL FACT (Instant DB + Background Dedup)
       // ─────────────────────────────────────────────────────────────
       case 'savePersonalFact': {
         const fact = String(args.fact || '').trim();
         if (!fact) return { status: 'ERROR', message: 'Fakta tidak boleh kosong.' };
 
-        const saved = await _withToolTimeout(
-          aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE'),
-          6000
+        // 1. Direct Instant DB Save (< 100ms)
+        await _withToolTimeout(
+          supabaseMemories.saveMemoryWithMeta(fact, 'PREFERENCE', 'USER_PROFILE'),
+          3000
         );
 
-        try {
-          if (geminiVectorCache.invalidateCache) await geminiVectorCache.invalidateCache();
-        } catch (_) {}
+        // 2. Background Deduplication & Cache Refresh (Non-blocking)
+        aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE').catch(() => {});
+        try { aiRouter.invalidatePersonalFactsCache(); } catch (_) {}
 
         return {
           status: 'SUCCESS',
-          saved,
-          message: saved
-            ? `Fakta baru berhasil disimpan ke memori permanen Tuan Faqih: "${fact}".`
-            : `Fakta ini sudah ada di memori atau merupakan pembaruan dari fakta sebelumnya.`
+          saved: true,
+          message: `Fakta baru berhasil dicatat ke memori Tuan Faqih: "${fact}".`
         };
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 19. MEMORY: SAVE CORE IDENTITY FACT
+      // 19. MEMORY: SAVE CORE IDENTITY FACT (Instant DB + Background Dedup)
       // ─────────────────────────────────────────────────────────────
       case 'saveCoreIdentityFact': {
         const fact = String(args.fact || '').trim();
         if (!fact) return { status: 'ERROR', message: 'Fakta identitas tidak boleh kosong.' };
 
-        const saved = await _withToolTimeout(
-          aiRouter.deduplicateAndSaveFact(fact, 'CORE_IDENTITY'),
-          6000
+        // 1. Direct Instant DB Save (< 100ms)
+        await _withToolTimeout(
+          supabaseMemories.saveMemoryWithMeta(fact, 'RULE', 'CORE_IDENTITY'),
+          3000
         );
 
-        try {
-          await _withToolTimeout(
-            aiRouter.deduplicateAndSaveSelfFact(fact, 'OPERATIONAL_RULES', 'LIVE_CALL', 'Voice call instruction'),
-            6000
-          );
-        } catch (_) {}
-
+        // 2. Background Deduplication & Self-Model (Non-blocking)
+        aiRouter.deduplicateAndSaveFact(fact, 'CORE_IDENTITY').catch(() => {});
+        aiRouter.deduplicateAndSaveSelfFact(fact, 'OPERATIONAL_RULES', 'LIVE_CALL', 'Voice call instruction').catch(() => {});
         try { aiRouter.invalidatePersonalFactsCache(); } catch (_) {}
 
         return {
           status: 'SUCCESS',
-          saved,
-          message: saved
-            ? `Aturan baru untuk saya berhasil disimpan: "${fact}".`
-            : `Instruksi ini sudah tercatat sebelumnya.`
+          saved: true,
+          message: `Aturan baru untuk saya berhasil disimpan: "${fact}".`
         };
       }
 
