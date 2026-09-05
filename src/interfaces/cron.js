@@ -23,10 +23,21 @@ function initCronJobs() {
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // 1.5. The Midnight Check-in (01:00 WIB)
+  // TRIGGER KHUSUS: Hanya aktif jika Nexa Bridge terhubung dan layar HP sedang AKTIF/MENYALA.
+  // Jika layar HP mati atau offline, peringatan tidak dikirimkan agar tidak mengganggu istirahat.
   cron.schedule('0 1 * * *', async () => {
-    console.log('[CRON] Executing Midnight Check-in...');
+    console.log('[CRON] Executing Midnight Check-in evaluation (01:00 WIB)...');
     try {
-      const checkinText = await intelligenceBrief.generateMidnightCheckin();
+      const bridgeAdapter = require('./mobile_bridge/adapter');
+      const isScreenActive = bridgeAdapter.isScreenActive();
+
+      if (!isScreenActive) {
+        console.log('[CRON] 🌙 Midnight Check-in dilewati: Layar HP mati atau Nexa Bridge offline (Tuan Faqih diasumsikan sedang tidur/istirahat).');
+        return;
+      }
+
+      console.log('[CRON] 📱 Midnight Check-in AKTIF: Layar HP terdeteksi menyala pada 01:00 WIB. Mengirimkan sapaan kepedulian...');
+      const checkinText = await intelligenceBrief.generateMidnightCheckin({ screenActive: true });
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
         const { sendTelegramOutbound } = require('./webhook');
         await sendTelegramOutbound(checkinText);

@@ -360,9 +360,48 @@ class NexaBridgeAdapter {
     return this.isConnected();
   }
 
+  /**
+   * Check if the device screen is currently active / on via Nexa Bridge.
+   * Returns true ONLY IF:
+   * 1. Nexa Bridge is actively connected via WebSocket.
+   * 2. The latest telemetry explicitly reports screen_on: true (or is_screen_on: true).
+   * 3. The telemetry data is fresh (within maxStaleMs, default 5 minutes).
+   * If bridge is offline, or screen is off, or telemetry is missing/stale, returns false.
+   * 
+   * @param {number} [maxStaleMs=300000] - Max allowable staleness in ms (default 5 minutes)
+   * @returns {boolean}
+   */
+  isScreenActive(maxStaleMs = 300000) {
+    if (!this.isConnected()) {
+      return false;
+    }
+
+    const telemetry = this.latestTelemetry;
+    if (!telemetry || typeof telemetry !== 'object') {
+      return false;
+    }
+
+    // Freshness check: reject stale telemetry older than maxStaleMs
+    const timestampStr = telemetry.updated_at || telemetry.received_at;
+    if (timestampStr) {
+      const ageMs = Date.now() - new Date(timestampStr).getTime();
+      if (ageMs > maxStaleMs) {
+        return false;
+      }
+    }
+
+    const isScreenOn = telemetry.screen_on === true || 
+                       telemetry.is_screen_on === true || 
+                       telemetry.screenOn === true ||
+                       telemetry.screen_state === 'ON';
+
+    return Boolean(isScreenOn);
+  }
+
   getSnapshot() {
     return {
       is_online: this.isOnline(),
+      is_screen_active: this.isScreenActive(),
       telemetry: this.latestTelemetry,
       context: this.latestContext
     };

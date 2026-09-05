@@ -92,7 +92,8 @@ function initWebSocket(server) {
         }
 
         // B. Telemetry Event Stream
-        if (payload.type === 'telemetry' || payload.type === 'TELEMETRY_REPORT') {
+        const pType = String(payload.type || '').toUpperCase();
+        if (pType === 'TELEMETRY' || pType === 'TELEMETRY_REPORT') {
           latestTelemetry = {
             ...payload,
             received_at: new Date().toISOString()
@@ -163,6 +164,10 @@ function initWebSocket(server) {
 
         // F. App Usage Telemetry & Duration Limiting Engine
         if (payload.type === 'APP_USAGE_TELEMETRY' || payload.type === 'app_usage') {
+          if (latestTelemetry) {
+            latestTelemetry.screen_on = true;
+            latestTelemetry.updated_at = new Date().toISOString();
+          }
           try {
             const appDiscipline = require('../../domain/App_Discipline_Engine');
             appDiscipline.evaluateAppUsage(payload).catch((err) => {

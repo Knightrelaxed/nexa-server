@@ -529,12 +529,16 @@ Output: teks naratif hangat, 3-4 kalimat, bukan JSON.
 // ============================================================
 // LEGACY: Midnight Check-In (Tidak Diubah)
 // ============================================================
-async function generateMidnightCheckin() {
+async function generateMidnightCheckin(options = {}) {
   console.log('[INTELLIGENCE] Generating Midnight Check-in...');
+  const screenContext = options.screenActive
+    ? 'Layar HP Samsung Tuan Faqih terdeteksi MASIH AKTIF / MENYALA via Nexa Mobile Bridge pada pukul 01:00 dini hari (menandakan beliau masih aktif beraktivitas di ponselnya dan belum tidur).'
+    : 'Tuan Faqih saat ini terdeteksi belum tidur pada larut malam (sekitar jam 01:00 dini hari).';
+
   const prompt = `
-Tuan Faqih saat ini belum tidur (atau sistem sedang mengecek keadaannya karena sudah lewat larut malam, sekitar jam 01:00 pagi).
+${screenContext}
 Sebagai asisten pribadi N.E.X.A yang super pintar, sangat peduli, dan proaktif, sapa Tuan Faqih.
-SANGAT PENTING: Tanya dengan nada hangat tapi sedikit cerewet/penasaran: "Ini sudah jam berapa kok belum tidur?", "Lagi ngerjain apa malam-malam begini?", "Apakah ada yang mengganggu pikiran?".
+SANGAT PENTING: Tanya dengan nada hangat tapi sedikit cerewet/penasaran: "Ini sudah jam satu pagi kok layarnya masih aktif/belum tidur?", "Lagi ngerjain apa malam-malam begini?", "Apakah ada yang mengganggu pikiran atau tugas yang belum tuntas?".
 Tunjukkan kepedulian tingkat tinggi terhadap kesehatan dan jam tidurnya. Jangan terlalu panjang, cukup 2-3 paragraf natural yang memancing Tuan Faqih untuk membalas dan bercerita.
 Penting: Output murni teks naratif (jangan JSON), tanpa awalan kaku.
 `;
