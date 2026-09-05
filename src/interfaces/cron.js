@@ -38,11 +38,33 @@ function initCronJobs() {
 
       console.log('[CRON] 📱 Midnight Check-in AKTIF: Layar HP terdeteksi menyala pada 01:00 WIB. Mengirimkan sapaan kepedulian...');
       const checkinText = await intelligenceBrief.generateMidnightCheckin({ screenActive: true });
+
+      // 1. Peringatan via Chat Telegram
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-        const { sendTelegramOutbound } = require('./webhook');
-        await sendTelegramOutbound(checkinText);
+        try {
+          const { sendTelegramOutbound } = require('./webhook');
+          await sendTelegramOutbound(checkinText);
+        } catch (tgErr) {
+          console.error('[CRON] Gagal mengirim pesan Telegram Midnight Check-in:', tgErr.message);
+        }
       } else {
-        console.warn('[CRON] Telegram bot not configured. Midnight check-in not sent.');
+        console.warn('[CRON] Telegram bot not configured. Midnight check-in text not sent.');
+      }
+
+      // 2. Peringatan Suara Lisan (TTS) via Speaker HP Samsung (Nexa Mobile Bridge)
+      try {
+        const ttsSpeech = checkinText
+          .replace(/<[^>]*>/g, '')   // Hapus tag HTML
+          .replace(/[*_`#~]/g, '')   // Hapus format markdown
+          .replace(/\n+/g, ' ')      // Ubah baris baru menjadi spasi natural
+          .trim();
+
+        if (ttsSpeech) {
+          console.log('[CRON] 🎙️ Menyuarakannya via TTS HP Samsung A33 5G...');
+          await bridgeAdapter.speakText(ttsSpeech);
+        }
+      } catch (ttsErr) {
+        console.warn('[CRON] Gagal memicu TTS HP pada Midnight Check-in:', ttsErr.message);
       }
     } catch (e) {
       console.error('[CRON] Midnight check-in failed:', e.message);

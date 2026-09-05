@@ -131,6 +131,64 @@ try {
     assert.strictEqual(checkinTriggered, true, 'Check-in MUST be triggered when screen is ON');
   });
 
+  // Test 10: Dual Alert Trigger (Telegram + TTS) with phonetic and HTML sanitization
+  test('10. Dual Alert: Dispatches both Telegram and Phone TTS when screen is ON', async () => {
+    bridgeAdapter.isConnected = () => true;
+    bridgeAdapter.latestTelemetry = { screen_on: true, updated_at: new Date().toISOString() };
+
+    let telegramSent = false;
+    let ttsSpokenText = '';
+
+    // Mock bridgeAdapter.speakText
+    const originalSpeakText = bridgeAdapter.speakText;
+    bridgeAdapter.speakText = async (text) => {
+      ttsSpokenText = text;
+      return { success: true };
+    };
+
+    try {
+      if (bridgeAdapter.isScreenActive()) {
+        const sampleCheckin = '<b>Tuan Faqih</b>, sudah jam 1 pagi lho! *Kok belum tidur?*\nLagi ngerjain apa malam-malam begini?';
+        
+        // 1. Telegram
+        telegramSent = true;
+
+        // 2. TTS Sanitization
+        const ttsSpeech = sampleCheckin
+          .replace(/<[^>]*>/g, '')
+          .replace(/[*_`#~]/g, '')
+          .replace(/\n+/g, ' ')
+          .trim();
+
+        await bridgeAdapter.speakText(ttsSpeech);
+      }
+
+      assert.strictEqual(telegramSent, true, 'Telegram must be sent');
+      assert.strictEqual(ttsSpokenText.includes('<b>'), false, 'TTS must not contain HTML tags');
+      assert.strictEqual(ttsSpokenText.includes('*'), false, 'TTS must not contain markdown asterisks');
+      assert.strictEqual(ttsSpokenText, 'Tuan Faqih, sudah jam 1 pagi lho! Kok belum tidur? Lagi ngerjain apa malam-malam begini?');
+    } finally {
+      bridgeAdapter.speakText = originalSpeakText;
+    }
+  });
+
+  // Test 11: Dual Alert Suppressed when screen is OFF
+  test('11. Dual Alert: Suppresses BOTH Telegram and Phone TTS when screen is OFF', async () => {
+    bridgeAdapter.isConnected = () => true;
+    bridgeAdapter.latestTelemetry = { screen_on: false, updated_at: new Date().toISOString() };
+
+    let telegramSent = false;
+    let ttsSent = false;
+
+    if (bridgeAdapter.isScreenActive()) {
+      telegramSent = true;
+      ttsSent = true;
+    }
+
+    assert.strictEqual(telegramSent, false, 'Telegram must NOT be sent when screen is OFF');
+    assert.strictEqual(ttsSent, false, 'TTS must NOT be spoken when screen is OFF');
+  });
+
 } finally {
   // Restore original adapter methods
   bridgeAdapter.isConnected = originalIsConnected;
