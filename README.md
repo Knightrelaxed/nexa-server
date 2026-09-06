@@ -115,40 +115,6 @@ N.E.X.A aktif memberikan pembaruan rutin terjadwal:
 
 ---
 
-## 🔑 Konfigurasi Environment Variables
-
-| Kategori | Variabel | Deskripsi |
-|---|---|---|
-| **Server & Port** | `PORT` | Port server aplikasi (Default: 3000) |
-| **Telegram Gateway** | `TELEGRAM_BOT_TOKEN` | Token bot resmi dari @BotFather |
-| | `TELEGRAM_CHAT_ID` | Chat ID Telegram Tuan Faqih (Proteksi Akses) |
-| | `NEXA_VERCEL_RELAY_URL` | Endpoint Vercel Webhook Relay |
-| | `NEXA_RELAY_SECRET` | Kunci autentikasi shared-secret webhook relay |
-| **Database** | `SUPABASE_URL` | URL project Supabase PostgreSQL |
-| | `SUPABASE_KEY` | Service / Anon Key Supabase |
-| **AI LLM Backbone** | `GEMINI_API_KEY_1` s.d. `4` | API Key Google Gemini (Primary & Backup Pools) |
-| | `GROQ_API_KEY_1` s.d. `4` | API Key Groq (Whisper & Llama Fallback Pools) |
-| | `CEREBRAS_API_KEY_1` s.d. `4`| API Key Cerebras Ultra-Fast Llama Engine |
-| | `OPENROUTER_API_KEY` | Fallback model agregator OpenRouter |
-| | `MISTRAL_API_KEY` | API Key Mistral AI |
-| **Google Master OAuth 2.0** | `GOOGLE_CLIENT_ID` | Client ID Google Cloud Console OAuth 2.0 |
-| | `GOOGLE_CLIENT_SECRET` | Client Secret Google Cloud Console OAuth 2.0 |
-| | `GOOGLE_MASTER_REFRESH_TOKEN` | Master Refresh Token (Gmail, Calendar, Drive, Tasks) |
-| | `GOOGLE_SHEET_ID` | ID Spreadsheet Google Sheets untuk backup mutasi |
-| | `GOOGLE_CALENDAR_ID` | ID Google Calendar utama |
-| | `GOOGLE_DRIVE_FOLDER_ID` | ID Direktori Google Drive N.E.X.A |
-| | `GOOGLE_DOCS_IDEA_ID` | ID Dokumen Master 2nd Brain Ideation |
-| **Search & External APIs** | `SERPER_API_KEY` | API Key Serper.dev Google Search |
-| | `TAVILY_API_KEY` | API Key Tavily Advanced AI Research |
-| | `BRAVE_API_KEY` | API Key Brave Search & Local Place API |
-| | `NOTION_API_KEY` | API Token integrasi Notion Workspace |
-| | `NOTION_TASKS_DB_ID` | Database ID tugas di Notion |
-| **Keamanan & Device Bridge** | `NEXA_GODMODE_SECRET` | Bearer Token autentikasi God Mode & Mobile Bridge |
-| | `NEXA_DEVICE_SECRET` | Secret token identifikasi perangkat Android |
-| | `NEXA_CLI_SECRET` | Secret token akses mandiri N.E.X.A CLI |
-
----
-
 ## 🛡️ Immortality Protocol v3.1
 
 Untuk menjamin ketersediaan layanan 24/7 tanpa henti:
