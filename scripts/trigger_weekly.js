@@ -11,7 +11,7 @@ const { sendTelegramOutbound } = require('../src/interfaces/webhook');
     if (result.success && result.saved > 0) {
       const summaryMsg = [
         `🧠 <b>Weekly Identity Inference Selesai</b>`,
-        `<i>(Siklus Pemahaman Mingguan N.E.X.A — Manual Trigger)</i>`,
+        `<i>(Siklus Pemahaman Mingguan N.E.X.A: Manual Trigger)</i>`,
         '',
         `📊 Hipotesis yang dianalisis : <b>${result.totalHypotheses}</b>`,
         `✅ Proposal baru tersimpan   : <b>${result.saved}</b>`,
