@@ -72,49 +72,6 @@ N.E.X.A aktif memberikan pembaruan rutin terjadwal:
 
 ---
 
-## 🛠️ Panduan Instalasi & Deployment Produksi
-
-### Persyaratan Sistem
-- Node.js v20.x LTS atau lebih baru
-- Ubuntu Server 22.04 / 24.04 LTS
-- Process Manager PM2 (`npm install -g pm2`)
-- Reverse Proxy Nginx dengan sertifikat SSL (Let's Encrypt / Cloudflare)
-
-### Langkah Setup
-
-1. **Clone Repository:**
-   ```bash
-   git clone https://github.com/Knightrelaxed/nexa-server.git
-   cd nexa-server
-   ```
-
-2. **Instal Dependensi:**
-   ```bash
-   npm install
-   ```
-
-3. **Konfigurasi Environment (`.env`):**
-   Salin dan lengkapi konfigurasi variabel lingkungan:
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
-
-4. **Inisialisasi Master Token & Snapshot Vektor:**
-   ```bash
-   node scripts/generate_google_master_token.js
-   node scripts/generate_vector_snapshot.js
-   ```
-
-5. **Jalankan via PM2:**
-   ```bash
-   pm2 start src/app.js --name "nexa-server"
-   pm2 save
-   pm2 startup
-   ```
-
----
-
 ## 🛡️ Immortality Protocol v3.1
 
 Untuk menjamin ketersediaan layanan 24/7 tanpa henti:
