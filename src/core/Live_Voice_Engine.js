@@ -159,6 +159,10 @@ class LiveVoiceSession {
     this.maxReconnectAttempts = 4;
     this.turnHistory       = [];   // { role: 'user'|'assistant', text: string }
     this.sessionStartTime  = Date.now();
+    // BUG 3 & 4 FIX: Keepalive heartbeat + server watchdog state
+    this.keepaliveInterval = null;
+    this.watchdogInterval  = null;
+    this.lastActivityTime  = Date.now();  // BUG 4: tracks last Google message time
   }
 
   /**
@@ -176,6 +180,9 @@ class LiveVoiceSession {
   }
 
   async _connectGoogleWs() {
+    // BUG 2 FIX: Reset setup flag so audio is never sent before setup completes on reconnect
+    this.isSetupComplete = false;
+
     const apiKey    = this._getApiKey();
     const rawBase   = process.env.GEMINI_BASE_URL || 'https://nexa-relay.dazatulloh2.workers.dev';
     const cleanHost = rawBase.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -466,6 +473,9 @@ class LiveVoiceSession {
     try {
       const msg = JSON.parse(rawBuffer.toString());
 
+      // BUG 4 FIX: Update activity timestamp on every message from Google
+      this.lastActivityTime = Date.now();
+
       // ── 1. Setup Complete ────────────────────────────────────────────────
       if (msg.setupComplete) {
         this.isSetupComplete    = true;
@@ -498,6 +508,12 @@ class LiveVoiceSession {
         } catch (err) {
           console.warn(`[LIVE-VOICE] Greeting send warning:`, err.message);
         }
+
+        // BUG 3 FIX: Start keepalive heartbeat to prevent idle timeout
+        this._startKeepalive();
+        // BUG 4 FIX: Start server-side watchdog for stuck session detection
+        this._startServerWatchdog();
+
         return;
       }
 
@@ -505,6 +521,8 @@ class LiveVoiceSession {
       if (msg.serverContent) {
         if (msg.serverContent.interrupted) {
           console.log(`[LIVE-VOICE] ⚡ Barge-in / turn transition detected.`);
+          // BUG 1 FIX: Signal Android to flush playback queue and re-open mic immediately
+          this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
         }
 
         const parts = msg.serverContent.modelTurn?.parts || [];
@@ -710,6 +728,50 @@ class LiveVoiceSession {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
+  // BUG 3 FIX: Keepalive Heartbeat — prevent Google idle timeout
+  // Sends a 100ms silence frame (3200 zero bytes @16kHz) every 5 seconds
+  // ──────────────────────────────────────────────────────────────────────────
+  _startKeepalive() {
+    if (this.keepaliveInterval) clearInterval(this.keepaliveInterval);
+    // 3200 zero bytes = 100ms of silence at 16kHz 16-bit mono PCM
+    const silenceBase64 = Buffer.alloc(3200, 0).toString('base64');
+    this.keepaliveInterval = setInterval(() => {
+      if (!this.isActive || !this.isSetupComplete) return;
+      if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN) return;
+      try {
+        this.googleWs.send(JSON.stringify({
+          realtimeInput: {
+            audio: {
+              mimeType: 'audio/pcm;rate=16000',
+              data: silenceBase64
+            }
+          }
+        }));
+      } catch (err) {
+        console.warn(`[LIVE-VOICE] Keepalive send warning:`, err.message);
+      }
+    }, 5000);
+    console.log(`[LIVE-VOICE] 💓 Keepalive heartbeat started (5s interval).`);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // BUG 4 FIX: Server-Side Watchdog — detect and recover stuck sessions
+  // Checks every 15s; triggers failover if no message from Google in 30s
+  // ──────────────────────────────────────────────────────────────────────────
+  _startServerWatchdog() {
+    if (this.watchdogInterval) clearInterval(this.watchdogInterval);
+    this.watchdogInterval = setInterval(() => {
+      if (!this.isActive) return;
+      const silentMs = Date.now() - this.lastActivityTime;
+      if (silentMs > 30000) {
+        console.warn(`[LIVE-VOICE] 🐕 Watchdog: Google silent for ${Math.round(silentMs / 1000)}s — triggering failover.`);
+        this._handleFailover(1006, 'Server silent timeout');
+      }
+    }, 15000);
+    console.log(`[LIVE-VOICE] 🐕 Server watchdog started (check: 15s, threshold: 30s).`);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
   // CLOSE SESSION — Persist memory & run End-of-Call Passive Learning
   // ──────────────────────────────────────────────────────────────────────────
   async close() {
@@ -718,6 +780,10 @@ class LiveVoiceSession {
     this.isActive = false;
     const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
     console.log(`[LIVE-VOICE] 🛑 Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);
+
+    // BUG 3 & 4 FIX: Clear keepalive and watchdog intervals on close
+    if (this.keepaliveInterval) { clearInterval(this.keepaliveInterval); this.keepaliveInterval = null; }
+    if (this.watchdogInterval)  { clearInterval(this.watchdogInterval);  this.watchdogInterval  = null; }
 
     if (this.googleWs) {
       try { this.googleWs.close(1000, 'Session Closed'); } catch (_) {}
