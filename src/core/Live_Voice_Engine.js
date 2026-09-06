@@ -163,6 +163,9 @@ class LiveVoiceSession {
     this.keepaliveInterval = null;
     this.watchdogInterval  = null;
     this.lastActivityTime  = Date.now();  // BUG 4: tracks last Google message time
+    // Turn Gating: Prevent mic ambient noise from colliding with greeting & tool response synthesis
+    this.isExecutingTool   = false;
+    this.isGreetingPending = false;
   }
 
   /**
@@ -181,7 +184,9 @@ class LiveVoiceSession {
 
   async _connectGoogleWs() {
     // BUG 2 FIX: Reset setup flag so audio is never sent before setup completes on reconnect
-    this.isSetupComplete = false;
+    this.isSetupComplete   = false;
+    this.isExecutingTool   = false;
+    this.isGreetingPending = false;
 
     const apiKey    = this._getApiKey();
     const rawBase   = process.env.GEMINI_BASE_URL || 'https://nexa-relay.dazatulloh2.workers.dev';
@@ -502,6 +507,13 @@ class LiveVoiceSession {
           }
         };
 
+        this.isGreetingPending = true;
+        setTimeout(() => {
+          if (this.isGreetingPending) {
+            this.isGreetingPending = false;
+          }
+        }, 4000);
+
         try {
           this.googleWs.send(JSON.stringify(greetingPayload));
           console.log(`[LIVE-VOICE] 🎙️ Dispatched Proactive Vocal Greeting trigger.`);
@@ -531,6 +543,8 @@ class LiveVoiceSession {
         for (const p of parts) {
           // Audio chunk (PCM 24kHz Base64)
           if (p.inlineData && p.inlineData.data) {
+            this.isGreetingPending = false;
+            this.isExecutingTool = false;
             this._sendToClient({
               type: 'CALL_AUDIO_PLAY',
               pcm_chunk: p.inlineData.data
@@ -556,6 +570,8 @@ class LiveVoiceSession {
 
         // If turnComplete is reached, return state to LISTENING (only if call is not ending)
         if (msg.serverContent.turnComplete && !this.isEndingCall) {
+          this.isGreetingPending = false;
+          this.isExecutingTool = false;
           this._sendToClient({
             type: 'CALL_STATUS_UPDATE',
             status: 'LISTENING'
@@ -582,6 +598,7 @@ class LiveVoiceSession {
 
       // ── 3. Tool Calls (Function Execution — Parallel Batching) ──────────
       if (msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0) {
+        this.isExecutingTool = true;
         // Notify HUD that tools are executing (Memproses..)
         this._sendToClient({
           type: 'CALL_STATUS_UPDATE',
@@ -635,6 +652,12 @@ class LiveVoiceSession {
         if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
           this.googleWs.send(JSON.stringify(toolResponsePayload));
           console.log(`[LIVE-VOICE] 📤 Sent ${responses.length} Tool Response(s) back to Google.`);
+          // Tool gating safety release: after 6 seconds max, unblock mic if Google stays silent
+          setTimeout(() => {
+            if (this.isExecutingTool) {
+              this.isExecutingTool = false;
+            }
+          }, 6000);
         }
       }
 
@@ -649,6 +672,11 @@ class LiveVoiceSession {
    */
   handleIncomingClientAudio(pcmBase64) {
     if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN || !this.isSetupComplete) {
+      return;
+    }
+
+    // GATING: Do not forward mic noise while tool response is being synthesized or greeting is pending
+    if (this.isExecutingTool || this.isGreetingPending) {
       return;
     }
 
