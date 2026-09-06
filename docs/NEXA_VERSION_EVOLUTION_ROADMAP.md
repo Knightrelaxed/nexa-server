@@ -11,42 +11,39 @@ Dokumen ilmiah ini merangkum kronologi evolusi arsitektur **N.E.X.A (Neural Exec
 Setiap lompatan versi mewakili terobosan dalam rekayasa sistem terdistribusi, manajemen memori autobiografis (*Chrono-Episodic Memory*), ketahanan sistem anti-gagal (*Fault-Tolerant Multi-Tier Fallback*), integrasi multi-antarmuka (Telegram, CLI, Mobile Bridge), serta otomatisasi kognisi proaktif yang dirancang khusus untuk mendukung aspirasi akademik, kedisiplinan, dan karier diplomatik Tuan Faqih Hidayatulloh.
 
 ```mermaid
-timeline
-    title N.E.X.A Architectural Evolution Roadmap
-    section Local Genesis
-      v1.0 (Termux Genesis) : Local Android Proto-Core
-                            : Resource Bottlenecks & Process Kill
-    section Cloud Ascension
-      v2.0 (Cloud Ascension) : Hugging Face Cloud Migration
-                             : Immortality Protocol v2.0
-      v2.1 (Financial Core) : Autonomous Expense Tracking
-      v2.2 (Intent Router) : Dual-Layer NLP Classification
-    section Relational & Multi-Modal
-      v2.3 (Supabase Migration) : Relational ACID Database Migration
-                                : Real-time Transaction Deduplication
-      v2.4 (Discipline Guard) : Executive Discipline & God Mode
-      v2.5 (Multi-Modal Sensory) : Tasks, Calendar, Vision & Voice
-                                 : 12-Tier Redundant Fallback Matrix
-      v2.6 (Second Brain Store) : Knowledge Vault & Permanent Facts
-    section Cognitive Resonance
-      v2.7 (C.R.A.I. Architecture) : Ebbinghaus Memory Decay Engine
-                                   : Causal Knowledge Graph & Anticipatory Interventions
-                                   : Conversational Memory UX & Decision Journaling
-    section Self-Learning & Organic Memory
-      v2.8 (Self-Learning Core) : Passive Knowledge Acquisition (nexa_self_model)
-                                : Weekly Self-Reflection Pass
-      v2.9 (Living Memory & CLI) : Memory Hygiene Pipeline (4-Stage Sweep)
-                                 : Dual-Channel CLI Console (nexa-assistant-console)
-    section Sovereign Cloud Infrastructure
-      v3.0 (Azure Sovereign VPS) : Azure VM Jakarta (Standard_B2ats_v2) 24/7
-                                 : Caddy Auto-HTTPS & PM2 Plus Systemd
-                                 : Ed25519 Autonomous DevOps Key Auth
-                                 : Production Node.js 20 & Direct Telegram Tier
-    section Unified Master & Chrono-Episodic
-      v3.1 (Unified Master & Chrono) : Unified Master OAuth 2.0 (16 Scopes Consolidated)
-                                     : Dual-Tier Chrono-Episodic Memory (>90d Daily Narratives)
-                                     : Smart Closed-Loop Intention Engine & Auto-Reconciler
-                                     : Official Identity: Neural Executive with Xenial Agent
+flowchart TD
+    subgraph S1 ["1. Local Genesis (v1.0)"]
+        V1["<b>v1.0 (Termux Genesis)</b><br>• Local Android Proto-Core<br>• Process Kill & Bottlenecks"]
+    end
+
+    subgraph S2 ["2. Cloud Ascension & Data Migration (v2.0 - v2.3)"]
+        V20["<b>v2.0 (Cloud Ascension)</b><br>• Hugging Face Spaces<br>• Immortality Protocol v2.0"]
+        V21["<b>v2.1 (Financial Core)</b><br>• Autonomous Expense Tracking"]
+        V22["<b>v2.2 (Intent Router)</b><br>• Dual-Layer NLP Classification"]
+        V23["<b>v2.3 (Supabase Relational)</b><br>• PostgreSQL ACID Migration<br>• Transaction Deduplication"]
+    end
+
+    subgraph S3 ["3. Multi-Modal Sensory & Cognitive (v2.4 - v2.7)"]
+        V24["<b>v2.4 (Discipline Guard)</b><br>• Executive God Mode & Habits"]
+        V25["<b>v2.5 (Multi-Modal Sensory)</b><br>• Tasks, Calendar, Vision & Voice<br>• 11-Tier Fallback Matrix"]
+        V26["<b>v2.6 (Second Brain Store)</b><br>• Knowledge Vault & Facts"]
+        V27["<b>v2.7 (C.R.A.I. Architecture)</b><br>• Ebbinghaus Memory Decay<br>• Causal Graph & Anticipation"]
+    end
+
+    subgraph S4 ["4. Self-Learning & Interfaces (v2.8 - v2.9)"]
+        V28["<b>v2.8 (Self-Learning Core)</b><br>• Passive Learning (nexa_self_model)<br>• Weekly Reflection Pass"]
+        V29["<b>v2.9 (Living Memory & CLI)</b><br>• Memory Hygiene Pipeline<br>• Dual-Channel CLI Console (SSE)"]
+    end
+
+    subgraph S5 ["5. Sovereign Infrastructure (v3.0)"]
+        V30["<b>v3.0 (Azure Sovereign VPS)</b><br>• Ubuntu 24.04 Jakarta (24/7)<br>• Caddy HTTPS & PM2 Systemd<br>• Ed25519 DevOps Key Auth"]
+    end
+
+    subgraph S6 ["6. Unified Master & Chrono-Episodic (v3.1)"]
+        V31["<b>v3.1 (Unified Master & Chrono)</b><br>• Unified Master OAuth 2.0 (16 Scopes)<br>• Chrono-Episodic Daily Narratives (>90d)<br>• Smart Closed-Loop Intention Engine<br>• Identity: Neural Executive with Xenial Agent"]
+    end
+
+    V1 --> V20 --> V21 --> V22 --> V23 --> V24 --> V25 --> V26 --> V27 --> V28 --> V29 --> V30 --> V31
 ```
 
 ---
