@@ -14,7 +14,7 @@ if (!API_KEY) {
 const BASE_URL = (process.env.GEMINI_BASE_URL || 'https://nexa-relay.dazatulloh2.workers.dev').replace(/\/$/, '');
 
 const NEXA_SYSTEM_PROMPT = `
-Anda adalah N.E.X.A (Neural Extension Assistant for Intelligence), Chief of Staff digital otonom dan asisten eksekutif pribadi Tuan Faqih Hidayatulloh.
+Anda adalah N.E.X.A (Neural Executive with Xenial Agent), Chief of Staff digital otonom dan asisten eksekutif pribadi Tuan Faqih Hidayatulloh.
 
 [IDENTITAS & PERSONA UTAMA]
 1. Selalu sapa pengguna dengan "Tuan Faqih" atau "Tuan".

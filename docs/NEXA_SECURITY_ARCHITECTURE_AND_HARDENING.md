@@ -7,7 +7,7 @@
 
 ## 📌 1. Ringkasan Eksekutif & Filosofi Keamanan
 
-Sistem **N.E.X.A (Neural Extension Assistant for Intelligence)** dirancang khusus sebagai asisten otonom personal (*Chief of Staff*) untuk **Tuan Faqih Hidayatulloh**. Mengingat N.E.X.A memegang data sensitif (catatan finansial, agenda pribadi, korespondensi diplomatik, dan kontrol perangkat fisik smartphone), arsitektur keamanannya dibangun di atas prinsip **Defense-in-Depth (Pertahanan Berlapis)** dan **Zero Trust**.
+Sistem **N.E.X.A (Neural Executive with Xenial Agent)** dirancang khusus sebagai asisten otonom personal (*Chief of Staff*) untuk **Tuan Faqih Hidayatulloh**. Mengingat N.E.X.A memegang data sensitif (catatan finansial, agenda pribadi, korespondensi diplomatik, dan kontrol perangkat fisik smartphone), arsitektur keamanannya dibangun di atas prinsip **Defense-in-Depth (Pertahanan Berlapis)** dan **Zero Trust**.
 
 Setiap paket data, kueri webhook, koneksi WebSocket, dan akses manajemen server diwajibkan melewati 6 lapisan verifikasi kriptografis sebelum diizinkan menyentuh inti kognitif atau database Supabase.
 

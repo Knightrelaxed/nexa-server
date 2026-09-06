@@ -7,7 +7,7 @@ sdk: docker
 pinned: false
 app_port: 7860
 ---
-# N.E.X.A — Neural Extension Assistant for Intelligence
+# N.E.X.A — Neural Executive with Xenial Agent
 > Chief of Staff AI — Immortality Protocol v2.7
 
 **N.E.X.A** adalah asisten AI super cerdas bergaya "J.A.R.V.I.S" yang dirancang khusus untuk menjadi *Chief of Staff* bagi Tuan Faqih. Berbeda dengan chatbot konvensional, N.E.X.A beroperasi secara proaktif (*set-and-forget*), mengelola keuangan, agenda akademik, penjadwalan, hingga memonitor kedisiplinan digital pengguna.

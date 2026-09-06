@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Extension Assistant for Intelligence — v3.1 "Unified Master OAuth 2.0 & Human-Centric Cognitive Ergonomics")*
+*(Neural Executive with Xenial Agent — v3.1 "Unified Master OAuth 2.0 & Human-Centric Cognitive Ergonomics")*
 
 ---
 

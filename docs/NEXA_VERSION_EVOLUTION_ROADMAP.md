@@ -1,12 +1,12 @@
 # N.E.X.A ARCHITECTURAL WHITEPAPER: EVOLUTIONARY ROADMAP (v1.0 — v3.0)
-**Neural Extension Assistant for Intelligence (N.E.X.A)**  
+**Neural Executive with Xenial Agent (N.E.X.A)**  
 *Chief of Staff & Autonomous Executive Ecosystem for Tuan Faqih Hidayatulloh*  
 
 ---
 
 ## Executive Summary
 
-Dokumen ilmiah ini merangkum kronologi evolusi arsitektur **N.E.X.A (Neural Extension Assistant for Intelligence)** dari prototipe eksperimental berbasis lingkungan lokal (*Termux Genesis*), evolusi kognisi organik & *Self-Learning*, hingga menjadi sistem *Chief of Staff* otonom berderajat kognitif tinggi yang berjalan di atas infrastruktur server mandiri **v3.0 — Sovereign Azure Cloud Production (Jakarta Region)**. 
+Dokumen ilmiah ini merangkum kronologi evolusi arsitektur **N.E.X.A (Neural Executive with Xenial Agent)** dari prototipe eksperimental berbasis lingkungan lokal (*Termux Genesis*), evolusi kognisi organik & *Self-Learning*, hingga menjadi sistem *Chief of Staff* otonom berderajat kognitif tinggi yang berjalan di atas infrastruktur server mandiri **v3.0 — Sovereign Azure Cloud Production (Jakarta Region)**. 
 
 Setiap lompatan versi mewakili terobosan dalam rekayasa sistem terdistribusi, manajemen memori organik (*Organic Long-Term Memory*), ketahanan sistem anti-gagal (*Fault-Tolerant Multi-Tier Fallback*), integrasi multi-antarmuka (Telegram & CLI), serta otomatisasi kognisi proaktif yang dirancang khusus untuk mendukung aspirasi akademik, kedisiplinan, dan karier diplomatik Tuan Faqih Hidayatulloh.
 
