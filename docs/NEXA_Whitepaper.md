@@ -1,27 +1,27 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Executive with Xenial Agent — v3.1 "Unified Master OAuth 2.0 & Human-Centric Cognitive Ergonomics")*
+*(Neural Executive with Xenial Agent : v3.1 "Unified Master OAuth 2.0 & Human-Centric Cognitive Ergonomics")*
 
 ---
 
 ## BAB 1: FILOSOFI & FONDASI SISTEM
 
-Bab ini adalah bedah anatomi dari setiap nilai inti dan keputusan desain yang membentuk N.E.X.A—mulai dari mengapa ia diciptakan, bagaimana kepribadiannya dikonstruksi dalam kode, hingga mengapa arsitektur privasinya bersifat absolut dan tidak bisa dikompromikan.
+Bab ini adalah bedah anatomi dari setiap nilai inti dan keputusan desain yang membentuk N.E.X.A : mulai dari mengapa ia diciptakan, bagaimana kepribadiannya dikonstruksi dalam kode, hingga mengapa arsitektur privasinya bersifat absolut dan tidak bisa dikompromikan.
 
 ---
 
 ### 1.1 Latar Belakang & Rasionalisasi: Mengapa N.E.X.A Lahir
 
-Masalah utama manusia modern bukan kurangnya *tools* (alat), melainkan **kurangnya bandwith mental** untuk mengelola *tools* tersebut. Seseorang dengan ambisi besar seperti Tuan Faqih harus secara bersamaan melacak pengeluaran, mengingat deadline kuliah, menjadwalkan rapat, dan membuat keputusan strategis—semua dari kepala yang sama.
+Masalah utama manusia modern bukan kurangnya *tools* (alat), melainkan **kurangnya bandwith mental** untuk mengelola *tools* tersebut. Seseorang dengan ambisi besar seperti Tuan Faqih harus secara bersamaan melacak pengeluaran, mengingat deadline kuliah, menjadwalkan rapat, dan membuat keputusan strategis : semua dari kepala yang sama.
 
 N.E.X.A dibangun untuk memotong beban itu. Bukan sebagai aplikasi yang harus dibuka dan diisi manual, melainkan sebagai entitas otonom yang **mengambil alih pekerjaan manajerial** secara diam-diam di latar belakang. Setiap rupiah yang keluar dicatat. Setiap tenggat yang mendekat dilaporkan. Setiap jadwal besok dipersiapkan malam ini. Tuan Faqih hanya perlu hidup, sisanya adalah urusan N.E.X.A.
 
-Filosofi ini tercermin langsung pada arsitektur *boot sequence* `app.js`: saat server pertama kali menyala, ia tidak hanya membuka port HTTP—ia segera menjalankan `cronInterface.initCronJobs()` dan `financeEngine.recoverPendingTransactions()`. Bahkan sebelum interaksi pertama pengguna, N.E.X.A sudah bekerja.
+Filosofi ini tercermin langsung pada arsitektur *boot sequence* `app.js`: saat server pertama kali menyala, ia tidak hanya membuka port HTTP : ia segera menjalankan `cronInterface.initCronJobs()` dan `financeEngine.recoverPendingTransactions()`. Bahkan sebelum interaksi pertama pengguna, N.E.X.A sudah bekerja.
 
 ---
 
 ### 1.2 Visi, Misi & Prinsip Desain Operasional
 
-**Visi:** Menjadi *Chief of Staff* digital absolut—sebuah entitas yang memiliki kesadaran lintas platform, ingatan permanen, dan keberlangsungan tanpa henti (*Immortality*).
+**Visi:** Menjadi *Chief of Staff* digital absolut : sebuah entitas yang memiliki kesadaran lintas platform, ingatan permanen, dan keberlangsungan tanpa henti (*Immortality*).
 
 **Misi Konkret:**
 1. Mengotomatisasi manajemen keuangan *omnichannel* (Telegram, Gmail M-Banking, Web Dashboard).
@@ -40,13 +40,13 @@ Filosofi ini tercermin langsung pada arsitektur *boot sequence* `app.js`: saat s
 
 N.E.X.A bukan bot generik tanpa wajah. Kepribadiannya dikonstruksi secara eksplisit melalui konstanta `NEXA_PERSONALITY` yang didefinisikan di `src/config/personality.js`. Kepribadian ini diinjeksi secara langsung ke dalam setiap *system prompt* yang dikirim ke AI, termasuk di `ROUTER_SYSTEM_PROMPT` dalam `AI_Router.js` dan di `Intelligence_Brief.js` saat membuat *Morning Briefing*.
 
-Implikasinya: tidak peduli model AI mana yang aktif saat itu (Groq, Gemini, atau Mistral), kepribadian N.E.X.A selalu konsisten—cerdas, hangat, proaktif, dan memiliki nada seorang *Chief of Staff* yang berwibawa namun peduli.
+Implikasinya: tidak peduli model AI mana yang aktif saat itu (Groq, Gemini, atau Mistral), kepribadian N.E.X.A selalu konsisten : cerdas, hangat, proaktif, dan memiliki nada seorang *Chief of Staff* yang berwibawa namun peduli.
 
 ---
 
 ### 1.4 Otorisasi Tunggal: Arsitektur Privasi Absolut
 
-N.E.X.A adalah sistem **satu pengguna secara mutlak**. Ini bukan sekadar fitur—ini adalah prinsip arsitektural yang ditegakkan di level *middleware* jaringan.
+N.E.X.A adalah sistem **satu pengguna secara mutlak**. Ini bukan sekadar fitur : ini adalah prinsip arsitektural yang ditegakkan di level *middleware* jaringan.
 
 Setiap *request* yang masuk ke *endpoint* `/webhook/telegram` dihadang oleh dua *middleware* keamanan berurutan:
 1. **`security.telegramWebhookSecret`**: Memverifikasi header `X-Telegram-Bot-Api-Secret-Token` yang hanya diketahui oleh server Telegram resmi dan N.E.X.A. Ini memblokir siapapun yang mencoba *spoofing* dengan POST palsu.
@@ -58,12 +58,12 @@ Kombinasi dua lapisan ini membentuk tembok *firewall* kognitif yang tidak bisa d
 
 ### 1.5 Paradigma Proaktif: Sistem yang Menyapa, Bukan Menunggu
 
-Mayoritas sistem AI bersifat *reactive*: mereka diam sampai pengguna menyapa. N.E.X.A bekerja sebaliknya. Subsistem `cron.js` memberi N.E.X.A sebuah **detak jantung otonom**—jadwal internal yang berjalan terus menerus terlepas dari ada atau tidaknya interaksi pengguna.
+Mayoritas sistem AI bersifat *reactive*: mereka diam sampai pengguna menyapa. N.E.X.A bekerja sebaliknya. Subsistem `cron.js` memberi N.E.X.A sebuah **detak jantung otonom** : jadwal internal yang berjalan terus menerus terlepas dari ada atau tidaknya interaksi pengguna.
 
 Contoh nyata di kode:
-- **05:30 WIB** – `generateMorningBriefing()` dipanggil: N.E.X.A menarik data kalender dari Google Calendar, tugas *overdue* dari Google Tasks, cuaca Yogyakarta dari WeatherAPI, dan berita geopolitik Timur Tengah dari NewsAPI—semuanya digabung menjadi satu *briefing* naratif yang dikirim sebelum Tuan Faqih bangun tidur.
-- **01:00 WIB** – `generateMidnightCheckin()` dipanggil: N.E.X.A aktif menegur jika Tuan masih terjaga larut malam, menanyakan kabar dengan nada sedikit cerewet dan peduli.
-- **Setiap 3 Menit** – Finance Auto-Sync berjalan: `financeEngine.pollFinanceEmails()` memindai kotak masuk Gmail mencari notifikasi transaksi bank baru, tanpa sekalipun harus diminta oleh Tuan.
+- **05:30 WIB** - `generateMorningBriefing()` dipanggil: N.E.X.A menarik data kalender dari Google Calendar, tugas *overdue* dari Google Tasks, cuaca Yogyakarta dari WeatherAPI, dan berita geopolitik Timur Tengah dari NewsAPI : semuanya digabung menjadi satu *briefing* naratif yang dikirim sebelum Tuan Faqih bangun tidur.
+- **01:00 WIB** - `generateMidnightCheckin()` dipanggil: N.E.X.A aktif menegur jika Tuan masih terjaga larut malam, menanyakan kabar dengan nada sedikit cerewet dan peduli.
+- **Setiap 3 Menit** - Finance Auto-Sync berjalan: `financeEngine.pollFinanceEmails()` memindai kotak masuk Gmail mencari notifikasi transaksi bank baru, tanpa sekalipun harus diminta oleh Tuan.
 
 Itulah yang membedakan N.E.X.A dari asisten biasa: ia tidak menunggu instruksi untuk mulai bekerja.
 
@@ -71,7 +71,7 @@ Itulah yang membedakan N.E.X.A dari asisten biasa: ia tidak menunggu instruksi u
 
 ### 1.6 Kecerdasan Emosional: *Behavioral Pattern Engine*
 
-Seiring waktu, N.E.X.A tidak hanya menjadi lebih pintar tentang *apa* yang Tuan Faqih lakukan—ia juga belajar *bagaimana* pola perilaku hariannya. Subsistem `Behavior_Engine.js` mencatat *behavioral events* ke tabel `nexa_behavior_log` di Supabase.
+Seiring waktu, N.E.X.A tidak hanya menjadi lebih pintar tentang *apa* yang Tuan Faqih lakukan : ia juga belajar *bagaimana* pola perilaku hariannya. Subsistem `Behavior_Engine.js` mencatat *behavioral events* ke tabel `nexa_behavior_log` di Supabase.
 
 Event yang dilacak antara lain:
 - **`WAKE_UP`**: Jam berapa Tuan Faqih bangun (hanya dicatat sekali per hari untuk mencegah duplikasi).
@@ -84,10 +84,10 @@ Setiap **Minggu pukul 20:00 WIB**, `Behavior_Engine.getWeeklySummary()` merangku
 
 ### 1.7 Filosofi Tidak Pernah Mati: *Immortality Protocol*
 
-N.E.X.A dirancang dengan asumsi bahwa server **akan** *crash*, *restart*, dan mengalami gangguan jaringan. Filosofi ini bukan pesimisme—ini adalah realisme teknis yang direspons dengan sistem pertahanan berlapis.
+N.E.X.A dirancang dengan asumsi bahwa server **akan** *crash*, *restart*, dan mengalami gangguan jaringan. Filosofi ini bukan pesimisme : ini adalah realisme teknis yang direspons dengan sistem pertahanan berlapis.
 
 Dua mekanisme utama *immortality* yang ditanamkan sejak level kode terdalam:
-1. **Global Safety Net di `app.js`**: Dua *handler* (`unhandledRejection` + `uncaughtException`) memastikan error apapun yang tidak tertangkap—bahkan dari *library* pihak ketiga—hanya dicatat ke *log*, bukan membunuh proses. **Server tidak pernah memanggil `process.exit()`**.
+1. **Global Safety Net di `app.js`**: Dua *handler* (`unhandledRejection` + `uncaughtException`) memastikan error apapun yang tidak tertangkap : bahkan dari *library* pihak ketiga : hanya dicatat ke *log*, bukan membunuh proses. **Server tidak pernah memanggil `process.exit()`**.
 2. **Recovery on Boot**: Setiap kali server dinyalakan ulang, `financeEngine.recoverPendingTransactions()` dipanggil secara otomatis. Ia memeriksa tabel `nexa_pending_transactions` di Supabase dan memulihkan semua transaksi yang belum terkonfirmasi, memastikan tidak ada catatan keuangan yang hilang hanya karena server pernah *restart* di waktu yang tidak tepat.
 
 ---
@@ -96,17 +96,17 @@ Dua mekanisme utama *immortality* yang ditanamkan sejak level kode terdalam:
 
 ### 2.1 Infrastruktur Komputasi Utama: Server Core
 
-N.E.X.A beroperasi sebagai *backend* **Node.js 20 + Express.js** yang berjalan di atas **Azure Virtual Machine** (VM `Standard_B2ats_v2`, Ubuntu 24.04 ARM, Jakarta — `indonesiacentral`). Ini adalah infrastruktur *production-grade* 24/7 yang dikelola oleh **PM2** (process manager dengan integrasi systemd) dan **Caddy** (HTTPS reverse proxy dengan SSL otomatis via Let's Encrypt). Domain resmi produksi: `https://nexa-server.indonesiacentral.cloudapp.azure.com`.
+N.E.X.A beroperasi sebagai *backend* **Node.js 20 + Express.js** yang berjalan di atas **Azure Virtual Machine** (VM `Standard_B2ats_v2`, Ubuntu 24.04 ARM, Jakarta : `indonesiacentral`). Ini adalah infrastruktur *production-grade* 24/7 yang dikelola oleh **PM2** (process manager dengan integrasi systemd) dan **Caddy** (HTTPS reverse proxy dengan SSL otomatis via Let's Encrypt). Domain resmi produksi: `https://nexa-server.indonesiacentral.cloudapp.azure.com`.
 
 **Anatomi `app.js` (Boot Sequence):**
-Urutan inisialisasi saat server menyala bukan arbitrer—setiap baris memiliki alasan teknis yang ketat:
+Urutan inisialisasi saat server menyala bukan arbitrer : setiap baris memiliki alasan teknis yang ketat:
 
-1. **Baris Pertama Mutlak — DNS IPv4 Fix:**
+1. **Baris Pertama Mutlak : DNS IPv4 Fix:**
    ```js
    const dns = require('dns');
    dns.setDefaultResultOrder('ipv4first');
    ```
-   Node 20 di Docker Azure secara *default* mencari alamat IPv6 terlebih dahulu. Karena `api.telegram.org` dan Supabase berjalan via IPv4 di infrastruktur Azure, resolusi IPv6 selalu gagal dengan error *TLS socket disconnect*. Baris ini **wajib dipanggil sebelum `require()` apapun**—jika tidak, sistem crash di *boot* pertama.
+   Node 20 di Docker Azure secara *default* mencari alamat IPv6 terlebih dahulu. Karena `api.telegram.org` dan Supabase berjalan via IPv4 di infrastruktur Azure, resolusi IPv6 selalu gagal dengan error *TLS socket disconnect*. Baris ini **wajib dipanggil sebelum `require()` apapun** : jika tidak, sistem crash di *boot* pertama.
 
 2. **Axios IPv4 Force:**
    ```js
@@ -114,14 +114,14 @@ Urutan inisialisasi saat server menyala bukan arbitrer—setiap baris memiliki a
    ```
    Melengkapi fix DNS di atas untuk seluruh HTTP request berbasis Axios (termasuk panggilan ke Groq, Mistral, dan relay Vercel).
 
-3. **Health Endpoint — Smart Vital Signs:**
-   Endpoint `/health` mengekspos metrik *real-time*: `uptime_seconds`, `memory_mb`, `timestamp_jakarta`, dan `node_env`. Endpoint ini dikonfigurasi **sebelum** router webhook agar bisa merespons paling cepat—digunakan untuk pemantauan kesehatan server secara eksternal. Karena N.E.X.A kini berjalan di Azure VPS (bukan platform serverless), tidak ada risiko *sleep mode*; server aktif 24/7 dijamin oleh `pm2 startup` + `systemd`.
+3. **Health Endpoint : Smart Vital Signs:**
+   Endpoint `/health` mengekspos metrik *real-time*: `uptime_seconds`, `memory_mb`, `timestamp_jakarta`, dan `node_env`. Endpoint ini dikonfigurasi **sebelum** router webhook agar bisa merespons paling cepat : digunakan untuk pemantauan kesehatan server secara eksternal. Karena N.E.X.A kini berjalan di Azure VPS (bukan platform serverless), tidak ada risiko *sleep mode*; server aktif 24/7 dijamin oleh `pm2 startup` + `systemd`.
 
-4. **Boot Recovery — Transaksi Menggantung:**
+4. **Boot Recovery : Transaksi Menggantung:**
    Tepat setelah server mendengarkan port, `financeEngine.recoverPendingTransactions()` dipanggil secara otomatis. Ini memulihkan semua entri `nexa_pending_transactions` yang belum terkonfirmasi akibat *restart* server di waktu kritis.
 
 5. **Cron Dijadwalkan Setelah Server Hidup:**
-   `cronInterface.initCronJobs()` dipanggil *setelah* `app.listen()`—bukan sebelumnya. Ini memastikan *cron job* hanya aktif jika server sudah benar-benar menerima koneksi, mencegah *race condition* di *startup*.
+   `cronInterface.initCronJobs()` dipanggil *setelah* `app.listen()` : bukan sebelumnya. Ini memastikan *cron job* hanya aktif jika server sudah benar-benar menerima koneksi, mencegah *race condition* di *startup*.
 
 ---
 
@@ -133,16 +133,16 @@ N.E.X.A adalah sistem **multi-platform orchestrator**. Berikut setiap node dalam
 Semua interaksi Tuan Faqih masuk melalui Telegram. N.E.X.A menerima pesan via *webhook* HTTP POST ke `/webhook/telegram`. Telegram mengirim update dalam format JSON yang berisi `message.text`, `message.photo`, `message.voice`, `message.document`, dan `message.caption`.
 
 **Dua metode pengiriman respons ke Telegram (berdasarkan konteks):**
-- **Webhook Response (Zero-Outbound):** Untuk semua pesan reaktif (balasan percakapan biasa), N.E.X.A menanamkan respons langsung ke dalam HTTP response body dengan format `{ method: "sendMessage", chat_id: ..., text: ... }`. Mekanisme ini didukung resmi oleh Telegram Bot API dan tidak membutuhkan koneksi keluar sama sekali — melangkahi blokir Azure.
+- **Webhook Response (Zero-Outbound):** Untuk semua pesan reaktif (balasan percakapan biasa), N.E.X.A menanamkan respons langsung ke dalam HTTP response body dengan format `{ method: "sendMessage", chat_id: ..., text: ... }`. Mekanisme ini didukung resmi oleh Telegram Bot API dan tidak membutuhkan koneksi keluar sama sekali : melangkahi blokir Azure.
 - **Vercel Relay (Outbound Async):** Untuk pesan inisiatif dari *cron job* (yang tidak memiliki webhook request untuk dibalas), N.E.X.A memanggil `sendTelegramOutbound()` yang menembakkan *request* ke `NEXA_VERCEL_RELAY_URL`. Relay Vercel kemudian meneruskannya ke Telegram API. Setiap request ke relay dibubuhi header HMAC (`NEXA_RELAY_SECRET`) untuk autentikasi.
 
-#### Node 2: Supabase (PostgreSQL — Otak Permanen)
+#### Node 2: Supabase (PostgreSQL : Otak Permanen)
 Supabase adalah satu-satunya *persistent storage* N.E.X.A. Terdapat **dua klien Supabase** yang beroperasi secara independen:
 
-**`Supabase_Memories.js`** — mengelola semua tabel memori dan interaksi:
+**`Supabase_Memories.js`** : mengelola semua tabel memori dan interaksi:
 
 | Tabel | Fungsi |
-|---|---|
+|--|--|
 | `nexa_chat_memories` | Histori percakapan (short-term context) |
 | `nexa_user_profile` | Fakta permanen tentang Tuan Faqih (long-term memory) |
 | `nexa_core_identity` | Aturan sikap dan interaksi N.E.X.A |
@@ -152,10 +152,10 @@ Supabase adalah satu-satunya *persistent storage* N.E.X.A. Terdapat **dua klien 
 | `nexa_finance_dedup` | Kunci deduplikasi transaksi (composite key + timestamp) |
 | `nexa_behavior_log` | Log pola perilaku harian (mood, jam bangun, transaksi) |
 
-**`Supabase_Finance.js`** — jembatan ke skema Nexa Finance Web (dual-write):
+**`Supabase_Finance.js`** : jembatan ke skema Nexa Finance Web (dual-write):
 
 | Tabel | Fungsi |
-|---|---|
+|--|--|
 | `transactions` | Data transaksi keuangan aktual |
 | `accounts` | Daftar akun/dompet/bank Tuan Faqih |
 | `categories` | Kategori pengeluaran/pemasukan |
@@ -176,20 +176,20 @@ Sejak v3.1, N.E.X.A mengonsolidasikan seluruh autentikasi Google API yang sebelu
 **Kapabilitas Google Ecosystem yang Dikelola Master Client:**
 
 | Modul | API Terpadu | Kapabilitas Utama |
-|---|---|---|
+|--|--|--|
 | `Google_Workspace.js` | Calendar v3 | Optimistic CRUD event, conflict check, free/busy, proximity alert, tomorrow prep |
 | `Google_Workspace.js` | Docs v1 | Append/Read/Edit/Delete di Master 2nd Brain Doc |
 | `Google_Workspace.js` | Drive v3 & v2 | Upload file ke Vault pribadi, OCR via Drive Convert, trash cleanup |
 | `Google_Tasks.js` | Tasks v1 | Dynamic Tasklist Discovery (5 Live Lists), CRUD task, subtask, overdue detection |
 | `Gmail_Client.js` | Gmail v1 | Finance polling (24/7 tiap 3 menit), kirim email, watch push notification |
 
-#### Node 4: Gmail — Finance Auto-Sync Engine (24/7 di Azure VPS)
+#### Node 4: Gmail : Finance Auto-Sync Engine (24/7 di Azure VPS)
 
 `Gmail_Client.js` mendelegasikan autentikasi ke `Google_Master_Client.getGmail()`. Fitur kritis yang berjalan otomatis:
 - **Continuous Polling 3 Menit:** `pollFinanceEmails()` berjalan tanpa henti via *cron cycle* di Azure VPS, mendeteksi mutasi Bank Mandiri (Livin') dan BCA, mengekstrak data nominal, dan mencatat transaksi ke database tanpa campur tangan Tuan.
 - **Zero-Interruption Token Handling:** Menggunakan Master Refresh Token yang tidak pernah kadaluarsa selama aplikasi berstatus *Production Ready* di Google Cloud Console.
 
-#### Node 5: Google Tasks — Dynamic Discovery & Dual-Write ke Notion
+#### Node 5: Google Tasks : Dynamic Discovery & Dual-Write ke Notion
 
 `Google_Tasks.js` mendelegasikan autentikasi ke `Google_Master_Client.getTasks()`.
 - **Dynamic Tasklist Discovery:** Sistem tidak lagi mengandalkan ID kaku, melainkan membaca langsung daftar tasklist aktif milik Tuan (`Tugas Saya`, `Tugas Kuliah`, `Pekerjaan`, `Riset & Baca`, `Belanja`) dengan in-memory cache 5 menit.
@@ -223,7 +223,7 @@ Untuk memahami arsitektur *Multi-Cloud Microservices* yang kompleks secara intui
 - ⚡ **Sistem Syaraf Tepi: Cloudflare & Vercel (Relay API)**
   Jaringan penghantar impuls listrik yang membawa sinyal secara *asynchronous* dari Telegram (kulit luar) ke peladen utama (jantung) dengan latensi ultra-rendah.
 - 🎭 **Wajah & Interaksi Sosial: Telegram**
-  Bentuk perwujudan fisik (*User Interface*) N.E.X.A dalam berinteraksi—tempat ia menyapa, menegur, dan memberikan laporan harian kepada Tuan.
+  Bentuk perwujudan fisik (*User Interface*) N.E.X.A dalam berinteraksi : tempat ia menyapa, menegur, dan memberikan laporan harian kepada Tuan.
 - 📊 **Mata Batin (Jendela Refleksi): nexa-finance-web**
   Dasbor analitik visual tempat Tuan Faqih bisa melihat cerminan mendalam dari isi otak finansial N.E.X.A.
 - 📧 **Kelenjar Reseptor Finansial: Gmail API**
@@ -247,31 +247,31 @@ N.E.X.A tidak hanya berpikir, tetapi juga bertindak memanipulasi dunia digital T
 
 N.E.X.A beroperasi di lingkungan yang penuh hambatan. Berikut setiap ancaman dan mekanisme perlawanannya yang ditanamkan langsung dalam kode:
 
-#### Ancaman 1 — Blokir Outbound Azure
+#### Ancaman 1 : Blokir Outbound Azure
 **Problem:** Azure memblokir semua request keluar ke `api.telegram.org` dan `*.workers.dev`.
-**Solusi:** *Zero-Outbound Webhook Response* — respons Telegram ditanamkan langsung ke body HTTP 200 dari webhook.
+**Solusi:** *Zero-Outbound Webhook Response* : respons Telegram ditanamkan langsung ke body HTTP 200 dari webhook.
 
-#### Ancaman 2 — Cron Job Tanpa Webhook Trigger
+#### Ancaman 2 : Cron Job Tanpa Webhook Trigger
 **Problem:** *Cron job* inisiatif (Morning Briefing, Midday Pulse) tidak dipicu oleh pesan Telegram, sehingga tidak ada webhook request untuk "dibalas".
 **Solusi:** `sendTelegramOutbound()` mengirim request ke Vercel Relay (`NEXA_VERCEL_RELAY_URL`) yang kemudian meneruskannya ke Telegram. Relay diverifikasi dengan `NEXA_RELAY_SECRET`.
 
-#### Ancaman 3 — IPv6 DNS Failure di Docker
+#### Ancaman 3 : IPv6 DNS Failure di Docker
 **Problem:** Node 20 Docker di Azure mencari DNS IPv6 terlebih dahulu. Ini menyebabkan `TLS socket disconnect` saat mengakses Supabase dan API eksternal.
 **Solusi:** `dns.setDefaultResultOrder('ipv4first')` dipanggil **sebelum baris apapun** di `app.js`, diikuti `axios.defaults.httpsAgent = new https.Agent({ family: 4 })`.
 
-#### Ancaman 4 — Server Restart Saat Transaksi Pending
+#### Ancaman 4 : Server Restart Saat Transaksi Pending
 **Problem:** Jika server *restart* saat ada transaksi menggantung di RAM (`pendingConfirmations`), data tersebut hilang dan pengguna tidak mendapat konfirmasi.
 **Solusi:** Setiap transaksi pending **juga disimpan ke `nexa_pending_transactions` di Supabase**. Saat boot, `recoverPendingTransactions()` memulihkannya, menyetel ulang timer 5 menit, dan mengirim ulang notifikasi Telegram.
 
-#### Ancaman 5 — TLS Disconnect Saat Mengirim Notifikasi
+#### Ancaman 5 : TLS Disconnect Saat Mengirim Notifikasi
 **Problem:** Gangguan jaringan sesaat (beberapa detik) dapat menyebabkan notifikasi transaksi gagal dikirim, dengan flag `telegram_sent = false` di database.
 **Solusi:** *Telegram Alert Watchdog* (`setInterval` setiap 90 detik) memindai semua pending transaction dengan `telegram_sent = false` dan mencoba mengirim ulang secara paksa.
 
-#### Ancaman 6 — Service Account Drive Quota Habis
+#### Ancaman 6 : Service Account Drive Quota Habis
 **Problem:** Google Service Account memiliki kuota Drive yang terbatas. Upload file besar ke Vault bisa gagal dengan error *"Service Accounts do not have storage quota"*.
 **Solusi:** `uploadFileToVault()` dan `extractOcrTextViaDriveOcr()` memiliki *fallback* otomatis ke klien OAuth2 user (`getOAuthDriveClients()`) yang menggunakan kuota Drive pribadi Tuan Faqih.
 
-#### Ancaman 7 — Gmail OAuth Token Kadaluarsa
+#### Ancaman 7 : Gmail OAuth Token Kadaluarsa
 **Problem:** Refresh token Gmail bisa dicabut atau kadaluarsa, menghentikan Finance Auto-Sync tanpa peringatan.
 **Solusi:** `Gmail_Client.js` mendeteksi error `invalid_grant`, mereset klien, dan mengirim **satu alert Telegram** (tidak berulang) yang menginstruksikan cara regenerasi token.
 
@@ -369,7 +369,7 @@ Setiap kali Tuan Faqih melakukan perbaikan kode atau penambahan fitur pada CLI d
 
 3. **Publish ke NPM Registry (Perintah 1 Baris)**:
    ```powershell
-   cd "d:\N.E.X.A Asistant\scratch\nexa-cli-repo"; npm publish --access public
+   cd "d:\N.E.X.A Asistant\scratch\nexa-cli-repo"; npm publish -access public
    ```
    *(Catatan: Karena `.npmrc` dengan token Bypass 2FA `npm_mWAMZupE2xsCX...` sudah terkonfigurasi di folder `d:\N.E.X.A Asistant\scratch\nexa-cli-repo`, eksekusi perintah publish di atas akan berjalan 100% otomatis tanpa meminta kode OTP manual).*
 
@@ -377,13 +377,13 @@ Setiap kali Tuan Faqih melakukan perbaikan kode atau penambahan fitur pada CLI d
 
 ## BAB 3: KOGNISI AI & UNIVERSAL STATE MACHINE
 
-Otak N.E.X.A bukan satu model AI—ia adalah **orkestra berlapis** yang bekerja secara berurutan, paralel, dan dengan fallback otomatis. Bab ini membedah setiap tahap pipeline kognitif dari masuknya sinyal mentah hingga keluarnya tindakan yang tepat.
+Otak N.E.X.A bukan satu model AI : ia adalah **orkestra berlapis** yang bekerja secara berurutan, paralel, dan dengan fallback otomatis. Bab ini membedah setiap tahap pipeline kognitif dari masuknya sinyal mentah hingga keluarnya tindakan yang tepat.
 
 ---
 
 ### 3.1 Universal State Machine: Siklus Hidup Setiap Pesan
 
-Tidak ada satu pun pesan Tuan Faqih yang langsung dieksekusi secara mentah. Setiap masukan—teks, suara, foto, atau dokumen—melewati **Universal State Machine (USM)** yang bersifat deterministik dan terurut:
+Tidak ada satu pun pesan Tuan Faqih yang langsung dieksekusi secara mentah. Setiap masukan : teks, suara, foto, atau dokumen : melewati **Universal State Machine (USM)** yang bersifat deterministik dan terurut:
 
 ```
 Sinyal Masuk → Auth (Identity Lock) → Pre-Processing (Indera)
@@ -400,41 +400,41 @@ Setiap tahap USM dirancang agar **tidak bisa dilewati**. Bahkan pesan sederhana 
 
 Sebelum teks menyentuh AI Router, pesan mentah melewati tiga indera khusus yang menerjemahkan sinyal non-teks menjadi bahasa yang dapat diproses.
 
-#### 3.2.1 Voice Engine — Telinga N.E.X.A (13-Tier Fallback)
+#### 3.2.1 Voice Engine : Telinga N.E.X.A (13-Tier Fallback)
 
 Ketika Tuan Faqih mengirim Voice Note, `Voice_Engine.js` mengaktifkan pipeline transkripsi berlapis:
 
-**Tier 0 — Worker Transcription (Game Changer):**
+**Tier 0 : Worker Transcription (Game Changer):**
 N.E.X.A mengirim *hanya* `file_path` ke Vercel Relay melalui `postToRelay('/api/transcribe', ...)`. Worker Vercel yang mendownload audio secara langsung dari Telegram dan menjalankan transkripsi di sisi Edge. N.E.X.A hanya menerima teks transkripsi dalam respons JSON kecil. **Tidak ada file audio besar yang perlu diunduh oleh kontainer Azure.**
 
-**Tier 1–4 — Azure Whisper Large v3 Turbo (4 Attempts / Slots):**
+**Tier 1 - 4 : Azure Whisper Large v3 Turbo (4 Attempts / Slots):**
 Jika Worker gagal, sistem mendownload file audio `.ogg` ke file sementara (`tmpFilePath`) di RAM Azure, lalu menjalankan transkripsi kilat dengan model Whisper Large v3 Turbo.
 
-**Tier 5–8 — Gemini 3.6 Flash Native Audio (4 Kunci Rotasi):**
+**Tier 5 - 8 : Gemini 3.6 Flash Native Audio (4 Kunci Rotasi):**
 Jika Azure gagal, file `.ogg` dibaca sebagai `Buffer`, di-encode ke Base64, lalu dikirim langsung ke Gemini 3.6 Flash sebagai `inlineData` dengan `mimeType: 'audio/ogg'`.
 
-**Tier 9–12 — Groq Whisper Large v3 (4 Kunci Rotasi sebagai Backup):**
+**Tier 9 - 12 : Groq Whisper Large v3 (4 Kunci Rotasi sebagai Backup):**
 Jika seluruh tier di atas gagal, sistem beralih ke 4 kunci Groq Whisper Large v3 secara berurutan dengan *smart retry* internal.
 
 **Cleanup Otomatis:** Terlepas dari tier mana yang berhasil atau jika semua gagal, blok `finally` memastikan file temp selalu dihapus dari disk.
 
-#### 3.2.2 Vision Engine — Mata N.E.X.A (14-Tier Fallback)
+#### 3.2.2 Vision Engine : Mata N.E.X.A (14-Tier Fallback)
 
 Ketika Tuan Faqih mengirim foto atau dokumen, `Vision_Engine.js` mengaktifkan pipeline analisis visual:
 
-**Tier 0 — Worker Vision (Zero Binary Download):**
+**Tier 0 : Worker Vision (Zero Binary Download):**
 N.E.X.A mengirim `file_path` + `gemini_key` ke Vercel Relay melalui `postToRelay('/api/vision', ...)`. Worker yang mendownload gambar dan memanggil Gemini Vision langsung dari sisi Edge.
 
-**Tier 1–4 — Cerebras Gemma 4 31B Vision (4 Kunci WSE-3 Ultra-Fast):**
+**Tier 1 - 4 : Cerebras Gemma 4 31B Vision (4 Kunci WSE-3 Ultra-Fast):**
 Gambar diunduh sebagai Base64 dan diproses dengan kecepatan kilat chip Cerebras WSE-3.
 
-**Tier 5–8 — Gemini 3.6 Flash Vision (4 Kunci Rotasi, Premium Quality):**
+**Tier 5 - 8 : Gemini 3.6 Flash Vision (4 Kunci Rotasi, Premium Quality):**
 Analisis visual mendalam menggunakan model multimodal Google Gemini 3.6 Flash terbaru.
 
-**Tier 9–12 — Groq Vision Llama 3.2 90B/11B Vision (4 Kunci Rotasi):**
+**Tier 9 - 12 : Groq Vision Llama 3.2 90B/11B Vision (4 Kunci Rotasi):**
 Penalaran visual berkecepatan tinggi menggunakan Llama 3.2 Vision di infrastruktur Groq Cloud.
 
-**Tier 13 — Azure Qwen2-VL Vision (Free Safety Net):**
+**Tier 13 : Azure Qwen2-VL Vision (Free Safety Net):**
 Terakhir, model multimodal *open-weight* yang dijalankan via Azure Inference API tanpa batasan kuota harian.
 
 **Dual Mode Vision (Narasi vs JSON Extraction):**
@@ -448,7 +448,7 @@ Vision Engine mendukung dua *system prompt* berbeda:
 
 Ini adalah otak pengambilan keputusan utama N.E.X.A. Setiap pesan teks (termasuk hasil transkripsi Voice dan OCR Vision) melewati `routeUserMessage()` yang membangun *prompt* multi-lapis dan memanggil `executeWitAzureallback()`.
 
-#### 3.3.1 Pre-Flight Classifier — 0 Token, 0 Milidetik
+#### 3.3.1 Pre-Flight Classifier : 0 Token, 0 Milidetik
 
 Sebelum memanggil AI, sistem menjalankan dua classifier murni JavaScript yang tidak memakan biaya API sama sekali:
 
@@ -467,16 +467,16 @@ Menentukan apakah pesan mengandung kata kunci waktu/kalender untuk menentukan se
 - Jika ada referensi waktu saja (`besok`, `senin`, `tanggal`): generate kalender 3 hari ke depan.
 - Jika tidak ada: skip generasi kalender sama sekali (hemat token).
 
-#### 3.3.2 Adaptive History — Konteks Dinamis
+#### 3.3.2 Adaptive History : Konteks Dinamis
 
-Panjang histori percakapan yang diambil dari Supabase tidak statis—ia menyesuaikan diri:
+Panjang histori percakapan yang diambil dari Supabase tidak statis : ia menyesuaikan diri:
 
 - **Normal**: 12 pesan terakhir (6 exchange user↔N.E.X.A).
 - **Jika ada kata referensi konteks** (`yang tadi`, `sebelumnya`, `lanjut`, `hapus yang`, `ubah itu`): 20 pesan terakhir (10 exchange).
 
 Selain itu, ada **Character Safety Net** (`HISTORY_CHAR_CAP = 10.000`): jika total karakter histori melebihi batas, pesan tertua dipangkas dari belakang, sambil memastikan histori tidak dimulai dengan pesan N.E.X.A tanpa pasangan user-nya (mencegah konteks "yatim").
 
-#### 3.3.3 SACR Hybrid Semantic Gateway v3.0 — The Ultimate Cognitive Resonance Engine
+#### 3.3.3 SACR Hybrid Semantic Gateway v3.0 : The Ultimate Cognitive Resonance Engine
 
 Pada versi 3.0, N.E.X.A mengintegrasikan arsitektur penelusuran semantik generasi terbaru: **SACR Hybrid Semantic Gateway v3.0**. Sistem ini memadukan kecerdasan **Google Gemini Cloud Embedding (`gemini-embedding-2`)**, **In-Memory Vector Snapshot (`data/facts_vectors.json`)**, dan **Masked Parallel Execution Pipeline (`Promise.all`)**.
 
@@ -487,10 +487,10 @@ Pada versi 3.0, N.E.X.A mengintegrasikan arsitektur penelusuran semantik generas
 Sebelum mencapai arsitektur v3.0, sistem melalui 3 tahap evaluasi komparatif yang menghasilkan keputusan desain final:
 
 | Pendekatan yang Diuji | Hasil Pengujian & Karakteristik | Alasan Kegagalan / Batasan |
-|---|---|---|
+|--|--|--|
 | **1. Lexical Keyword Matching Murni** | ⚡ Latensi 0.00 ms, 0 MB RAM | ❌ **Kaku & Gagal pada Bahasa Bebas:** Gagal mengenali sinonim implisit (misal: *"kalau server mati cadangannya apa?"* tidak cocok jika kamus hanya mencari kata *"failover"*). |
 | **2. Local ONNX Model di VPS (`@xenova/transformers`)** | 🎯 Akurasi tinggi, mandiri | ❌ **Memory Deadlock / Freeze:** Mengonsumsi ~500 MB RAM saat inisialisasi WASM C++. Pada Azure VPS 1.0 GiB RAM tanpa Swap Space, memori menabrak batas fisik dan membekukan OS. |
-| **3. Cloud API Naif (Sekuensial)** | 🎯 Akurasi tinggi, 0 MB RAM VPS | ⚠️ **Latensi Tambahan 200–350 ms:** Menembak API embedding sebelum query database menambah waktu jeda balasan chat pengguna secara berurutan. |
+| **3. Cloud API Naif (Sekuensial)** | 🎯 Akurasi tinggi, 0 MB RAM VPS | ⚠️ **Latensi Tambahan 200 - 350 ms:** Menembak API embedding sebelum query database menambah waktu jeda balasan chat pengguna secara berurutan. |
 | **4. SACR Hybrid Semantic Gateway v3.0 ⭐** | 👑 **Akurasi 100%, 0 ms Added Latency, 0 MB RAM Overhead** | ✅ **Solusi Master:** Menggunakan *Parallel Masking*, *Vector Snapshot Caching*, dan *Fast-Path Reflex Gate*. |
 
 ---
@@ -552,13 +552,13 @@ Pengujian nyata dengan pertanyaan kasual Tuan Faqih:
 > 💬 *"kalau server mati atau hang cadangannya apa aja?"*
 
 Hasil pemeringkatan otomatis Google Gemini Semantic Gateway:
-1. 🏆 **ID #248 (`70.64%`) — SACR 16-Tier Fallback Redundancy [TOP #1 MATCH]**
-2. 🥈 **ID #45 (`67.62%`) — Uptime Watchdog Health Monitoring [Sangat Relevan]**
-3. 🥈 **ID #215 (`67.22%`) — Azure VPS Production Architecture [Sangat Relevan]**
-4. ❌ **ID #88 (`64.36%`) — Supabase PostgreSQL Database [Diabaikan]**
-5. ❌ **ID #105 (`52.02%`) — Kebiasaan Makan & Minum [Diabaikan]**
-6. ❌ **ID #5 (`51.28%`) — Transaksi Keuangan QRIS [Diabaikan]**
-7. ❌ **ID #1 (`47.26%`) — Profil Kuliah UGM & Beasiswa Jardine [Diabaikan]**
+1. 🏆 **ID #248 (`70.64%`) : SACR 16-Tier Fallback Redundancy [TOP #1 MATCH]**
+2. 🥈 **ID #45 (`67.62%`) : Uptime Watchdog Health Monitoring [Sangat Relevan]**
+3. 🥈 **ID #215 (`67.22%`) : Azure VPS Production Architecture [Sangat Relevan]**
+4. ❌ **ID #88 (`64.36%`) : Supabase PostgreSQL Database [Diabaikan]**
+5. ❌ **ID #105 (`52.02%`) : Kebiasaan Makan & Minum [Diabaikan]**
+6. ❌ **ID #5 (`51.28%`) : Transaksi Keuangan QRIS [Diabaikan]**
+7. ❌ **ID #1 (`47.26%`) : Profil Kuliah UGM & Beasiswa Jardine [Diabaikan]**
 
 Gemini Embedding secara cerdas mengenali bahwa **16-Tier Fallback, Uptime Watchdog, dan Azure VPS Architecture** adalah satu rumpun ekosistem perlindungan kegagalan server, tanpa membutuhkan satu pun kata kunci persis!
 
@@ -567,43 +567,43 @@ Gemini Embedding secara cerdas mengenali bahwa **16-Tier Fallback, Uptime Watchd
 ##### E. Metrik Kinerja & Efisiensi Sumber Daya Produksi di Azure VPS
 
 | Indikator Metrik | Nilai Aktual Produksi di Azure VPS Jakarta | Keterangan |
-|---|:---:|---|
+|--|:--:|--|
 | **Waktu Boot Server (Snapshot Load)** | **`0.001 detik (1.1 ms)`** | Membaca file 400 KB ke struktur data RAM |
 | **Latensi Tambahan yang Dirasakan Pengguna**| **`0.00 ms`** | Waktu API embedding tertutup oleh latensi database |
 | **Penggunaan RAM Tambahan di VPS** | **`0 MB`** | Neural embedding 100% diproses di Google Cloud |
 | **Total Konsumsi RAM Server (PM2)** | **`189 MiB` (dari 893 MiB)** | Stabil di zona hijau (~21% kapasitas memori) |
-| **Beban CPU Saat Retrieval** | **`0.0% – 0.2%`** | Sangat dingin tanpa lonjakan prosesor |
+| **Beban CPU Saat Retrieval** | **`0.0% - 0.2%`** | Sangat dingin tanpa lonjakan prosesor |
 | **Event Loop Latency Node.js** | **`0.6 ms`** | Responsivitas ultra-cepat (< 1 ms) |
 
 ---
 
-#### 3.3.4 Cross-Domain Context Fusion — Prompt Multi-Dimensi
+#### 3.3.4 Cross-Domain Context Fusion : Prompt Multi-Dimensi
 
 Saat membangun prompt, `AI_Router.js` menjalankan 4 fetch data secara **paralel penuh** menggunakan `Promise.allSettled()`:
 
-1. **`_fetchRecentFinanceSummary(3)`** — 3 transaksi keuangan terakhir.
-2. **`_fetchUpcomingEventsSummary(3)`** — 3 jadwal mendatang dari Google Calendar.
-3. **`supabaseFinance.getAccountsList()`** — Daftar akun aktif (dengan nama persis untuk field `account`).
-4. **`supabaseFinance.getCategoriesList()`** — Daftar kategori aktif dikelompokkan per `group_name` (PEMASUKAN vs PENGELUARAN).
+1. **`_fetchRecentFinanceSummary(3)`** : 3 transaksi keuangan terakhir.
+2. **`_fetchUpcomingEventsSummary(3)`** : 3 jadwal mendatang dari Google Calendar.
+3. **`supabaseFinance.getAccountsList()`** : Daftar akun aktif (dengan nama persis untuk field `account`).
+4. **`supabaseFinance.getCategoriesList()`** : Daftar kategori aktif dikelompokkan per `group_name` (PEMASUKAN vs PENGELUARAN).
 
 Semua data ini diinjeksi ke prompt AI dalam blok tersendiri yang memberi konteks lintas domain:
 > *"Keuangan Terkini: 3 transaksi terakhir... | Jadwal Mendatang: Meeting UGM jam 10..."*
 
 Serta blok akun dan kategori yang eksplisit agar AI Router tidak menebak-nebak nama akun:
-> *"AKUN KEUANGAN AKTIF — PAKAI NAMA PERSIS INI: - BCA (bank) - DANA (e-wallet)..."*
+> *"AKUN KEUANGAN AKTIF : PAKAI NAMA PERSIS INI: - BCA (bank) - DANA (e-wallet)..."*
 
-#### 3.3.5 Runtime Context Injection — Kesadaran Status Aktif
+#### 3.3.5 Runtime Context Injection : Kesadaran Status Aktif
 
 Jika ada operasi yang sedang dalam penantian (pending context), `AI_Router.js` menyuntikkan blok `[STATUS AKTIF N.E.X.A SAAT INI]` ke prompt, yang mencakup:
 - `pendingCalendarContext`: *"Sedang memproses pembuatan jadwal 'Meeting BEM'"*
 - `pendingEmailContext`: *"Sedang membaca kotak masuk Finance, kata kunci: Mandiri"*
 - `pendingDatabaseContext`: *"Sedang memanipulasi tabel nexa_chat_memories"*
 - `pendingVaultContext`: *"Sedang memproses unggahan dokumen/gambar ke Vault"*
-- `conversationContext.lastAssistantReply`: Pesan N.E.X.A yang terakhir—agar AI tahu persis apa yang sudah ia katakan.
+- `conversationContext.lastAssistantReply`: Pesan N.E.X.A yang terakhir : agar AI tahu persis apa yang sudah ia katakan.
 
 Ini memungkinkan AI Router untuk menentukan bahwa *"ya"* dari Tuan Faqih adalah konfirmasi Calendar, bukan sekadar percakapan biasa.
 
-#### 3.3.6 JSON Output Schema — Kontrak Ketat AI Router
+#### 3.3.6 JSON Output Schema : Kontrak Ketat AI Router
 
 AI Router selalu mengembalikan JSON dengan schema ketat berikut:
 ```json
@@ -631,7 +631,7 @@ Sebelum routing masuk ke eksekusi domain, `webhook.js` menjalankan dua lapisan v
 
 #### 3.4.1 Global Follow-Up Router (`buildGlobalFollowUpRouting`)
 
-Ketika Tuan Faqih mengirim pesan ambigu seperti *"lanjut"*, *"hapus itu"*, *"yang tadi"*, sistem terlebih dahulu memeriksa `conversationContext` (konteks aktif dalam 10 menit terakhir) sebelum memanggil AI Router. Jika match ditemukan, **AI Router tidak dipanggil sama sekali**—menghemat latensi ~500ms.
+Ketika Tuan Faqih mengirim pesan ambigu seperti *"lanjut"*, *"hapus itu"*, *"yang tadi"*, sistem terlebih dahulu memeriksa `conversationContext` (konteks aktif dalam 10 menit terakhir) sebelum memanggil AI Router. Jika match ditemukan, **AI Router tidak dipanggil sama sekali** : menghemat latensi ~500ms.
 
 Contoh resolusi:
 - "hapus itu" + context `FINANCE` → `{ intent: 'FINANCE', extracted_data: { action: 'DELETE' } }`
@@ -648,19 +648,19 @@ Setelah AI Router menghasilkan routing, `getClarificationMessage()` memvalidasi 
 - **EMAIL/SEND**: Harus ada `to`, `subject`, dan `content`.
 - **DATABASE**: Harus ada `table_name` untuk aksi non-`LIST_TABLES`.
 
-Jika validasi gagal, N.E.X.A mengirim pertanyaan klarifikasi spesifik dan menghentikan eksekusi—tanpa mengeksekusi aksi yang berpotensi merusak data.
+Jika validasi gagal, N.E.X.A mengirim pertanyaan klarifikasi spesifik dan menghentikan eksekusi : tanpa mengeksekusi aksi yang berpotensi merusak data.
 
 ---
 
-### 3.5 Fallback Engine — 16 Lapisan Ketangguhan Kognitif & Redundansi Global (SACR v2.1)
+### 3.5 Fallback Engine : 16 Lapisan Ketangguhan Kognitif & Redundansi Global (SACR v2.1)
 
 `Fallback_Engine.js` adalah benteng pertahanan terakhir ketersediaan AI N.E.X.A. Setiap pemanggilan kognitif melewati 16 tier model secara berurutan, berpindah ke tier berikutnya (*instant failover*) jika tier sebelumnya mengalami error jaringan, timeout, atau rate limit.
 
 | Tier | Model | Provider / Endpoint Gateway | Kuota & Karakteristik |
-|---|---|---|---|
-| **1–4** | **Google Gemma 4 31B (Anti-CoT)** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | **57.600 Chat/Hari (14.4K RPD x 4)** — Super Cerdas, 0 Geo-block |
-| **5–8** | **Google Gemini 3.7 Flash** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | Deep Reasoning & Adaptive Thinking (Reset Harian 07:00 WIB) |
-| **9–12** | **Google Gemini 3.6 Flash** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | Ultra Long Context 1M Token & High Reliability |
+|--|--|--|--|
+| **1 - 4** | **Google Gemma 4 31B (Anti-CoT)** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | **57.600 Chat/Hari (14.4K RPD x 4)** : Super Cerdas, 0 Geo-block |
+| **5 - 8** | **Google Gemini 3.7 Flash** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | Deep Reasoning & Adaptive Thinking (Reset Harian 07:00 WIB) |
+| **9 - 12** | **Google Gemini 3.6 Flash** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | Ultra Long Context 1M Token & High Reliability |
 | **13** | **Cerebras Gemma 4 31B** | Cerebras Cloud AI | PayGo Ultra-Fast Inference Backup |
 | **14** | **Mistral Pixtral 12B / Large** | Mistral AI API | European Independent Inference (691 ms Latency) |
 | **15** | **Puter AI Multi-Model Pool** | Puter.js Global Pool | Codestral, GPT-4o, dan Claude Backup Pool |
@@ -689,7 +689,7 @@ export default {
   }
 };
 ```
-- **Latensi Tambahan:** Hanya **~1–3 milidetik** karena Cloudflare memiliki Point of Presence (PoP) di Jakarta (`CGK`), satu kota dengan Azure VPS Jakarta kita.
+- **Latensi Tambahan:** Hanya **~1 - 3 milidetik** karena Cloudflare memiliki Point of Presence (PoP) di Jakarta (`CGK`), satu kota dengan Azure VPS Jakarta kita.
 - **Hasil:** Google AI Studio menerima koneksi dari Cloudflare Edge IP secara legal dan mengembalikan respon **`200 OK`**, membuka kembali 100% kapasitas kuota 57.600 request/hari Google Gemma 4 dan Gemini 3.7/3.6.
 
 ---
@@ -742,7 +742,7 @@ function extractFirstValidJson(str) {
     if (!inString) {
       if (char === '{') depth++;
       else if (char === '}') {
-        depth--;
+        depth-;
         if (depth === 0) {
           const candidate = text.substring(startIdx, i + 1);
           try { JSON.parse(candidate); return candidate; } catch (e) {}
@@ -766,13 +766,13 @@ Algoritma ini menjamin bahwa objek JSON valid pertama yang selesai langsung diek
 
 ---
 
-#### 3.5.5 Dumb Mode — Jaring Pengaman Terakhir
+#### 3.5.5 Dumb Mode : Jaring Pengaman Terakhir
 
 Jika seluruh 16 lapisan peladen dunia mengalami pemadaman total secara bersamaan, sistem mengembalikan struktur darurat terisolasi tanpa crash:
 ```json
 {
   "intent": "DUMB_MODE",
-### 3.6 Classifier Spesialisasi — Fungsi AI Ringan Non-Routing
+### 3.6 Classifier Spesialisasi : Fungsi AI Ringan Non-Routing
 
 Selain `routeUserMessage()`, `AI_Router.js` menyediakan tiga fungsi AI spesialisasi yang hanya dipanggil dalam konteks tertentu:
 
@@ -800,7 +800,7 @@ Ini memastikan memori N.E.X.A **tidak pernah berisi duplikasi** atau informasi y
 
 ## BAB 4: THE OMNICHANNEL FINANCE ENGINE (OTAK KEUANGAN)
 
-`Finance_Engine.js` adalah modul terbesar di seluruh sistem N.E.X.A — 1.895 baris kode yang mengorkestrasi pencatatan, validasi, analitik, dan pengamanan keuangan Tuan Faqih secara menyeluruh. Bab ini membedah setiap lapisan arsitekturnya hingga ke level logika terdalam.
+`Finance_Engine.js` adalah modul terbesar di seluruh sistem N.E.X.A : 1.895 baris kode yang mengorkestrasi pencatatan, validasi, analitik, dan pengamanan keuangan Tuan Faqih secara menyeluruh. Bab ini membedah setiap lapisan arsitekturnya hingga ke level logika terdalam.
 
 ---
 
@@ -808,32 +808,32 @@ Ini memastikan memori N.E.X.A **tidak pernah berisi duplikasi** atau informasi y
 
 Tidak ada satu jalur tunggal untuk mencatat transaksi. N.E.X.A menerima data keuangan dari dua sumber yang benar-benar berbeda, masing-masing dengan karakteristik uniknya:
 
-#### Jalur 1 — `TELEGRAM_MANUAL` (Input Aktif Pengguna)
-Tuan Faqih mengetik pesan seperti *"beli kopi 25rb di starbucks"* atau mengirim voice note. AI Router mengekstrak `{ nominal, type, destination, category, description, account, payment_method }` lalu memanggil `processTransaction(data, 'TELEGRAM_MANUAL')`. Jalur ini **tidak melewati deduplication check** — asumsinya setiap input manual adalah unik dan disengaja.
+#### Jalur 1 : `TELEGRAM_MANUAL` (Input Aktif Pengguna)
+Tuan Faqih mengetik pesan seperti *"beli kopi 25rb di starbucks"* atau mengirim voice note. AI Router mengekstrak `{ nominal, type, destination, category, description, account, payment_method }` lalu memanggil `processTransaction(data, 'TELEGRAM_MANUAL')`. Jalur ini **tidak melewati deduplication check** : asumsinya setiap input manual adalah unik dan disengaja.
 
-#### Jalur 2 — `GMAIL_POLLING` (Finance Auto-Sync)
+#### Jalur 2 : `GMAIL_POLLING` (Finance Auto-Sync)
 Setiap 3 menit, `pollFinanceEmails()` memindai kotak masuk Gmail mencari notifikasi mutasi bank (Mandiri, BCA, dll.). Email yang ditemukan diparsing untuk mengekstrak nominal, tipe transaksi, dan nama merchant. Jalur ini **wajib melewati Zero-Duplication Engine** sebelum disimpan. Akun default-nya adalah `'Bank Mandiri'` karena email notifikasi diasumsikan berasal dari rekening bank utama.
 
 ---
 
-### 4.2 Pipeline `processTransaction()` — Anatomi Pemrosesan Transaksi
+### 4.2 Pipeline `processTransaction()` : Anatomi Pemrosesan Transaksi
 
 Setiap transaksi yang masuk dari jalur manapun melewati satu pipeline tunggal ini. Setiap langkahnya berurutan dan tidak bisa dilewati:
 
-**Langkah 1 — Parsing Nominal Fleksibel (`_parseFlexibleCurrency`):**
+**Langkah 1 : Parsing Nominal Fleksibel (`_parseFlexibleCurrency`):**
 Nominal bisa masuk dalam berbagai format: `"3.600.000"` (IDR ribuan), `"3,600.00"` (USD), atau angka murni `3600000`. Fungsi ini mendeteksi konteks format berdasarkan pola titik dan koma, lalu mengkonversi ke `float` yang bersih. Ini mencegah bug di mana `"3.600"` salah diinterpretasi sebagai 3,6 (bukan 3.600).
 
-**Langkah 2 — Composite Key Generation:**
+**Langkah 2 : Composite Key Generation:**
 ```js
 const cleanMerchant = (data.destination || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
 const compositeKey = `${nominal}_${cleanMerchant}`; // e.g. "25000_starbucks"
 ```
-Kunci ini digunakan untuk deduplication lintas channel — mencegah transaksi yang sama masuk dari dua sumber berbeda.
+Kunci ini digunakan untuk deduplication lintas channel : mencegah transaksi yang sama masuk dari dua sumber berbeda.
 
-**Langkah 3 — Deduplication (hanya untuk jalur pasif):**
+**Langkah 3 : Deduplication (hanya untuk jalur pasif):**
 `supabase.isDuplicateTransaction(compositeKey, transactionTime, false)` mencari kunci yang sama di tabel `nexa_finance_dedup`. Jika ditemukan dengan selisih waktu <5 menit, transaksi langsung dikembalikan dengan status `DUPLICATE` tanpa disimpan.
 
-**Langkah 4 — AI Smart Categorization (`_autoCategorizeMerchant`):**
+**Langkah 4 : AI Smart Categorization (`_autoCategorizeMerchant`):**
 Jika kategori dari sumber adalah `'Lainnya'`, `'Finance Email'`, `'[Menunggu Kategori AI/User]'`, atau string yang diawali `[`, sistem memanggil AI untuk kategorisasi ulang. AI menerima *prompt* yang berisi:
 - Deskripsi transaksi dan nama merchant (digabung: `"starbucks - kopi latte"`)
 - Daftar kategori valid yang diambil *real-time* dari `supabaseFinance.getCategoriesList()`
@@ -842,49 +842,49 @@ Jika kategori dari sumber adalah `'Lainnya'`, `'Finance Email'`, `'[Menunggu Kat
 
 Output AI di-*fuzzy match* ke daftar kategori valid (case-insensitive). Jika tidak cocok, fallback ke `'Lainnya'`.
 
-**Langkah 5 — Resolusi Akun (`resolveAccountId`):**
+**Langkah 5 : Resolusi Akun (`resolveAccountId`):**
 Nama akun teks bebas (misal: `"livin"`, `"mandiri"`, `"gopay"`) dicocokkan ke tabel `accounts` via **Fuzzy Score Algorithm**:
 - Exact match → skor 100
 - Target mengandung query → skor 80
 - Query mengandung target → skor 70
-- Token matching → skor proporsional (0–60)
+- Token matching → skor proporsional (0 - 60)
 Threshold minimum: skor ≥ 30. Jika tidak ada yang cocok, **fallback paksa ke akun pertama** (bukan `null`) agar transaksi tidak hangus.
 
-**Langkah 6 — Resolusi Kategori (`resolveCategoryId`):**
+**Langkah 6 : Resolusi Kategori (`resolveCategoryId`):**
 Sama seperti resolusi akun, tetapi dengan threshold lebih ketat (≥ 40) dan memfilter kategori berdasarkan `type` transaksi (income vs expense) agar tidak salah memetakan kategori pemasukan ke pengeluaran. Fallback ke kategori `'Lainnya'` dengan tipe yang sesuai.
 
-**Langkah 7 — Dual-Write ke Supabase Finance (`writeTransaction`):**
+**Langkah 7 : Dual-Write ke Supabase Finance (`writeTransaction`):**
 Resolusi akun ID dan kategori ID dijalankan **secara paralel** via `Promise.all()`. Kemudian INSERT ke tabel `transactions` dengan semua field: `account_id`, `category_id`, `amount` (selalu positif), `type` (lowercase: `'income'`/`'expense'`), `transaction_date`, `transaction_time`, `description`, `payment_method`.
 
-**Langkah 8 — Log Deduplication Key:**
+**Langkah 8 : Log Deduplication Key:**
 `supabase.logTransactionKey(compositeKey, transactionTime, source)` mencatat ke tabel `nexa_finance_dedup` agar transaksi yang sama tidak bisa masuk lagi dari channel lain.
 
-**Langkah 9 — Behavioral Log (Fire-and-Forget):**
+**Langkah 9 : Behavioral Log (Fire-and-Forget):**
 ```js
 await behaviorEngine.logFinanceRecord({ type, nominal, category: smartCategory });
 ```
 Dipanggil setelah simpan berhasil, **tidak pernah memblokir flow utama** jika gagal (dibungkus `try-catch` yang menelan error).
 
-**Langkah 10 — Budget Alert Check:**
+**Langkah 10 : Budget Alert Check:**
 Jika transaksi adalah pengeluaran (`!isIncome`), `Budget_Engine.checkAndAlertBudget()` dipanggil. Jika ada anggaran yang terlampaui ≥ 80%, alert dikirim ke Telegram via `sendTelegramOutbound()` secara **async non-blocking** (`sendTelegramOutbound(alertMsg).catch(...)`).
 
 ---
 
-### 4.3 Zero-Duplication Engine — Sistem Deteksi Konflik Lintas Channel
+### 4.3 Zero-Duplication Engine : Sistem Deteksi Konflik Lintas Channel
 
 Masalah paling berbahaya di sistem omnichannel adalah entri ganda: Tuan Faqih mencatat manual Rp50.000 untuk GoPay, lalu 2 menit kemudian Gmail Polling membaca notifikasi email yang sama.
 
 N.E.X.A mengatasi ini dengan dua mekanisme berlapis:
 
-**Lapisan 1 — `nexa_finance_dedup` Table:**
-Setiap transaksi yang berhasil disimpan meninggalkan jejak composite key di tabel ini. Cek duplikasi dilakukan **sebelum** proses apapun dimulai — jika key sudah ada dengan timestamp dalam window tertentu, transaksi langsung ditolak.
+**Lapisan 1 : `nexa_finance_dedup` Table:**
+Setiap transaksi yang berhasil disimpan meninggalkan jejak composite key di tabel ini. Cek duplikasi dilakukan **sebelum** proses apapun dimulai : jika key sudah ada dengan timestamp dalam window tertentu, transaksi langsung ditolak.
 
-**Lapisan 2 — `nexa_pending_transactions` Cross-Check:**
+**Lapisan 2 : `nexa_pending_transactions` Cross-Check:**
 Parameter `checkPending` di `isDuplicateTransaction()` mengontrol apakah pending transactions juga ikut dicek. Ini mencegah race condition antara Recovery Function (boot) dan Watchdog Cron (setiap 90 detik) yang bisa keduanya mencoba menyimpan transaksi yang sama secara bersamaan.
 
 ---
 
-### 4.4 Pending Confirmation System — Jendela 5 Menit
+### 4.4 Pending Confirmation System : Jendela 5 Menit
 
 Ketika transaksi masuk dari Gmail Polling namun kategorinya masih ambigu atau perlu konfirmasi, sistem tidak langsung menyimpannya. Ini adalah alur lengkapnya:
 
@@ -896,7 +896,7 @@ Ketika transaksi masuk dari Gmail Polling namun kategorinya masih ambigu atau pe
 
 **`_buildConfirmationMessage(tx)`** memformat pesan konfirmasi dengan semua detail transaksi yang relevan (tipe, nominal formatted, merchant, kategori sementara, metode pembayaran) agar Tuan Faqih bisa membuat keputusan informed dengan cepat.
 
-#### Boot Recovery — Pemulihan Setelah Restart
+#### Boot Recovery : Pemulihan Setelah Restart
 
 `recoverPendingTransactions()` (dipanggil saat boot) membaca semua baris dari `nexa_pending_transactions` dan:
 - **Jika sudah >5 menit**: langsung memanggil `processTransaction()` dengan mode auto-save, lalu menghapus baris pending.
@@ -907,13 +907,13 @@ Sebuah **Watchdog Timer** (`setInterval` setiap 90 detik) memindai semua pending
 
 ---
 
-### 4.5 Operasi CRUD Transaksi — Edit, Hapus, dan Undo
+### 4.5 Operasi CRUD Transaksi : Edit, Hapus, dan Undo
 
 #### Multi-Attribute Fuzzy Matching (`_findBestTransactionMatch`)
 Saat Tuan Faqih berkata *"hapus transaksi kopi tadi"*, N.E.X.A harus menemukan baris yang tepat dari 50 transaksi terakhir. Fungsi ini menghitung skor untuk setiap baris:
 
 | Kriteria | Skor |
-|---|---|
+|--|--|
 | Deskripsi exact match | +100 |
 | Nominal exact match | +50 |
 | Nominal partial match (>3 digit) | +20 |
@@ -930,11 +930,11 @@ requestDeleteConfirmation → pendingDeletions.set → "Apakah ini yang ingin di
 → confirmDeleteTransaction(isYes=true) → supabaseFinance.deleteTransaction(uuid) → Hapus dari DB
 ```
 
-#### Undo System — Jendela 10 Menit
+#### Undo System : Jendela 10 Menit
 Setelah penghapusan berhasil, data transaksi lengkap disimpan di `lastDeletedTransaction` (RAM) dengan timer 10 menit. Jika Tuan Faqih berkata *"undo"* dalam 10 menit, `undoDeleteTransaction()` memanggil `supabaseFinance.writeTransaction()` untuk menulis ulang data yang persis sama ke database.
 
 #### Edit Transaksi (Partial Patch)
-`editTransaction()` mendukung partial update — hanya field yang disediakan yang diubah:
+`editTransaction()` mendukung partial update : hanya field yang disediakan yang diubah:
 - `nominal` → re-parse via `_parseFlexibleCurrency`
 - `description` → langsung update
 - `category` → resolve UUID via `resolveCategoryId`
@@ -943,9 +943,9 @@ Setelah penghapusan berhasil, data transaksi lengkap disimpan di `lastDeletedTra
 
 ---
 
-### 4.6 Analytics Engine — Laporan Keuangan Identik dengan Web
+### 4.6 Analytics Engine : Laporan Keuangan Identik dengan Web
 
-Semua fungsi analytics di `Supabase_Finance.js` mengimplementasikan **logika yang identik persis** dengan komponen `analytics-view.tsx` di Nexa Finance Web — bukan estimasi, melainkan replikasi formula yang sama:
+Semua fungsi analytics di `Supabase_Finance.js` mengimplementasikan **logika yang identik persis** dengan komponen `analytics-view.tsx` di Nexa Finance Web : bukan estimasi, melainkan replikasi formula yang sama:
 
 #### KPI Cards (via `getFinanceAnalytics`)
 ```
@@ -957,7 +957,7 @@ daysPassed = Math.ceil((endDate - startDate) / ms_per_day) + 1
 #### Fungsi Analytics yang Tersedia
 
 | Fungsi | Output |
-|---|---|
+|--|--|
 | `getFinanceAnalytics(start, end)` | Income, Expense, Balance, Savings Rate, Avg Daily |
 | `getCategoryBreakdown(start, end)` | Array `{name, total, percentage, count}` per kategori, sorted descending |
 | `getTopExpenses(start, end, limit)` | N transaksi expense terbesar |
@@ -967,11 +967,11 @@ daysPassed = Math.ceil((endDate - startDate) / ms_per_day) + 1
 | `getMonthlySummary(months)` | Ringkasan bulanan via Supabase RPC `get_monthly_summary` |
 | `getDailyBalanceTrend(accId, start, end)` | Tren saldo harian per akun via Supabase RPC `get_daily_balance_trend` |
 
-**`getDailyTrend`** menggunakan iterasi `iter.setDate(iter.getDate() + 1)` — cara aman untuk lintas bulan yang identik dengan implementasi di `analytics-view.tsx`. Hari tanpa transaksi tetap muncul sebagai `{ expense: 0, income: 0 }` agar grafik tidak berlubang.
+**`getDailyTrend`** menggunakan iterasi `iter.setDate(iter.getDate() + 1)` : cara aman untuk lintas bulan yang identik dengan implementasi di `analytics-view.tsx`. Hari tanpa transaksi tetap muncul sebagai `{ expense: 0, income: 0 }` agar grafik tidak berlubang.
 
 ---
 
-### 4.7 Budget Engine — Sistem Pengawas Anggaran Multi-Period
+### 4.7 Budget Engine : Sistem Pengawas Anggaran Multi-Period
 
 `Budget_Engine.js` adalah modul penjaga disiplin finansial yang bekerja tanpa diminta.
 
@@ -996,23 +996,23 @@ Dipanggil **setiap ada pengeluaran** dari `processTransaction()`:
 #### Format Alert Budget
 Jika threshold tercapai, alert diformat dengan **progress bar ASCII** (`generateProgressBar`):
 ```
-🚨 ALERT ANGGARAN — MAKAN & MINUMAN
+🚨 ALERT ANGGARAN : MAKAN & MINUMAN
 Tuan, setelah transaksi tadi (Rp25.000 - starbucks), jatah Anda mencapai batas peringatan.
 
 📊 Status Hari Ini: ⚠️
    Terpakai: ████████░░░░ Rp120.000
    Sisa: Rp30.000
 
-📆 Status Bulan Ini: ✅ Aman (Rp450.000 dari Rp800.000 — 56%)
+📆 Status Bulan Ini: ✅ Aman (Rp450.000 dari Rp800.000 : 56%)
 ```
 
-#### `getStartAndEndOf(period, txDate)` — Presisi Waktu WIB
+#### `getStartAndEndOf(period, txDate)` : Presisi Waktu WIB
 Semua kalkulasi periode menggunakan offset WIB (UTC+7) agar boundary `daily` (`00:00 WIB`), `weekly` (Senin WIB), dan `monthly` (tanggal 1 WIB) tidak bergeser akibat perbedaan timezone UTC.
 
 #### Budget Recap Berkala
 `generatePeriodicRecap(targetPeriod)` dipanggil oleh cron job:
-- **Setiap Minggu pukul 23:30 WIB**: `generatePeriodicRecap('weekly')` — Rekap anggaran mingguan.
-- **Setiap Akhir Bulan pukul 23:30 WIB**: `generatePeriodicRecap('monthly')` — Rekap anggaran bulanan.
+- **Setiap Minggu pukul 23:30 WIB**: `generatePeriodicRecap('weekly')` : Rekap anggaran mingguan.
+- **Setiap Akhir Bulan pukul 23:30 WIB**: `generatePeriodicRecap('monthly')` : Rekap anggaran bulanan.
 
 Output berisi status per kelompok anggaran (✅/⚠️/❌), persentase pemakaian, dan kesimpulan total: apakah Tuan berhasil hemat atau malah melebihi jatah.
 
@@ -1035,16 +1035,16 @@ Berbeda dari raw data di `Supabase_Finance.js`, `Finance_Engine.getFinanceAnalyt
 🔢 Total Transaksi: 47 transaksi dalam 30 hari
 ```
 
-Mendukung filter periode: `'minggu ini'`, `'bulan kemarin'`, `'tahun ini'`, `'hari ini'` — semua diparse via keyword matching di `dateText`.
+Mendukung filter periode: `'minggu ini'`, `'bulan kemarin'`, `'tahun ini'`, `'hari ini'` : semua diparse via keyword matching di `dateText`.
 
 ---
 
-### 4.9 Parsing Tanggal Relatif — `_parseRelativeDateFilter`
+### 4.9 Parsing Tanggal Relatif : `_parseRelativeDateFilter`
 
-Tuan Faqih bisa berkata *"transaksi kemarin"* atau *"pengeluaran tanggal 14"* — bukan ISO date. Fungsi ini mengkonversi teks relatif ke objek `Date` yang presisi:
+Tuan Faqih bisa berkata *"transaksi kemarin"* atau *"pengeluaran tanggal 14"* : bukan ISO date. Fungsi ini mengkonversi teks relatif ke objek `Date` yang presisi:
 
 | Input | Output |
-|---|---|
+|--|--|
 | `"hari ini"` / `"today"` | Date hari ini |
 | `"kemarin"` / `"yesterday"` | Date kemarin |
 | `"tanggal 14"` / `"tgl 14"` | Tanggal 14 bulan berjalan |
@@ -1066,9 +1066,9 @@ Pada versi terdahulu, ketiadaan jam selesai (*end time*) memaksa sistem berhenti
 
 Setiap kali Tuan menyebutkan kegiatan tanpa durasi eksplisit (contoh: *"besok jam 2 siang ada bimbingan skripsi"*), sistem mengaktifkan **Bayesian Semantic Duration Inference Matrix** (`inferProbableDuration`):
 
-1. **Jalur Cepat Regex Eksplisit:** Mendeteksi frasa durasi alami seperti `sejam`, `setengah jam`, `1 jam 30 menit`, dan fraksi unicode `½ jam` $\rightarrow$ 30–90 menit.
+1. **Jalur Cepat Regex Eksplisit:** Mendeteksi frasa durasi alami seperti `sejam`, `setengah jam`, `1 jam 30 menit`, dan fraksi unicode `½ jam` $\rightarrow$ 30 - 90 menit.
 2. **Matriks Semantik Probabilistik Kontekstual:**
-   - 🎓 **Perkuliahan / Matkul / Praktikum / SKS:** $\rightarrow$ **100 menit** (Sesuai bobot standar 2–3 SKS perkuliahan).
+   - 🎓 **Perkuliahan / Matkul / Praktikum / SKS:** $\rightarrow$ **100 menit** (Sesuai bobot standar 2 - 3 SKS perkuliahan).
    - 👨‍🏫 **Bimbingan Skripsi / Konsultasi Dosen:** $\rightarrow$ **45 menit**.
    - 📝 **Ujian / UTS / UAS / Sidang Pendadaran:** $\rightarrow$ **100 menit**.
    - ☕ **Sosial / Ngopi / Warkop / Kuliner / Nongkrong:** $\rightarrow$ **90 menit**.
@@ -1116,7 +1116,7 @@ Manusia berkomunikasi secara relatif terhadap apa yang baru saja mereka lihat di
 ### 5.4 Autonomous Time-Blocking & Presisi Penanggalan (*Timezone Integrity*)
 
 Jika sebuah tugas memiliki tenggat waktu (*Deadline Date*) **DAN** preferensi waktu pengerjaan, N.E.X.A mengaktifkan `findEmptySlot()` dan menjadwalkan blok kerja:
-- Menambahkan *Event* `"⏰ BLOK KERJA: [Nama Tugas]"` pada kalender kerja (08:00 – 22:00 WIB).
+- Menambahkan *Event* `"⏰ BLOK KERJA: [Nama Tugas]"` pada kalender kerja (08:00 - 22:00 WIB).
 - Menambahkan *Event All-Day* `"🔴 DEADLINE: [Nama Tugas]"` berwarna merah (*Tomato*) pada hari H.
 - **Two-Way Status Sync:** Saat tugas ditandai selesai (`COMPLETE`), blok kerja dan deadline di Google Calendar otomatis diubah warnanya menjadi **Graphite (Abu-abu, `colorId: 8`)** untuk menandakan penyelesaian secara visual.
 
@@ -1165,7 +1165,7 @@ Aturan pembatasan aplikasi bersifat **100% dinamis** dan dapat diubah kapan saja
 
 ##### A. Struktur Metadata Tabel `nexa_app_limits` (Supabase)
 | Kolom | Tipe | Penjelasan |
-| :--- | :---: | :--- |
+| :-- | :--: | :-- |
 | `package_name` | `TEXT (UNIQUE)` | Package ID Android (misal: `com.google.android.youtube`). |
 | `app_label` | `TEXT` | Nama aplikasi yang ramah manusia (misal: `YouTube`). |
 | `max_session_minutes` | `INT` | Batas durasi maksimum per satu kali sesi aktif. |
@@ -1212,10 +1212,10 @@ DO UPDATE SET
 
 * **Menonaktifkan Sementara atau Menghapus:**
 ```sql
--- Nonaktifkan sementara:
+- Nonaktifkan sementara:
 UPDATE "public"."nexa_app_limits" SET "is_active" = false WHERE "package_name" = 'com.google.android.youtube';
 
--- Hapus permanen:
+- Hapus permanen:
 DELETE FROM "public"."nexa_app_limits" WHERE "package_name" = 'com.mobile.legends';
 ```
 
@@ -1273,18 +1273,18 @@ Puncak kematangan kognisi N.E.X.A dicapai melalui evolusi arsitektural **v2.7 ("
 
 ```mermaid
 flowchart TD
-    A[User Event / Message] --> B[AI Router & NLP Classifier]
-    B --> C[Ebbinghaus Memory Decay Engine]
-    C -->|R = e^(-\lambda t)| D[Tiered Approval Pipeline]
-    D -->|Tier 1: Auto-Commit| E[(Supabase Fact Store)]
-    D -->|Tier 2/3: Review| F[Telegram Inline Keyboard]
+    A[User Event / Message] -> B[AI Router & NLP Classifier]
+    B -> C[Ebbinghaus Memory Decay Engine]
+    C ->|R = e^(-\lambda t)| D[Tiered Approval Pipeline]
+    D ->|Tier 1: Auto-Commit| E[(Supabase Fact Store)]
+    D ->|Tier 2/3: Review| F[Telegram Inline Keyboard]
     
-    B --> G[Anticipatory Engine]
-    G -->|36h Emotional Time-Series| H[Causal Knowledge Graph]
-    H -->|Overthinking / Late Night| I[Proactive Intervention Alert]
+    B -> G[Anticipatory Engine]
+    G ->|36h Emotional Time-Series| H[Causal Knowledge Graph]
+    H ->|Overthinking / Late Night| I[Proactive Intervention Alert]
     
-    E --> J[Conversational Memory UX]
-    J --> K[Natural Executive Narrative + Status Badge]
+    E -> J[Conversational Memory UX]
+    J -> K[Natural Executive Narrative + Status Badge]
 ```
 
 #### 1. *Ebbinghaus Memory Decay Engine & 365-Day Cap*
@@ -1360,7 +1360,7 @@ Dua *cron* bekerja dengan tempo yang sangat cepat untuk memastikan data tetap ko
    - Platform *cloud* gratis sering memutuskan koneksi jaringan secara sepihak. Jika N.E.X.A gagal mengirim notifikasi ke Telegram (karena koneksi putus), transaksi tersebut akan menggantung di `nexa_pending_transactions` dengan `telegram_sent = false`.
    - Watchdog memindai tabel ini setiap 90 detik. Jika pesan belum terkirim, Watchdog akan melakukan **pengiriman ulang paksa** (*force resend*).
    - Jika transaksi menggantung lebih dari 5 menit tanpa respons pengguna, Watchdog mengamankannya dengan cara melakukan **Auto-Save**, memastikan uang Tuan Faqih tercatat secara permanen.
-3. **Daily Memory Consolidation (23:59 WIB)**: Mengekstraksi obrolan harian untuk membangun Long-Term Memory (dibahas detail di Bab 6).
+3. **Chrono-Episodic Daily Consolidation & Memory Hygiene (03:30 WIB)**: Mengeksekusi penyulingan obrolan lampau (>90 hari) menjadi catatan narasi harian di `nexa_daily_narratives` serta membersihkan fakta usang dari memori (dibahas detail di Bab 6).
 
 ---
 
@@ -1390,7 +1390,7 @@ Semua lalu lintas HTTP masuk dijaga oleh *middleware* keamanan sebelum mencapai 
 Modul `env.js` mengelola lebih dari 30 *credential* rahasia untuk mengeksekusi integrasi lintas platform, meliputi:
 
 - **LLM Key Rotation & Multi-Modal Inference**: N.E.X.A siap menghadapi *Rate Limit* gratisan dengan menyiapkan slot rotasi untuk 4 Kunci Gemini (`GEMINI_API_KEY_1-4`), 4 Kunci Groq, Cerebras, Mistral, **Hugging Face Inference API** (`HF_TOKEN` untuk Vision OCR, Whisper Voice, dan model fallback), hingga *fallback* premium via OpenRouter.
-- **Dual Google Authentication**: Menggunakan JSON *Service Account* (`GOOGLE_PRIVATE_KEY`) untuk operasi Google Drive, namun menggunakan sistem kredensial manusia (OAuth2 `GMAIL_REFRESH_TOKEN` & `TASKS_REFRESH_TOKEN`) untuk mengakses *inbox* email dan daftar tugas Tuan Faqih secara mandiri.
+- **Unified Master Google OAuth 2.0**: Mengonsolidasikan seluruh 16 izin resmi Google API (Calendar, Tasks, Gmail, Drive Vault, Docs 2nd Brain, Sheets, Meet) di bawah satu klien Master OAuth 2.0 terpadu (`Google_Master_Client.js`), meniadakan sepenuhnya ketergantungan pada Service Account lama.
 - **Node Fisik & Integrasi Eksternal**: Kunci akses untuk Supabase (Memori Permanen), Notion (Task Sync), Serper.dev (Pencarian Web), dan Nexa Mobile Bridge Secret (`NEXA_DEVICE_SECRET` untuk Eksekutor God Mode Android).
 
 ## BAB 9: PETA KODE (*CODEBASE MAPPING*) & PANDUAN PENGEMBANGAN
@@ -1450,11 +1450,9 @@ Dengan menaati protokol ini, fitur baru bisa disuntikkan dalam hitungan menit ta
 
 ---
 
----
-
 ## BAB 10: THE LIVING MEMORY ENGINE (SISTEM MEMORI ORGANIS)
 
-Bab ini mendokumentasikan pembaruan revolusioner **Phase 9**, di mana N.E.X.A berevolusi dari sekadar pengingat pasif menjadi sistem yang memiliki ingatan organik—layaknya otak manusia yang dapat belajar, menegaskan kembali (*reinforce*), melupakan hal yang tak lagi relevan (*decay*), dan menyembuhkan dirinya dari kontradiksi.
+Bab ini mendokumentasikan pembaruan revolusioner **Phase 9**, di mana N.E.X.A berevolusi dari sekadar pengingat pasif menjadi sistem yang memiliki ingatan organik : layaknya otak manusia yang dapat belajar, menegaskan kembali (*reinforce*), melupakan hal yang tak lagi relevan (*decay*), dan menyembuhkan dirinya dari kontradiksi.
 
 ---
 
@@ -1506,11 +1504,11 @@ Sistem menjunjung tinggi kontrol pengguna. Fakta yang berada di ambang batas pem
 - **[ ❌ Tahan Semua ]**: Membatalkan penghapusan (mengembalikan ke `ACTIVE`).
 - **[ 🔍 Pilih Manual ]**: Memungkinkan Tuan Faqih mengatur secara manual baris demi baris via chat teks.
 
-Keseluruhan sistem ini menjadikan N.E.X.A asisten pertama yang memiliki kognisi organik—mengingat sekuat komputer, namun memilah serelevan manusia.
+Keseluruhan sistem ini menjadikan N.E.X.A asisten pertama yang memiliki kognisi organik : mengingat sekuat komputer, namun memilah serelevan manusia.
 
 ---
 
-## BAB 11: NEXA MOBILE BRIDGE — NEURAL-PERIPHERAL EXTENSION (TUBUH, INDERA & EKSEKUTOR FISIK)
+## BAB 11: NEXA MOBILE BRIDGE : NEURAL-PERIPHERAL EXTENSION (TUBUH, INDERA & EKSEKUTOR FISIK)
 
 Bab ini mendokumentasikan terobosan arsitektural **N.E.X.A 3.0 Mobile Bridge**, yang menghubungkan *Cloud Brain* (Azure VPS) dengan perangkat fisik Android (Samsung Galaxy A33 5G / Android 16 One UI 8). Melalui jembatan ini, N.E.X.A tidak lagi terkurung sebagai teks di dalam chat, melainkan memiliki mata, tangan, telinga, lokasi, dan suara di dunia nyata.
 
@@ -1520,7 +1518,7 @@ Bab ini mendokumentasikan terobosan arsitektural **N.E.X.A 3.0 Mobile Bridge**, 
 
 Sistem AI asisten konvensional umumnya terbagi menjadi dua kompromi buruk:
 1. **On-Device AI Lemah**: Model AI kecil yang dijalankan lokal di HP boros baterai, cepat panas, dan bodoh.
-2. **Chatbot Terisolasi**: AI berbasis cloud yang pintar tetapi buta dan lumpuh—tidak tahu di mana pengguna berada, tidak bisa melihat layar, dan tidak bisa mengoperasikan aplikasi HP.
+2. **Chatbot Terisolasi**: AI berbasis cloud yang pintar tetapi buta dan lumpuh : tidak tahu di mana pengguna berada, tidak bisa melihat layar, dan tidak bisa mengoperasikan aplikasi HP.
 
 N.E.X.A memecahkan dilema ini dengan arsitektur **Neural-Peripheral Separation**:
 - **Otak (Cloud Core)**: Berada di Azure VPS (PM2, Node.js 20, LLM Multi-Tier Router, Supabase Memory). Bebas dari batasan daya dan baterai.
@@ -1553,7 +1551,7 @@ Komunikasi antara Cloud Core dan HP menggunakan protokol **Nexa Bi-directional W
 2. **Single-Device Instant Termination**:
    Untuk mencegah konflik *split-brain* atau koneksi ganda akibat pergantian jaringan (Wi-Fi ke 4G), server secara instan mematikan (*terminate*) soket lama saat soket baru tersambung.
 3. **Anti-Ghost Promise Cleanup & Fail-Safe Memory Purge**:
-   Setiap perintah ke HP memiliki batas waktu (*timeout* 5–12 detik). Jika HP terputus di tengah eksekusi perintah, seluruh *pending promise* di memori server langsung dibersihkan (`resolve({ success: false, status: 'DISCONNECTED' })`), mencegah *event loop deadlock* di Node.js.
+   Setiap perintah ke HP memiliki batas waktu (*timeout* 5 - 12 detik). Jika HP terputus di tengah eksekusi perintah, seluruh *pending promise* di memori server langsung dibersihkan (`resolve({ success: false, status: 'DISCONNECTED' })`), mencegah *event loop deadlock* di Node.js.
 4. **Heartbeat Proaktif (PING/PONG)**:
    Interval detak jantung periodik setiap 30 detik untuk mendeteksi *silent network drop* dari ISP seluler.
 
@@ -1637,7 +1635,7 @@ N.E.X.A 3.0 menanggalkan ketergantungan pada API berbayar seperti Google Maps Pl
    - Memperluas sinonim percakapan Indonesia ke tag OSM resmi (`POI_SYNONYMS`: *pom bensin* → `SPBU Pertamina`, `SPBU`; *ngopi* → `warkop`, `cafe`; *minimarket* → `Indomaret`, `Alfamart`).
 3. **Bounded Viewbox Engine (Nominatim & Photon)**:
    - Mengunci area pencarian dalam kotak pembatas geografis (*Viewbox Bounding Box* $\pm 0.09^{\circ} \approx 10\text{ km}$) di sekitar koordinat GPS pengguna (*Sinduadi, Sleman*).
-   - **Hard Distance Filter**: Membuang semua POI di luar radius terdekat sehingga hasil yang disajikan murni berada dalam jangkauan 1–3 km di sekitar posisi pengguna.
+   - **Hard Distance Filter**: Membuang semua POI di luar radius terdekat sehingga hasil yang disajikan murni berada dalam jangkauan 1 - 3 km di sekitar posisi pengguna.
 
 ---
 
@@ -1658,8 +1656,8 @@ sequenceDiagram
     Note over Tuan,Tools: FASE 1: HANDSHAKE & SETUP WSS
     Server->>Relay: WSS Handshake via wss://nexa-relay.../ws/...
     Relay->>Google: BidiGenerateContent (Gemini 3.1 Flash Live Preview)
-    Google-->>Server: setupComplete: {}
-    Server-->>Bridge: CALL_LIVE_READY (Session Handshake Confirmed)
+    Google->>Server: setupComplete: {}
+    Server->>Bridge: CALL_LIVE_READY (Session Handshake Confirmed)
 
     Note over Tuan,Tools: FASE 2: PERCAKAPAN AUDIO DUA ARAH (TURN-AWARE DUPLEX)
     Tuan->>Bridge: "Catat pengeluaran 20 ribu beli bensin pakai Cash"
@@ -1667,14 +1665,14 @@ sequenceDiagram
     Server->>Google: realtimeInput.audio { mimeType: "audio/pcm;rate=16000", data }
     
     Note over Google,Tools: FASE 3: EKSEKUSI INTENT ROUTER NYATA (TOOL CALLING)
-    Google-->>Server: toolCall: recordExpense(amount: 20000, desc: "bensin", method: "Cash")
+    Google->>Server: toolCall: recordExpense(amount: 20000, desc: "bensin", method: "Cash")
     Server->>Tools: writeTransaction() -> Simpan ke Database Supabase (1ms)
-    Tools-->>Server: { status: "SUCCESS", transaction_id: "trx_99182" }
-    Server-->>Google: toolResponse: { status: "SUCCESS", message: "Tersimpan" }
+    Tools->>Server: { status: "SUCCESS", transaction_id: "trx_99182" }
+    Server->>Google: toolResponse: { status: "SUCCESS", message: "Tersimpan" }
     
     Note over Google,Tuan: FASE 4: STREAMING SUARA VOKAL FENRIR
-    Google-->>Server: modelTurn.parts[].inlineData (24kHz PCM Base64)
-    Server-->>Bridge: CALL_AUDIO_PLAY (24kHz PCM Base64)
+    Google->>Server: modelTurn.parts[].inlineData (24kHz PCM Base64)
+    Server->>Bridge: CALL_AUDIO_PLAY (24kHz PCM Base64)
     Bridge->>Tuan: 🔊 Loudspeaker / Earpiece Suara Fenrir Bersuara Lancar
 ```
 
@@ -1700,7 +1698,7 @@ sequenceDiagram
 Selain mengeksekusi perintah, Nexa Bridge bertindak sebagai sistem saraf otonom yang melaporkan kondisi lingkungan ke server:
 
 | Tipe Laporan | Parameter yang Dikirim | Pemicu & Pemanfaatan di Server |
-|---|---|---|
+|--|--|--|
 | **`TELEMETRY_REPORT`** | `battery_level`, `is_charging`, `network_type`, `wifi_ssid`, `signal_rssi` | Dikirim periodik tiap 5 menit untuk memantau daya baterai dan konektivitas HP Tuan. |
 | **`CONTEXT_UPDATE`** | `USER_ARRIVED_HOME`, `USER_LEFT_HOME` | Pemicu Geofence: Menyalakan/mematikan rutinitas rumah tangga otomatis. |
 | **`CONTEXT_UPDATE`** | `PHONE_PICKUP_MORNING`, `ALARM_DISMISSED` | Pemicu Pagi: N.E.X.A mendeteksi Tuan telah bangun dan mengirimkan *Morning Briefing*. |
@@ -1713,7 +1711,7 @@ Selain mengeksekusi perintah, Nexa Bridge bertindak sebagai sistem saraf otonom 
 Seluruh kendali perangkat didefinisikan dalam konstanta `NexaActions` dan dieksekusi secara terpusat oleh `DeviceCommandDispatcher.kt` dan `Device_Control_Engine.js`:
 
 | Aksi Perangkat | Parameter | Deskripsi & Dampak Nyata |
-|---|---|---|
+|--|--|--|
 | `TOGGLE_FLASHLIGHT` | `enabled: boolean` | Menyalakan atau mematikan lampu senter HP. |
 | `SET_VOLUME` | `stream: string`, `level: 0-100` | Mengatur volume suara (*MUSIC*, *RING*, *NOTIFICATION*). |
 | `FORCE_DND` | `enabled: boolean` | Mengaktifkan mode Jangan Ganggu (*Do Not Disturb*). |
@@ -1729,9 +1727,7 @@ Seluruh kendali perangkat didefinisikan dalam konstanta `NexaActions` dan diekse
 
 ---
 
----
-
-## BAB 12: ARSITEKTUR v3.1 — UNIFIED MASTER OAUTH 2.0 & COGNITIVE ERGONOMICS
+## BAB 12: ARSITEKTUR v3.1 : UNIFIED MASTER OAUTH 2.0 & COGNITIVE ERGONOMICS
 
 Pembaruan v3.1 menandai lompatan evolusioner terbesar dalam efisiensi autentikasi eksternal dan kenyamanan interaksi manusia (*Human-Centric Cognitive Ergonomics*).
 
@@ -1787,7 +1783,7 @@ Beroperasi 24/7 di atas **Azure Virtual Machine** (`Standard_B2ats_v2`, Jakarta 
 
 ---
 
-## BAB 13: DILEMA KOGNITIF ENTERPRISE — PROMPT BLOAT, ATTENTION SALIENCE & ARSITEKTUR LEAN ROUTER
+## BAB 13: DILEMA KOGNITIF ENTERPRISE : PROMPT BLOAT, ATTENTION SALIENCE & ARSITEKTUR LEAN ROUTER
 
 ### 13.1 The Enterprise Frontier: Dilema Antara "Full Context Awareness" vs "Prompt Bloat"
 
@@ -1815,7 +1811,7 @@ Pada arsitektur `AI_Router.js`, setiap pesan singkat (misal: *"Beli es teh 5rb"*
 4. **Daftar Akun Bank/Dompet & 3 Transaksi Terakhir:** ~1.500 karakter.
 5. **Kalender Referensi 7 Hari & Agenda Mendatang:** ~1.200 karakter.
 6. **Profil Pengguna, Core Identity, & 7-Layer Cognitive Model:** ~6.500 karakter.
-7. **Riwayat Chat History (12–20 Pesan):** ~8.000 karakter.
+7. **Riwayat Chat History (12 - 20 Pesan):** ~8.000 karakter.
 
 Rasio efisiensi muatan pesan pengguna terhadap konteks yang disodorkan adalah **1 : 3.000**. Ini membebani *Tokens Per Minute* (TPM) pada penyedia inference cepat (Cerebras/Groq) dan menimbulkan fenomena *Lost in the Middle* (penurunan daya tangkap LLM terhadap instruksi di tengah teks panjang).
 
@@ -1857,7 +1853,7 @@ Penyederhanaan atau penyaringan prompt yang tidak dirancang dengan hati-hati dap
    - *Mitigasi:* Menggunakan **Micro-Summary Injection** (menyuntikkan ringkasan 1 baris tentang saldo dan agenda aktif, bukan membuang konteks sama sekali) serta fallback **Native Tool Calling**.
 2. **Kerentanan Memori Basi (*Working Memory Drift*):**
    - *Masalah:* Snapshot status di RAM bisa tertinggal jika data diubah dari luar (misal input via Next.js Web Dashboard atau Google Calendar langsung).
-   - *Mitigasi:* Event-driven cache invalidation dan TTL pendek (3–5 menit) untuk data dinamis.
+   - *Mitigasi:* Event-driven cache invalidation dan TTL pendek (3 - 5 menit) untuk data dinamis.
 3. **Race Condition pada Pembelajaran Asinkron (*Async Amnesia*):**
    - *Masalah:* Jika ekstraksi preferensi baru dilakukan secara asinkron di background, pesan susulan yang dikirim 2 detik kemudian bisa dieksekusi dengan memori lama.
    - *Mitigasi:* **Write-Through In-Memory Cache**: preferensi yang terdeteksi langsung memperbarui state RAM secara instan sebelum commit database selesai.
@@ -1902,7 +1898,7 @@ Berdasarkan *Agentic Design Patterns* (Google Cloud / Springer) dan evaluasi di 
 ┌─────────────────────────────────────────────────────────────┐
 │  3. SINGLE-TURN UNIFIED EXECUTION (~4.000 char prompt)      │
 │  • Model: Cerebras Gemma 31B / Gemini 3.7 Flash             │
-│  • Latensi: 0.3s – 0.6s (Super Cepat, Bebas Rate-Limit)     │
+│  • Latensi: 0.3s - 0.6s (Super Cepat, Bebas Rate-Limit)     │
 │  • Menghasilkan: Tindakan Presisi + Balasan Bahasa Alami    │
 └──────────────────────────────┬──────────────────────────────┘
                                │
@@ -1919,10 +1915,10 @@ Berdasarkan *Agentic Design Patterns* (Google Cloud / Springer) dan evaluasi di 
 ### 13.5 Matriks Evaluasi & Target Performa
 
 | Parameter Teknis | Arsitektur v3.1 (Lama) | Arsitektur v3.2 (Lean Cognitive) |
-|---|---|---|
-| **Ukuran Prompt Rata-rata** | ~45.000 karakter | **~4.000 – 6.500 karakter** (📉 -85%) |
-| **Konsumsi Token per Pesan** | ~11.000 token | **~1.000 – 1.500 token** (📉 -88%) |
-| **Latensi Respons (Round-Trip)** | 2.5 – 4.2 detik | **⚡ 0.4 – 0.8 detik** |
+|--|--|--|
+| **Ukuran Prompt Rata-rata** | ~45.000 karakter | **~4.000 - 6.500 karakter** (📉 -85%) |
+| **Konsumsi Token per Pesan** | ~11.000 token | **~1.000 - 1.500 token** (📉 -88%) |
+| **Latensi Respons (Round-Trip)** | 2.5 - 4.2 detik | **⚡ 0.4 - 0.8 detik** |
 | **Resiko Rate-Limit (Groq/Cerebras)**| Tinggi (mendekati 12K TPM) | **🛡️ Nol (Sangat Aman)** |
 | **Ketahanan terhadap Typo/Slang** | Rendah (Ketergantungan Regex) | **🎯 Tinggi (Native Semantic & Embeddings)** |
 | **Kepribadian & Proaktivitas** | Sering kaku terbebani data | **❤️ Alami, fokus, dan relevan** |
@@ -1930,8 +1926,6 @@ Berdasarkan *Agentic Design Patterns* (Google Cloud / Springer) dan evaluasi di 
 ---
 
 Dengan formalisasi **Bab 13** ini ke dalam Whitepaper, N.E.X.A mengukuhkan komitmen desainnya: menjadi asisten cerdas yang tidak hanya tangguh dalam otomasi fisik dan finansial, tetapi juga memiliki arsitektur kognitif yang ramping, elegan, dan setara dengan standar riset AI enterprise global.
-
----
 
 ---
 **~ TAMAT ~**
