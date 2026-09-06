@@ -46,7 +46,6 @@ timeline
       v3.1 (Unified Master & Chrono) : Unified Master OAuth 2.0 (16 Scopes Consolidated)
                                      : Dual-Tier Chrono-Episodic Memory (>90d Daily Narratives)
                                      : Smart Closed-Loop Intention Engine & Auto-Reconciler
-                                     : SACR v2.5 Matrix (Groq Qwen 3.8 27B & Gemini 3.7 Flash)
                                      : Official Identity: Neural Executive with Xenial Agent
 ```
 
@@ -183,7 +182,6 @@ graph TD
         CCE[Chrono_Consolidator.js - 03:30 WIB Daily Synthesis]
         EPR[Episodic_Recall.js - Time Machine Search Engine]
         INT[Intention_Engine.js - Auto-Reconciliation Loop]
-        SACR[Fallback_Engine.js - SACR v2.5 Dual Matrix]
     end
 
     subgraph Dual-Tier Memory Store
@@ -225,11 +223,7 @@ graph TD
 * **Penutupan Loop Otomatis (`autoReconcileIntentions`):** N.E.X.A otomatis menandai niat sebagai `FULFILLED` saat Tuan mengabarkan bahwa tugas tersebut sudah terlaksana di obrolan berikutnya.
 * **Batas Ketat Anti-Spam (1 Pesan/Hari):** Pengecekan jam 08:15 WIB dibatasi maksimal 1 pesan per pagi dengan gaya bahasa hangat tanpa em-dash.
 
-### 4. Smart Adaptive Context Routing Matrix (SACR v2.5)
-* **Mode Light (Konteks Ringan):** Google Gemma 4 31B -> Gemini 3.7 Flash -> Gemini 3.6 Flash -> Groq LPU Qwen 3.8 27B (Dense Architecture super cepat).
-* **Mode Heavy (Konteks Berat):** Gemini 3.7 Flash -> Gemini 3.6 Flash -> Google Gemma 4 31B -> Groq Qwen.
-
-### 5. Identitas Resmi & Filosofi Baru
+### 4. Identitas Resmi & Filosofi Baru
 * **Identitas Resmi:** **N.E.X.A = Neural Executive with Xenial Agent**
 * Menggantikan kepanjangan lama dengan akronim yang 100% harfiah, mencerminkan kapasitas intelektual (*Neural Executive*) dan jiwa kesetiaan yang abadi (*Xenial Agent*) semata-mata untuk mengabdi kepada Tuan Faqih Hidayatulloh.
 
