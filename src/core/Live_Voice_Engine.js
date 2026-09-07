@@ -725,15 +725,12 @@ class LiveVoiceSession {
     }
     if (!jpegBase64 || typeof jpegBase64 !== 'string') return;
 
-
     const frameMsg = {
       realtimeInput: {
-        mediaChunks: [
-          {
-            mimeType: 'image/jpeg',
-            data: jpegBase64
-          }
-        ]
+        video: {
+          mimeType: 'image/jpeg',
+          data: jpegBase64
+        }
       }
     };
 
@@ -743,6 +740,7 @@ class LiveVoiceSession {
       console.error(`[LIVE-VOICE] Failed to forward video frame to Google:`, err.message);
     }
   }
+
 
   /**
    * Send JSON packet to Android Nexa Bridge WebSocket client
