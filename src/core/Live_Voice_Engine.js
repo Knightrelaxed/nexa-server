@@ -87,8 +87,8 @@ Anda memiliki akses langsung ke seluruh infrastruktur backend N.E.X.A. Eksekusi 
 - HARDWARE HP: Senter, volume, DND, kunci layar, baterai, buka aplikasi, ringtone, foto, screenshot → controlDeviceHardware.
 - TUTUP TELEPON: Saat Tuan pamit ("sudah ya", "tutup teleponnya", "bye nexa", "makasih nexa") → endCall setelah salam perpisahan.
 - INTERNET: Berita, cuaca, kurs, pengetahuan umum → searchWeb.
-- DIAGNOSA SISTEM: Cek log/error server → querySystemLogs.
 - VISUAL KAMERA (Jika Tuan mengaktifkan kamera): Tuan bisa mengarahkan kamera HP ke objek, dokumen, layar, atau lingkungan sekitar. Anda akan menerima konteks visual tersebut secara real-time bersamaan dengan suara. Gunakan informasi ini untuk: membaca teks pada dokumen/layar, mengidentifikasi objek fisik, menganalisis produk/kemasan, membantu navigasi visual, atau mendiskusikan apa pun yang dilihat Tuan. Berikan respons visual secara alami dan kontekstual melalui suara, tanpa menyebut frasa teknis seperti "saya menerima frame kamera".
+- RESPON CEPAT & LUGAS: Ketika Tuan bertanya mengenai apa yang dilihat kamera (misal "apa ini?", "baca ini", "lihat ini"), segera jawab secara spontan, padat, dan akurat dalam 1-2 kalimat langsung tanpa bertele-tele atau jeda lama.
 `;
 
 
@@ -165,8 +165,10 @@ class LiveVoiceSession {
     this.watchdogInterval  = null;
     this.lastActivityTime  = Date.now();  // BUG 4: tracks last Google message time
     // Turn Gating: Prevent mic ambient noise from colliding with greeting & tool response synthesis
-    this.isExecutingTool   = false;
-    this.isGreetingPending = false;
+    this.isExecutingTool     = false;
+    this.isGreetingPending   = false;
+    this.isAssistantSpeaking = false;
+    this.lastClientInputTime = Date.now();
   }
 
   /**
@@ -185,9 +187,11 @@ class LiveVoiceSession {
 
   async _connectGoogleWs() {
     // BUG 2 FIX: Reset setup flag so audio is never sent before setup completes on reconnect
-    this.isSetupComplete   = false;
-    this.isExecutingTool   = false;
-    this.isGreetingPending = false;
+    this.isSetupComplete     = false;
+    this.isExecutingTool     = false;
+    this.isGreetingPending   = false;
+    this.isAssistantSpeaking = false;
+    this.lastClientInputTime = Date.now();
 
     const apiKey    = this._getApiKey();
     const rawBase   = process.env.GEMINI_BASE_URL || 'https://nexa-relay.dazatulloh2.workers.dev';
@@ -534,6 +538,7 @@ class LiveVoiceSession {
       if (msg.serverContent) {
         if (msg.serverContent.interrupted) {
           console.log(`[LIVE-VOICE] ⚡ Barge-in / turn transition detected.`);
+          this.isAssistantSpeaking = false;
           // BUG 1 FIX: Signal Android to flush playback queue and re-open mic immediately
           this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
         }
@@ -544,8 +549,9 @@ class LiveVoiceSession {
         for (const p of parts) {
           // Audio chunk (PCM 24kHz Base64)
           if (p.inlineData && p.inlineData.data) {
-            this.isGreetingPending = false;
-            this.isExecutingTool = false;
+            this.isAssistantSpeaking = true;
+            this.isGreetingPending   = false;
+            this.isExecutingTool     = false;
             this._sendToClient({
               type: 'CALL_AUDIO_PLAY',
               pcm_chunk: p.inlineData.data
@@ -571,8 +577,9 @@ class LiveVoiceSession {
 
         // If turnComplete is reached, return state to LISTENING (only if call is not ending)
         if (msg.serverContent.turnComplete && !this.isEndingCall) {
-          this.isGreetingPending = false;
-          this.isExecutingTool = false;
+          this.isAssistantSpeaking = false;
+          this.isGreetingPending   = false;
+          this.isExecutingTool     = false;
           this._sendToClient({
             type: 'CALL_STATUS_UPDATE',
             status: 'LISTENING'
@@ -676,6 +683,8 @@ class LiveVoiceSession {
       return;
     }
 
+    this.lastClientInputTime = Date.now();
+
     // GATING: Do not forward mic noise while tool response is being synthesized or greeting is pending
     if (this.isExecutingTool || this.isGreetingPending) {
       return;
@@ -704,6 +713,7 @@ class LiveVoiceSession {
    */
   handleIncomingClientText(text) {
     if (!text || !text.trim()) return;
+    this.lastClientInputTime = Date.now();
     this.turnHistory.push({ role: 'user', text: text.trim() });
     // Async persist to nexa_chat_memories — never block audio
     supabaseMemories.saveChatMemory('user', text.trim().slice(0, 800), 'live_call').catch(() => {});
@@ -711,7 +721,7 @@ class LiveVoiceSession {
 
   /**
    * Forward incoming video frame (JPEG base64) from Android camera to Google Live API.
-   * Encapsulated as realtimeInput.mediaChunks so Gemini processes visual context
+   * Encapsulated as realtimeInput.video so Gemini processes visual context
    * alongside the ongoing audio stream — enabling true multimodal understanding.
    * @param {string} jpegBase64 - Base64-encoded JPEG frame captured from Android camera
    */
@@ -719,8 +729,11 @@ class LiveVoiceSession {
     if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN || !this.isSetupComplete) {
       return;
     }
-    // GATING: Do not forward video frame while tool execution is ongoing or greeting is pending
-    if (this.isExecutingTool || this.isGreetingPending) {
+
+    this.lastClientInputTime = Date.now();
+
+    // GATING: Do not forward video frame while assistant is speaking, tool is executing, or greeting is pending
+    if (this.isAssistantSpeaking || this.isExecutingTool || this.isGreetingPending) {
       return;
     }
     if (!jpegBase64 || typeof jpegBase64 !== 'string') return;
@@ -792,7 +805,7 @@ class LiveVoiceSession {
 
   // ──────────────────────────────────────────────────────────────────────────
   // BUG 3 FIX: Keepalive Heartbeat — prevent Google idle timeout
-  // Sends a 100ms silence frame (3200 zero bytes @16kHz) every 5 seconds
+  // Sends a 100ms silence frame (3200 zero bytes @16kHz) only when client is truly idle
   // ──────────────────────────────────────────────────────────────────────────
   _startKeepalive() {
     if (this.keepaliveInterval) clearInterval(this.keepaliveInterval);
@@ -801,6 +814,13 @@ class LiveVoiceSession {
     this.keepaliveInterval = setInterval(() => {
       if (!this.isActive || !this.isSetupComplete) return;
       if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN) return;
+
+      // Only inject silence keepalive if client has been truly idle (no audio/video) for >= 4500ms
+      const idleTime = Date.now() - this.lastClientInputTime;
+      if (idleTime < 4500) {
+        return; // Session is actively streaming audio or video — skip keepalive injection
+      }
+
       try {
         this.googleWs.send(JSON.stringify({
           realtimeInput: {
@@ -814,7 +834,7 @@ class LiveVoiceSession {
         console.warn(`[LIVE-VOICE] Keepalive send warning:`, err.message);
       }
     }, 5000);
-    console.log(`[LIVE-VOICE] 💓 Keepalive heartbeat started (5s interval).`);
+    console.log(`[LIVE-VOICE] 💓 Conditional keepalive heartbeat started (5s interval, idle threshold: 4.5s).`);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
