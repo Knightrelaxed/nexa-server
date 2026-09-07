@@ -162,6 +162,24 @@ function initWebSocket(server) {
           return;
         }
 
+        // E.2. Continuous Live Video Frame Stream (Camera -> Google Gemini Multimodal)
+        if (payload.type === 'CALL_VIDEO_FRAME' || payload.type === 'VIDEO_STREAM') {
+          try {
+            const liveVoice = require('../../core/Live_Voice_Engine');
+            const activeSession = liveVoice.getActiveSessionForClient(ws);
+            if (activeSession) {
+              const imageChunk = payload.image_chunk || payload.data;
+              if (imageChunk) {
+                activeSession.handleIncomingClientVideoFrame(imageChunk);
+              }
+            }
+          } catch (e) {
+            console.error('[NEXA-BRIDGE-WS] Video frame relay error:', e.message);
+          }
+          return;
+        }
+
+
         // F. App Usage Telemetry & Duration Limiting Engine
         if (payload.type === 'APP_USAGE_TELEMETRY' || payload.type === 'app_usage') {
           if (latestTelemetry) {

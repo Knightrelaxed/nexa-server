@@ -88,6 +88,7 @@ Anda memiliki akses langsung ke seluruh infrastruktur backend N.E.X.A. Eksekusi 
 - TUTUP TELEPON: Saat Tuan pamit ("sudah ya", "tutup teleponnya", "bye nexa", "makasih nexa") → endCall setelah salam perpisahan.
 - INTERNET: Berita, cuaca, kurs, pengetahuan umum → searchWeb.
 - DIAGNOSA SISTEM: Cek log/error server → querySystemLogs.
+- VISUAL KAMERA (Jika Tuan mengaktifkan kamera): Tuan bisa mengarahkan kamera HP ke objek, dokumen, layar, atau lingkungan sekitar. Anda akan menerima konteks visual tersebut secara real-time bersamaan dengan suara. Gunakan informasi ini untuk: membaca teks pada dokumen/layar, mengidentifikasi objek fisik, menganalisis produk/kemasan, membantu navigasi visual, atau mendiskusikan apa pun yang dilihat Tuan. Berikan respons visual secara alami dan kontekstual melalui suara, tanpa menyebut frasa teknis seperti "saya menerima frame kamera".
 `;
 
 
@@ -709,6 +710,41 @@ class LiveVoiceSession {
   }
 
   /**
+   * Forward incoming video frame (JPEG base64) from Android camera to Google Live API.
+   * Encapsulated as realtimeInput.mediaChunks so Gemini processes visual context
+   * alongside the ongoing audio stream — enabling true multimodal understanding.
+   * @param {string} jpegBase64 - Base64-encoded JPEG frame captured from Android camera
+   */
+  handleIncomingClientVideoFrame(jpegBase64) {
+    if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN || !this.isSetupComplete) {
+      return;
+    }
+    // GATING: Do not forward video frame while tool execution is ongoing or greeting is pending
+    if (this.isExecutingTool || this.isGreetingPending) {
+      return;
+    }
+    if (!jpegBase64 || typeof jpegBase64 !== 'string') return;
+
+
+    const frameMsg = {
+      realtimeInput: {
+        mediaChunks: [
+          {
+            mimeType: 'image/jpeg',
+            data: jpegBase64
+          }
+        ]
+      }
+    };
+
+    try {
+      this.googleWs.send(JSON.stringify(frameMsg));
+    } catch (err) {
+      console.error(`[LIVE-VOICE] Failed to forward video frame to Google:`, err.message);
+    }
+  }
+
+  /**
    * Send JSON packet to Android Nexa Bridge WebSocket client
    */
   _sendToClient(packet) {
@@ -718,6 +754,7 @@ class LiveVoiceSession {
       } catch (_) {}
     }
   }
+
 
   /**
    * 8-Layer Failover and Hot-Reconnection Strategy
