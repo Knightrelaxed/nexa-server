@@ -44,6 +44,13 @@ module.exports = {
   CEREBRAS_API_KEY_3: process.env.CEREBRAS_API_KEY_3,
   CEREBRAS_API_KEY_4: process.env.CEREBRAS_API_KEY_4,
 
+  // SambaNova Cloud Ultra-Fast Keys (1 sampai 4) - Cadangan
+  SAMBANOVA_API_KEY: process.env.SAMBANOVA_API_KEY || process.env.SAMBANOVA_API_KEY_1,
+  SAMBANOVA_API_KEY_1: process.env.SAMBANOVA_API_KEY_1,
+  SAMBANOVA_API_KEY_2: process.env.SAMBANOVA_API_KEY_2,
+  SAMBANOVA_API_KEY_3: process.env.SAMBANOVA_API_KEY_3,
+  SAMBANOVA_API_KEY_4: process.env.SAMBANOVA_API_KEY_4,
+
   // Secondary LLM Providers
   MISTRAL_API_KEY: process.env.MISTRAL_API_KEY,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
