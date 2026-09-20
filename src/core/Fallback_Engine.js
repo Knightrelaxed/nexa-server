@@ -253,19 +253,19 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
   // [SACR v2.5 DUAL-MODE ADAPTIVE MATRIX]
-  // MODE LIGHT ⚡ : Google Gemma 4 31B (Tier 1-4) -> Gemini 3.7 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
-  // MODE HEAVY 🧠 : Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 31B (Tier 9-12)
-  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY 🧠 [Gemini 3.7 -> Gemini 3.6 -> Gemma 4 31B]' : 'LIGHT ⚡ [Google Gemma 4 -> Gemini 3.7 -> Gemini 3.6]'} | Total chars: ${inputChars}`);
+  // MODE LIGHT : Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.7 Flash (Tier 9-12)
+  // MODE HEAVY : Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12)
+  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.7 -> Gemini 3.6 -> Gemma 4 26B]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.6 -> Gemini 3.7]'} | Total chars: ${inputChars}`);
 
-  // 1. Google AI Studio Gemma 4 31B (Anti-CoT) (4 Keys - 57.6K RPD Free Quota, Ultra-Natural Persona)
+  // 1. Google AI Studio Gemma 4 26B (4 Keys: Ultra-Natural Persona, ~2.8s)
   const googleGemmaBlock = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
-      name: `Tier X (Google Gemma 4 Key ${i + 1} [Anti-CoT])`,
+      name: `Tier X (Google Gemma 4 26B Key ${i + 1} [Natural Persona])`,
       fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 2. Gemini 3.7 Flash (4 Keys - High Reasoning & Fast Response)
+  // 2. Gemini 3.7 Flash (4 Keys: High Reasoning & Fast Response)
   const gemini37Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -273,7 +273,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(key, 'gemini-3.7-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 3. Gemini 3.6 Flash (4 Keys - Backup Stable Engine)
+  // 3. Gemini 3.6 Flash (4 Keys: Backup Stable Engine 1.5s)
   const gemini36Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -281,7 +281,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 4. Groq LPU Qwen 3.8 27B (4 Keys - Dense 27B Fast Secondary Engine)
+  // 4. Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine)
   const groqQwenBlock = groqKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -289,7 +289,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGroqQwen(key, prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  // 5. Cerebras (4 Keys - PayGo / Fallback)
+  // 5. Cerebras (4 Keys: PayGo / Fallback)
   const cerebrasBlock = cerebrasKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -298,11 +298,11 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }));
 
   // Penataan Dinamis Top 12 Tiers Sesuai Mode Kognitif:
-  // LIGHT ⚡: Google Gemma 4 31B (Tier 1-4) -> Gemini 3.7 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
-  // HEAVY 🧠: Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 31B (Tier 9-12)
+  // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.7 Flash (Tier 9-12)
+  // HEAVY: Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12)
   const top12Block = heavy
     ? [...gemini37Block, ...gemini36Block, ...googleGemmaBlock]
-    : [...googleGemmaBlock, ...gemini37Block, ...gemini36Block];
+    : [...googleGemmaBlock, ...gemini36Block, ...gemini37Block];
 
   const tiers = [
     // Tier 1-12 Top Engine
@@ -383,7 +383,7 @@ function cleanGemmaOutput(rawText, jsonMode = false) {
 
 async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperature = 0.3, jsonMode = true, retries = 1) {
   const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const url = `${baseUrl}/v1beta/models/gemma-4-31b-it:generateContent?key=${apiKey}`;
+  const url = `${baseUrl}/v1beta/models/gemma-4-26b-a4b-it:generateContent?key=${apiKey}`;
 
   // Injeksi Instruksi Anti-CoT (Mematikan Monolog Internal & Draf)
   let optimizedSys = systemInstruction || '';
@@ -415,7 +415,7 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(7000)
       });
 
       if (!res.ok) {
