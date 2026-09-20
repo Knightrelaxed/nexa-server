@@ -253,9 +253,9 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
   // [SACR v2.5 DUAL-MODE ADAPTIVE MATRIX]
-  // MODE LIGHT : Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.7 Flash (Tier 9-12)
-  // MODE HEAVY : Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12)
-  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.7 -> Gemini 3.6 -> Gemma 4 26B]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.6 -> Gemini 3.7]'} | Total chars: ${inputChars}`);
+  // MODE LIGHT : Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.8 Flash (Tier 9-12)
+  // MODE HEAVY : Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12)
+  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.8 -> Gemini 3.6 -> Gemma 4 26B]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.6 -> Gemini 3.8]'} | Total chars: ${inputChars}`);
 
   // 1. Google AI Studio Gemma 4 26B (4 Keys: Ultra-Natural Persona, ~2.8s)
   const googleGemmaBlock = googleApiKeys
@@ -265,12 +265,12 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 2. Gemini 3.7 Flash (4 Keys: High Reasoning & Fast Response)
-  const gemini37Block = googleApiKeys
+  // 2. Gemini 3.8 Flash (4 Keys: High Reasoning, Casual Tone & Fast Response)
+  const gemini38Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
-      name: `Tier X (Gemini 3.7 Flash Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(key, 'gemini-3.7-flash', prompt, systemInstruction, temperature, jsonMode, 1)
+      name: `Tier X (Gemini 3.8 Flash Key ${i + 1})`,
+      fn: () => callGeminiWithRetry(key, 'gemini-3.8-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
   // 3. Gemini 3.6 Flash (4 Keys: Backup Stable Engine 1.5s)
@@ -298,11 +298,11 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }));
 
   // Penataan Dinamis Top 12 Tiers Sesuai Mode Kognitif:
-  // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.7 Flash (Tier 9-12)
-  // HEAVY: Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12)
+  // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.8 Flash (Tier 9-12)
+  // HEAVY: Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12)
   const top12Block = heavy
-    ? [...gemini37Block, ...gemini36Block, ...googleGemmaBlock]
-    : [...googleGemmaBlock, ...gemini36Block, ...gemini37Block];
+    ? [...gemini38Block, ...gemini36Block, ...googleGemmaBlock]
+    : [...googleGemmaBlock, ...gemini36Block, ...gemini38Block];
 
   const tiers = [
     // Tier 1-12 Top Engine
@@ -448,7 +448,7 @@ async function callGeminiWithRetry(apiKey, modelName, prompt, systemInstruction,
     maxOutputTokens: jsonMode ? 2048 : 4096
   };
 
-  if (/3\.7|2\.5|2\.0/i.test(modelName)) {
+  if (/3\.8|3\.7|2\.5|2\.0/i.test(modelName)) {
     generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
 
