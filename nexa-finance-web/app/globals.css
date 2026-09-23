@@ -127,3 +127,14 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Bottom nav: hanya tampil di mobile, WAJIB tersembunyi di desktop */
+.bottom-nav-mobile {
+  display: flex;
+}
+
+@media (min-width: 640px) {
+  .bottom-nav-mobile {
+    display: none !important;
+  }
+}
