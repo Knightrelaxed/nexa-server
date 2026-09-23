@@ -261,6 +261,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const googleGemmaBlock = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
+      group: 'gemma-4-26b',
       name: `Tier X (Google Gemma 4 26B Key ${i + 1} [Natural Persona])`,
       fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
     }));
@@ -269,6 +270,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const gemini38Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
+      group: 'gemini-3.8-flash',
       name: `Tier X (Gemini 3.8 Flash Key ${i + 1})`,
       fn: () => callGeminiWithRetry(key, 'gemini-3.8-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
@@ -277,6 +279,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const gemini36Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
+      group: 'gemini-3.6-flash',
       name: `Tier X (Gemini 3.6 Flash Key ${i + 1})`,
       fn: () => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
@@ -324,7 +327,15 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }] : [])
   ];
 
+  const failedGroups = new Set();
+  const groupTimeoutCount = {};
+
   for (const tier of tiers) {
+    if (tier.group && failedGroups.has(tier.group)) {
+      asyncLog(`[CIRCUIT BREAKER] Melewati ${tier.name} (model ${tier.group} sedang antre/503 di Google)...`);
+      continue;
+    }
+
     try {
       asyncLog(`[FALLBACK] Trying ${tier.name}...`);
       const rawRes = await tier.fn();
@@ -340,7 +351,23 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 
       return validated;
     } catch (e) {
-      asyncWarn(`[FALLBACK] ${tier.name} failed:`, getErrDetails(e));
+      const errDetail = getErrDetails(e);
+      asyncWarn(`[FALLBACK] ${tier.name} failed:`, errDetail);
+
+      // Jika error 503 (High Demand) pada Google, seluruh kunci untuk model tersebut pasti kena 503.
+      // Langsung lewati sisa kunci untuk model ini agar respons tetap kilat!
+      if (tier.group) {
+        if (/503|high demand/i.test(errDetail)) {
+          failedGroups.add(tier.group);
+          asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} sedang mengalami 503 High Demand global. Melewati sisa kunci untuk model ini.`);
+        } else if (/timeout|aborted/i.test(errDetail)) {
+          groupTimeoutCount[tier.group] = (groupTimeoutCount[tier.group] || 0) + 1;
+          if (groupTimeoutCount[tier.group] >= 2) {
+            failedGroups.add(tier.group);
+            asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} mengalami 2x timeout berturut-turut. Melewati sisa kunci untuk model ini.`);
+          }
+        }
+      }
     }
   }
 
