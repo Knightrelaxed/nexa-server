@@ -34,6 +34,7 @@ export function BottomNav() {
     <nav 
       aria-label="Navigasi bawah mobile" 
       data-mobile-nav="true"
+      suppressHydrationWarning
       className="mobile-only-nav hidden max-sm:block fixed bottom-0 left-0 right-0 z-40 select-none"
     >
       <div className="relative bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.07)] rounded-t-[28px] pb-[max(env(safe-area-inset-bottom),0.7rem)] pt-3 px-1 transition-all duration-300">

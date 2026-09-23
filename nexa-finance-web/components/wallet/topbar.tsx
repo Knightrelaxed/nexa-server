@@ -94,6 +94,7 @@ export function Topbar() {
             <Link
               href="/settings"
               data-mobile-nav="true"
+              suppressHydrationWarning
               className={cn(
                 "mobile-only-nav hidden max-sm:flex items-center justify-center h-9 w-9 rounded-full border transition-all duration-300 shrink-0",
                 pathname === "/settings"
