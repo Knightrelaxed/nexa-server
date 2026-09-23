@@ -1,14 +1,16 @@
 "use client"
 
 import { Topbar } from "./topbar"
+import { BottomNav } from "./bottom-nav"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-slate-200">
       <Topbar />
-      <main className="flex-1 w-full max-w-[1440px] mx-auto px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <main className="flex-1 w-full max-w-[1440px] mx-auto px-3 py-4 pb-28 sm:px-6 sm:py-6 sm:pb-8 lg:px-8">
         {children}
       </main>
+      <BottomNav />
       <style dangerouslySetInnerHTML={{__html: `
         /* Hide scrollbars globally for cleaner mobile look */
         .no-scrollbar::-webkit-scrollbar { display: none; }

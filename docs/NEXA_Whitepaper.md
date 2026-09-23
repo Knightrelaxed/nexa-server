@@ -375,6 +375,149 @@ Setiap kali Tuan Faqih melakukan perbaikan kode atau penambahan fitur pada CLI d
 
 ---
 
+### 2.6 Struktur Arsitektur Monorepo Codebase & Peta Modul Komprehensif (v3.1)
+
+Arsitektur codebase N.E.X.A mengadopsi pola **Modular Hexagonal / Layered Architecture** yang memisahkan secara ketat antara antarmuka (*Interfaces/Adapters*), orkestrasi kognitif (*Core Brain*), logika domain otonom (*Domain Engines*), dan lapisan infrastruktur/database (*Infrastructure & Data*).
+
+```mermaid
+flowchart TD
+    subgraph Ingress["1. Ingress & Interface Layer (src/interfaces/)"]
+        TG["Telegram Webhook (/webhook/telegram)"]
+        MB["Mobile Bridge WebSocket (/ws & /bridge/*)"]
+        CLI_IN["Universal Remote CLI (POST /webhook/cli & SSE /cli/stream)"]
+        GMAIL_IN["Gmail Pub/Sub Webhook (/webhook/gmail)"]
+        CRON["Autonomous Chrono-Pulse Scheduler (node-cron)"]
+    end
+
+    subgraph Entry["2. Entry Point & Security Hardening (src/)"]
+        APP["app.js (Express + HTTP/WS Server)"]
+        SEC["utils/security.js & logger.js (IPv4 First, CORS, Secret Token)"]
+    end
+
+    subgraph CoreBrain["3. Core Cognitive & Routing Layer (src/core/)"]
+        AIR["AI_Router.js (Intent Classifier, Token Guard & Fact Injection)"]
+        FBE["Fallback_Engine.js (Multi-Model Zero-Downtime Resilience)"]
+        TR["Live_Tool_Registry.js (Dynamic Tool Calling / Function Execution)"]
+        VE["Vision_Engine.js (11-Tier Visual Extraction)"]
+        VOICE["Live_Voice_Engine.js & Voice_Engine.js (Audio Stream & Groq Whisper)"]
+    end
+
+    subgraph DomainLogic["4. Autonomous Domain Engines (src/domain/)"]
+        FIN["Finance_Engine, Budget_Engine & Split_Engine"]
+        DISC["Discipline_GodMode & App_Discipline_Engine"]
+        MEM["Episodic_Recall & Chrono_Consolidator (23:59 WIB)"]
+        INF["Inference_Engine (Cognitive Sunday Pass) & Behavior_Engine"]
+        PLAN["Agenda_Manager, Task_Manager & Anticipatory_Engine"]
+        INT["Intention_Engine (Stated-vs-Revealed Reconciler)"]
+    end
+
+    subgraph InfraLayer["5. Infrastructure & External Services (src/infrastructure/)"]
+        SUPA["Supabase_Finance.js & Supabase_Memories.js"]
+        GMC["Google_Master_Client.js (Calendar, Gmail, Tasks, Drive, Docs)"]
+        NOTION_C["Notion_Client.js"]
+        SEARCH_C["Web_Search.js (Tavily, Serper)"]
+        VEC_CACHE["utils/gemini_vector_cache.js (In-Memory RAM Snapshot)"]
+    end
+
+    subgraph FrontendUI["6. Visual Presentation Layer"]
+        NFW["nexa-finance-web (Next.js 14 App Router)"]
+    end
+
+    Ingress --> APP
+    APP --> SEC
+    SEC --> CoreBrain
+    CoreBrain --> DomainLogic
+    DomainLogic --> InfraLayer
+    FrontendUI <--> SUPA
+```
+
+#### 1. Hierarki Direktori Monorepo
+
+```text
+nexa-server/
+├── src/
+│   ├── app.js                          # Main server boot, security headers, IPv4 agent, WS & cron init
+│   ├── config/
+│   │   ├── env.js                      # Environment variable loader & validator
+│   │   ├── personality.js              # Persona, System Prompts, dan aturan karakter N.E.X.A
+│   │   └── model_backup_plan.json      # Model fallback configuration matrix
+│   ├── core/                           # Cognitive Brain & Orchestration Layer
+│   │   ├── AI_Router.js                # Contextual intent routing, progressive fact injection, token guard
+│   │   ├── Fallback_Engine.js          # Multi-provider zero-downtime failover engine
+│   │   ├── Live_Tool_Registry.js       # Dynamic tool calling & function execution registry
+│   │   ├── Live_Voice_Engine.js        # Full-duplex WebSocket voice streaming engine
+│   │   ├── Vision_Engine.js            # 11-Tier OCR & document visual extraction pipeline
+│   │   └── Voice_Engine.js             # Voice note processing & Groq Whisper transcription
+│   ├── domain/                         # Autonomous Business & Domain Logic (17 Engines)
+│   │   ├── Agenda_Manager.js           # Google Calendar sync, conflict check, and proximity alert
+│   │   ├── Anticipatory_Engine.js      # Cognitive pattern prediction & stress anticipation
+│   │   ├── App_Discipline_Engine.js    # Screen time quotas & Android application discipline
+│   │   ├── Behavior_Engine.js          # Daily wake-up time, sentiment log, and weekly summary
+│   │   ├── Budget_Engine.js            # Monthly budget envelopes & spending allocation
+│   │   ├── Chrono_Consolidator.js      # 23:59 WIB daily episodic narrative reduction
+│   │   ├── Device_Control_Engine.js    # Mobile bridge device telemetry & hardware control
+│   │   ├── Discipline_GodMode.js       # Tiered physical screen lock, grayscale, and TTS intervention
+│   │   ├── Episodic_Recall.js          # Semantic vector & keyword long-term memory retriever
+│   │   ├── Finance_Engine.js           # Income/expense ledger, NLP correction, pending recovery
+│   │   ├── Inference_Engine.js         # Weekly cognitive Sunday pass & personality evolution
+│   │   ├── Intelligence_Brief.js       # Morning briefing, midnight check-in, and evening debrief
+│   │   ├── Intention_Engine.js         # Stated-vs-revealed reconciler & strategic target tracker
+│   │   ├── Location_Orchestrator.js    # GPS location contextual inference & place discovery
+│   │   ├── Memory_Hygiene_Engine.js    # Memory deduplication, compaction, and factual hygiene
+│   │   ├── Split_Engine.js             # Bill split calculator & peer debt ledger
+│   │   └── Task_Manager.js             # Google Tasks discovery & Notion parallel synchronization
+│   ├── infrastructure/                 # External Integrations & Storage Clients
+│   │   ├── Gmail_Client.js             # Gmail API m-banking polling & message delivery
+│   │   ├── Google_Master_Client.js     # Unified Google Master OAuth 2.0 Client (16 scopes)
+│   │   ├── Google_Tasks.js             # Google Tasks API interface with date-only normalization
+│   │   ├── Google_Workspace.js         # Calendar v3, Drive v3/v2 Vault, and Docs v1 2nd Brain
+│   │   ├── Location_Engine.js          # Reverse geocoding & Brave Place API
+│   │   ├── Notion_Client.js            # Notion Database sync client
+│   │   ├── Supabase_Finance.js         # Supabase PostgreSQL financial schema bridge
+│   │   ├── Supabase_Memories.js        # Supabase PostgreSQL long-term memory & profile bridge
+│   │   └── Web_Search.js               # Real-time web search (Tavily AI & Serper.dev)
+│   ├── interfaces/                     # Inbound & Outbound Ingress Adapters
+│   │   ├── cli/                        # Remote CLI adapter & SSE push streaming channel
+│   │   ├── cron.js                     # Cron pulse scheduler (01:00, 05:30, 08:15, 20:00, 21:00, 23:59 WIB)
+│   │   ├── gmail/                      # Google Cloud Pub/Sub push webhook handler
+│   │   ├── mobile_bridge/              # WebSocket /ws server & Android command dispatcher
+│   │   ├── telegram/                   # Telegram webhook handler, inline keyboards & outbound actions
+│   │   ├── webhook.js                  # Master /webhook facade router
+│   │   └── whatsapp/                   # WhatsApp Baileys socket adapter (local deployment mode)
+│   └── utils/                          # Low-Level Utilities & Hardening
+│       ├── gemini_vector_cache.js      # Sub-millisecond in-memory vector cache & JSON snapshot
+│       ├── logger.js                   # Self-awareness contextual logger
+│       ├── security.js                 # Identity lock, webhook secret verification & CLI token auth
+│       ├── telegram_network.js         # Network retry & proxy fallbacks
+│       └── telegram_proxy.js           # Socks5 proxy support for restricted networks
+├── nexa-finance-web/                   # Next.js 14 Web Frontend Dashboard (Tailwind CSS, React)
+├── database/                           # PostgreSQL Schema definitions & migration SQL scripts
+├── cloudflare-worker/                  # Cloudflare edge relay for Telegram API bypass
+├── vercel-relay/                       # Vercel serverless relay for outbound webhook proxying
+├── tools/ & scripts/                   # Token generation, prompt audits, and maintenance tools
+└── docs/                              # Comprehensive architectural blueprints & specifications
+```
+
+#### 2. Spesifikasi Modul Domain & Peran Fungsional
+
+| Layer | Modul / Berkas | Fungsi & Tanggung Jawab Kritis |
+| :--- | :--- | :--- |
+| **Core** | `AI_Router.js` | Klasifikasi niat (11 domain intents), Dynamic Word Resonance, pemangkasan histori percakapan berbasis Token Budget Guard, dan injeksi profil progresif. |
+| **Core** | `Fallback_Engine.js` | Menjamin *Zero Single Point of Failure* dengan orkestrasi failover model LLM (Gemini 2.5 Flash → Groq Llama 3.3 70B → Cerebras Llama 3.1 8B → Mistral → OpenRouter → Puter). |
+| **Core** | `Vision_Engine.js` | Rantai failover 11 lapis untuk OCR struk belanja, visualisasi bagan, dan dokumen PDF/gambar. |
+| **Core** | `Live_Voice_Engine.js` | Streaming audio dupleks penuh berbasis WebSocket untuk percakapan suara real-time. |
+| **Domain** | `Finance_Engine.js` | Pengelolaan mutasi keuangan, deteksi duplikasi transaksi, koreksi ralat natural (*"eh tadi bukan 50rb tapi 40rb"*), dan pemulihan transaksi saat boot. |
+| **Domain** | `Discipline_GodMode.js` | Eksekusi penegakan disiplin digital berjenjang pada HP Android (Audio TTS warning → Home screen redirect → Grayscale monokrom → Lock screen). |
+| **Domain** | `Chrono_Consolidator.js` | Engine konsolidasi harian pada 23:59 WIB yang memadatkan seluruh transkrip hari itu menjadi narasi reflektif dan memperbarui basis pengetahuan jangka panjang. |
+| **Domain** | `Inference_Engine.js` | *Cognitive Sunday Pass* (Minggu 21:00 WIB) yang menyimpulkan hipotesis preferensi, gaya komunikasi, dan pola kebiasaan pengguna. |
+| **Domain** | `Intention_Engine.js` | *Stated-vs-Revealed Reconciler* yang menyaring janji strategis pengguna (mengabaikan aktivitas mikro harian) dan menindaklanjutinya pada 08:15 WIB. |
+| **Domain** | `Agenda_Manager.js` | Pengelolaan kalender Google Calendar, kalkulasi slot kosong (*free/busy*), dan peringatan kedekatan agenda (*proximity alert* 30 menit sebelum acara). |
+| **Domain** | `Task_Manager.js` | Sinkronisasi dua arah Google Tasks dan Notion dengan preservasi timezone lokal (WIB). |
+| **Infra** | `Google_Master_Client.js` | Klien Singleton tunggal pengelola 16 scope Google Workspace dengan auto-refresh token senyap dan proteksi circuit breaker. |
+| **Infra** | `Supabase_Memories.js` | Manajemen database PostgreSQL untuk riwayat chat, fakta profil, dan identitas inti dengan cache RAM ber-TTL 30 menit. |
+
+---
+
 ## BAB 3: KOGNISI AI & UNIVERSAL STATE MACHINE
 
 Otak N.E.X.A bukan satu model AI : ia adalah **orkestra berlapis** yang bekerja secara berurutan, paralel, dan dengan fallback otomatis. Bab ini membedah setiap tahap pipeline kognitif dari masuknya sinyal mentah hingga keluarnya tindakan yang tepat.
