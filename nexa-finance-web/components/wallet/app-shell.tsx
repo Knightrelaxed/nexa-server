@@ -19,6 +19,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         html { scroll-behavior: smooth; }
         /* Better tap highlight */
         * { -webkit-tap-highlight-color: transparent; }
+        /* Mobile elements must NEVER display on desktop screens */
+        @media (min-width: 640px) {
+          .mobile-only-nav,
+          [data-mobile-nav="true"] {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+          }
+        }
       `}} />
     </div>
   )

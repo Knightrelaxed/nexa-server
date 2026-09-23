@@ -93,8 +93,9 @@ export function Topbar() {
             {/* Mobile Settings Shortcut Link */}
             <Link
               href="/settings"
+              data-mobile-nav="true"
               className={cn(
-                "sm:hidden flex items-center justify-center h-9 w-9 rounded-full border transition-all duration-300 shrink-0",
+                "mobile-only-nav hidden max-sm:flex items-center justify-center h-9 w-9 rounded-full border transition-all duration-300 shrink-0",
                 pathname === "/settings"
                   ? "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-500/25 scale-105"
                   : "border-border bg-white text-slate-600 hover:text-emerald-600 hover:bg-slate-50 shadow-xs"

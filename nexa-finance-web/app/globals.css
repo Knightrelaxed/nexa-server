@@ -128,13 +128,13 @@
   }
 }
 
-/* Bottom nav: hanya tampil di mobile, WAJIB tersembunyi di desktop */
-.bottom-nav-mobile {
-  display: flex;
-}
-
+/* Navigasi mobile: tersembunyi sepenuhnya di desktop */
 @media (min-width: 640px) {
-  .bottom-nav-mobile {
+  .mobile-only-nav,
+  [data-mobile-nav="true"] {
     display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
   }
 }
+
