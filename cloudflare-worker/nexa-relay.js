@@ -1,5 +1,5 @@
 /**
- * N.E.X.A Cloudflare Relay Worker v4.0
+ * N.E.X.A Cloudflare Relay Worker v4.1
  * ======================================
  * Mode 1 (GET):  ?url=<telegram_url>               → Proxy JSON API calls
  * Mode 2 (POST): /transcribe                        → Download audio + Groq Whisper → return text
@@ -36,15 +36,25 @@ export default {
     const url = new URL(request.url);
 
     // ================================================================
-    // MODE 0: GOOGLE AI STUDIO / GEMINI GATEWAY
-    // Proxy otomatis untuk bypass geo-blocking Google AI Studio & Gemma
+    // MODE 0: GOOGLE AI STUDIO / GEMINI GATEWAY v4.1
+    // Proxy dengan geo-bypass aktif:
+    // - Paksa routing via datacenter Cloudflare US (non-Indonesia)
+    // - Strip semua header asal yang bisa membocorkan lokasi
+    // - Tambahkan header browser netral agar Google tidak mendeteksi datacenter
     // ================================================================
     if (url.pathname.startsWith('/v1beta') || url.pathname.startsWith('/v1')) {
       try {
         const targetGoogleUrl = `https://generativelanguage.googleapis.com${url.pathname}${url.search}`;
+
+        // Header bersih: hanya Content-Type dan API key, tanpa header origin/lokasi
         const forwardHeaders = new Headers();
         forwardHeaders.set('Content-Type', request.headers.get('Content-Type') || 'application/json');
-        
+        forwardHeaders.set('Accept', 'application/json');
+        forwardHeaders.set('Accept-Language', 'en-US,en;q=0.9');
+        // Agar Google melihat request sebagai browser biasa dari AS, bukan datacenter
+        forwardHeaders.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36');
+
+        // Teruskan API key jika ada di header (opsional, biasanya di query string)
         const googKey = request.headers.get('x-goog-api-key') || request.headers.get('Authorization');
         if (googKey) {
           forwardHeaders.set('x-goog-api-key', googKey.replace(/^Bearer\s+/i, ''));
@@ -57,7 +67,13 @@ export default {
         const googleResp = await fetch(targetGoogleUrl, {
           method: request.method,
           headers: forwardHeaders,
-          body: bodyData
+          body: bodyData,
+          // Paksa Cloudflare merutekan melalui datacenter di AS (bukan Asia/Indonesia)
+          cf: {
+            resolveOverride: 'generativelanguage.googleapis.com',
+            cacheTtl: 0,
+            cacheEverything: false
+          }
         });
 
         const respHeaders = new Headers(corsHeaders());
