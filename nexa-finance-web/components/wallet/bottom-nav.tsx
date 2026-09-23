@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { 
@@ -10,7 +10,6 @@ import {
   Target, 
   TrendingUp 
 } from "lucide-react"
-import { cn } from "@/lib/utils"
 
 const navItems = [
   { href: "/dashboard", label: "Dasbor", icon: LayoutDashboard },
@@ -37,52 +36,22 @@ export function BottomNav() {
     return routeIndex !== -1 ? routeIndex : 0
   })
 
-  const [isRolling, setIsRolling] = useState(false)
-  const [direction, setDirection] = useState<1 | -1>(1)
-  const [rotation, setRotation] = useState(0)
-  const rollingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
   // Smoothly roll to new position if route changes externally (e.g. browser back/forward or in-page navigation)
   useEffect(() => {
     if (routeIndex !== -1 && routeIndex !== displayIndex) {
-      const dir: 1 | -1 = routeIndex > displayIndex ? 1 : -1
-      setDirection(dir)
-      setRotation((prev) => prev + dir * 360)
-      setIsRolling(true)
       setDisplayIndex(routeIndex)
       globalLastIndex = routeIndex
-
-      if (rollingTimeoutRef.current) clearTimeout(rollingTimeoutRef.current)
-      rollingTimeoutRef.current = setTimeout(() => {
-        setIsRolling(false)
-      }, 550)
     } else if (routeIndex !== -1) {
       globalLastIndex = routeIndex
-    }
-
-    return () => {
-      if (rollingTimeoutRef.current) clearTimeout(rollingTimeoutRef.current)
     }
   }, [routeIndex, displayIndex])
 
   // Instant optimistic response when user taps a tab
   const handleTabClick = (targetIndex: number) => {
     if (targetIndex === displayIndex) return
-    const dir: 1 | -1 = targetIndex > displayIndex ? 1 : -1
-    setDirection(dir)
-    setRotation((prev) => prev + dir * 360)
-    setIsRolling(true)
     setDisplayIndex(targetIndex)
     globalLastIndex = targetIndex
-
-    if (rollingTimeoutRef.current) clearTimeout(rollingTimeoutRef.current)
-    rollingTimeoutRef.current = setTimeout(() => {
-      setIsRolling(false)
-    }, 550)
   }
-
-  const activeItem = displayIndex >= 0 && displayIndex < navItems.length ? navItems[displayIndex] : null
-  const ActiveIcon = activeItem ? activeItem.icon : null
 
   return (
     <nav 
@@ -91,25 +60,20 @@ export function BottomNav() {
       suppressHydrationWarning
       className="mobile-only-nav hidden max-sm:block fixed bottom-0 left-0 right-0 z-40 select-none"
     >
-      <div className="relative bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.07)] rounded-t-[28px] pb-[max(env(safe-area-inset-bottom),0.7rem)] pt-3 px-1 transition-all duration-300">
+      <div className="relative bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.07)] rounded-t-[28px] pb-[max(env(safe-area-inset-bottom),0.7rem)] pt-3 px-1">
         
-        {/* Sliding Fluid Wave & Rolling Bubble Indicator */}
+        {/* Sliding Fluid Wave & Rolling Bubble Indicator (GPU Hardware-Accelerated) */}
         {displayIndex !== -1 && (
           <div 
             className="absolute top-0 left-0 w-1/5 pointer-events-none z-10"
             style={{ 
-              transform: `translateX(${displayIndex * 100}%)`,
-              transition: 'transform 550ms cubic-bezier(0.34, 1.45, 0.55, 1)',
+              transform: `translate3d(${displayIndex * 100}%, 0, 0)`,
+              transition: 'transform 450ms cubic-bezier(0.16, 1, 0.3, 1)',
+              willChange: 'transform',
             }}
           >
             {/* The Seamless Organic Wave rising from the white bar */}
-            <div 
-              className="absolute -top-[15px] left-1/2 w-20 h-4"
-              style={{
-                transform: isRolling ? 'translateX(-50%) scaleX(1.1)' : 'translateX(-50%) scaleX(1)',
-                transition: 'transform 550ms cubic-bezier(0.34, 1.45, 0.55, 1)',
-              }}
-            >
+            <div className="absolute -top-[15px] left-1/2 -translate-x-1/2 w-20 h-4">
               <svg 
                 viewBox="0 0 80 16" 
                 className="w-full h-full drop-shadow-[0_-3px_5px_rgba(0,0,0,0.03)]" 
@@ -125,36 +89,47 @@ export function BottomNav() {
 
             {/* The Rolling Emerald Marble / Sphere */}
             <div 
-              className="absolute -top-7 left-1/2 w-12 h-12 rounded-full border-[3.5px] border-white flex items-center justify-center shadow-[0_8px_20px_rgba(16,185,129,0.42)] overflow-hidden"
+              className="absolute -top-7 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full border-[3.5px] border-white flex items-center justify-center overflow-hidden"
               style={{
                 background: 'radial-gradient(circle at 35% 30%, #34d399 0%, #10b981 60%, #059669 100%)',
-                transform: isRolling
-                  ? `translateX(-50%) scaleX(1.12) scaleY(0.92) rotate(${direction * 12}deg)`
-                  : 'translateX(-50%) scale(1.05) rotate(0deg)',
-                transition: 'transform 550ms cubic-bezier(0.34, 1.45, 0.55, 1)',
+                boxShadow: '0 8px 24px -2px rgba(16, 185, 129, 0.45), 0 2px 6px rgba(0, 0, 0, 0.08)',
+                transform: 'translateZ(0)',
+                willChange: 'transform',
               }}
             >
-              {/* Rolling Specular Highlight (creates the physical roll illusion) */}
+              {/* Rolling Specular Highlight (physical rolling glint illusion) */}
               <div 
                 className="absolute inset-0 rounded-full pointer-events-none"
                 style={{ 
-                  transform: `rotate(${rotation}deg)`,
-                  transition: 'transform 550ms cubic-bezier(0.34, 1.45, 0.55, 1)',
+                  transform: `rotate(${displayIndex * 120}deg)`,
+                  transition: 'transform 450ms cubic-bezier(0.16, 1, 0.3, 1)',
+                  willChange: 'transform',
                 }}
               >
-                <div className="absolute top-1.5 left-2 w-3.5 h-1.5 rounded-full bg-white/45 blur-[0.5px]" />
+                <div className="absolute top-1.5 left-2 w-3.5 h-1.5 rounded-full bg-white/50 blur-[0.6px]" />
                 <div className="absolute bottom-2 right-2.5 w-1.5 h-1.5 rounded-full bg-emerald-200/40 blur-[0.4px]" />
               </div>
 
-              {/* Active Icon: pops in and stays upright */}
-              <div 
-                key={displayIndex}
-                className="relative z-10 text-white flex items-center justify-center transition-all duration-300 animate-in zoom-in-75 fade-in"
-              >
-                {ActiveIcon && (
-                  <ActiveIcon className="h-5 w-5 stroke-[2.5]" />
-                )}
-              </div>
+              {/* Pre-rendered Active Icons with Silk-Smooth Cross-Fade */}
+              {navItems.map((item, index) => {
+                const Icon = item.icon
+                const isCurrent = index === displayIndex
+                return (
+                  <div 
+                    key={item.href}
+                    className="absolute inset-0 flex items-center justify-center text-white"
+                    style={{
+                      opacity: isCurrent ? 1 : 0,
+                      transform: isCurrent ? 'scale(1) translate3d(0, 0, 0)' : 'scale(0.55) translate3d(0, 4px, 0)',
+                      transition: 'opacity 350ms cubic-bezier(0.16, 1, 0.3, 1), transform 350ms cubic-bezier(0.16, 1, 0.3, 1)',
+                      pointerEvents: 'none',
+                      willChange: 'opacity, transform',
+                    }}
+                  >
+                    <Icon className="h-5 w-5 stroke-[2.5]" />
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
@@ -172,36 +147,41 @@ export function BottomNav() {
                 onClick={() => handleTabClick(index)}
                 className="group flex flex-1 flex-col items-center justify-end relative h-full pb-1 focus:outline-none"
               >
-                {/* Inactive Icon (Smoothly lifts and dissolves as the rolling ball approaches) */}
+                {/* Inactive Icon (Smoothly dissolves into the rising bubble) */}
                 <div 
-                  className={cn(
-                    "flex items-center justify-center transition-all duration-300 mb-1",
-                    isActive 
-                      ? "opacity-0 scale-50 -translate-y-2 pointer-events-none" 
-                      : "opacity-100 scale-100 translate-y-0 text-slate-400 group-hover:text-slate-600"
-                  )}
+                  className="flex items-center justify-center mb-1"
+                  style={{
+                    opacity: isActive ? 0 : 1,
+                    transform: isActive ? 'scale(0.6) translate3d(0, -6px, 0)' : 'scale(1) translate3d(0, 0, 0)',
+                    transition: 'opacity 350ms cubic-bezier(0.16, 1, 0.3, 1), transform 350ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    color: '#94a3b8',
+                    willChange: 'opacity, transform',
+                  }}
                 >
                   <Icon className="h-5 w-5 stroke-[1.8]" />
                 </div>
 
                 {/* Label Text */}
                 <span
-                  className={cn(
-                    "text-[10.5px] tracking-tight transition-all duration-300 select-none",
-                    isActive
-                      ? "font-bold text-slate-900 drop-shadow-xs"
-                      : "font-medium text-slate-500 group-hover:text-slate-700"
-                  )}
+                  className="text-[10.5px] tracking-tight select-none"
+                  style={{
+                    fontWeight: isActive ? 700 : 500,
+                    color: isActive ? '#0f172a' : '#64748b',
+                    transform: isActive ? 'scale(1.05)' : 'scale(1)',
+                    transition: 'color 300ms ease, transform 300ms ease, font-weight 300ms ease',
+                  }}
                 >
                   {item.label}
                 </span>
 
                 {/* Tiny Active Pill Indicator under label */}
                 <span 
-                  className={cn(
-                    "w-1 h-1 rounded-full bg-emerald-500 mt-0.5 transition-all duration-300",
-                    isActive ? "opacity-100 scale-100" : "opacity-0 scale-0"
-                  )}
+                  className="w-1.5 h-1 rounded-full bg-emerald-500 mt-0.5"
+                  style={{
+                    opacity: isActive ? 1 : 0,
+                    transform: isActive ? 'scaleX(1)' : 'scaleX(0)',
+                    transition: 'opacity 350ms ease, transform 350ms cubic-bezier(0.16, 1, 0.3, 1)',
+                  }}
                 />
               </Link>
             )
