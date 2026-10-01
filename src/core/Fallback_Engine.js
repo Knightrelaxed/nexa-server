@@ -310,25 +310,19 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const tiers = [
     // Tier 1-12 Top Engine
     ...top12Block.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
-    // Groq LPU Qwen 3.8 27B (Dense 27B Fast Secondary Engine)
-    ...groqQwenBlock.map((t, i) => ({
-      group: 'groq-qwen-27b',
-      name: `Tier ${13 + i} (Groq Qwen 3.8 27B Key ${i + 1})`,
-      fn: t.fn
-    })),
-    // Mistral Pixtral 12B (European Datacenter)
+    // Tier 13: Mistral Pixtral 12B (European Datacenter)
     ...(env.MISTRAL_API_KEY ? [{
-      name: `Tier ${13 + groqQwenBlock.length} (Mistral Pixtral 12B)`,
+      name: 'Tier 13 (Mistral Pixtral 12B)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
     }] : []),
-    // Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
+    // Tier 14: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
     ...(env.PUTER_AUTH_TOKEN ? [{
-      name: `Tier ${14 + groqQwenBlock.length} (Puter AI Pool - Codestral & GPT-4o)`,
+      name: 'Tier 14 (Puter AI Pool - Codestral & GPT-4o)',
       fn: () => callPuter(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
     }] : []),
-    // OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
+    // Tier 15: OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
     ...(env.OPENROUTER_API_KEY ? [{
-      name: `Tier ${15 + groqQwenBlock.length} (OpenRouter Multi-Model Free Pool)`,
+      name: 'Tier 15 (OpenRouter Multi-Model Free Pool)',
       fn: () => callOpenRouter(prompt, systemInstruction, temperature, jsonMode)
     }] : [])
   ];
