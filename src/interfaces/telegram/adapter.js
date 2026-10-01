@@ -3309,12 +3309,15 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           domainReply = routingData.reply_message || `⚠️ <b>PERINGATAN!</b> Anda meminta untuk menghapus SELURUH isi dari tabel <b>${escapeHtml(tableName)}</b>.\n\nApakah Anda benar-benar yakin ingin memusnahkan semua datanya? Balas <b>"YA"</b> untuk mengeksekusi, atau <b>"BATAL"</b>.`;
           pendingDatabaseContext = { tableName, lastAction: dbAction, awaitingConfirmation: true, askedAt: Date.now() };
         } else if (dbAction === 'DELETE_ALL_ROWS_CONFIRMED') {
-          // AI router telah menyatakan user setuju. Gunakan tabel dari context jika AI lupa.
-          const targetTable = tableName || pendingDatabaseContext?.tableName;
-          if (!targetTable) {
-            domainReply = `❌ Kesalahan memori: N.E.X.A lupa tabel mana yang ingin dihapus massal. Silakan ulangi perintah dari awal.`;
+          // Validasi deterministik: Wajib ada sesi pending konfirmasi aktif dalam 2 menit terakhir
+          const isPending = pendingDatabaseContext?.awaitingConfirmation === true;
+          const isFresh = pendingDatabaseContext?.askedAt && (Date.now() - pendingDatabaseContext.askedAt < 120000);
+
+          if (!isPending || !isFresh) {
+            domainReply = `⛔ <b>Keamanan Terpicu</b>: Aksi pemusnahan massal ditolak karena tidak ada konfirmasi aktif sebelumnya. Silakan ajukan perintah hapus dari awal.`;
             pendingDatabaseContext = null;
           } else {
+            const targetTable = pendingDatabaseContext?.tableName || tableName;
             let driveDeletedMsg = '';
             if (targetTable === 'nexa_vault_items') {
               const googleWorkspace = require("../../infrastructure/Google_Workspace");

@@ -721,11 +721,14 @@ async function _dispatchIntent(intent, routingData, textInput, sessionId) {
         cliPendingDatabase.set(sessionId, { tableName, lastAction: dbAction, awaitingConfirmation: true, askedAt: Date.now() });
 
       } else if (dbAction === 'DELETE_ALL_ROWS_CONFIRMED') {
-        const targetTable = tableName || pendingDb?.tableName;
-        if (!targetTable) {
-          domainReply = '❌ N.E.X.A lupa tabel mana yang ingin dihapus massal. Silakan ulangi dari awal.';
+        const isPending = pendingDb?.awaitingConfirmation === true;
+        const isFresh = pendingDb?.askedAt && (Date.now() - pendingDb.askedAt < 120000);
+
+        if (!isPending || !isFresh) {
+          domainReply = '⛔ Keamanan Terpicu: Aksi pemusnahan massal ditolak karena tidak ada konfirmasi aktif sebelumnya.';
           cliPendingDatabase.delete(sessionId);
         } else {
+          const targetTable = pendingDb?.tableName || tableName;
           let driveDeletedMsg = '';
           if (targetTable === 'nexa_vault_items') {
             const driveSuccess = await googleWorkspace.deleteAllVaultFiles();
