@@ -51,7 +51,7 @@ const groqKeys = [
 // ============================================================
 // SMART ADAPTIVE CONTEXT ROUTING (SACR) - v2.6
 // Memilah beban konteks secara otomatis:
-//   MODE LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.5 Flash (Tier 9-12)
+//   MODE LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
 //   MODE HEAVY: Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
 // ============================================================
 
@@ -137,8 +137,8 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
  *
  * MODE LIGHT (Konteks Normal / Default):
  *   Tier 1-4  : Google Gemma 4 26B Key 1-4 (The Ultra-Natural Persona)
- *   Tier 5-8  : Google Gemini 3.6 Flash Key 1-4 (The Rock-Solid Secondary: 1M Context)
- *   Tier 9-12 : Google Gemini 3.5 Flash Key 1-4 (The Fast & Balanced Tertiary)
+ *   Tier 5-8  : Google Gemini 3.5 Flash Key 1-4 (The Fast & Balanced Secondary)
+ *   Tier 9-12 : Google Gemini 3.6 Flash Key 1-4 (The Rock-Solid Tertiary: 1M Context)
  *   Tier 13   : Mistral Pixtral 12B (European Datacenter)
  *   Tier 14   : Puter AI Multi-Model Pool (Codestral & GPT-4o)
  *   Tier 15   : OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
@@ -257,9 +257,9 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
   // [SACR v2.6 DUAL-MODE ADAPTIVE MATRIX]
-  // MODE LIGHT : Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.5 Flash (Tier 9-12)
+  // MODE LIGHT : Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
   // MODE HEAVY : Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
-  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.8 -> Gemini 3.6 -> Gemma 4 26B -> Gemini 3.5]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.6 -> Gemini 3.5]'} | Total chars: ${inputChars}`);
+  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.8 -> Gemini 3.6 -> Gemma 4 26B -> Gemini 3.5]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.5 -> Gemini 3.6]'} | Total chars: ${inputChars}`);
 
   // 1. Google AI Studio Gemma 4 26B (4 Keys: Ultra-Natural Persona, ~2.8s)
   const googleGemmaBlock = googleApiKeys
@@ -314,11 +314,11 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }));
 
   // Penataan Dinamis Top Tiers Sesuai Mode Kognitif:
-  // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.5 Flash (Tier 9-12)
+  // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
   // HEAVY: Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
   const topGoogleBlock = heavy
     ? [...gemini38Block, ...gemini36Block, ...googleGemmaBlock, ...gemini35Block]
-    : [...googleGemmaBlock, ...gemini36Block, ...gemini35Block];
+    : [...googleGemmaBlock, ...gemini35Block, ...gemini36Block];
 
   const externalTiers = [
     // Mistral Pixtral 12B (European Datacenter)
