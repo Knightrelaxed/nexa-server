@@ -350,6 +350,7 @@ CRITICAL ROUTING RULES:
     - Jika sedang bekerja/coding/riset/deploy, pilih FOCUSED atau MOTIVATED.
 14. CHAT & PAST HISTORY QUERY RULE: If user asks about past conversations, past events, purchases, activities, or what was discussed earlier (e.g., "pas 1 Juni kemarin aku beli apa?", "waktu 17 Mei kita ke mana?", "kemarin kita bahas apa?"), use intent "NORMAL_CHAT" and answer DIRECTLY using data from [ARSIP MEMORI EPISODIK MASA LALU] or [RIWAYAT OBROLAN]. CRITICAL: NEVER output placeholder promises like "sebentar saya cek dulu" or "tunggu sebentar" without answering: you MUST synthesize and provide the actual concrete answer immediately in reply_message!
 15. ABSOLUTE ANTI EM-DASH RULE: DILARANG KERAS menggunakan tanda baca em dash atau en dash di dalam reply_message. Tanda hubung panjang terkesan kaku dan bergaya robotik/AI. Gunakan tanda koma (,), titik (.), atau tanda kurung (...) secara alami.
+16. MULTI-ACTION DISPATCH: If the user message contains multiple distinct requests across different domains (e.g. recording an expense AND setting a calendar reminder, or completing a task AND logging an expense), populate the "actions" array with each distinct action in chronological order. Each action in "actions" must have its own "intent" and "extracted_data" matching the DOMAIN SCHEMAS. For single requests, "actions" must contain exactly 1 element.
 `;
 
 const DOMAIN_SCHEMAS = {
@@ -493,17 +494,24 @@ function buildRouterSystemPrompt(targetDomains = 'ALL') {
   const intentString = allowedIntents.join('|');
 
   return `${ROUTER_COMMON_PREFIX}
+DOMAIN SCHEMAS (Reference schemas for extracted_data of each intent):
+${activeSchemas.join('\n')}
+
 OUTPUT JSON FORMAT:
 {
   "reasoning": "1-2 sentences of logical analysis binding context and intent.",
   "intent": "${intentString}",
+  "actions": [
+    {
+      "intent": "${intentString}",
+      "extracted_data": {}
+    }
+  ],
   "mood": "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD",
   "reply_message": "Natural, warm conversational Indonesian response addressing user as Tuan Faqih (MANDATORY for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE, USER_PROFILE, CORE_IDENTITY, DEVICE_CONTROL).",
   "learned_user_facts": ["New permanent facts ABOUT TUAN FAQIH (the human), or empty []"],
   "learned_core_identities": ["New permanent facts ABOUT N.E.X.A ITSELF (the AI), or empty []"],
-  "extracted_data": {
-${activeSchemas.join('\n')}
-  },
+  "extracted_data": {},
   "god_mode_trigger": false
 }
 `;
@@ -646,6 +654,7 @@ Berikan respons refleks dalam format JSON!
 
   const routingData = JSON.parse(cleanStr);
   routingData.intent = 'NORMAL_CHAT';
+  routingData.actions = [{ intent: 'NORMAL_CHAT', extracted_data: {} }];
   routingData.mood = (routingData.mood || 'NEUTRAL').toUpperCase();
   routingData.extracted_data = routingData.extracted_data || {};
   routingData.god_mode_trigger = false;
@@ -1424,13 +1433,8 @@ Tentukan intent dan ekstrak data!
   }
 
   try {
-    const routingData = JSON.parse(cleanStr);
-    const detectedMood = (_sentimentScore !== 'NEUTRAL') ? _sentimentScore : (routingData.mood || 'NEUTRAL');
-    routingData.mood = String(detectedMood).toUpperCase();
-    if (typeof routingData.reply_message === 'string') {
-      routingData.reply_message = _cleanEmDashes(routingData.reply_message);
-    }
-    return routingData;
+    const rawData = JSON.parse(cleanStr);
+    return _normalizeRoutingOutput(rawData, _sentimentScore);
   } catch (err) {
     // Smart repair: try extracting the first complete balanced JSON object ignoring trailing junk
     try {
@@ -1450,24 +1454,65 @@ Tentukan intent dan ekstrak data!
       }
       if (endIdx !== -1) {
         const repaired = cleanStr.substring(firstBrace, endIdx + 1);
-        const routingData = JSON.parse(repaired);
-        const detectedMood = (_sentimentScore !== 'NEUTRAL') ? _sentimentScore : (routingData.mood || 'NEUTRAL');
-        routingData.mood = String(detectedMood).toUpperCase();
-        if (typeof routingData.reply_message === 'string') {
-          routingData.reply_message = _cleanEmDashes(routingData.reply_message);
-        }
+        const rawData = JSON.parse(repaired);
         console.log('[ROUTER] Smart JSON Repair SUCCESS after trailing garbage');
-        return routingData;
+        return _normalizeRoutingOutput(rawData, _sentimentScore);
       }
     } catch (_) { }
 
     console.error('[ROUTER] JSON Parse Error:', err.message, resultJsonStr);
     return {
       intent: 'ERROR',
+      actions: [{ intent: 'ERROR', extracted_data: {} }],
       reply_message: 'Maaf Tuan, saya mengalami disonansi kognitif saat memproses instruksi tersebut.',
       mood: _sentimentScore
     };
   }
+}
+
+/**
+ * Normalizes router output to guarantee multi-action array and backwards compatibility.
+ */
+function _normalizeRoutingOutput(routingData, sentimentScore) {
+  if (!routingData || typeof routingData !== 'object') {
+    return {
+      intent: 'NORMAL_CHAT',
+      actions: [{ intent: 'NORMAL_CHAT', extracted_data: {} }],
+      extracted_data: {},
+      reply_message: '',
+      mood: sentimentScore || 'NEUTRAL',
+      god_mode_trigger: false
+    };
+  }
+
+  // Normalize multi-action array
+  if (Array.isArray(routingData.actions) && routingData.actions.length > 0) {
+    if (!routingData.intent) {
+      routingData.intent = routingData.actions[0].intent || 'NORMAL_CHAT';
+    }
+    if (!routingData.extracted_data || Object.keys(routingData.extracted_data).length === 0) {
+      routingData.extracted_data = routingData.actions[0].extracted_data || {};
+    }
+    if ((!routingData.actions[0].extracted_data || Object.keys(routingData.actions[0].extracted_data).length === 0) && routingData.extracted_data) {
+      routingData.actions[0].extracted_data = routingData.extracted_data;
+    }
+  } else if (routingData.intent) {
+    routingData.actions = [{
+      intent: routingData.intent,
+      extracted_data: routingData.extracted_data || {}
+    }];
+  } else {
+    routingData.intent = 'NORMAL_CHAT';
+    routingData.actions = [{ intent: 'NORMAL_CHAT', extracted_data: {} }];
+    routingData.extracted_data = {};
+  }
+
+  const detectedMood = (sentimentScore !== 'NEUTRAL') ? sentimentScore : (routingData.mood || 'NEUTRAL');
+  routingData.mood = String(detectedMood).toUpperCase();
+  if (typeof routingData.reply_message === 'string') {
+    routingData.reply_message = _cleanEmDashes(routingData.reply_message);
+  }
+  return routingData;
 }
 
 /**

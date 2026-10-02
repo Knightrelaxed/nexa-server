@@ -2231,8 +2231,12 @@ PERINGATAN KRITIS UNTUK AI ROUTER:
       }
     }
     console.log('[ROUTER] Intent identified:', routingData.intent);
+    if (routingData.actions && routingData.actions.length > 1) {
+      console.log('[ROUTER] ⚡ Multi-action detected (' + routingData.actions.length + ' actions):', routingData.actions.map(a => a.intent).join(', '));
+    }
     conversationContext = {
       intent: routingData.intent,
+      actions: routingData.actions || null,
       extractedData: routingData.extracted_data || null,
       lastUserText: textInput,
       lastAssistantReply: conversationContext?.lastAssistantReply || '',
@@ -2448,11 +2452,13 @@ PERINGATAN KRITIS UNTUK AI ROUTER:
       }
     }
 
-    if (!domainReply) {
+    async function _dispatchSingleIntent(routingData) {
+      let domainReply = null;
       const clarificationMessage = getClarificationMessage(routingData, textInput);
       if (clarificationMessage) {
-        domainReply = clarificationMessage;
-      } else switch (routingData.intent) {
+        return clarificationMessage;
+      }
+      switch (routingData.intent) {
         case 'FINANCE':
 
         if (routingData.extracted_data && routingData.extracted_data.action === 'IMPORT_FROM_EMAIL') {
@@ -3444,7 +3450,36 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         }
         break;
       }
+      }
+      return domainReply;
     }
+
+    if (!domainReply) {
+      const actionsToExecute = (Array.isArray(routingData.actions) && routingData.actions.length > 0)
+        ? routingData.actions
+        : [{ intent: routingData.intent, extracted_data: routingData.extracted_data }];
+
+      const collectedReplies = [];
+
+      for (let actIdx = 0; actIdx < actionsToExecute.length; actIdx++) {
+        const act = actionsToExecute[actIdx];
+        if (act.intent === 'NORMAL_CHAT') continue;
+
+        const actionPayload = {
+          ...routingData,
+          intent: act.intent,
+          extracted_data: act.extracted_data || {}
+        };
+
+        const actReply = await _dispatchSingleIntent(actionPayload);
+        if (actReply && typeof actReply === 'string' && actReply.trim().length > 0) {
+          collectedReplies.push(actReply.trim());
+        }
+      }
+
+      if (collectedReplies.length > 0) {
+        domainReply = collectedReplies.join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n');
+      }
     }
 
     // Send reply via Webhook Response Method (ZERO outbound needed)

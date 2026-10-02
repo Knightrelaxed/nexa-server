@@ -1147,12 +1147,32 @@ async function handleCliWebhook(req, res) {
     }
 
     // ── Intent Domain Dispatcher (Full Parity) ────────────────
-    let reply = await _dispatchIntent(intent, routingData, textInput, session_id);
+    const actionsToExecute = (Array.isArray(routingData?.actions) && routingData.actions.length > 0)
+      ? routingData.actions
+      : [{ intent, extracted_data: routingData?.extracted_data || {} }];
+
+    let collectedCliReplies = [];
+    for (const act of actionsToExecute) {
+      if (act.intent === 'NORMAL_CHAT') continue;
+      const actPayload = {
+        ...routingData,
+        intent: act.intent,
+        extracted_data: act.extracted_data || {}
+      };
+      let actReply = await _dispatchIntent(act.intent, actPayload, textInput, session_id);
+      if (actReply && typeof actReply === 'object') {
+        actReply = actReply.text || actReply.message || JSON.stringify(actReply);
+      }
+      if (actReply && String(actReply).trim().length > 0) {
+        collectedCliReplies.push(String(actReply).trim());
+      }
+    }
+
+    let reply = collectedCliReplies.length > 0
+      ? collectedCliReplies.join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n')
+      : null;
 
     // Fallback jika dispatcher tidak menghasilkan balasan
-    if (reply && typeof reply === 'object') {
-      reply = reply.text || reply.message || JSON.stringify(reply);
-    }
     if (!reply || String(reply).trim().length === 0) {
       reply = routingData?.reply_message || '(N.E.X.A tidak menghasilkan balasan untuk pesan ini.)';
     }
@@ -1170,6 +1190,7 @@ async function handleCliWebhook(req, res) {
     // ── Update Session Context ───────────────────────────────
     cliSessions.set(session_id, {
       intent,
+      actions: routingData?.actions || null,
       extractedData: routingData?.extracted_data || null,
       lastUserText: textInput,
       lastAssistantReply: reply,
