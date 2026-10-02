@@ -500,10 +500,10 @@ ${activeSchemas.join('\n')}
 OUTPUT JSON FORMAT:
 {
   "reasoning": "1-2 sentences of logical analysis binding context and intent.",
-  "intent": "${intentString}",
+  "intent": "${intentString} (Dominant domain name, e.g. FINANCE, CALENDAR)",
   "actions": [
     {
-      "intent": "${intentString}",
+      "intent": "${intentString} (Domain name from list above, NOT action names like RECORD)",
       "extracted_data": {}
     }
   ],
@@ -1507,6 +1507,15 @@ function _normalizeRoutingOutput(routingData, sentimentScore) {
     routingData.extracted_data = {};
   }
 
+  // Defensively normalize any action names back to their parent domain
+  for (const act of routingData.actions) {
+    _fixActionDomain(act);
+  }
+  if (routingData.actions.length > 0) {
+    routingData.intent = routingData.actions[0].intent || 'NORMAL_CHAT';
+    routingData.extracted_data = routingData.actions[0].extracted_data || {};
+  }
+
   const detectedMood = (sentimentScore !== 'NEUTRAL') ? sentimentScore : (routingData.mood || 'NEUTRAL');
   routingData.mood = String(detectedMood).toUpperCase();
   if (typeof routingData.reply_message === 'string') {
@@ -1515,8 +1524,44 @@ function _normalizeRoutingOutput(routingData, sentimentScore) {
   return routingData;
 }
 
+const _FINANCE_ACTION_NAMES = new Set([
+  'RECORD', 'RECORD_MULTIPLE', 'READ_LATEST', 'READ_ANALYTICS', 'EDIT', 'DELETE',
+  'UNDO_DELETE', 'IMPORT_FROM_EMAIL', 'CONFIRM_TRANSACTION', 'UPDATE_PENDING',
+  'CANCEL_TRANSACTION', 'CATEGORY_BREAKDOWN', 'PERIOD_COMPARISON', 'TOP_EXPENSES',
+  'ACCOUNT_BALANCES', 'DAILY_TREND', 'SMART_SUMMARY', 'MONTHLY_SUMMARY',
+  'SAVING_RATE', 'BALANCE_TREND'
+]);
+
+const _DEVICE_ACTION_NAMES = new Set([
+  'TOGGLE_FLASHLIGHT', 'LOCK_SCREEN', 'GO_HOME_SCREEN', 'GO_BACK', 'SHOW_RECENTS',
+  'SET_VOLUME', 'FORCE_DND', 'GET_BATTERY_STATUS', 'GET_NETWORK_INFO', 'TOGGLE_WIFI',
+  'SPEAK_TEXT', 'TAKE_PHOTO', 'TAKE_SCREENSHOT', 'DUMP_UI_HIERARCHY', 'LAUNCH_APP'
+]);
+
+function _fixActionDomain(act) {
+  if (!act || typeof act !== 'object') return;
+  const it = String(act.intent || '').toUpperCase();
+  const ed = act.extracted_data || {};
+
+  if (_FINANCE_ACTION_NAMES.has(it) || (ed && ed.nominal && it !== 'FINANCE')) {
+    act.extracted_data = { ...ed, action: ed.action || it };
+    act.intent = 'FINANCE';
+  } else if (_DEVICE_ACTION_NAMES.has(it)) {
+    act.extracted_data = { ...ed, action: ed.action || it };
+    act.intent = 'DEVICE_CONTROL';
+  } else if (it === 'CREATE' || it === 'CREATE_MULTIPLE' || it === 'READ_TODAY' || it === 'READ_TOMORROW' || it === 'READ_UPCOMING') {
+    if (ed.summary || ed.start || ed.events || ed.semester_start) {
+      act.extracted_data = { ...ed, action: ed.action || it };
+      act.intent = 'CALENDAR';
+    } else if (ed.title || ed.dueDate || ed.tasks) {
+      act.extracted_data = { ...ed, action: ed.action || it };
+      act.intent = 'TASK';
+    }
+  }
+}
+
 /**
- * Clean em-dashes (— and –) from any text string to keep language natural and non-robotic.
+ * Clean em-dashes and en-dashes from any text string to keep language natural and non-robotic.
  */
 function _cleanEmDashes(text) {
   if (!text || typeof text !== 'string') return text;
