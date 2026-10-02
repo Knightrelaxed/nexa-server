@@ -342,11 +342,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const tiers = allTiersRaw.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) }));
 
   const failedGroups = new Set();
-  const groupTimeoutCount = {};
 
   for (const tier of tiers) {
     if (tier.group && failedGroups.has(tier.group)) {
-      asyncLog(`[CIRCUIT BREAKER] Melewati ${tier.name} (model ${tier.group} sedang antre/503 di Google)...`);
+      asyncLog(`[CIRCUIT BREAKER] Melewati ${tier.name} (model ${tier.group} mengalami gangguan server/timeout)...`);
       continue;
     }
 
@@ -368,18 +367,16 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       const errDetail = getErrDetails(e);
       asyncWarn(`[FALLBACK] ${tier.name} failed:`, errDetail);
 
-      // Jika error 503 (High Demand) pada Google, seluruh kunci untuk model tersebut pasti kena 503.
-      // Langsung lewati sisa kunci untuk model ini agar respons tetap kilat!
       if (tier.group) {
-        if (/503|high demand/i.test(errDetail)) {
+        // Cek apakah error merupakan 429 Too Many Requests / Rate Limit / Quota Exceeded
+        const isQuota429 = /429|quota|rate_limit|rate limit|too many requests|resource_exhausted/i.test(errDetail) || e.status === 429 || e.response?.status === 429;
+        
+        if (isQuota429) {
+          asyncLog(`[RATE LIMIT] ${tier.name} terkena limit kuota/429. Melanjutkan ke kunci berikutnya untuk model ${tier.group}...`);
+        } else {
+          // Error non-429 (500, 503, 502, 504, 404, Timeout/Aborted): langsung lewati sisa kunci model ini
           failedGroups.add(tier.group);
-          asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} sedang mengalami 503 High Demand global. Melewati sisa kunci untuk model ini.`);
-        } else if (/timeout|aborted/i.test(errDetail)) {
-          groupTimeoutCount[tier.group] = (groupTimeoutCount[tier.group] || 0) + 1;
-          if (groupTimeoutCount[tier.group] >= 2) {
-            failedGroups.add(tier.group);
-            asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} mengalami 2x timeout berturut-turut. Melewati sisa kunci untuk model ini.`);
-          }
+          asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} mengalami gangguan non-429 (${errDetail.substring(0, 80)}...). Melewati sisa kunci untuk model ini.`);
         }
       }
     }
