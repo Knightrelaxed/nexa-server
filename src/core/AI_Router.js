@@ -290,7 +290,28 @@ function _buildIdentityContextBlock(identityModel, topicContext) {
     lines.join('\n\n') + '\n';
 }
 
-const ROUTER_SYSTEM_PROMPT = `
+// ============================================================
+// MODULAR DOMAIN SCHEMAS & SELECTIVE PROMPT COMPILATION
+// ============================================================
+
+// Helper untuk formatting waktu WIB (module-level)
+function formatTimeWIB(isoStr) {
+  if (!isoStr) return 'Unknown Time';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return 'Unknown Time';
+    const tzDate = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+    const DD = String(tzDate.getUTCDate()).padStart(2, '0');
+    const MM = String(tzDate.getUTCMonth() + 1).padStart(2, '0');
+    const HH = String(tzDate.getUTCHours()).padStart(2, '0');
+    const MIN = String(tzDate.getUTCMinutes()).padStart(2, '0');
+    return `${DD}/${MM} ${HH}:${MIN} WIB`;
+  } catch (e) {
+    return 'Unknown Time';
+  }
+}
+
+const ROUTER_COMMON_PREFIX = `
 ${NEXA_PERSONALITY}
 
 [COGNITIVE & ROUTING TASKS]
@@ -301,7 +322,7 @@ CRITICAL ROUTING RULES:
 2. FINANCE UPDATE_PENDING: ONLY output fields explicitly mentioned (e.g. payment_method, account). Leave others null. DO NOT overwrite with empty strings.
 3. CONTEXT INFERENCE: For short follow-ups ("iya", "lanjut", "ubah harganya", "hapus itu"), strictly use "Intent Sebelumnya" and "Data Aktif Terakhir" from [STATUS AKTIF] to infer the action. DO NOT default to NORMAL_CHAT.
 4. DATABASE: STRICTLY for Supabase tables. NEVER use for "Buku kas"/"Tabel keuangan" (Use FINANCE). DO NOT invent actions (No "DELETE_ROWS").
-5. PASSIVE LEARNING — CRITICAL SEPARATION:
+5. PASSIVE LEARNING: CRITICAL SEPARATION:
    - "learned_user_facts": ONLY facts about TUAN FAQIH (the human user). e.g. his hobbies, habits, goals, preferences, daily life, health. CRITICAL: ALSO capture UPDATES and LIFE CHANGES. If Tuan mentions something that CONTRADICTS or UPDATES a previous state (e.g. "sudah berhenti merokok", "sudah lulus", "pindah ke Jakarta", "sekarang olahraga rutin"), EXTRACT it as a learned_user_fact so the system can replace/update the old record. Empty [] if nothing new or changed.
    - "learned_core_identities": ONLY facts about N.E.X.A ITSELF (the AI). Capture ALL of the following types:
        * Explicit capabilities:  "kamu bisa baca PDF", "N.E.X.A sudah bisa analisis emosi"
@@ -310,7 +331,7 @@ CRITICAL ROUTING RULES:
        * Operational rules:      "kamu harus konfirmasi dulu sebelum hapus data", "sebaiknya kamu ringkas jawaban"
        * Style observations:     "responsmu terlalu formal", "gaya bahasamu sudah enak", "kamu sudah lebih singkat"
      Empty [] if nothing new about N.E.X.A.
-   - NEVER mix them. "Kamu diciptakan pada X" → learned_core_identities. "Aku suka kopi" → learned_user_facts.
+   - NEVER mix them. "Kamu diciptakan pada X" -> learned_core_identities. "Aku suka kopi" -> learned_user_facts.
 6. ISO DATES: 'start' & 'end' MUST be ISO 8601 +07:00 (e.g., "2026-05-07T19:00:00+07:00").
 7. LANGUAGE: Output JSON keys/values in English, EXCEPT "reply_message" MUST be in natural, elegant Indonesian based on NEXA_PERSONALITY. CRITICAL: If greeting, STRICTLY match the time of day provided in [WAKTU SERVER SAAT INI].
 8. PROACTIVE MEMORY INITIATIVE (NORMAL_CHAT): In NORMAL_CHAT, intelligently synthesize [FAKTA PERMANEN TENTANG TUAN FAQIH] with his current activity and [WAKTU SERVER SAAT INI]. When he mentions daily routines, study sessions, fatigue, or plans, naturally weave in his recorded habits and proactively offer ONE relevant executive assistance (e.g., focus timer, calendar reminder, expense logging, literature search) ONLY when it feels 100% natural, empathetic, and genuinely helpful. If it is merely casual banter or a brief greeting, remain warm and conversational without forcing features.
@@ -323,34 +344,28 @@ CRITICAL ROUTING RULES:
     - "kartu kredit/gesek/cicil/cc" -> "Kartu Kredit"
     - "tunai/cash/uang fisik" -> "Tunai"
 12. TELEGRAM FORMATTING RULE: DILARANG menyebar karakter asterisk/bintang (*) berlebihan dalam reply_message. Gunakan bahasa Indonesia natural yang bersih, atau tag HTML <b>teks</b> jika ingin penekanan kata.
-
 13. MOOD EXTRACTION (EMPATHY & INTENSITY SENSITIVITY):
     WAJIB evaluasi nada emosi dari pesan Tuan Faqih. Pilih 1 dari: "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD".
     - Jika Tuan Faqih mengeluh error/bug, protes, bingung, atau frustrasi ("argh", "ga sesuai", "kok gini", "looping", "perbaiki"), pilih STRESSED, ANGRY, atau NEGATIVE.
     - Jika sedang bekerja/coding/riset/deploy, pilih FOCUSED atau MOTIVATED.
-14. CHAT & PAST HISTORY QUERY RULE: If user asks about past conversations, past events, purchases, activities, or what was discussed earlier (e.g., "pas 1 Juni kemarin aku beli apa?", "waktu 17 Mei kita ke mana?", "kemarin kita bahas apa?"), use intent "NORMAL_CHAT" and answer DIRECTLY using data from [ARSIP MEMORI EPISODIK MASA LALU] or [RIWAYAT OBROLAN]. CRITICAL: NEVER output placeholder promises like "sebentar saya cek dulu" or "tunggu sebentar" without answering — you MUST synthesize and provide the actual concrete answer immediately in reply_message!
-15. ABSOLUTE ANTI EM-DASH RULE: DILARANG KERAS menggunakan tanda baca em dash (—) atau en dash (–) di dalam reply_message. Tanda hubung panjang terkesan kaku dan bergaya robotik/AI. Gunakan tanda koma (,), titik (.), atau tanda kurung (...) secara alami.
+14. CHAT & PAST HISTORY QUERY RULE: If user asks about past conversations, past events, purchases, activities, or what was discussed earlier (e.g., "pas 1 Juni kemarin aku beli apa?", "waktu 17 Mei kita ke mana?", "kemarin kita bahas apa?"), use intent "NORMAL_CHAT" and answer DIRECTLY using data from [ARSIP MEMORI EPISODIK MASA LALU] or [RIWAYAT OBROLAN]. CRITICAL: NEVER output placeholder promises like "sebentar saya cek dulu" or "tunggu sebentar" without answering: you MUST synthesize and provide the actual concrete answer immediately in reply_message!
+15. ABSOLUTE ANTI EM-DASH RULE: DILARANG KERAS menggunakan tanda baca em dash atau en dash di dalam reply_message. Tanda hubung panjang terkesan kaku dan bergaya robotik/AI. Gunakan tanda koma (,), titik (.), atau tanda kurung (...) secara alami.
+`;
 
-OUTPUT JSON FORMAT:
-{
-  "reasoning": "1-2 sentences of logical analysis binding context and intent.",
-  "intent": "FINANCE|CALENDAR|TASK|EMAIL|DATABASE|WEB_SEARCH|LOCATION|DISCIPLINE|2ND_BRAIN|USER_PROFILE|CORE_IDENTITY|DEVICE_CONTROL|DIAGNOSE_SYSTEM|INCOMPLETE_INFO|NORMAL_CHAT",
-  "mood": "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD",
-  "reply_message": "Natural, warm conversational Indonesian response addressing user as Tuan Faqih (MANDATORY for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE, USER_PROFILE, CORE_IDENTITY, DEVICE_CONTROL).",
-  "learned_user_facts": ["New permanent facts ABOUT TUAN FAQIH (the human), or empty []"],
-  "learned_core_identities": ["New permanent facts ABOUT N.E.X.A ITSELF (the AI), or empty []"],
-  "extracted_data": {
-    // DEVICE_CONTROL: { action: "TOGGLE_FLASHLIGHT|LOCK_SCREEN|GO_HOME_SCREEN|GO_BACK|SHOW_RECENTS|SET_VOLUME|FORCE_DND|GET_BATTERY_STATUS|GET_NETWORK_INFO|TOGGLE_WIFI|GET_LOCATION|SPEAK_TEXT|TAKE_PHOTO|TAKE_SCREENSHOT|DUMP_UI_HIERARCHY|ACCESSIBILITY_CLICK|ACCESSIBILITY_INPUT_TEXT|ACCESSIBILITY_SCROLL|GET_CLIPBOARD|SET_CLIPBOARD|LAUNCH_APP|OPEN_INTENT|SHOW_OVERLAY_MSG|PLAY_RINGTONE|STOP_MEDIA|SIMULATE_INCOMING_CALL|SET_GEOFENCE|MARK_GEOFENCE_HERE", enabled: boolean, level: number, stream: "MUSIC|RING|ALARM|NOTIFICATION|SYSTEM", camera_facing: "front|back", text: string, package_name: string, url: string, target: string, x: number, y: number, direction: "FORWARD|BACKWARD", caller_name: string, message: string, options: [] }
-    //   - Triggers: "nyalakan senter", "matikan senter", "kunci HP", "ke home screen", "buka recent apps", "cek baterai HP", "cek wifi/sinyal HP", "di mana HP-ku", "ucapkan suara di HP", "foto kamera depan/belakang", "screenshot HP", "buka youtube/chrome di HP", "salin ke clipboard", "bunyikan alarm HP / cari HP", "munculkan pop up di HP", "telepon HP-ku", "call aku"
-    // FINANCE: { action: "RECORD|RECORD_MULTIPLE|READ_LATEST|READ_ANALYTICS|EDIT|DELETE|UNDO_DELETE|IMPORT_FROM_EMAIL|CONFIRM_TRANSACTION|UPDATE_PENDING|CANCEL_TRANSACTION|CATEGORY_BREAKDOWN|PERIOD_COMPARISON|TOP_EXPENSES|ACCOUNT_BALANCES|DAILY_TREND|SMART_SUMMARY|MONTHLY_SUMMARY|SAVING_RATE|BALANCE_TREND", nominal: number, type: "INCOME|EXPENSE", destination: string, category: string, description: string, time: "ISO+07:00", account: string, payment_method: string, search_keyword: string, date_text: string, limit: number, transactions: [],
+const DOMAIN_SCHEMAS = {
+  DEVICE_CONTROL: `    // DEVICE_CONTROL: { action: "TOGGLE_FLASHLIGHT|LOCK_SCREEN|GO_HOME_SCREEN|GO_BACK|SHOW_RECENTS|SET_VOLUME|FORCE_DND|GET_BATTERY_STATUS|GET_NETWORK_INFO|TOGGLE_WIFI|GET_LOCATION|SPEAK_TEXT|TAKE_PHOTO|TAKE_SCREENSHOT|DUMP_UI_HIERARCHY|ACCESSIBILITY_CLICK|ACCESSIBILITY_INPUT_TEXT|ACCESSIBILITY_SCROLL|GET_CLIPBOARD|SET_CLIPBOARD|LAUNCH_APP|OPEN_INTENT|SHOW_OVERLAY_MSG|PLAY_RINGTONE|STOP_MEDIA|SIMULATE_INCOMING_CALL|SET_GEOFENCE|MARK_GEOFENCE_HERE", enabled: boolean, level: number, stream: "MUSIC|RING|ALARM|NOTIFICATION|SYSTEM", camera_facing: "front|back", text: string, package_name: string, url: string, target: string, x: number, y: number, direction: "FORWARD|BACKWARD", caller_name: string, message: string, options: [] }
+    //   - Triggers: "nyalakan senter", "matikan senter", "kunci HP", "ke home screen", "buka recent apps", "cek baterai HP", "cek wifi/sinyal HP", "di mana HP-ku", "ucapkan suara di HP", "foto kamera depan/belakang", "screenshot HP", "buka youtube/chrome di HP", "salin ke clipboard", "bunyikan alarm HP / cari HP", "munculkan pop up di HP", "telepon HP-ku", "call aku"`,
+
+  FINANCE: `    // FINANCE: { action: "RECORD|RECORD_MULTIPLE|READ_LATEST|READ_ANALYTICS|EDIT|DELETE|UNDO_DELETE|IMPORT_FROM_EMAIL|CONFIRM_TRANSACTION|UPDATE_PENDING|CANCEL_TRANSACTION|CATEGORY_BREAKDOWN|PERIOD_COMPARISON|TOP_EXPENSES|ACCOUNT_BALANCES|DAILY_TREND|SMART_SUMMARY|MONTHLY_SUMMARY|SAVING_RATE|BALANCE_TREND", nominal: number, type: "INCOME|EXPENSE", destination: string, category: string, description: string, time: "ISO+07:00", account: string, payment_method: string, search_keyword: string, date_text: string, limit: number, transactions: [],
     //   is_split: boolean (true jika pengeluaran mengandung BEBERAPA item dengan kategori berbeda),
     //   store_name: string (nama toko/merchant jika disebutkan, e.g. "Indomaret", "Alfamart"),
     //   items: [{label: string, nominal: number, category: string}] (array rincian item split, WAJIB diisi jika is_split=true)
     //   SPLIT DETECTION RULES: Set is_split=true jika user menyebut beberapa item dengan kategori berbeda dalam satu perintah.
-    //   Contoh split: "belanja indomaret 50rb: beras 20rb, sabun 15rb, es krim 15rb" → is_split=true, items=[{beras,20000,Bahan Makanan},{sabun,15000,Perawatan},{es krim,15000,Jajan}]
-    //   Contoh BUKAN split: "beli nasi goreng 15rb" → is_split=false (satu kategori, RECORD biasa)
-    //   - EDIT/DELETE last tx: set search_keyword="LATEST" (Triggers: "hapus yang tadi", "ubah yang barusan").
-    // CALENDAR: { action: "CREATE|CREATE_MULTIPLE|DELETE|UPDATE|READ|READ_TODAY|READ_TOMORROW|READ_UPCOMING", summary, start: "ISO+07:00", end: "ISO+07:00", description, eventId, location, reminder_minutes: [], recurrence: "RRULE...", color_id, events: [], semester_start: "YYYY-MM-DD", semester_end: "YYYY-MM-DD" }
+    //   Contoh split: "belanja indomaret 50rb: beras 20rb, sabun 15rb, es krim 15rb" -> is_split=true, items=[{beras,20000,Bahan Makanan},{sabun,15000,Perawatan},{es krim,15000,Jajan}]
+    //   Contoh BUKAN split: "beli nasi goreng 15rb" -> is_split=false (satu kategori, RECORD biasa)
+    //   - EDIT/DELETE last tx: set search_keyword="LATEST" (Triggers: "hapus yang tadi", "ubah yang barusan").`,
+
+  CALENDAR: `    // CALENDAR: { action: "CREATE|CREATE_MULTIPLE|DELETE|UPDATE|READ|READ_TODAY|READ_TOMORROW|READ_UPCOMING", summary, start: "ISO+07:00", end: "ISO+07:00", description, eventId, location, reminder_minutes: [], recurrence: "RRULE...", color_id, events: [], semester_start: "YYYY-MM-DD", semester_end: "YYYY-MM-DD" }
     //   - CREATE_MULTIPLE (Batch Semester / Multi-Course Scheduling):
     //     * Triggers: "jadwalkan kuliah semester ini: 1. Senin 08:00 - 10:00 Sastra Arab, 2. Selasa 10:00 - 12:00 Diplomasi...", "buat jadwal kuliah semester ganjil..."
     //     * Set action="CREATE_MULTIPLE", semester_start="YYYY-MM-DD", semester_end="YYYY-MM-DD", events=[{summary, day_of_week: "MO|TU|WE|TH|FR|SA|SU", start_time: "HH:MM", end_time: "HH:MM", location, recurrence: "RRULE:FREQ=WEEKLY;BYDAY=...;UNTIL=..."}]
@@ -371,8 +386,9 @@ OUTPUT JSON FORMAT:
     //     * "hapus/ubah jadwal yang pertama/ke-1/paling atas" -> summary="INDEX_1" (or action=DELETE/UPDATE)
     //     * "hapus/ubah jadwal yang kedua/ke-2" -> summary="INDEX_2"
     //     * "hapus/ubah jadwal yang tadi/barusan" -> summary="LATEST"
-    //   - For READ actions: 'summary' MUST be null or omitted unless user explicitly searched for a specific event title keyword (e.g., "jadwal rapat" -> summary="rapat"). NEVER put date strings or sentences in summary!
-    // TASK: { action: "CREATE|CREATE_SUBTASK|CREATE_MULTIPLE|READ|READ_LIST|READ_LISTS|READ_TODAY|READ_TOMORROW|READ_UPCOMING|READ_OVERDUE|READ_DONE|COMPLETE|DELETE|EDIT|MOVE|CLEAR_DONE|SET_PRIORITY", title, due_date: "ISO+07:00|null", notes, search_keyword, list_name, parent_task_keyword, priority: "HIGH|NORMAL", duration_minutes: number|null, tasks: [], sync_calendar: true|false|null, calendar_start_time: "ISO+07:00|null" }
+    //   - For READ actions: 'summary' MUST be null or omitted unless user explicitly searched for a specific event title keyword (e.g., "jadwal rapat" -> summary="rapat"). NEVER put date strings or sentences in summary!`,
+
+  TASK: `    // TASK: { action: "CREATE|CREATE_SUBTASK|CREATE_MULTIPLE|READ|READ_LIST|READ_LISTS|READ_TODAY|READ_TOMORROW|READ_UPCOMING|READ_OVERDUE|READ_DONE|COMPLETE|DELETE|EDIT|MOVE|CLEAR_DONE|SET_PRIORITY", title, due_date: "ISO+07:00|null", notes, search_keyword, list_name, parent_task_keyword, priority: "HIGH|NORMAL", duration_minutes: number|null, tasks: [], sync_calendar: true|false|null, calendar_start_time: "ISO+07:00|null" }
     //   CRITICAL TASK FIELD RULES:
     //   - READ Triggers: "daftar tugas", "tugas aktif", "cek tugas", "ada tugas apa", "tampilkan semua tugas" -> action="READ" (list_name=null, search_keyword=null).
     //   - READ_LIST Triggers: "tampilkan list Tugas Kuliah", "tugas list belanja" -> action="READ_LIST", list_name="Tugas Kuliah".
@@ -389,39 +405,256 @@ OUTPUT JSON FORMAT:
     //   - COMPLETE Trigger: "tandai tugas essay selesai", "selesaikan tugas 1", "tugas 1 beres", "tandai 1,2 selesai"
     //   - DELETE Trigger: "hapus tugas essay Arab", "hapus tugas kedua", "hapus tugas 1 dan 3"
     //   - EDIT Trigger: "ubah deadline tugas essay jadi Senin"
-    //   - MOVE Trigger: "pindahkan tugas essay ke list Tugas Kuliah"
-    // EMAIL: { action: "READ|SEND|DELETE", search_keyword, max_results, to, subject, content }
-    // DATABASE: { action: "LIST_TABLES|READ_TABLE|INSERT_ROW|UPDATE_ROW|DELETE_ROW|DELETE_ALL_ROWS|DELETE_ALL_ROWS_CONFIRMED|CANCEL_ACTION", table_name, row_id, search_keyword, max_results, row_data: {}, update_data: {} }
-    //   - DELETE_ALL_ROWS Triggers: "hapus riwayat chat" (table: nexa_chat_memories), "bersihkan vault" (table: nexa_vault_items)
-    // 2ND_BRAIN: { action: "APPEND|READ|EDIT|DELETE", title, content, search_keyword }
-    // DISCIPLINE: { action: "READ_LIMITS|UPDATE_LIMIT|ADD_LIMIT|DELETE_LIMIT|DISABLE_LIMIT|ENABLE_LIMIT", app_name: string, package_name: string, max_session_minutes: number, max_daily_minutes: number, warning_threshold_pct: number, escalation_level: number, is_active: boolean }
-    //   - Triggers: "cek batas aplikasi", "daftar batas aplikasi", "ubah batas youtube jadi 45 menit", "set limit instagram 30 menit", "tambahkan batas game mobile legends 20 menit", "hapus batas youtube", "matikan limit tiktok", "aktifkan kembali batas youtube"
-    // USER_PROFILE: Facts about TUAN FAQIH (the human user). { action: "APPEND|READ|DELETE", content, search_keyword }
+    //   - MOVE Trigger: "pindahkan tugas essay ke list Tugas Kuliah"`,
+
+  EMAIL: `    // EMAIL: { action: "READ|SEND|DELETE", search_keyword, max_results, to, subject, content }`,
+
+  DATABASE: `    // DATABASE: { action: "LIST_TABLES|READ_TABLE|INSERT_ROW|UPDATE_ROW|DELETE_ROW|DELETE_ALL_ROWS|DELETE_ALL_ROWS_CONFIRMED|CANCEL_ACTION", table_name, row_id, search_keyword, max_results, row_data: {}, update_data: {} }
+    //   - DELETE_ALL_ROWS Triggers: "hapus riwayat chat" (table: nexa_chat_memories), "bersihkan vault" (table: nexa_vault_items)`,
+
+  '2ND_BRAIN': `    // 2ND_BRAIN: { action: "APPEND|READ|EDIT|DELETE", title, content, search_keyword }`,
+
+  DISCIPLINE: `    // DISCIPLINE: { action: "READ_LIMITS|UPDATE_LIMIT|ADD_LIMIT|DELETE_LIMIT|DISABLE_LIMIT|ENABLE_LIMIT", app_name: string, package_name: string, max_session_minutes: number, max_daily_minutes: number, warning_threshold_pct: number, escalation_level: number, is_active: boolean }
+    //   - Triggers: "cek batas aplikasi", "daftar batas aplikasi", "ubah batas youtube jadi 45 menit", "set limit instagram 30 menit", "tambahkan batas game mobile legends 20 menit", "hapus batas youtube", "matikan limit tiktok", "aktifkan kembali batas youtube"`,
+
+  USER_PROFILE: `    // USER_PROFILE: Facts about TUAN FAQIH (the human user). { action: "APPEND|READ|DELETE", content, search_keyword }
     //   - APPEND Triggers: "ingat ya aku suka kopi", "aku punya kebiasaan X", "cita-citaku adalah..."
     //   - READ Triggers: "apa yang kamu ingat tentangku", "kamu tahu apa tentang diriku"
-    //   - DELETE Triggers: "hapus ingatanmu tentang kopi"
-    // CORE_IDENTITY: Facts about N.E.X.A ITSELF (the AI). { action: "APPEND|READ|DELETE", content, search_keyword }
+    //   - DELETE Triggers: "hapus ingatanmu tentang kopi"`,
+
+  CORE_IDENTITY: `    // CORE_IDENTITY: Facts about N.E.X.A ITSELF (the AI). { action: "APPEND|READ|DELETE", content, search_keyword }
     //   - APPEND Triggers: "kamu diciptakan pada X", "namamu adalah...", "kemampuanmu adalah...", "simpan ke memori kamu tentang dirimu"
     //   - READ Triggers: "kamu itu siapa", "kamu diciptakan kapan", "apa kemampuanmu"
     //   - DELETE Triggers: "hapus aturan identitasmu tentang X"
-    //   CRITICAL: If a message states a fact about N.E.X.A (uses "kamu"/"Nex"/"N.E.X.A" as the subject), it MUST be intent CORE_IDENTITY, NOT USER_PROFILE.
-    // WEB_SEARCH: { query, type: "search|news", mode: "fast|deep" }
+    //   CRITICAL: If a message states a fact about N.E.X.A (uses "kamu"/"Nex"/"N.E.X.A" as the subject), it MUST be intent CORE_IDENTITY, NOT USER_PROFILE.`,
+
+  WEB_SEARCH: `    // WEB_SEARCH: { query, type: "search|news", mode: "fast|deep" }
     //   - Triggers: "cari informasi tentang X", "googling X", "coba cari X", "berita terbaru X", "apa itu X", "baca tentang X", "info X", "terbaru dari X"
     //   - CRITICAL QUERY RULE: 'query' MUST be extracted STRICTLY from the user's own words. DO NOT add context words like "dari lampiran", "dari sistem", "analisis konten" unless the user explicitly mentioned them.
     //   - type: "news" jika user menyebut "berita"/"terbaru"/"hari ini". "search" untuk pertanyaan umum/riset.
     //   - mode: "deep" jika user meminta "analisis mendalam", "kronologi lengkap", "riset detail", "seluk beluk", "baca lengkap", atau investigasi kompleks. "fast" untuk pertanyaan umum/singkat.
-    //   - EXAMPLE CORRECT: User says "coba baca tentang apa yang terbaru" → query="berita terbaru", type="news", mode="fast"
-    //   - EXAMPLE WRONG: query="analisis konten terbaru dari lampiran" (DO NOT add words not spoken by user)
-    // LOCATION: { action: "SEARCH_NEARBY|ROUTE|GEOCODE", query: string, origin: string, destination: string }
+    //   - EXAMPLE CORRECT: User says "coba baca tentang apa yang terbaru" -> query="berita terbaru", type="news", mode="fast"
+    //   - EXAMPLE WRONG: query="analisis konten terbaru dari lampiran" (DO NOT add words not spoken by user)`,
+
+  LOCATION: `    // LOCATION: { action: "SEARCH_NEARBY|ROUTE|GEOCODE", query: string, origin: string, destination: string }
     //   - Triggers SEARCH_NEARBY: "carikan warkop/tempat ngopi/cafe/pom bensin/ATM/makan terdekat", "tempat makan di sekitar sini", "kopi terdekat dari posisi saya", "rekomendasi kuliner dekat sini", "ada masjid dekat sini?"
     //   - Triggers ROUTE: "berapa menit dari A ke B", "rute dari X ke Y", "jarak dari sini ke kampus"
-    //   - Triggers GEOCODE: "alamat Masjid Zayed Solo", "di mana letak Monas"
-    // DIAGNOSE_SYSTEM: { action: "READ_LOGS", search_keyword: string }
-    //   - Triggers STRICTLY TECHNICAL LOGS ONLY: "cek log error", "kenapa server error", "baca log sistem". DO NOT use for chat history or past conversations!
+    //   - Triggers GEOCODE: "alamat Masjid Zayed Solo", "di mana letak Monas"`,
+
+  DIAGNOSE_SYSTEM: `    // DIAGNOSE_SYSTEM: { action: "READ_LOGS", search_keyword: string }
+    //   - Triggers STRICTLY TECHNICAL LOGS ONLY: "cek log error", "kenapa server error", "baca log sistem". DO NOT use for chat history or past conversations!`
+};
+
+const REFLEX_SYSTEM_PROMPT = `
+${NEXA_PERSONALITY}
+
+[COGNITIVE & REFLEX CHAT TASK]
+Pesan Tuan Faqih adalah respons refleks, sapaan santai, ucapan terima kasih, atau konfirmasi singkat.
+Tugas Anda adalah merespons secara hangat, cerdas, elegan, dan sopan sebagai N.E.X.A sesuai kepribadian.
+
+CRITICAL RULES:
+1. Sapaan WAJIB mencocokkan waktu di [WAKTU SERVER SAAT INI].
+2. DILARANG KERAS menggunakan tanda baca em dash atau en dash. Gunakan tanda koma (,), titik (.), atau tanda kurung (...) secara alami.
+3. Bersikap ramah, hangat, dan ringkas (1 sampai 2 kalimat). Jangan bertele-tele dan jangan mengarang aksi atau data yang tidak diminta.
+4. Output WAJIB JSON murni tanpa markdown wrapping.
+
+OUTPUT JSON FORMAT:
+{
+  "reasoning": "Refleks atau sapaan santai dari Tuan Faqih.",
+  "intent": "NORMAL_CHAT",
+  "mood": "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD",
+  "reply_message": "Respons bahasa Indonesia hangat dan elegan khas N.E.X.A...",
+  "learned_user_facts": [],
+  "learned_core_identities": [],
+  "extracted_data": {},
+  "god_mode_trigger": false
+}
+`;
+
+function buildRouterSystemPrompt(targetDomains = 'ALL') {
+  let activeSchemas = [];
+  let allowedIntents = [];
+
+  if (targetDomains === 'ALL' || !targetDomains) {
+    activeSchemas = Object.values(DOMAIN_SCHEMAS);
+    allowedIntents = Object.keys(DOMAIN_SCHEMAS);
+  } else {
+    for (const d of targetDomains) {
+      if (DOMAIN_SCHEMAS[d]) {
+        activeSchemas.push(DOMAIN_SCHEMAS[d]);
+        allowedIntents.push(d);
+      }
+    }
+  }
+
+  if (!allowedIntents.includes('NORMAL_CHAT')) allowedIntents.push('NORMAL_CHAT');
+  if (!allowedIntents.includes('INCOMPLETE_INFO')) allowedIntents.push('INCOMPLETE_INFO');
+
+  const intentString = allowedIntents.join('|');
+
+  return `${ROUTER_COMMON_PREFIX}
+OUTPUT JSON FORMAT:
+{
+  "reasoning": "1-2 sentences of logical analysis binding context and intent.",
+  "intent": "${intentString}",
+  "mood": "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD",
+  "reply_message": "Natural, warm conversational Indonesian response addressing user as Tuan Faqih (MANDATORY for NORMAL_CHAT, INCOMPLETE_INFO, DISCIPLINE, USER_PROFILE, CORE_IDENTITY, DEVICE_CONTROL).",
+  "learned_user_facts": ["New permanent facts ABOUT TUAN FAQIH (the human), or empty []"],
+  "learned_core_identities": ["New permanent facts ABOUT N.E.X.A ITSELF (the AI), or empty []"],
+  "extracted_data": {
+${activeSchemas.join('\n')}
   },
   "god_mode_trigger": false
 }
 `;
+}
+
+// Backwards-compatible static prompt
+const ROUTER_SYSTEM_PROMPT = buildRouterSystemPrompt('ALL');
+
+function _isReflexMessage(textInput, runtimeHints = {}) {
+  if (!textInput) return false;
+  if (runtimeHints && Object.keys(runtimeHints).length > 0) {
+    if (runtimeHints.pendingEmailContext ||
+        runtimeHints.pendingDatabaseContext ||
+        runtimeHints.pendingCalendarContext ||
+        runtimeHints.pendingVaultContext ||
+        runtimeHints.conversationContext?.intent) {
+      return false;
+    }
+  }
+  const clean = textInput.trim().toLowerCase();
+  const words = clean.split(/\s+/);
+  if (words.length > 3) return false;
+
+  const REFLEX_REGEX = /^(halo|hai|hey|p|ping|cek|test|tes|pagi|siang|sore|malam|selamat pagi|selamat siang|selamat sore|selamat malam|makasih|terima kasih|tengkyu|thanks|ok|oke|siap|baik|sip|mantap|yoi|yo)(?:\s+(?:nex|nexa|min|bot|bro|sis))?[!.]*$/i;
+  return REFLEX_REGEX.test(clean);
+}
+
+function _detectCandidateDomains(textInput, runtimeHints = {}) {
+  if (!textInput) return 'ALL';
+  if (runtimeHints && Object.keys(runtimeHints).length > 0) {
+    if (runtimeHints.pendingEmailContext ||
+        runtimeHints.pendingDatabaseContext ||
+        runtimeHints.pendingCalendarContext ||
+        runtimeHints.pendingVaultContext ||
+        runtimeHints.conversationContext?.intent) {
+      return 'ALL';
+    }
+  }
+
+  const clean = textInput.toLowerCase();
+  const matched = new Set();
+
+  if (/\b(beli|bayar|uang|duit|rp|ribu|jt|juta|pengeluaran|pemasukan|belanja|saldo|transfer|tf|rekening|dompet|qris|cash|kas|finansial|biaya|ongkir|makan|kopi|nasi|tagihan|gaji|buku kas|split|indomaret|alfamart|top up|topup|ewallet|gopay|ovo|dana|shopeepay)\b/i.test(clean) || /\b\d+\s*(?:k|rb|ribu|jt|juta|rupiah)\b/i.test(clean)) {
+    matched.add('FINANCE');
+  }
+
+  if (/\b(jadwal|kalender|agenda|kuliah|matkul|meeting|rapat|acara|janji|event|semester|reschedule|ingatkan|pengingat|besok|lusa|minggu depan|hari ini|jam \d|pukul \d)\b/i.test(clean)) {
+    matched.add('CALENDAR');
+  }
+
+  if (/\b(tugas|task|todo|to-do|deadline|selesaikan|kerjakan|list belanja|catatan tugas|pr|makalah|tandai selesai|hapus tugas)\b/i.test(clean)) {
+    matched.add('TASK');
+  }
+
+  if (/\b(hp|ponsel|handphone|senter|baterai|battery|wifi|layar|screenshot|kunci hp|volume|suara|kamera|clipboard|notif|dering|telepon hp|ringtone|buka aplikasi)\b/i.test(clean)) {
+    matched.add('DEVICE_CONTROL');
+  }
+
+  if (/\b(cari|carikan|googling|google|siapa|apa itu|berita|informasi|info|riset|cek internet|terbaru|cuaca)\b/i.test(clean)) {
+    matched.add('WEB_SEARCH');
+  }
+
+  if (/\b(terdekat|lokasi|jarak|rute|peta|maps|alamat|di mana letak|warkop|cafe terdekat|pom bensin|masjid terdekat)\b/i.test(clean)) {
+    matched.add('LOCATION');
+  }
+
+  if (/\b(database|tabel|supabase|kolom|row|insert|update row|delete row|hapus riwayat|bersihkan vault)\b/i.test(clean)) {
+    matched.add('DATABASE');
+  }
+
+  if (/\b(email|inbox|gmail|surat|kirim email|cek email)\b/i.test(clean)) {
+    matched.add('EMAIL');
+  }
+
+  if (/\b(disiplin|limit|batas aplikasi|screen time|durasi aplikasi)\b/i.test(clean)) {
+    matched.add('DISCIPLINE');
+  }
+
+  if (/\b(catat|catatan|simpan catatan|vault|second brain|2nd brain|arsip)\b/i.test(clean)) {
+    matched.add('2ND_BRAIN');
+  }
+
+  if (/\b(ingat ya aku|kebiasaanku|tentangku|diriku|profilku|biodataku|kesukaanku|hobiku)\b/i.test(clean)) {
+    matched.add('USER_PROFILE');
+  }
+
+  if (/\b(kamu itu siapa|kamu siapa|kamu diciptakan|kemampuanmu|aturanmu|namamu|identitasmu|kamu bisa apa)\b/i.test(clean)) {
+    matched.add('CORE_IDENTITY');
+  }
+
+  // Strict Fail-Open: If no technical domain matched, load all schemas
+  if (matched.size === 0) {
+    return 'ALL';
+  }
+
+  return matched;
+}
+
+async function _handleReflexRouting(textInput, runtimeHints = {}) {
+  let contextStr = '[Tidak ada riwayat obrolan sebelumnya]';
+  try {
+    const rawMemories = await supabaseMemories.getRecentMemories(4);
+    if (rawMemories && rawMemories.length > 0) {
+      contextStr = rawMemories.map(m => {
+        const timeStr = formatTimeWIB(m.created_at);
+        const platform = (m.platform || 'telegram').toUpperCase();
+        return `[${timeStr} | via ${platform}] [${m.role.toUpperCase()}]: ${m.content}`;
+      }).join('\n');
+    }
+  } catch (_) {}
+
+  const _now = new Date();
+  const _jkt = new Date(_now.getTime() + 7 * 60 * 60 * 1000);
+  const _DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const _MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const currentJakartaTime =
+    `${_DAYS[_jkt.getUTCDay()]}, ${_jkt.getUTCDate()} ${_MONTHS[_jkt.getUTCMonth()]} ${_jkt.getUTCFullYear()} ` +
+    `pukul ${String(_jkt.getUTCHours()).padStart(2, '0')}:${String(_jkt.getUTCMinutes()).padStart(2, '0')} WIB`;
+
+  const reflexPrompt = `
+[WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
+${currentJakartaTime}
+
+[RIWAYAT OBROLAN SINGKAT]
+${contextStr}
+
+[PESAN TERBARU TUAN FAQIH]
+${textInput}
+
+Berikan respons refleks dalam format JSON!
+`;
+
+  const resultJsonStr = await executeWithFallback(reflexPrompt, REFLEX_SYSTEM_PROMPT, 0.3, true, { userText: textInput });
+  let cleanStr = resultJsonStr.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const firstBrace = cleanStr.indexOf('{');
+  const lastBrace = cleanStr.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    cleanStr = cleanStr.substring(firstBrace, lastBrace + 1);
+  }
+
+  const routingData = JSON.parse(cleanStr);
+  routingData.intent = 'NORMAL_CHAT';
+  routingData.mood = (routingData.mood || 'NEUTRAL').toUpperCase();
+  routingData.extracted_data = routingData.extracted_data || {};
+  routingData.god_mode_trigger = false;
+  if (typeof routingData.reply_message === 'string') {
+    routingData.reply_message = _cleanEmDashes(routingData.reply_message);
+  }
+  return routingData;
+}
+
 
 // ============================================================
 // CROSS-DOMAIN FUSION & SENTIMENT HELPERS
@@ -855,10 +1088,30 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     };
   }
 
-  // 1. Load personal facts (from cache — zero overhead after first call)
+  // ── Reflex Fast-Path (Instant Micro-Prompt for Greetings/Acknowledgements) ──
+  const _isReflex = _isReflexMessage(textInput, runtimeHints);
+  if (_isReflex) {
+    console.log('[ROUTER] ⚡ Reflex Fast-Path triggered for:', JSON.stringify(textInput));
+    try {
+      const reflexResult = await _handleReflexRouting(textInput, runtimeHints);
+      if (reflexResult) {
+        return reflexResult;
+      }
+    } catch (reflexErr) {
+      console.warn('[ROUTER] Reflex Fast-Path error, falling back to full router:', reflexErr.message);
+      // Fail-open: continue to standard routing
+    }
+  }
+
+  // ── Candidate Domains Detection (Fail-Open Union Gating) ──
+  const _candidateDomains = _detectCandidateDomains(textInput, runtimeHints);
+  const _loadFinanceContext = _candidateDomains === 'ALL' || _candidateDomains.has('FINANCE');
+  const _loadCalendarContext = _candidateDomains === 'ALL' || _candidateDomains.has('CALENDAR') || hasCal;
+
+  // 1. Load personal facts (from cache: zero overhead after first call)
   const personalFacts = await loadPersonalFactsWithCache();
 
-  // [PHASE 6] 1.5. Load Identity Model (from cache — zero overhead after first call)
+  // [PHASE 6] 1.5. Load Identity Model (from cache: zero overhead after first call)
   // Berjalan paralel dengan langkah berikutnya untuk efisiensi maksimal
   const [_, identityModel] = await Promise.allSettled([
     Promise.resolve(), // placeholder
@@ -866,16 +1119,15 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   ]);
   const _identityModel = identityModel.status === 'fulfilled' ? (identityModel.value || {}) : {};
 
-  // 2. Contextual & Semantic Retrieval — Masked Parallel Execution (Step 3: Zero Added Latency)
+  // 2. Contextual & Semantic Retrieval: Masked Parallel Execution (Step 3: Zero Added Latency)
   const _fetchLimit = _hasContextRef ? 20 : 12;
-  const isShortReflex = !textInput || (textInput.trim().split(/\s+/).length <= 2 && /^(halo|hai|p|ping|cek|test|tes|pagi|siang|malam|makasih|terima kasih|ok|oke|siap)$/i.test(textInput.trim()));
 
   const [_rawMemories, semanticMatches] = await Promise.all([
     supabaseMemories.getRecentMemories(_fetchLimit).catch(e => {
       console.error('[ROUTER] Memory fetch error:', e.message);
       return [];
     }),
-    (!isShortReflex && geminiVectorCache.isSnapshotReady())
+    geminiVectorCache.isSnapshotReady()
       ? geminiVectorCache.getRelevantFacts(textInput, {
         topKProfile: PROFILE_KW_LIMIT,
         topKIdentity: IDENTITY_KW_LIMIT,
@@ -1009,8 +1261,8 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // ISO date string in Jakarta (for AI date arithmetic in TASK/CALENDAR intents)
   const currentJakartaISO = `${_jktYear}-${String(_jktMonth + 1).padStart(2, '0')}-${String(_jktDate).padStart(2, '0')}`;
 
-  // Build mini-calendar — conditionally gated by pre-flight classifier (Step 2)
-  const _calDays = hasCal ? 7 : (hasTime ? 3 : 0);
+  // Build mini-calendar: conditionally gated by pre-flight classifier and domain
+  const _calDays = _loadCalendarContext ? (hasCal ? 7 : (hasTime ? 3 : 0)) : 0;
   const _miniCal = [];
   for (let i = 0; i <= _calDays; i++) {
     const d = new Date(_jkt.getTime() + i * 86400000);
@@ -1022,7 +1274,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
 
   // ── Cross-Domain Fusion + Accounts Context ─────────────────────────────────
   // Silently pull recent finance + upcoming calendar data + active accounts list.
-  // Runs in parallel — zero sequential latency penalty.
+  // Runs in parallel: zero sequential latency penalty.
   let crossDomainBlock = '';
   let activeAccountsBlock = '';
   let activeCategoriesBlock = '';
@@ -1030,20 +1282,20 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     const [recentTxResult, upcomingEvResult, accountsResult, categoriesResult] = await Promise.allSettled([
       _fetchRecentFinanceSummary(3),
       _fetchUpcomingEventsSummary(3),
-      // Load daftar akun aktif dari Supabase Finance (dengan cache)
-      (async () => {
+      // Load daftar akun aktif dari Supabase Finance (hanya jika domain finance aktif)
+      _loadFinanceContext ? (async () => {
         try {
           const supabaseFinance = require('../infrastructure/Supabase_Finance');
           return await supabaseFinance.getAccountsList();
         } catch (_) { return []; }
-      })(),
-      // Load daftar kategori aktif dari Supabase Finance
-      (async () => {
+      })() : Promise.resolve([]),
+      // Load daftar kategori aktif dari Supabase Finance (hanya jika domain finance aktif)
+      _loadFinanceContext ? (async () => {
         try {
           const supabaseFinance = require('../infrastructure/Supabase_Finance');
           return await supabaseFinance.getCategoriesList();
         } catch (_) { return []; }
-      })()
+      })() : Promise.resolve([])
     ]);
     const finLines = [];
     if (recentTxResult.status === 'fulfilled' && recentTxResult.value) {
@@ -1053,13 +1305,13 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
       finLines.push(`Jadwal Mendatang: ${upcomingEvResult.value}`);
     }
     if (finLines.length > 0) {
-      crossDomainBlock = `\n[DATA LINTAS DOMAIN — GUNAKAN UNTUK KONEKSI KONTEKS CERDAS]\n${finLines.join('\n')}\n`;
+      crossDomainBlock = `\n[DATA LINTAS DOMAIN: GUNAKAN UNTUK KONEKSI KONTEKS CERDAS]\n${finLines.join('\n')}\n`;
     }
 
     // Bangun blok akun aktif jika ada data
     if (accountsResult.status === 'fulfilled' && accountsResult.value && accountsResult.value.length > 0) {
       const accountLines = accountsResult.value.map(a => `- ${a.name} (${a.type})`).join('\n');
-      activeAccountsBlock = `\n[AKUN KEUANGAN AKTIF — PAKAI NAMA PERSIS INI UNTUK FIELD "account" DI FINANCE]\n${accountLines}\nCatatan: Jika user menyebut nama akun/dompet/bank yang mirip salah satu di atas, petakan ke nama yang paling cocok.\n`;
+      activeAccountsBlock = `\n[AKUN KEUANGAN AKTIF: PAKAI NAMA PERSIS INI UNTUK FIELD "account" DI FINANCE]\n${accountLines}\nCatatan: Jika user menyebut nama akun/dompet/bank yang mirip salah satu di atas, petakan ke nama yang paling cocok.\n`;
     }
 
     // Bangun blok kategori aktif jika ada data
@@ -1089,9 +1341,9 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
       if (_incomeStr) _catLines.push(_incomeStr);
       if (_expenseStr) _catLines.push(_expenseStr);
 
-      activeCategoriesBlock = `\n[ACTIVE TRANSACTION CATEGORIES — ABSOLUTE LIST FOR FINANCE "category" FIELD]\n${_catLines.join('\n')}\n\n[SUPER STRICT CATEGORY SELECTION GUIDELINES]\n1. EXACT CHARACTER MATCHING: You MUST copy EXACTLY one category name from the list above (case-sensitive, spaces, symbols). IT IS STRICTLY FORBIDDEN to hallucinate or invent categories that are not on the list (e.g., do not use "Makanan & Minuman" or "Perawatan & Kecantikan" if they are not listed).\n2. SEMANTIC REASONING: Ask "What is the SUBSTANCE/OBJECT being purchased?" then find the closest match ONLY in the active list.\n- Food/Drinks: If buying nasi, ayam, sate, dll, use "Makan Berat / Makan Luar". If buying camilan, kopi, boba, dll, use "Jajan / Ngopi / Kafe".\n- Services: If paying for laundry/cuci baju, use "Jasa Laundry".\n- Shopping: If buying sabun, beras at a minimarket, use "Bahan Makanan / Groceries".\n- Transportation: For Grab/Gojek, use "Ojek / Taksi Online" or "Transportasi Umum".\n- If there is absolutely no specific category that matches, use "Lainnya" (if available in the list).\n`;
+      activeCategoriesBlock = `\n[ACTIVE TRANSACTION CATEGORIES: ABSOLUTE LIST FOR FINANCE "category" FIELD]\n${_catLines.join('\n')}\n\n[SUPER STRICT CATEGORY SELECTION GUIDELINES]\n1. EXACT CHARACTER MATCHING: You MUST copy EXACTLY one category name from the list above (case-sensitive, spaces, symbols). IT IS STRICTLY FORBIDDEN to hallucinate or invent categories that are not on the list (e.g., do not use "Makanan & Minuman" or "Perawatan & Kecantikan" if they are not listed).\n2. SEMANTIC REASONING: Ask "What is the SUBSTANCE/OBJECT being purchased?" then find the closest match ONLY in the active list.\n- Food/Drinks: If buying nasi, ayam, sate, dll, use "Makan Berat / Makan Luar". If buying camilan, kopi, boba, dll, use "Jajan / Ngopi / Kafe".\n- Services: If paying for laundry/cuci baju, use "Jasa Laundry".\n- Shopping: If buying sabun, beras at a minimarket, use "Bahan Makanan / Groceries".\n- Transportation: For Grab/Gojek, use "Ojek / Taksi Online" or "Transportasi Umum".\n- If there is absolutely no specific category that matches, use "Lainnya" (if available in the list).\n`;
     }
-  } catch (_) { /* Non-critical — never crash routing */ }
+  } catch (_) { /* Non-critical: never crash routing */ }
 
   let runtimeContextBlock = '';
   if (runtimeHints && Object.keys(runtimeHints).length > 0) {
@@ -1127,17 +1379,20 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // ── Build Sentiment Instruction Block ─────────────────────────────────────
   let sentimentBlock = '';
   if (_sentimentScore === 'STRESSED') {
-    sentimentBlock = `\n[DETEKSI EMOSI TUAN FAQIH — WAJIB DIPATUHI]\nAnalisis gaya penulisan menunjukkan Tuan sedang TERBURU-BURU atau STRES. Respons N.E.X.A harus: (1) SUPER SINGKAT — max 3 kalimat, (2) Tidak ada basa-basi panjang, (3) Langsung ke inti, (4) Nada hangat dan suportif.\n`;
+    sentimentBlock = `\n[DETEKSI EMOSI TUAN FAQIH: WAJIB DIPATUHI]\nAnalisis gaya penulisan menunjukkan Tuan sedang TERBURU-BURU atau STRES. Respons N.E.X.A harus: (1) SUPER SINGKAT: max 3 kalimat, (2) Tidak ada basa-basi panjang, (3) Langsung ke inti, (4) Nada hangat dan suportif.\n`;
   } else if (_sentimentScore === 'CASUAL') {
     sentimentBlock = `\n[DETEKSI EMOSI TUAN FAQIH]\nTuan sedang santai. Boleh sedikit lebih hangat dan conversational dalam respons.\n`;
   }
+
+  // ── Compile Selective System Prompt based on Candidate Domains ──────────
+  const routerSystemPrompt = buildRouterSystemPrompt(_candidateDomains);
 
   const prompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
 ISO Date Hari Ini: ${currentJakartaISO}
 ${miniCalStr ? `
-[KALENDER REFERENSI${hasCal ? ' — 7 HARI KE DEPAN' : ''}]
+[KALENDER REFERENSI${hasCal ? ' (7 HARI KE DEPAN)' : ''}]
 ${miniCalStr}
 (Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)
 ` : ''}
@@ -1146,7 +1401,7 @@ ${factsContext}${activeAccountsBlock}${activeCategoriesBlock}${sentimentBlock}${
 ${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
 
 [RIWAYAT OBROLAN]
-${_applyTokenBudgetGuard(factsContext + activeAccountsBlock + activeCategoriesBlock + sentimentBlock + crossDomainBlock + runtimeContextBlock, contextStr, ROUTER_SYSTEM_PROMPT)}
+${_applyTokenBudgetGuard(factsContext + activeAccountsBlock + activeCategoriesBlock + sentimentBlock + crossDomainBlock + runtimeContextBlock, contextStr, routerSystemPrompt)}
 
 [PESAN TERBARU TUAN FAQIH]
 ${textInput}
@@ -1154,8 +1409,10 @@ ${textInput}
 Tentukan intent dan ekstrak data!
 `;
 
+  console.log(`[ROUTER] 🎯 Gated domains: ${_candidateDomains === 'ALL' ? 'ALL (Fail-Open)' : Array.from(_candidateDomains).join(', ')} | System: ${routerSystemPrompt.length}ch | Prompt: ${prompt.length}ch`);
+
   // 4. Execute Cognitive Routing (Medium Temperature = 0.3)
-  let resultJsonStr = await executeWithFallback(prompt, ROUTER_SYSTEM_PROMPT, 0.3, true, { userText: textInput });
+  let resultJsonStr = await executeWithFallback(prompt, routerSystemPrompt, 0.3, true, { userText: textInput });
 
 
   // Clean markdown block if GenAI decides to return it despite instructions
@@ -1657,4 +1914,8 @@ module.exports = {
   // [PHASE 6] Identity helpers (untuk testing)
   detectTopicContext: _detectTopicContext,
   buildIdentityContextBlock: _buildIdentityContextBlock,
+  // ── Selective Prompt & Gating Helpers (untuk testing / benchmarks) ────────
+  buildRouterSystemPrompt,
+  detectCandidateDomains: _detectCandidateDomains,
+  isReflexMessage: _isReflexMessage,
 };
