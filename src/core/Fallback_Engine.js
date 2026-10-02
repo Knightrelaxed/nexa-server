@@ -49,17 +49,17 @@ const groqKeys = [
 ];
 
 // ============================================================
-// SMART ADAPTIVE CONTEXT ROUTING (SACR) — v2.5
+// SMART ADAPTIVE CONTEXT ROUTING (SACR) - v2.6
 // Memilah beban konteks secara otomatis:
-//   MODE LIGHT ⚡ : Google Gemma 4 31B (Tier 1-4) -> Gemini 3.7 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
-//   MODE HEAVY 🧠 : Gemini 3.7 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 31B (Tier 9-12)
+//   MODE LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.5 Flash (Tier 9-12)
+//   MODE HEAVY: Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
 // ============================================================
 
 /** Batas panjang karakter (prompt + systemInstruction) untuk trigger MODE HEAVY */
 const SACR_HEAVY_CHAR_THRESHOLD = 1000;
 
 /**
- * Kata kunci pemicu MODE HEAVY — mencakup tugas analitik, keuangan mendalam,
+ * Kata kunci pemicu MODE HEAVY: mencakup tugas analitik, keuangan mendalam,
  * pengelolaan kode, pemrosesan dokumen, riset, dan instruksi multi-langkah.
  */
 const SACR_HEAVY_KEYWORDS = [
@@ -114,7 +114,7 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
     return options.forceHeavy;
   }
 
-  // [SACR] 2. Ambil pesan MURNI Tuan Faqih — dikirim eksplisit via options.userText dari AI_Router.
+  // [SACR] 2. Ambil pesan MURNI Tuan Faqih (dikirim eksplisit via options.userText dari AI_Router)
   // Evaluasi threshold karakter & kata kunci HANYA pada teks ini,
   // bukan pada total prompt router (yang berisi 30K+ karakter histori + fakta profil).
   const rawUserChat = (options?.userText || '').trim();
@@ -133,22 +133,26 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
 
 
 /**
- * Execute AI Prompt with Smart Adaptive Context Routing (SACR) + 16-Layer Fallback
+ * Execute AI Prompt with Smart Adaptive Context Routing (SACR) + Multi-Layer Fallback
  *
- * MODE LIGHT ⚡ (Konteks Normal — default):
- *   Tier 1-4  : Cerebras Gemma 4 31B Key 1-4       (The Ultra-Fast WSE-3 Sprinters)
- *   Tier 5-8  : Google Gemini 3.7 Flash Key 1-4    (The Advanced Reasoning Secondary)
- *   Tier 9-12 : Google Gemini 3.6 Flash Key 1-4    (The Rock-Solid Tertiary — 1M Context)
+ * MODE LIGHT (Konteks Normal / Default):
+ *   Tier 1-4  : Google Gemma 4 26B Key 1-4 (The Ultra-Natural Persona)
+ *   Tier 5-8  : Google Gemini 3.6 Flash Key 1-4 (The Rock-Solid Secondary: 1M Context)
+ *   Tier 9-12 : Google Gemini 3.5 Flash Key 1-4 (The Fast & Balanced Tertiary)
+ *   Tier 13   : Mistral Pixtral 12B (European Datacenter)
+ *   Tier 14   : Puter AI Multi-Model Pool (Codestral & GPT-4o)
+ *   Tier 15   : OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
+ *   Tier 16   : Dumb Mode (Emergency Offline Response)
  *
- * MODE HEAVY 🧠 (Konteks Berat & Berpikir Kritis — otomatis jika threshold/keyword terpenuhi):
- *   Tier 1-4  : Google Gemini 3.7 Flash Key 1-4    (1 Juta Token Window, Deep Critical Thinking Priority)
- *   Tier 5-8  : Google Gemini 3.6 Flash Key 1-4    (1 Juta Token Window, 100% Stable Secondary)
- *   Tier 9-12 : Google AI Studio Gemma 4 31B Key 1-4 (Skip-CoT Fast Companion Tertiary)
- *
- * Tier 13 : Hugging Face Gemma 4 31B IT          (The Free Safety Net)
- * Tier 14 : Mistral Pixtral 12B                  (The Reliable European Closer — 937.5K TPM)
- * Tier 15 : Puter AI Multi-Model Pool            (Codestral & GPT-4o)
- * Tier 16 : OpenRouter Multi-Model Free          (The Indestructible Last Resort)
+ * MODE HEAVY (Konteks Berat & Berpikir Kritis: otomatis jika threshold/keyword terpenuhi):
+ *   Tier 1-4  : Google Gemini 3.8 Flash Key 1-4 (Deep Reasoning Priority)
+ *   Tier 5-8  : Google Gemini 3.6 Flash Key 1-4 (1 Juta Token Window, Stable Secondary)
+ *   Tier 9-12 : Google Gemma 4 26B Key 1-4 (Skip-CoT Fast Companion)
+ *   Tier 13-16: Google Gemini 3.5 Flash Key 1-4 (Fast & Balanced Tertiary)
+ *   Tier 17   : Mistral Pixtral 12B (European Datacenter)
+ *   Tier 18   : Puter AI Multi-Model Pool (Codestral & GPT-4o)
+ *   Tier 19   : OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
+ *   Tier 20   : Dumb Mode (Emergency Offline Response)
  *
  * Trigger HEAVY otomatis:
  *   a) Pesan MURNI Tuan Faqih > 1.000 karakter
@@ -252,10 +256,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       : isHeavyContext(prompt, systemInstruction, options);
 
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
-  // [SACR v2.5 DUAL-MODE ADAPTIVE MATRIX]
-  // MODE LIGHT : Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.8 Flash (Tier 9-12)
-  // MODE HEAVY : Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12)
-  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.8 -> Gemini 3.6 -> Gemma 4 26B]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.6 -> Gemini 3.8]'} | Total chars: ${inputChars}`);
+  // [SACR v2.6 DUAL-MODE ADAPTIVE MATRIX]
+  // MODE LIGHT : Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.5 Flash (Tier 9-12)
+  // MODE HEAVY : Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
+  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.8 -> Gemini 3.6 -> Gemma 4 26B -> Gemini 3.5]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.6 -> Gemini 3.5]'} | Total chars: ${inputChars}`);
 
   // 1. Google AI Studio Gemma 4 26B (4 Keys: Ultra-Natural Persona, ~2.8s)
   const googleGemmaBlock = googleApiKeys
@@ -284,7 +288,16 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 4. Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine)
+  // 4. Gemini 3.5 Flash (4 Keys: Fast & Balanced Workhorse)
+  const gemini35Block = googleApiKeys
+    .filter(Boolean)
+    .map((key, i) => ({
+      group: 'gemini-3.5-flash',
+      name: `Tier X (Gemini 3.5 Flash Key ${i + 1})`,
+      fn: () => callGeminiWithRetry(key, 'gemini-3.5-flash', prompt, systemInstruction, temperature, jsonMode, 1)
+    }));
+
+  // 5. Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine)
   const groqQwenBlock = groqKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -292,7 +305,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGroqQwen(key, prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  // 5. Cerebras (4 Keys: PayGo / Fallback)
+  // 6. Cerebras (4 Keys: PayGo / Fallback)
   const cerebrasBlock = cerebrasKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -300,32 +313,33 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  // Penataan Dinamis Top 12 Tiers Sesuai Mode Kognitif:
-  // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.8 Flash (Tier 9-12)
-  // HEAVY: Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12)
-  const top12Block = heavy
-    ? [...gemini38Block, ...gemini36Block, ...googleGemmaBlock]
-    : [...googleGemmaBlock, ...gemini36Block, ...gemini38Block];
+  // Penataan Dinamis Top Tiers Sesuai Mode Kognitif:
+  // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Gemini 3.5 Flash (Tier 9-12)
+  // HEAVY: Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
+  const topGoogleBlock = heavy
+    ? [...gemini38Block, ...gemini36Block, ...googleGemmaBlock, ...gemini35Block]
+    : [...googleGemmaBlock, ...gemini36Block, ...gemini35Block];
 
-  const tiers = [
-    // Tier 1-12 Top Engine
-    ...top12Block.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) })),
-    // Tier 13: Mistral Pixtral 12B (European Datacenter)
+  const externalTiers = [
+    // Mistral Pixtral 12B (European Datacenter)
     ...(env.MISTRAL_API_KEY ? [{
-      name: 'Tier 13 (Mistral Pixtral 12B)',
+      name: 'Tier X (Mistral Pixtral 12B)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
     }] : []),
-    // Tier 14: Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
+    // Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
     ...(env.PUTER_AUTH_TOKEN ? [{
-      name: 'Tier 14 (Puter AI Pool - Codestral & GPT-4o)',
+      name: 'Tier X (Puter AI Pool - Codestral & GPT-4o)',
       fn: () => callPuter(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
     }] : []),
-    // Tier 15: OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
+    // OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
     ...(env.OPENROUTER_API_KEY ? [{
-      name: 'Tier 15 (OpenRouter Multi-Model Free Pool)',
+      name: 'Tier X (OpenRouter Multi-Model Free Pool)',
       fn: () => callOpenRouter(prompt, systemInstruction, temperature, jsonMode)
     }] : [])
   ];
+
+  const allTiersRaw = [...topGoogleBlock, ...externalTiers];
+  const tiers = allTiersRaw.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) }));
 
   const failedGroups = new Set();
   const groupTimeoutCount = {};
@@ -372,12 +386,12 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   }
 
   // Fallback Final
-  asyncError('[FALLBACK] ⚠️ All 16 AI layers exhausted. Entering Dumb Mode.');
+  asyncError(`[FALLBACK] ⚠️ All ${tiers.length} AI layers exhausted. Entering Dumb Mode.`);
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,
     god_mode_trigger: false,
-    reply_message: '⚠️ Sistem Otak N.E.X.A (AI Router) mengalami Down Total di semua 16 peladen dunia. Mohon tunggu beberapa saat.'
+    reply_message: `⚠️ Sistem Otak N.E.X.A (AI Router) mengalami Down Total di semua ${tiers.length} peladen dunia. Mohon tunggu beberapa saat.`
   });
 }
 
@@ -475,7 +489,7 @@ async function callGeminiWithRetry(apiKey, modelName, prompt, systemInstruction,
     maxOutputTokens: jsonMode ? 2048 : 4096
   };
 
-  if (/3\.8|3\.7|2\.5|2\.0/i.test(modelName)) {
+  if (/3\.8|3\.7|3\.6|3\.5|2\.5|2\.0/i.test(modelName)) {
     generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
 
@@ -557,12 +571,12 @@ async function callGroq(apiKey, prompt, systemInstruction, temperature, jsonMode
 }
 
 /**
- * callGroqQwen — Groq LPU + Qwen 3.8 27B (Dense Architecture)
- * Digunakan sebagai Tier 1-4 pada MODE LIGHT SACR v2.5.
+ * callGroqQwen: Groq LPU + Qwen 3.8 27B (Dense Architecture)
+ * Digunakan sebagai alternatif cadangan kencang.
  * - Model Dense 27B: seluruh 27B parameter aktif per token (5x lebih padat dari GPT-OSS 120B per token)
  * - Latency: ~1 Detik untuk percakapan normal N.E.X.A
  * - Batas: 8.000 TPM per key (4 key = 32.000 TPM efektif dengan round-robin fallback)
- * - Tidak ada reasoning tokens — output langsung, hemat kuota, dan ultra-efisien
+ * - Tidak ada reasoning tokens: output langsung, hemat kuota, dan ultra-efisien
  */
 async function callGroqQwen(apiKey, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
   if (!apiKey) throw new Error('No Groq API key provided');
