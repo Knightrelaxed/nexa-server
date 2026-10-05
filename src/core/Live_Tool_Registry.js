@@ -1121,13 +1121,17 @@ async function executeLiveTool(toolName, args = {}) {
         }
 
         if (action === 'GET_LOCATION') {
-          const bridgeRes = await _withToolTimeout(bridge.getLocation(), 5000);
+          const bridgeRes = await _withToolTimeout(bridge.getLocation(), 8000);
+          const locData = bridgeRes?.data || {};
+          const lat = locData.latitude ?? bridgeRes?.latitude;
+          const lon = locData.longitude ?? bridgeRes?.longitude;
+          const addr = locData.address || bridgeRes?.address || '';
           return {
-            status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+            status: bridgeRes?.success ? 'SUCCESS' : 'FAILED',
             action,
-            latitude: bridgeRes.latitude,
-            longitude: bridgeRes.longitude,
-            address: bridgeRes.address || 'Koordinat berhasil diambil.'
+            latitude: lat,
+            longitude: lon,
+            address: addr || (lat && lon ? `Koordinat (${lat}, ${lon})` : 'Gagal mengambil lokasi GPS.')
           };
         }
 

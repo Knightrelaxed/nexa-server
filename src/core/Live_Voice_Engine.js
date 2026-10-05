@@ -40,8 +40,8 @@ const GOOGLE_KEYS = [
 // Dual-Tier Live Models
 // ────────────────────────────────────────────────────────────────────────────
 const LIVE_MODELS = {
-  TIER_1_SPEED:    'models/gemini-3.1-flash-live-preview',        // 669ms TTFA
-  TIER_2_MARATHON: 'models/gemini-2.5-flash-native-audio-latest'  // 1,000,000 TPM
+  TIER_1_SPEED:    'models/gemini-3.8-live',              // Flagship Gemini 3.8 Live (65K TPM, Unlimited RPM)
+  TIER_2_MARATHON: 'models/gemini-3.1-flash-live-preview' // Fast Failover / Speed Marathon (Gemini 3 Flash Live)
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ class LiveVoiceSession {
     this.lastClientInputTime = Date.now();
 
     const apiKey    = this._getApiKey();
-    const rawBase   = process.env.GEMINI_BASE_URL || 'https://nexa-relay.dazatulloh2.workers.dev';
+    const rawBase   = process.env.GEMINI_LIVE_BASE_URL || 'https://generativelanguage.googleapis.com';
     const cleanHost = rawBase.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const url       = `wss://${cleanHost}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 

@@ -214,8 +214,9 @@ class NexaBridgeAdapter {
     return this.execute('TOGGLE_WIFI', { enabled });
   }
 
-  async getLocation() {
-    return this.execute('GET_LOCATION');
+  async getLocation(options = {}) {
+    const timeoutMs = options.timeoutMs || 8000;
+    return this.execute('GET_LOCATION', {}, { timeoutMs });
   }
 
   async speakText(text) {
