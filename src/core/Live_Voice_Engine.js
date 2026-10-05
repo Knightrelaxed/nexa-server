@@ -177,6 +177,11 @@ class LiveVoiceSession {
   async start() {
     this.isActive = true;
     console.log(`[LIVE-VOICE] 🚀 Starting Live Session [${this.sessionId}] | Model: ${this.currentModel}`);
+    // Immediately show THINKING on HUD so client knows session is connecting
+    this._sendToClient({
+      type: 'CALL_STATUS_UPDATE',
+      status: 'THINKING'
+    });
     await this._connectGoogleWs();
   }
 
@@ -499,6 +504,12 @@ class LiveVoiceSession {
           model: this.currentModel
         });
 
+        // Set HUD to THINKING while greeting is generating
+        this._sendToClient({
+          type: 'CALL_STATUS_UPDATE',
+          status: 'THINKING'
+        });
+
         // Proactive Initial Vocal Greeting (Dynamic, organic & context-aware)
         const greetingPayload = {
           clientContent: {
@@ -516,8 +527,15 @@ class LiveVoiceSession {
         setTimeout(() => {
           if (this.isGreetingPending) {
             this.isGreetingPending = false;
+            // If greeting timed out without speech, switch HUD to LISTENING
+            if (!this.isAssistantSpeaking) {
+              this._sendToClient({
+                type: 'CALL_STATUS_UPDATE',
+                status: 'LISTENING'
+              });
+            }
           }
-        }, 4000);
+        }, 3000);
 
         try {
           this.googleWs.send(JSON.stringify(greetingPayload));
@@ -549,6 +567,13 @@ class LiveVoiceSession {
         for (const p of parts) {
           // Audio chunk (PCM 24kHz Base64)
           if (p.inlineData && p.inlineData.data) {
+            if (!this.isAssistantSpeaking) {
+              this.turnsCount = (this.turnsCount || 0) + 1;
+              if (!this.hasLoggedFirstAudio) {
+                this.hasLoggedFirstAudio = true;
+                console.log(`[LIVE-VOICE] 🔊 Audio response streaming from Gemini to client.`);
+              }
+            }
             this.isAssistantSpeaking = true;
             this.isGreetingPending   = false;
             this.isExecutingTool     = false;
@@ -562,7 +587,7 @@ class LiveVoiceSession {
               status: 'SPEAKING'
             });
           }
-          // Text transcript from model
+          // Text transcript from model (if returned by model)
           if (p.text) {
             turnText += p.text;
           }
@@ -573,6 +598,8 @@ class LiveVoiceSession {
           this.turnHistory.push({ role: 'assistant', text: turnText });
           // Async persist to nexa_chat_memories (non-blocking — never delay audio)
           supabaseMemories.saveChatMemory('nexa', turnText.slice(0, 800), 'live_call').catch(() => {});
+        } else if (this.isAssistantSpeaking && msg.serverContent.turnComplete) {
+          this.turnHistory.push({ role: 'assistant', text: '(Respon suara N.E.X.A)' });
         }
 
         // If turnComplete is reached, return state to LISTENING (only if call is not ending)
@@ -684,18 +711,30 @@ class LiveVoiceSession {
     }
 
     this.lastClientInputTime = Date.now();
+    this.incomingAudioChunkCount = (this.incomingAudioChunkCount || 0) + 1;
+    if (this.incomingAudioChunkCount === 1 || this.incomingAudioChunkCount % 100 === 0) {
+      console.log(`[LIVE-VOICE] 🎙️ Mic audio stream from Android: ${this.incomingAudioChunkCount} chunks streamed.`);
+    }
 
-    // GATING: Do not forward mic noise while tool response is being synthesized or greeting is pending
-    if (this.isExecutingTool || this.isGreetingPending) {
+    // If user starts speaking while greeting is pending, cancel greeting pending immediately (barge-in)
+    if (this.isGreetingPending) {
+      this.isGreetingPending = false;
+    }
+
+    // GATING: Do not forward mic noise while tool response is being synthesized
+    if (this.isExecutingTool) {
       return;
     }
 
+    // Google Gemini Multimodal Live API protobuf spec: message RealtimeInput { repeated Blob media_chunks = 1; }
     const realtimeMsg = {
       realtimeInput: {
-        audio: {
-          mimeType: 'audio/pcm;rate=16000',
-          data: pcmBase64
-        }
+        mediaChunks: [
+          {
+            mimeType: 'audio/pcm;rate=16000',
+            data: pcmBase64
+          }
+        ]
       }
     };
 
@@ -738,19 +777,22 @@ class LiveVoiceSession {
     }
     if (!jpegBase64 || typeof jpegBase64 !== 'string') return;
 
+    // Google Gemini Multimodal Live API protobuf spec: mediaChunks with image/jpeg
     const frameMsg = {
       realtimeInput: {
-        video: {
-          mimeType: 'image/jpeg',
-          data: jpegBase64
-        }
+        mediaChunks: [
+          {
+            mimeType: 'image/jpeg',
+            data: jpegBase64
+          }
+        ]
       }
     };
 
     try {
       this.googleWs.send(JSON.stringify(frameMsg));
     } catch (err) {
-      console.error(`[LIVE-VOICE] Failed to forward video frame to Google:`, err.message);
+      console.error(`[LIVE-VOICE] ❌ Failed to forward video frame to Google:`, err.message);
     }
   }
 
@@ -824,10 +866,12 @@ class LiveVoiceSession {
       try {
         this.googleWs.send(JSON.stringify({
           realtimeInput: {
-            audio: {
-              mimeType: 'audio/pcm;rate=16000',
-              data: silenceBase64
-            }
+            mediaChunks: [
+              {
+                mimeType: 'audio/pcm;rate=16000',
+                data: silenceBase64
+              }
+            ]
           }
         }));
       } catch (err) {
