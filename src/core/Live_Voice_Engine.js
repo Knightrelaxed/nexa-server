@@ -40,8 +40,8 @@ const GOOGLE_KEYS = [
 // Dual-Tier Live Models
 // ────────────────────────────────────────────────────────────────────────────
 const LIVE_MODELS = {
-  TIER_1_SPEED:    'models/gemini-3.8-live',              // Flagship Gemini 3.8 Live (65K TPM, Unlimited RPM)
-  TIER_2_MARATHON: 'models/gemini-3.1-flash-live-preview' // Fast Failover / Speed Marathon (Gemini 3 Flash Live)
+  TIER_1_SPEED:    'models/gemini-3.1-flash-live-preview', // Rock-solid, stable low-latency live voice
+  TIER_2_MARATHON: 'models/gemini-3.8-live'               // Alternative failover tier
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -740,6 +740,11 @@ class LiveVoiceSession {
       rms = this._calculatePcmRms(pcmBuf);
     } catch (_) {}
 
+    // Periodic stream heartbeat logging (every ~5s / 50 chunks)
+    if (this.incomingAudioChunkCount === 1 || this.incomingAudioChunkCount % 50 === 0) {
+      console.log(`[LIVE-VOICE] 🎙️ Audio stream active: ${this.incomingAudioChunkCount} chunks (RMS: ${rms.toFixed(0)}, UserSpeaking: ${this.isUserSpeaking})`);
+    }
+
     // GATING: Do not forward mic noise while tool response is being synthesized
     if (this.isExecutingTool) {
       return;
@@ -753,19 +758,17 @@ class LiveVoiceSession {
     }
 
     // Release greeting pending on voice activity
-    if (this.isGreetingPending && rms > 800) {
+    if (this.isGreetingPending && rms > 400) {
       this.isGreetingPending = false;
     }
 
-    // Google Gemini Multimodal Live API protobuf spec: message RealtimeInput { repeated Blob media_chunks = 1; }
+    // Google Gemini Multimodal Live API format (media_chunks deprecated, audio required)
     const realtimeMsg = {
       realtimeInput: {
-        mediaChunks: [
-          {
-            mimeType: 'audio/pcm;rate=16000',
-            data: pcmBase64
-          }
-        ]
+        audio: {
+          mimeType: 'audio/pcm;rate=16000',
+          data: pcmBase64
+        }
       }
     };
 
@@ -776,7 +779,7 @@ class LiveVoiceSession {
     }
 
     // ── Server-Side Voice Activity Detection (VAD) & Turn Commit ──
-    const SPEECH_RMS_THRESHOLD = 750;
+    const SPEECH_RMS_THRESHOLD = 400;
 
     if (rms >= SPEECH_RMS_THRESHOLD) {
       // Voice detected
@@ -785,6 +788,7 @@ class LiveVoiceSession {
         this.isUserSpeaking = true;
         this.userSpeechStartTime = Date.now();
         this.userTurnChunkCount = 0;
+        console.log(`[LIVE-VOICE] 🗣️ User speech started (RMS: ${rms.toFixed(0)} >= ${SPEECH_RMS_THRESHOLD}).`);
         this._sendToClient({
           type: 'CALL_STATUS_UPDATE',
           status: 'LISTENING'
@@ -805,7 +809,7 @@ class LiveVoiceSession {
           if (!this.isActive || !this.isSetupComplete) return;
           if (!this.isUserSpeaking) return;
 
-          if (this.userTurnChunkCount >= 3) {
+          if (this.userTurnChunkCount >= 2) {
             console.log(`[LIVE-VOICE] 🎤 End of user speech detected (${this.userTurnChunkCount} chunks, RMS: ${rms.toFixed(0)}). Committing turn to Gemini...`);
             this.isUserSpeaking = false;
             this.vadSilenceTimer = null;
@@ -862,15 +866,13 @@ class LiveVoiceSession {
     }
     if (!jpegBase64 || typeof jpegBase64 !== 'string') return;
 
-    // Google Gemini Multimodal Live API protobuf spec: mediaChunks with image/jpeg
+    // Google Gemini Multimodal Live API format (media_chunks deprecated, video required)
     const frameMsg = {
       realtimeInput: {
-        mediaChunks: [
-          {
-            mimeType: 'image/jpeg',
-            data: jpegBase64
-          }
-        ]
+        video: {
+          mimeType: 'image/jpeg',
+          data: jpegBase64
+        }
       }
     };
 
@@ -951,12 +953,10 @@ class LiveVoiceSession {
       try {
         this.googleWs.send(JSON.stringify({
           realtimeInput: {
-            mediaChunks: [
-              {
-                mimeType: 'audio/pcm;rate=16000',
-                data: silenceBase64
-              }
-            ]
+            audio: {
+              mimeType: 'audio/pcm;rate=16000',
+              data: silenceBase64
+            }
           }
         }));
       } catch (err) {
@@ -1201,6 +1201,17 @@ function getActiveSessionForClient(clientWs) {
   for (const session of activeSessions.values()) {
     if (session.clientWs === clientWs && session.isActive) {
       return session;
+    }
+  }
+  // Single active session fallback: If mobile bridge socket reference changed or reconnected
+  if (activeSessions.size === 1) {
+    const onlySession = activeSessions.values().next().value;
+    if (onlySession && onlySession.isActive) {
+      if (clientWs && onlySession.clientWs !== clientWs) {
+        console.log(`[LIVE-VOICE] 🔄 Updating clientWs reference for active session [${onlySession.sessionId}]`);
+        onlySession.clientWs = clientWs;
+      }
+      return onlySession;
     }
   }
   return null;

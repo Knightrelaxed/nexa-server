@@ -155,6 +155,11 @@ function initWebSocket(server) {
               if (pcmData) {
                 activeSession.handleIncomingClientAudio(pcmData);
               }
+            } else {
+              if (!ws._lastNoSessionWarn || Date.now() - ws._lastNoSessionWarn > 5000) {
+                ws._lastNoSessionWarn = Date.now();
+                console.warn('[NEXA-BRIDGE-WS] ⚠️ Audio stream received but no active LiveVoiceSession found for client');
+              }
             }
           } catch (e) {
             console.error('[NEXA-BRIDGE-WS] Audio stream relay error:', e.message);
