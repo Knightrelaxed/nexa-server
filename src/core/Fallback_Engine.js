@@ -140,9 +140,7 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
  *   Tier 5-8  : Google Gemini 3.5 Flash Key 1-4 (The Fast & Balanced Secondary)
  *   Tier 9-12 : Google Gemini 3.6 Flash Key 1-4 (The Rock-Solid Tertiary: 1M Context)
  *   Tier 13   : Mistral Pixtral 12B (European Datacenter)
- *   Tier 14   : Puter AI Multi-Model Pool (Codestral & GPT-4o)
- *   Tier 15   : OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
- *   Tier 16   : Dumb Mode (Emergency Offline Response)
+ *   Tier 14   : Dumb Mode (Emergency Offline Response)
  *
  * MODE HEAVY (Konteks Berat & Berpikir Kritis: otomatis jika threshold/keyword terpenuhi):
  *   Tier 1-4  : Google Gemini 3.8 Flash Key 1-4 (Deep Reasoning Priority)
@@ -150,9 +148,7 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
  *   Tier 9-12 : Google Gemma 4 26B Key 1-4 (Skip-CoT Fast Companion)
  *   Tier 13-16: Google Gemini 3.5 Flash Key 1-4 (Fast & Balanced Tertiary)
  *   Tier 17   : Mistral Pixtral 12B (European Datacenter)
- *   Tier 18   : Puter AI Multi-Model Pool (Codestral & GPT-4o)
- *   Tier 19   : OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
- *   Tier 20   : Dumb Mode (Emergency Offline Response)
+ *   Tier 18   : Dumb Mode (Emergency Offline Response)
  *
  * Trigger HEAVY otomatis:
  *   a) Pesan MURNI Tuan Faqih > 1.000 karakter
@@ -325,16 +321,6 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     ...(env.MISTRAL_API_KEY ? [{
       name: 'Tier X (Mistral Pixtral 12B)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
-    }] : []),
-    // Puter AI Multi-Model Pool (Codestral -> GPT-4o -> Mistral-Large -> Gemma 4 31B)
-    ...(env.PUTER_AUTH_TOKEN ? [{
-      name: 'Tier X (Puter AI Pool - Codestral & GPT-4o)',
-      fn: () => callPuter(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
-    }] : []),
-    // OpenRouter Multi-Model Free Pool (LLaMA 3.3 70B & Qwen 2.5 72B)
-    ...(env.OPENROUTER_API_KEY ? [{
-      name: 'Tier X (OpenRouter Multi-Model Free Pool)',
-      fn: () => callOpenRouter(prompt, systemInstruction, temperature, jsonMode)
     }] : [])
   ];
 
@@ -685,7 +671,7 @@ async function callMistral(prompt, systemInstruction, temperature, jsonMode = tr
     try {
       const response = await axios.post('https://api.mistral.ai/v1/chat/completions', requestBody, {
         headers: { 'Authorization': `Bearer ${env.MISTRAL_API_KEY}`, 'Content-Type': 'application/json' },
-        timeout: 8000
+        timeout: 15000
       });
       return response.data.choices[0].message.content;
     } catch (e) {
@@ -696,103 +682,6 @@ async function callMistral(prompt, systemInstruction, temperature, jsonMode = tr
       throw e;
     }
   }
-}
-
-async function callPuter(prompt, systemInstruction, temperature, jsonMode = true, primaryModelId = 'codestral-latest', retries = 1) {
-  const token = env.PUTER_AUTH_TOKEN;
-  if (!token) throw new Error('No PUTER_AUTH_TOKEN configured');
-
-  // Pool model aktif terverifikasi di Puter AI (diurutkan berdasar kecepatan benchmark real-time)
-  const puterModels = [
-    primaryModelId,
-    'gpt-4o',
-    'mistral-large-latest',
-    'google/gemma-4-31b-it'
-  ].filter((v, i, a) => a.indexOf(v) === i); // deduplicate
-
-  const messages = [];
-  if (systemInstruction) {
-    messages.push({ role: 'system', content: systemInstruction });
-  }
-  messages.push({ role: 'user', content: prompt });
-
-  for (const modelId of puterModels) {
-    const requestBody = {
-      model: modelId,
-      messages: messages,
-      temperature,
-      max_tokens: 1500
-    };
-    if (jsonMode) requestBody.response_format = { type: 'json_object' };
-
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        const response = await axios.post('https://api.puter.com/puterai/openai/v1/chat/completions', requestBody, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 6000
-        });
-        return response.data.choices[0].message.content;
-      } catch (e) {
-        if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 1000));
-          continue;
-        }
-        asyncWarn(`[FALLBACK] Puter AI model ${modelId} failed:`, getErrDetails(e));
-        break; // Pindah ke model berikutnya dalam pool Puter AI
-      }
-    }
-  }
-
-  throw new Error('All Puter AI pool models exhausted.');
-}
-
-async function callOpenRouter(prompt, systemInstruction, temperature, jsonMode = true, retries = 2) {
-  const models = [
-    'google/gemma-4-31b-it:free',
-    'google/gemma-4-26b-a4b-it:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
-    'qwen/qwen3-next-80b-a3b-instruct:free',
-    'liquid/lfm-2.5-1.2b-instruct:free'
-  ];
-
-  for (const model of models) {
-    const requestBody = {
-      model,
-      messages: [
-        { role: 'system', content: systemInstruction },
-        { role: 'user', content: prompt }
-      ],
-      temperature,
-      max_tokens: 1500
-    };
-    if (jsonMode) requestBody.response_format = { type: 'json_object' };
-
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', requestBody, {
-          headers: {
-            'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://nexa.ai',
-            'X-Title': 'NEXA Assistant'
-          },
-          timeout: 7000
-        });
-        return response.data.choices[0].message.content;
-      } catch (e) {
-        if (e.response?.status === 503 && attempt < retries) {
-          await new Promise(r => setTimeout(r, attempt * 2000));
-          continue;
-        }
-        asyncWarn(`[FALLBACK] OpenRouter model ${model} failed:`, getErrDetails(e));
-        break; // Stop retrying this specific model and jump to the next free model in the list
-      }
-    }
-  }
-  throw new Error('All OpenRouter fallback models exhausted.');
 }
 
 module.exports = {
