@@ -41,7 +41,7 @@ const GOOGLE_KEYS = [
 // ────────────────────────────────────────────────────────────────────────────
 const LIVE_MODELS = {
   TIER_1_SPEED:    'models/gemini-3.1-flash-live-preview', // Rock-solid, stable low-latency live voice
-  TIER_2_MARATHON: 'models/gemini-3.8-live'               // Alternative failover tier
+  TIER_2_MARATHON: 'models/gemini-3.1-flash-live-preview' // Consistent high-speed fallback
 };
 
 // ────────────────────────────────────────────────────────────────────────────
