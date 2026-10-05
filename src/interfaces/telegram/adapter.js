@@ -836,7 +836,7 @@ async function handleTelegramWebhook(req, res) {
       }
 
       await respondToTelegram(
-        '<b>Menghubungi HP Tuan Faqih...</b>\n\nPanggilan suara langsung telah dikirim ke Samsung A33 5G via Nexa Bridge. Silakan angkat panggilan di layar HP untuk mulai berbicara dengan Gemini 3.8 Live.'
+        'Menghubungi HP Tuan Faqih...'
       );
       deliverWebhookReply();
 
