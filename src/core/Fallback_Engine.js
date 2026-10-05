@@ -139,7 +139,7 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
  *   Tier 1-4  : Google Gemma 4 26B Key 1-4 (The Ultra-Natural Persona)
  *   Tier 5-8  : Google Gemini 3.5 Flash Key 1-4 (The Fast & Balanced Secondary)
  *   Tier 9-12 : Google Gemini 3.6 Flash Key 1-4 (The Rock-Solid Tertiary: 1M Context)
- *   Tier 13   : Mistral Pixtral 12B (European Datacenter)
+ *   Tier 13   : Mistral Codestral (European Datacenter)
  *   Tier 14   : Dumb Mode (Emergency Offline Response)
  *
  * MODE HEAVY (Konteks Berat & Berpikir Kritis: otomatis jika threshold/keyword terpenuhi):
@@ -147,7 +147,7 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
  *   Tier 5-8  : Google Gemini 3.6 Flash Key 1-4 (1 Juta Token Window, Stable Secondary)
  *   Tier 9-12 : Google Gemma 4 26B Key 1-4 (Skip-CoT Fast Companion)
  *   Tier 13-16: Google Gemini 3.5 Flash Key 1-4 (Fast & Balanced Tertiary)
- *   Tier 17   : Mistral Pixtral 12B (European Datacenter)
+ *   Tier 17   : Mistral Codestral (European Datacenter)
  *   Tier 18   : Dumb Mode (Emergency Offline Response)
  *
  * Trigger HEAVY otomatis:
@@ -317,10 +317,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     : [...googleGemmaBlock, ...gemini35Block, ...gemini36Block];
 
   const externalTiers = [
-    // Mistral Pixtral 12B (European Datacenter)
+    // Mistral Codestral (European Datacenter)
     ...(env.MISTRAL_API_KEY ? [{
-      name: 'Tier X (Mistral Pixtral 12B)',
-      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'pixtral-12b-2409')
+      name: 'Tier X (Mistral Codestral)',
+      fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
     }] : [])
   ];
 
@@ -655,7 +655,7 @@ async function callHuggingFaceInference(prompt, systemInstruction, temperature, 
   }
 }
 
-async function callMistral(prompt, systemInstruction, temperature, jsonMode = true, modelId = 'pixtral-12b-2409', retries = 3) {
+async function callMistral(prompt, systemInstruction, temperature, jsonMode = true, modelId = 'codestral-latest', retries = 3) {
   const requestBody = {
     model: modelId,
     messages: [
