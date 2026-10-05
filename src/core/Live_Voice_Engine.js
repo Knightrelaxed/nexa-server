@@ -169,6 +169,26 @@ class LiveVoiceSession {
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
     this.lastClientInputTime = Date.now();
+    // Server-Side VAD (Voice Activity Detection) state
+    this.isUserSpeaking         = false;
+    this.userSpeechStartTime     = 0;
+    this.lastVoiceActivityTime   = 0;
+    this.userTurnChunkCount      = 0;
+    this.vadSilenceTimer         = null;
+    this.turnsCount              = 0;
+    this.hasLoggedFirstAudio     = false;
+    this.incomingAudioChunkCount = 0;
+  }
+
+  _calculatePcmRms(buffer) {
+    if (!buffer || buffer.length < 2) return 0;
+    let sum = 0;
+    const sampleCount = buffer.length / 2;
+    for (let i = 0; i < sampleCount; i++) {
+      const v = buffer.readInt16LE(i * 2);
+      sum += v * v;
+    }
+    return Math.sqrt(sum / sampleCount);
   }
 
   /**
@@ -177,10 +197,10 @@ class LiveVoiceSession {
   async start() {
     this.isActive = true;
     console.log(`[LIVE-VOICE] 🚀 Starting Live Session [${this.sessionId}] | Model: ${this.currentModel}`);
-    // Immediately show THINKING on HUD so client knows session is connecting
+    // Keep HUD on standard symmetrical round cyan LISTENING eyes
     this._sendToClient({
       type: 'CALL_STATUS_UPDATE',
-      status: 'THINKING'
+      status: 'LISTENING'
     });
     await this._connectGoogleWs();
   }
@@ -504,10 +524,10 @@ class LiveVoiceSession {
           model: this.currentModel
         });
 
-        // Set HUD to THINKING while greeting is generating
+        // Set HUD to LISTENING (clean symmetrical round cyan eyes)
         this._sendToClient({
           type: 'CALL_STATUS_UPDATE',
-          status: 'THINKING'
+          status: 'LISTENING'
         });
 
         // Proactive Initial Vocal Greeting (Dynamic, organic & context-aware)
@@ -712,18 +732,29 @@ class LiveVoiceSession {
 
     this.lastClientInputTime = Date.now();
     this.incomingAudioChunkCount = (this.incomingAudioChunkCount || 0) + 1;
-    if (this.incomingAudioChunkCount === 1 || this.incomingAudioChunkCount % 100 === 0) {
-      console.log(`[LIVE-VOICE] 🎙️ Mic audio stream from Android: ${this.incomingAudioChunkCount} chunks streamed.`);
-    }
 
-    // If user starts speaking while greeting is pending, cancel greeting pending immediately (barge-in)
-    if (this.isGreetingPending) {
-      this.isGreetingPending = false;
-    }
+    // Decode PCM buffer for energy (RMS) calculation
+    let rms = 0;
+    try {
+      const pcmBuf = Buffer.from(pcmBase64, 'base64');
+      rms = this._calculatePcmRms(pcmBuf);
+    } catch (_) {}
 
     // GATING: Do not forward mic noise while tool response is being synthesized
     if (this.isExecutingTool) {
       return;
+    }
+
+    // Barge-in: if assistant is speaking and user speaks with clear voice
+    if (this.isAssistantSpeaking && rms > 1200) {
+      console.log(`[LIVE-VOICE] ⚡ User voice barge-in detected (RMS: ${rms.toFixed(0)}).`);
+      this.isAssistantSpeaking = false;
+      this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
+    }
+
+    // Release greeting pending on voice activity
+    if (this.isGreetingPending && rms > 800) {
+      this.isGreetingPending = false;
     }
 
     // Google Gemini Multimodal Live API protobuf spec: message RealtimeInput { repeated Blob media_chunks = 1; }
@@ -742,6 +773,60 @@ class LiveVoiceSession {
       this.googleWs.send(JSON.stringify(realtimeMsg));
     } catch (err) {
       console.error(`[LIVE-VOICE] ❌ Failed to forward audio to Google:`, err.message);
+    }
+
+    // ── Server-Side Voice Activity Detection (VAD) & Turn Commit ──
+    const SPEECH_RMS_THRESHOLD = 750;
+
+    if (rms >= SPEECH_RMS_THRESHOLD) {
+      // Voice detected
+      this.lastVoiceActivityTime = Date.now();
+      if (!this.isUserSpeaking) {
+        this.isUserSpeaking = true;
+        this.userSpeechStartTime = Date.now();
+        this.userTurnChunkCount = 0;
+        this._sendToClient({
+          type: 'CALL_STATUS_UPDATE',
+          status: 'LISTENING'
+        });
+      }
+      this.userTurnChunkCount++;
+
+      // Reset any silence commit timer
+      if (this.vadSilenceTimer) {
+        clearTimeout(this.vadSilenceTimer);
+        this.vadSilenceTimer = null;
+      }
+    } else if (this.isUserSpeaking) {
+      // Silence following user speech
+      if (!this.vadSilenceTimer) {
+        // 800ms of consecutive silence commits the turn
+        this.vadSilenceTimer = setTimeout(() => {
+          if (!this.isActive || !this.isSetupComplete) return;
+          if (!this.isUserSpeaking) return;
+
+          if (this.userTurnChunkCount >= 3) {
+            console.log(`[LIVE-VOICE] 🎤 End of user speech detected (${this.userTurnChunkCount} chunks, RMS: ${rms.toFixed(0)}). Committing turn to Gemini...`);
+            this.isUserSpeaking = false;
+            this.vadSilenceTimer = null;
+
+            try {
+              this.googleWs.send(JSON.stringify({
+                clientContent: { turnComplete: true }
+              }));
+              this._sendToClient({
+                type: 'CALL_STATUS_UPDATE',
+                status: 'THINKING'
+              });
+            } catch (err) {
+              console.warn(`[LIVE-VOICE] Failed to commit turnComplete:`, err.message);
+            }
+          } else {
+            this.isUserSpeaking = false;
+            this.vadSilenceTimer = null;
+          }
+        }, 800);
+      }
     }
   }
 
@@ -908,9 +993,10 @@ class LiveVoiceSession {
     const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
     console.log(`[LIVE-VOICE] 🛑 Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);
 
-    // BUG 3 & 4 FIX: Clear keepalive and watchdog intervals on close
+    // BUG 3 & 4 FIX: Clear keepalive, watchdog intervals, and VAD timer on close
     if (this.keepaliveInterval) { clearInterval(this.keepaliveInterval); this.keepaliveInterval = null; }
     if (this.watchdogInterval)  { clearInterval(this.watchdogInterval);  this.watchdogInterval  = null; }
+    if (this.vadSilenceTimer)   { clearTimeout(this.vadSilenceTimer);    this.vadSilenceTimer   = null; }
 
     if (this.googleWs) {
       try { this.googleWs.close(1000, 'Session Closed'); } catch (_) {}
