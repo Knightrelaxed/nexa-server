@@ -51,7 +51,7 @@ const groqKeys = [
 // ============================================================
 // SMART ADAPTIVE CONTEXT ROUTING (SACR) - v2.6
 // Memilah beban konteks secara otomatis:
-//   MODE LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
+//   MODE LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash Lite (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
 //   MODE HEAVY: Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
 // ============================================================
 
@@ -137,7 +137,7 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
  *
  * MODE LIGHT (Konteks Normal / Default):
  *   Tier 1-4  : Google Gemma 4 26B Key 1-4 (The Ultra-Natural Persona)
- *   Tier 5-8  : Google Gemini 3.5 Flash Key 1-4 (The Fast & Balanced Secondary)
+ *   Tier 5-8  : Google Gemini 3.5 Flash Lite Key 1-4 (The Sub-Second Sprinter)
  *   Tier 9-12 : Google Gemini 3.6 Flash Key 1-4 (The Rock-Solid Tertiary: 1M Context)
  *   Tier 13   : Mistral Codestral (European Datacenter)
  *   Tier 14   : Dumb Mode (Emergency Offline Response)
@@ -253,9 +253,9 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 
   const inputChars = (prompt?.length || 0) + (systemInstruction?.length || 0);
   // [SACR v2.6 DUAL-MODE ADAPTIVE MATRIX]
-  // MODE LIGHT : Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
+  // MODE LIGHT : Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash Lite (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
   // MODE HEAVY : Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
-  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.8 -> Gemini 3.6 -> Gemma 4 26B -> Gemini 3.5]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.5 -> Gemini 3.6]'} | Total chars: ${inputChars}`);
+  asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.8 -> Gemini 3.6 -> Gemma 4 26B -> Gemini 3.5]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.5 Lite -> Gemini 3.6]'} | Total chars: ${inputChars}`);
 
   // 1. Google AI Studio Gemma 4 26B (4 Keys: Ultra-Natural Persona, ~2.8s)
   const googleGemmaBlock = googleApiKeys
@@ -284,7 +284,16 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 4. Gemini 3.5 Flash (4 Keys: Fast & Balanced Workhorse)
+  // 4. Gemini 3.5 Flash Lite (4 Keys: Sub-Second Ultra-Fast Secondary Engine for LIGHT mode)
+  const gemini35FlashLiteBlock = googleApiKeys
+    .filter(Boolean)
+    .map((key, i) => ({
+      group: 'gemini-3.5-flash-lite',
+      name: `Tier X (Gemini 3.5 Flash Lite Key ${i + 1})`,
+      fn: () => callGeminiWithRetry(key, 'gemini-3.5-flash-lite', prompt, systemInstruction, temperature, jsonMode, 1)
+    }));
+
+  // 5. Gemini 3.5 Flash (4 Keys: Fast & Balanced Workhorse for HEAVY mode)
   const gemini35Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -293,7 +302,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGeminiWithRetry(key, 'gemini-3.5-flash', prompt, systemInstruction, temperature, jsonMode, 1)
     }));
 
-  // 5. Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine)
+  // 6. Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine)
   const groqQwenBlock = groqKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -301,7 +310,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       fn: () => callGroqQwen(key, prompt, systemInstruction, temperature, jsonMode)
     }));
 
-  // 6. Cerebras (4 Keys: PayGo / Fallback)
+  // 7. Cerebras (4 Keys: PayGo / Fallback)
   const cerebrasBlock = cerebrasKeys
     .filter(Boolean)
     .map((key, i) => ({
@@ -310,11 +319,11 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }));
 
   // Penataan Dinamis Top Tiers Sesuai Mode Kognitif:
-  // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
+  // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash Lite (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
   // HEAVY: Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
   const topGoogleBlock = heavy
     ? [...gemini38Block, ...gemini36Block, ...googleGemmaBlock, ...gemini35Block]
-    : [...googleGemmaBlock, ...gemini35Block, ...gemini36Block];
+    : [...googleGemmaBlock, ...gemini35FlashLiteBlock, ...gemini36Block];
 
   const externalTiers = [
     // Mistral Codestral (European Datacenter)
@@ -472,7 +481,7 @@ async function callGeminiWithRetry(apiKey, modelName, prompt, systemInstruction,
     maxOutputTokens: jsonMode ? 2048 : 4096
   };
 
-  if (/3\.8|3\.7|3\.6|3\.5|2\.5|2\.0/i.test(modelName)) {
+  if (!modelName.includes('lite') && /3\.8|3\.7|3\.6|3\.5|2\.5|2\.0/i.test(modelName)) {
     generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
 
