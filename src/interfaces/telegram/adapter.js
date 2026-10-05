@@ -821,6 +821,32 @@ async function handleTelegramWebhook(req, res) {
 
     try {
     // ============================================================
+    // [DIRECT COMMAND] INSTANT LIVE CALL INTERCEPTOR (/call, /telepon, /callnexa)
+    // Langsung memanggil HP tanpa melalui AI Router / penalaran LLM
+    // ============================================================
+    if (textInput && /^(\/call|\/telepon|\/callnexa|\/panggilan)\b/i.test(textInput.trim())) {
+      console.log('[TELEGRAM-CMD] Menerima perintah direct call:', textInput.trim());
+      const mobileBridge = require('../mobile_bridge/adapter');
+      if (!mobileBridge.isConnected()) {
+        await respondToTelegram(
+          '<b>Panggilan Tidak Dapat Terhubung</b>\n\nNexa Bridge pada HP Samsung A33 5G sedang offline atau belum terhubung ke WebSocket server. Pastikan aplikasi Nexa Bridge aktif di HP dan terhubung ke internet.'
+        );
+        deliverWebhookReply();
+        return;
+      }
+
+      await respondToTelegram(
+        '<b>Menghubungi HP Tuan Faqih...</b>\n\nPanggilan suara langsung telah dikirim ke Samsung A33 5G via Nexa Bridge. Silakan angkat panggilan di layar HP untuk mulai berbicara dengan Gemini 3.8 Live.'
+      );
+      deliverWebhookReply();
+
+      mobileBridge.simulateIncomingCall('N.E.X.A Chief of Staff', 'Panggilan langsung dari perintah Telegram.', true).catch(err => {
+        console.error('[TELEGRAM-CMD] Error saat simulateIncomingCall:', err.message);
+      });
+      return;
+    }
+
+    // ============================================================
     // [PHASE 4] WHATSAPP LOGIN & LOGOUT COMMAND INTERCEPTOR
     // Menangani perintah /wa_login dan /wa_logout langsung dari Telegram
     // ============================================================
