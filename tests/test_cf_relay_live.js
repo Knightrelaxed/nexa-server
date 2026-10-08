@@ -5,7 +5,7 @@ const key = process.env.GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY;
 const rawBaseUrl = process.env.GEMINI_BASE_URL || 'https://nexa-relay.dazatulloh2.workers.dev';
 const cleanHost = rawBaseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-const path = `/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${key}`;
+const path = `/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${key}`;
 const wsUrl = `wss://${cleanHost}${path}`;
 
 console.log('='.repeat(70));

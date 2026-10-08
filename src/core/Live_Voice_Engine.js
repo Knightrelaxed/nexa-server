@@ -40,8 +40,8 @@ const GOOGLE_KEYS = [
 // Dual-Tier Live Models
 // ────────────────────────────────────────────────────────────────────────────
 const LIVE_MODELS = {
-  TIER_1_SPEED:    'models/gemini-3.1-flash-live-preview', // Rock-solid, stable low-latency live voice
-  TIER_2_MARATHON: 'models/gemini-3.1-flash-live-preview' // Consistent high-speed fallback
+  TIER_1_SPEED:    'models/gemini-3.8-live',              // Flagship Gemini 3.8 Live (high reasoning, sub-second speech)
+  TIER_2_MARATHON: 'models/gemini-3.1-flash-live-preview' // Rock-solid speed failover tier
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ class LiveVoiceSession {
     const apiKey    = this._getApiKey();
     const rawBase   = process.env.GEMINI_LIVE_BASE_URL || 'https://generativelanguage.googleapis.com';
     const cleanHost = rawBase.replace(/^https?:\/\//, '').replace(/\/$/, '');
-    const url       = `wss://${cleanHost}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+    const url       = `wss://${cleanHost}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
     console.log(`[LIVE-VOICE] 🔌 Connecting to Google Live API (${cleanHost}, Key idx: ${this.currentKeyIndex}, Model: ${this.currentModel})...`);
 
