@@ -70,7 +70,9 @@ Anda adalah N.E.X.A (Neural Executive with Xenial Agent), Chief of Staff digital
 
 [PANDUAN PERCAKAPAN SUARA (VOICE DYNAMICS)]
 - Ringkas & Berbobot: Karena ini percakapan suara via telepon, berikan respon 1-2 kalimat yang padat dan langsung ke sasaran untuk konfirmasi aksi.
-- DILARANG KERAS menggunakan frasa robotik klise Customer Service / Call Center seperti: "Ada yang bisa saya bantu?", "Ada yang bisa dibantu?", "Ada yang perlu saya bantu?". Berbicaralah seperti Chief of Staff / sahabat eksekutif berkelas ("N.E.X.A standby, Tuan", "Siap mendampingi, Tuan Faqih", "Ya Tuan, saya mendengarkan", "Beres Tuan").
+- Selalu gunakan gaya bicara Chief of Staff atau sahabat eksekutif berkelas (contoh: "N.E.X.A standby, Tuan", "Siap mendampingi, Tuan Faqih", "Ya Tuan, saya mendengarkan", "Beres Tuan").
+- DILARANG bertindak seperti operator telepon umum atau customer service (JANGAN bertanya nomor telepon, jangan menggunakan salam kaku call center).
+- Sapaan Pembuka: Saat panggilan terhubung dan ada sapaan pembuka, balas dengan hangat dan ringkas: "Halo Tuan Faqih, N.E.X.A siap mendampingi Tuan." atau "Selamat siang Tuan Faqih, N.E.X.A standby."
 - Tanpa Jargon Teknis: Jangan pernah menyebut nama fungsi teknis ("saya memanggil tool recordExpense"). Cukup sampaikan hasil akhirnya secara elegan ("Sudah saya catat ya Tuan, pengeluaran 25 ribu untuk kopi").
 
 [OTORITAS EKSEKUTIF REAL-TIME — TOOLS CALLING]
@@ -118,20 +120,7 @@ function _generateDynamicVocalGreetingInstruction() {
     timeOfDay = 'larut malam';
   }
 
-  const HH = hour.toString().padStart(2, '0');
-  const MM = nowJkt.getMinutes().toString().padStart(2, '0');
-
-  return `[SYSTEM_EVENT]: Tuan Faqih baru saja menyambungkan panggilan telepon (Waktu saat ini: ${timeOfDay}, ${HH}:${MM} WIB).
-Sapa Tuan Faqih secara SPONTAN, HANGAT, SINGKAT, dan BERKELAS dalam 1 kalimat pembuka layaknya Chief of Staff / F.R.I.D.A.Y sejati.
-ATURAN WAJIB:
-1. DILARANG KERAS menggunakan kalimat klise robotik call-center: "Ada yang bisa saya bantu?", "Ada yang bisa dibantu?", "Ada yang perlu saya bantu?".
-2. Buat sapaan bervariasi, luwes, dan hidup, contohnya:
-   - "Halo Tuan Faqih, N.E.X.A standby. Ada kabar apa hari ini?"
-   - "Selamat ${timeOfDay}, Tuan Faqih. Siap mendampingi."
-   - "Ya, Tuan? Saya mendengarkan."
-   - "Halo Tuan, N.E.X.A di sini. Silakan, Tuan."
-   - "Pagi/Siang/Sore/Malam, Tuan Faqih. Ada yang ingin dikoordinasikan?"
-Keluarkan 1 kalimat sapaan pembuka sekarang!`;
+  return `Halo N.E.X.A, panggilan telepon baru saja terhubung pada waktu ${timeOfDay}.`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -168,19 +157,10 @@ class LiveVoiceSession {
     this.isExecutingTool     = false;
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
-    this.isWaitingForModelReply = false;
-    this.waitingSafetyTimer  = null;
     this.lastClientInputTime = Date.now();
-    // Server-Side VAD (Voice Activity Detection) state
-    this.isUserSpeaking         = false;
-    this.userSpeechStartTime     = 0;
-    this.lastVoiceActivityTime   = 0;
-    this.userTurnChunkCount      = 0;
-    this.vadSilenceTimer         = null;
     this.turnsCount              = 0;
     this.hasLoggedFirstAudio     = false;
     this.incomingAudioChunkCount = 0;
-    this.ambientNoiseFloor       = 300;
   }
 
   _calculatePcmRms(buffer) {
@@ -214,17 +194,11 @@ class LiveVoiceSession {
   }
 
   async _connectGoogleWs() {
-    // BUG 2 FIX: Reset setup flag so audio is never sent before setup completes on reconnect
+    // Reset setup and state flags so audio is never sent before setup completes on reconnect
     this.isSetupComplete     = false;
     this.isExecutingTool     = false;
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
-    this.isWaitingForModelReply = false;
-    this.isUserSpeaking      = false;
-    if (this.vadSilenceTimer) {
-      clearTimeout(this.vadSilenceTimer);
-      this.vadSilenceTimer = null;
-    }
     this.lastClientInputTime = Date.now();
 
     const apiKey    = this._getApiKey();
@@ -557,12 +531,10 @@ class LiveVoiceSession {
         };
 
         this.isGreetingPending = true;
-        this.isWaitingForModelReply = true;
         setTimeout(() => {
           if (this.isGreetingPending) {
             this.isGreetingPending = false;
-            this.isWaitingForModelReply = false;
-            // If greeting timed out without speech, switch HUD to LISTENING
+            // If greeting timed out without speech, ensure HUD is LISTENING
             if (!this.isAssistantSpeaking) {
               this._sendToClient({
                 type: 'CALL_STATUS_UPDATE',
@@ -589,21 +561,15 @@ class LiveVoiceSession {
 
       // ── 2. Server Content: Audio Chunks & Text Transcripts ──────────────
       if (msg.serverContent) {
-        if (this.waitingSafetyTimer) {
-          clearTimeout(this.waitingSafetyTimer);
-          this.waitingSafetyTimer = null;
-        }
-        this.isWaitingForModelReply = false;
-        this.isUserSpeaking = false;
-        if (this.vadSilenceTimer) {
-          clearTimeout(this.vadSilenceTimer);
-          this.vadSilenceTimer = null;
-        }
         if (msg.serverContent.interrupted) {
           console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
           this.isAssistantSpeaking = false;
           // Signal Android to flush playback queue and re-open mic immediately
           this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
+          this._sendToClient({
+            type: 'CALL_STATUS_UPDATE',
+            status: 'LISTENING'
+          });
         }
 
         const parts = msg.serverContent.modelTurn?.parts || [];
@@ -652,7 +618,6 @@ class LiveVoiceSession {
           this.isAssistantSpeaking = false;
           this.isGreetingPending   = false;
           this.isExecutingTool     = false;
-          this.isWaitingForModelReply = false;
           this._sendToClient({
             type: 'CALL_STATUS_UPDATE',
             status: 'LISTENING'
@@ -679,11 +644,6 @@ class LiveVoiceSession {
 
       // ── 3. Tool Calls (Function Execution — Parallel Batching) ──────────
       if (msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0) {
-        if (this.waitingSafetyTimer) {
-          clearTimeout(this.waitingSafetyTimer);
-          this.waitingSafetyTimer = null;
-        }
-        this.isWaitingForModelReply = false;
         this.isExecutingTool = true;
         // Notify HUD that tools are executing (Memproses..)
         this._sendToClient({
@@ -738,7 +698,6 @@ class LiveVoiceSession {
         if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
           this.googleWs.send(JSON.stringify(toolResponsePayload));
           console.log(`[LIVE-VOICE] Sent ${responses.length} Tool Response(s) back to Google.`);
-          this.isWaitingForModelReply = true;
           // Tool gating safety release: after 6 seconds max, unblock mic if Google stays silent
           setTimeout(() => {
             if (this.isExecutingTool) {
@@ -754,7 +713,9 @@ class LiveVoiceSession {
   }
 
   /**
-   * Forward incoming audio chunk from Android mic to Google Live API
+   * Forward incoming audio chunk from Android mic directly to Google Live API
+   * Google Gemini Multimodal Live API features native server-side neural VAD
+   * for sub-second, full-duplex speech-to-speech interaction without artificial latency.
    * @param {string} pcmBase64 - Base64 encoded 16kHz 16-bit Mono PCM
    */
   handleIncomingClientAudio(pcmBase64) {
@@ -774,7 +735,7 @@ class LiveVoiceSession {
 
     // Periodic stream heartbeat logging (every ~5s / 50 chunks)
     if (this.incomingAudioChunkCount === 1 || this.incomingAudioChunkCount % 50 === 0) {
-      console.log(`[LIVE-VOICE] Audio stream active: ${this.incomingAudioChunkCount} chunks (RMS: ${rms.toFixed(0)}, UserSpeaking: ${this.isUserSpeaking})`);
+      console.log(`[LIVE-VOICE] Audio stream active: ${this.incomingAudioChunkCount} chunks (RMS: ${rms.toFixed(0)})`);
     }
 
     // GATING 1: Do not forward mic noise while tool response is being synthesized
@@ -796,13 +757,7 @@ class LiveVoiceSession {
       return;
     }
 
-    // GATING 3: While waiting for model reply, suppress low-energy noise chunks (< 800)
-    // so Google is not confused or delayed right after turnComplete
-    if (this.isWaitingForModelReply && rms < 800) {
-      return;
-    }
-
-    // Google Gemini Multimodal Live API format
+    // Forward raw PCM directly to Google Gemini Multimodal Live API
     const realtimeMsg = {
       realtimeInput: {
         audio: {
@@ -818,125 +773,6 @@ class LiveVoiceSession {
       }
     } catch (err) {
       console.error('[LIVE-VOICE] Failed to forward audio to Google:', err.message);
-    }
-
-    // ── Server-Side Voice Activity Detection (VAD) & Adaptive Turn Commit ──
-    // Track ambient noise floor moving average during non-speech intervals
-    if (!this.isUserSpeaking) {
-      this.ambientNoiseFloor = this.ambientNoiseFloor
-        ? (this.ambientNoiseFloor * 0.95 + rms * 0.05)
-        : Math.max(200, rms);
-    }
-
-    // Dynamic speech threshold: Adaptive to environment & headset type
-    // Typical noise floors: Phone quiet room: 100-250 RMS. TWS mic / ambient noise: 450-650 RMS.
-    // Speech is typically 1200 - 3000 RMS.
-    const speechThreshold = Math.max(650, Math.min(1100, Math.round((this.ambientNoiseFloor || 300) * 1.5 + 200)));
-
-    // Do not trigger VAD while assistant is speaking unless genuine loud barge-in
-    if (this.isAssistantSpeaking && rms < 850) {
-      return;
-    }
-
-    // If waiting for model reply and user speaks loudly again, cancel wait
-    if (this.isWaitingForModelReply) {
-      if (rms >= speechThreshold) {
-        this.isWaitingForModelReply = false;
-        if (this.waitingSafetyTimer) {
-          clearTimeout(this.waitingSafetyTimer);
-          this.waitingSafetyTimer = null;
-        }
-      } else {
-        return;
-      }
-    }
-
-    if (rms >= speechThreshold) {
-      // Voice detected
-      this.lastVoiceActivityTime = Date.now();
-      if (!this.isUserSpeaking) {
-        this.isUserSpeaking = true;
-        this.userSpeechStartTime = Date.now();
-        this.userTurnChunkCount = 0;
-        console.log(`[LIVE-VOICE] User speech started (RMS: ${rms.toFixed(0)} >= Threshold: ${speechThreshold}, NoiseFloor: ${Math.round(this.ambientNoiseFloor || 0)}).`);
-        this._sendToClient({
-          type: 'CALL_STATUS_UPDATE',
-          status: 'LISTENING'
-        });
-      }
-      this.userTurnChunkCount++;
-
-      // Reset any silence commit timer
-      if (this.vadSilenceTimer) {
-        clearTimeout(this.vadSilenceTimer);
-        this.vadSilenceTimer = null;
-      }
-
-      // Maximum speech duration safety clamp (commit turn if user speech continues > 6 seconds)
-      const speechDuration = Date.now() - this.userSpeechStartTime;
-      if (speechDuration > 6000 && this.userTurnChunkCount >= 10) {
-        console.log(`[LIVE-VOICE] Max speech duration reached (${speechDuration}ms). Auto-committing turn to Gemini...`);
-        this._commitUserTurn(rms);
-      }
-    } else if (this.isUserSpeaking) {
-      // Silence following user speech
-      if (!this.vadSilenceTimer) {
-        // 800ms of consecutive silence commits the turn
-        this.vadSilenceTimer = setTimeout(() => {
-          if (!this.isActive || !this.isSetupComplete) return;
-          if (!this.isUserSpeaking) return;
-          if (this.isWaitingForModelReply) {
-            this.isUserSpeaking = false;
-            this.vadSilenceTimer = null;
-            return;
-          }
-
-          // Require at least 3 chunks (~300ms) of sustained speech to filter out clicks/breaths
-          if (this.userTurnChunkCount >= 3) {
-            this._commitUserTurn(rms);
-          } else {
-            this.isUserSpeaking = false;
-            this.vadSilenceTimer = null;
-          }
-        }, 800);
-      }
-    }
-  }
-
-  /**
-   * Commit user speech turn to Gemini
-   */
-  _commitUserTurn(rms) {
-    console.log(`[LIVE-VOICE] End of user speech detected (${this.userTurnChunkCount} chunks, RMS: ${rms ? rms.toFixed(0) : 0}). Committing turn to Gemini...`);
-    this.isUserSpeaking = false;
-    if (this.vadSilenceTimer) {
-      clearTimeout(this.vadSilenceTimer);
-      this.vadSilenceTimer = null;
-    }
-    this.isWaitingForModelReply = true;
-
-    // Safety timeout: unlock waiting flag if Google stays silent for > 10s
-    if (this.waitingSafetyTimer) clearTimeout(this.waitingSafetyTimer);
-    this.waitingSafetyTimer = setTimeout(() => {
-      if (this.isWaitingForModelReply) {
-        console.log('[LIVE-VOICE] Safety timeout: Resetting isWaitingForModelReply after 10s.');
-        this.isWaitingForModelReply = false;
-      }
-    }, 10000);
-
-    try {
-      if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
-        this.googleWs.send(JSON.stringify({
-          clientContent: { turnComplete: true }
-        }));
-      }
-      this._sendToClient({
-        type: 'CALL_STATUS_UPDATE',
-        status: 'THINKING'
-      });
-    } catch (err) {
-      console.warn('[LIVE-VOICE] Failed to commit turnComplete:', err.message);
-      this.isWaitingForModelReply = false;
     }
   }
 
@@ -1083,11 +919,10 @@ class LiveVoiceSession {
       const googleSilentMs = Date.now() - this.lastActivityTime;
       const clientSilentMs = Date.now() - this.lastClientInputTime;
 
-      // Condition A: Waiting for model reply but Google silent for > 30s -> stuck generation!
-      if (this.isWaitingForModelReply && googleSilentMs > 30000) {
-        console.warn(`[LIVE-VOICE] Watchdog: Waiting for model reply but Google silent for ${Math.round(googleSilentMs / 1000)}s - triggering failover.`);
-        this.isWaitingForModelReply = false;
-        this._handleFailover(1006, 'Model reply timeout');
+      // Condition A: Client was recently active (< 20s) but Google silent for > 30s -> stuck generation!
+      if (clientSilentMs < 20000 && googleSilentMs > 30000) {
+        console.warn(`[LIVE-VOICE] Watchdog: Client active recently but Google silent for ${Math.round(googleSilentMs / 1000)}s - triggering failover.`);
+        this._handleFailover(1006, 'Google silent timeout');
         return;
       }
 
@@ -1111,11 +946,9 @@ class LiveVoiceSession {
     const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
     console.log(`[LIVE-VOICE] 🛑 Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);
 
-    // BUG 3 & 4 FIX: Clear keepalive, watchdog intervals, VAD and safety timers on close
-    if (this.keepaliveInterval)   { clearInterval(this.keepaliveInterval);   this.keepaliveInterval   = null; }
-    if (this.watchdogInterval)    { clearInterval(this.watchdogInterval);    this.watchdogInterval    = null; }
-    if (this.vadSilenceTimer)     { clearTimeout(this.vadSilenceTimer);      this.vadSilenceTimer     = null; }
-    if (this.waitingSafetyTimer)  { clearTimeout(this.waitingSafetyTimer);   this.waitingSafetyTimer  = null; }
+    // BUG 3 & 4 FIX: Clear keepalive and watchdog intervals on close
+    if (this.keepaliveInterval) { clearInterval(this.keepaliveInterval); this.keepaliveInterval = null; }
+    if (this.watchdogInterval)  { clearInterval(this.watchdogInterval);  this.watchdogInterval  = null; }
 
     if (this.googleWs) {
       try { this.googleWs.close(1000, 'Session Closed'); } catch (_) {}
@@ -1155,18 +988,34 @@ class LiveVoiceSession {
   async _runPassiveLearningPipeline(durationSec) {
     if (!this.turnHistory || this.turnHistory.length === 0) return;
 
-    console.log(`[LIVE-VOICE] 🧠 Starting End-of-Call Passive Learning Pipeline (${this.turnHistory.length} turns, ${durationSec}s)...`);
+    // Filter substantive user turns (require at least 2 real user turns to prevent Gemma meta-refusals)
+    const substantiveUserTurns = this.turnHistory.filter(t =>
+      t.role === 'user' &&
+      t.text &&
+      t.text.trim().length > 5 &&
+      !t.text.includes('panggilan telepon baru saja terhubung')
+    );
+
+    if (substantiveUserTurns.length < 2) {
+      console.log(`[LIVE-VOICE] 🧠 Passive Learning skipped: only ${substantiveUserTurns.length} substantive user turn(s).`);
+      return;
+    }
+
+    console.log(`[LIVE-VOICE] 🧠 Starting End-of-Call Passive Learning Pipeline (${this.turnHistory.length} turns, ${substantiveUserTurns.length} user turns, ${durationSec}s)...`);
 
     // Build conversation text for AI analysis
     const conversationText = this.turnHistory
       .map(t => `${t.role === 'user' ? 'Tuan Faqih' : 'N.E.X.A'}: ${t.text}`)
       .join('\n');
 
+    const REFUSAL_REGEX = /maaf|transkrip|percakapan|kosong|sepertinya|tidak ada|tidak ditemukan|tidak terdapat|tidak ada instruksi|tidak ada aturan|berdasarkan transkrip/i;
+
     // Helper to robustly parse extracted facts across JSON array, single string, or bullet list
     const parseLearnedFacts = (rawOutput) => {
       if (!rawOutput) return [];
       const cleanStr = String(rawOutput || '').trim().replace(/^```json|```$/gi, '').trim();
       if (!cleanStr || cleanStr.length < 5 || cleanStr === '[]' || cleanStr.toLowerCase() === 'none') return [];
+      if (REFUSAL_REGEX.test(cleanStr) && !cleanStr.startsWith('[')) return [];
 
       // 1. Try JSON Array parsing
       try {
@@ -1177,7 +1026,7 @@ class LiveVoiceSession {
           if (Array.isArray(parsed)) {
             return parsed
               .map(s => String(s || '').trim().replace(/^[-*•0-9.)\s]+/, ''))
-              .filter(s => s.length > 5 && !s.toLowerCase().includes('tidak ada'));
+              .filter(s => s.length > 5 && !REFUSAL_REGEX.test(s));
           }
         }
       } catch (_) {}
@@ -1187,12 +1036,7 @@ class LiveVoiceSession {
         return cleanStr
           .split('\n')
           .map(l => l.replace(/^[-*•0-9.)\s]+/, '').trim())
-          .filter(l => l.length > 5 && !l.toLowerCase().startsWith('tidak ada') && !l.startsWith('[') && !l.startsWith('{'));
-      }
-
-      // 3. Single fact string (e.g. from callAI)
-      if (cleanStr.length > 5 && !cleanStr.startsWith('{') && !cleanStr.toLowerCase().includes('tidak ada fakta')) {
-        return [cleanStr.replace(/^[-*•0-9.)\s]+/, '').trim()];
+          .filter(l => l.length > 5 && !REFUSAL_REGEX.test(l) && !l.startsWith('[') && !l.startsWith('{'));
       }
 
       return [];
