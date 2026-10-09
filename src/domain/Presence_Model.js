@@ -53,7 +53,13 @@ class PresenceModel {
     const rawLux = (d.lux !== undefined && d.lux !== null) ? Number(d.lux) : (typeof report.lux === 'number' ? report.lux : null);
     const rawState = String(d.state || report.state || report.condition || '').toUpperCase();
 
-    if (event === 'ROOM_DARK_NIGHT' || event === 'LIGHT_CHANGED' || (rawLux !== null && Number.isFinite(rawLux)) || rawState) {
+    const isLightEvent = event === 'ROOM_DARK_NIGHT' ||
+                         event === 'LIGHT_CHANGED' ||
+                         (rawLux !== null && Number.isFinite(rawLux)) ||
+                         rawState === 'DARK' ||
+                         rawState === 'BRIGHT';
+
+    if (isLightEvent) {
       let condition = 'NORMAL';
       if (event === 'ROOM_DARK_NIGHT' || rawState === 'DARK' || (rawLux !== null && rawLux < 15)) {
         condition = 'GELAP';

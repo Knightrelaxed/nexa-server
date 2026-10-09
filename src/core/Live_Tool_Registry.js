@@ -491,25 +491,38 @@ const LIVE_TOOL_DECLARATIONS = [
 // HIGH-RISK ACTION CONFIRMATION GUARD
 // ────────────────────────────────────────────────────────────────────────────
 const _pendingActionConfirmations = new Map();
+let _userTurnSeq = 0;
+
+function noteUserTurn() {
+  _userTurnSeq++;
+}
 
 function _validateActionConfirmation(toolName, key, previewText, confirmed) {
   const isConfirmed = confirmed === true || String(confirmed).toLowerCase() === 'true';
-  if (isConfirmed) {
+  const pending = _pendingActionConfirmations.get(key);
+
+  if (isConfirmed && pending && pending.expiresAt > Date.now() && _userTurnSeq > pending.seq) {
     _pendingActionConfirmations.delete(key);
     return null;
   }
+
   // Prune expired entries to prevent memory accumulation
   if (_pendingActionConfirmations.size > 100) {
     const now = Date.now();
-    for (const [k, exp] of _pendingActionConfirmations.entries()) {
-      if (exp < now) _pendingActionConfirmations.delete(k);
+    for (const [k, v] of _pendingActionConfirmations.entries()) {
+      if (v.expiresAt < now) _pendingActionConfirmations.delete(k);
     }
   }
-  _pendingActionConfirmations.set(key, Date.now() + 60000);
+
+  _pendingActionConfirmations.set(key, {
+    expiresAt: Date.now() + 60000,
+    seq: _userTurnSeq
+  });
+
   return {
     status: 'NEEDS_CONFIRMATION',
     tool: toolName,
-    message: `Aksi ${toolName} BELUM dieksekusi demi keamanan. Bacakan rincian ini kepada Tuan Faqih: "${previewText}". Mintalah persetujuan verbal eksplisit dari Tuan Faqih. Jika Tuan menyetujuinya, panggil kembali ${toolName} dengan parameter confirmed: true.`
+    message: `Aksi ${toolName} BELUM dieksekusi demi keamanan. Bacakan rincian ini kepada Tuan Faqih: "${previewText}". Mintalah persetujuan verbal eksplisit dari Tuan Faqih. Hanya jika Tuan telah memberikan persetujuannya, panggil kembali ${toolName} dengan parameter confirmed: true.`
   };
 }
 
@@ -1361,5 +1374,6 @@ async function executeLiveTool(toolName, args = {}) {
 
 module.exports = {
   LIVE_TOOL_DECLARATIONS,
-  executeLiveTool
+  executeLiveTool,
+  noteUserTurn
 };

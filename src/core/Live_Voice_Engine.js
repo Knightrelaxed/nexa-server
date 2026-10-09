@@ -10,7 +10,7 @@
 
 const WebSocket          = require('ws');
 const env                = require('../config/env');
-const { LIVE_TOOL_DECLARATIONS, executeLiveTool } = require('./Live_Tool_Registry');
+const { LIVE_TOOL_DECLARATIONS, executeLiveTool, noteUserTurn } = require('./Live_Tool_Registry');
 const geminiVectorCache  = require('../utils/gemini_vector_cache');
 const supabaseMemories   = require('../infrastructure/Supabase_Memories');
 const supabaseFinance    = require('../infrastructure/Supabase_Finance');
@@ -46,7 +46,7 @@ const LIVE_MODELS = {
 };
 
 // Configurable barge-in RMS threshold (optimized for TWS earbuds & mobile mic)
-const BARGE_IN_RMS_THRESHOLD = Number(process.env.NEXA_BARGE_IN_RMS) || 600;
+const BARGE_IN_RMS_THRESHOLD = (process.env.NEXA_BARGE_IN_RMS ?? '') !== '' ? Number(process.env.NEXA_BARGE_IN_RMS) : 600;
 
 // ────────────────────────────────────────────────────────────────────────────
 // BASE SYSTEM PROMPT — injected into every live session
@@ -178,6 +178,7 @@ class LiveVoiceSession {
     const text = (this._userTranscriptBuf || '').trim();
     this._userTranscriptBuf = '';
     if (!text) return;
+    noteUserTurn();
     console.log(`[LIVE-VOICE] Didengar dari Tuan Faqih: "${text}"`);
     this.turnHistory.push({ role: 'user', text });
     supabaseMemories.saveChatMemory('user', text.slice(0, 800), 'live_call').catch(() => {});
@@ -835,6 +836,7 @@ class LiveVoiceSession {
    */
   handleIncomingClientText(text) {
     if (!text || !text.trim()) return;
+    noteUserTurn();
     this.lastClientInputTime = Date.now();
     this.turnHistory.push({ role: 'user', text: text.trim() });
     // Async persist to nexa_chat_memories — never block audio

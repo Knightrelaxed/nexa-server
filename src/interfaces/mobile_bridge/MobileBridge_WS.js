@@ -237,24 +237,28 @@ function initWebSocket(server) {
     // 4. Socket Disconnect & Safety Cleanup
     ws.on('close', (code, reason) => {
       console.log(`[NEXA-BRIDGE-WS] Client disconnected: ${code} - ${reason}`);
-      if (activeClient === ws) {
+      const wasCurrent = (activeClient === ws);
+      if (wasCurrent) {
         activeClient = null;
-      }
-      // Allow 15-second grace period for Live Voice Session so momentary network drops (code 1006)
-      // do not destroy active calls
-      try {
-        const liveVoice = require('../../core/Live_Voice_Engine');
-        liveVoice.handleClientDisconnect(ws, 15000);
-      } catch (_) {}
 
-      // Purge all pending command promises so event loop never deadlocks
-      if (pendingCommands.size > 0) {
-        console.warn(`[NEXA-BRIDGE-WS] ⚠️ Clearing ${pendingCommands.size} pending command(s) on disconnect.`);
-        for (const [cmdId, { resolve, timer }] of pendingCommands.entries()) {
-          clearTimeout(timer);
-          resolve({ success: false, status: 'DISCONNECTED', message: 'Nexa Bridge disconnected' });
+        // Allow 15-second grace period for Live Voice Session so momentary network drops (code 1006)
+        // do not destroy active calls
+        try {
+          const liveVoice = require('../../core/Live_Voice_Engine');
+          liveVoice.handleClientDisconnect(ws, 15000);
+        } catch (_) {}
+
+        // Purge all pending command promises so event loop never deadlocks
+        if (pendingCommands.size > 0) {
+          console.warn(`[NEXA-BRIDGE-WS] ⚠️ Clearing ${pendingCommands.size} pending command(s) on disconnect.`);
+          for (const [cmdId, { resolve, timer }] of pendingCommands.entries()) {
+            clearTimeout(timer);
+            resolve({ success: false, status: 'DISCONNECTED', message: 'Nexa Bridge disconnected' });
+          }
+          pendingCommands.clear();
         }
-        pendingCommands.clear();
+      } else {
+        console.log('[NEXA-BRIDGE-WS] Superseded socket closed cleanly without disrupting active connection.');
       }
     });
 
