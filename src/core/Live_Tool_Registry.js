@@ -253,11 +253,12 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 7. CALENDAR: DELETE EVENT ─────────────────────────────────
   {
     name: 'deleteCalendarEvent',
-    description: 'Menghapus atau membatalkan jadwal dari Google Calendar Tuan Faqih.',
+    description: 'Menghapus atau membatalkan jadwal dari Google Calendar Tuan Faqih. WAJIB konfirmasi lisan ke Tuan Faqih sebelum dieksekusi jika confirmed belum true.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        title: { type: 'STRING', description: 'Judul atau kata kunci jadwal yang ingin dihapus. Contoh: "rapat BEM", "kuliah nahwu senin".' }
+        title:     { type: 'STRING', description: 'Judul atau kata kunci jadwal yang ingin dihapus. Contoh: "rapat BEM", "kuliah nahwu senin".' },
+        confirmed: { type: 'BOOLEAN', description: 'Wajib bernilai true jika Tuan Faqih sudah memberikan konfirmasi lisan eksplisit untuk menghapus jadwal ini.' }
       },
       required: ['title']
     }
@@ -308,11 +309,12 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 11. TASKS: DELETE TASK ────────────────────────────────────
   {
     name: 'deleteTask',
-    description: 'Menghapus tugas dari Google Tasks Tuan Faqih.',
+    description: 'Menghapus tugas dari Google Tasks Tuan Faqih. WAJIB konfirmasi lisan ke Tuan Faqih sebelum dieksekusi jika confirmed belum true.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        taskTitle: { type: 'STRING', description: 'Nama atau kata kunci tugas yang ingin dihapus.' }
+        taskTitle: { type: 'STRING', description: 'Nama atau kata kunci tugas yang ingin dihapus.' },
+        confirmed: { type: 'BOOLEAN', description: 'Wajib bernilai true jika Tuan Faqih sudah memberikan konfirmasi lisan eksplisit untuk menghapus tugas ini.' }
       },
       required: ['taskTitle']
     }
@@ -347,13 +349,14 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 14. EMAIL: SEND EMAIL ─────────────────────────────────────
   {
     name: 'sendEmail',
-    description: 'Mengirim pesan email keluar melalui akun Gmail Tuan Faqih.',
+    description: 'Mengirim pesan email keluar melalui akun Gmail Tuan Faqih. WAJIB konfirmasi lisan rincian penerima dan subjek ke Tuan Faqih jika confirmed belum true.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        to:      { type: 'STRING', description: 'Alamat email penerima.' },
-        subject: { type: 'STRING', description: 'Subjek email.' },
-        content: { type: 'STRING', description: 'Isi teks email.' }
+        to:        { type: 'STRING', description: 'Alamat email penerima.' },
+        subject:   { type: 'STRING', description: 'Subjek email.' },
+        content:   { type: 'STRING', description: 'Isi teks email.' },
+        confirmed: { type: 'BOOLEAN', description: 'Wajib bernilai true jika Tuan Faqih sudah memberikan konfirmasi lisan eksplisit untuk mengirim email ini.' }
       },
       required: ['to', 'subject', 'content']
     }
@@ -483,6 +486,24 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   }
 ];
+
+// ────────────────────────────────────────────────────────────────────────────
+// HIGH-RISK ACTION CONFIRMATION GUARD
+// ────────────────────────────────────────────────────────────────────────────
+const _pendingActionConfirmations = new Map();
+
+function _validateActionConfirmation(toolName, key, previewText, confirmed) {
+  if (confirmed === true) {
+    _pendingActionConfirmations.delete(key);
+    return null;
+  }
+  _pendingActionConfirmations.set(key, Date.now() + 60000);
+  return {
+    status: 'NEEDS_CONFIRMATION',
+    tool: toolName,
+    message: `Aksi ${toolName} BELUM dieksekusi demi keamanan. Bacakan rincian ini kepada Tuan Faqih: "${previewText}". Mintalah persetujuan verbal eksplisit dari Tuan Faqih. Jika Tuan menyetujuinya, panggil kembali ${toolName} dengan parameter confirmed: true.`
+  };
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // MASTER TOOL EXECUTOR
@@ -721,6 +742,14 @@ async function executeLiveTool(toolName, args = {}) {
         const title = String(args.title || '').trim();
         if (!title) return { status: 'ERROR', message: 'Sebutkan judul agenda yang ingin dihapus.' };
 
+        const confirmCheck = _validateActionConfirmation(
+          'deleteCalendarEvent',
+          `del_cal_${title.toLowerCase()}`,
+          `Hapus agenda kalender: "${title}"`,
+          args.confirmed
+        );
+        if (confirmCheck) return confirmCheck;
+
         const res = await _withToolTimeout(
           agendaManager.handleCalendarIntent({
             action: 'DELETE',
@@ -828,6 +857,14 @@ async function executeLiveTool(toolName, args = {}) {
         const taskTitle = String(args.taskTitle || '').trim();
         if (!taskTitle) return { status: 'ERROR', message: 'Sebutkan nama tugas yang ingin dihapus.' };
 
+        const confirmCheck = _validateActionConfirmation(
+          'deleteTask',
+          `del_task_${taskTitle.toLowerCase()}`,
+          `Hapus tugas to-do: "${taskTitle}"`,
+          args.confirmed
+        );
+        if (confirmCheck) return confirmCheck;
+
         const res = await _withToolTimeout(
           taskManager.handleTaskIntent({
             action: 'DELETE',
@@ -915,6 +952,14 @@ async function executeLiveTool(toolName, args = {}) {
         const content = String(args.content || '').trim();
 
         if (!to || !content) return { status: 'ERROR', message: 'Alamat penerima dan isi pesan email wajib diisi.' };
+
+        const confirmCheck = _validateActionConfirmation(
+          'sendEmail',
+          `send_email_${to.toLowerCase()}`,
+          `Kirim email ke ${to} dengan subjek "${subject}"`,
+          args.confirmed
+        );
+        if (confirmCheck) return confirmCheck;
 
         const sent = await _withToolTimeout(
           gmailClient.sendEmail(to, subject, content),

@@ -2,6 +2,7 @@ const { executeWithFallback } = require('./Fallback_Engine');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 const { NEXA_PERSONALITY } = require('../config/personality');
 const geminiVectorCache = require('../utils/gemini_vector_cache');
+const presenceModel = require('../domain/Presence_Model');
 
 
 
@@ -631,9 +632,12 @@ async function _handleReflexRouting(textInput, runtimeHints = {}) {
     `${_DAYS[_jkt.getUTCDay()]}, ${_jkt.getUTCDate()} ${_MONTHS[_jkt.getUTCMonth()]} ${_jkt.getUTCFullYear()} ` +
     `pukul ${String(_jkt.getUTCHours()).padStart(2, '0')}:${String(_jkt.getUTCMinutes()).padStart(2, '0')} WIB`;
 
+  const presenceContext = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
+
   const reflexPrompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
+${presenceContext}
 
 [RIWAYAT OBROLAN SINGKAT]
 ${contextStr}
@@ -1395,11 +1399,13 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
 
   // ── Compile Selective System Prompt based on Candidate Domains ──────────
   const routerSystemPrompt = buildRouterSystemPrompt(_candidateDomains);
+  const presenceContext = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
 
   const prompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
 ISO Date Hari Ini: ${currentJakartaISO}
+${presenceContext}
 ${miniCalStr ? `
 [KALENDER REFERENSI${hasCal ? ' (7 HARI KE DEPAN)' : ''}]
 ${miniCalStr}

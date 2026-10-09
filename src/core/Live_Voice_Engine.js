@@ -80,7 +80,7 @@ Anda adalah N.E.X.A (Neural Executive with Xenial Agent), Chief of Staff digital
 - Tanpa Jargon Teknis: Jangan pernah menyebut nama fungsi teknis ("saya memanggil tool recordExpense"). Cukup sampaikan hasil akhirnya secara elegan ("Sudah saya catat ya Tuan, pengeluaran 25 ribu untuk kopi").
 
 [OTORITAS EKSEKUTIF REAL-TIME — TOOLS CALLING]
-Anda memiliki akses langsung ke seluruh infrastruktur backend N.E.X.A. Eksekusi SEGERA tanpa ragu saat Tuan memberikan instruksi:
+Anda memiliki akses langsung ke seluruh infrastruktur backend N.E.X.A. Eksekusi segera jika instruksi Tuan sudah jelas dan eksplisit; jika ada keraguan atau menyangkut aksi berisiko tinggi, ikuti [ATURAN MENDENGAR & KEJELASAN AKSI]:
 - KEUANGAN: Catat beli/bayar/transfer → recordExpense atau recordIncome. Cek saldo/rekap → queryFinancialSummary.
 - JADWAL: Buat agenda → createCalendarEvent. Cek kalender → queryCalendarAgenda. Ubah jadwal → updateCalendarEvent. Batalkan → deleteCalendarEvent.
 - TUGAS: Buat tugas → createTask. Cek to-do → queryTasks. Tandai selesai → completeTask. Hapus tugas → deleteTask.
@@ -171,6 +171,16 @@ class LiveVoiceSession {
     this.hasLoggedFirstAudio     = false;
     this.incomingAudioChunkCount = 0;
     this.currentTurnAssistantText = '';
+    this._userTranscriptBuf       = '';
+  }
+
+  _flushUserTurn() {
+    const text = (this._userTranscriptBuf || '').trim();
+    this._userTranscriptBuf = '';
+    if (!text) return;
+    console.log(`[LIVE-VOICE] Didengar dari Tuan Faqih: "${text}"`);
+    this.turnHistory.push({ role: 'user', text });
+    supabaseMemories.saveChatMemory('user', text.slice(0, 800), 'live_call').catch(() => {});
   }
 
   _calculatePcmRms(buffer) {
@@ -580,6 +590,7 @@ class LiveVoiceSession {
         if (msg.serverContent.interrupted) {
           console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
           this.isAssistantSpeaking = false;
+          this._flushUserTurn();
           if (this.currentTurnAssistantText && this.currentTurnAssistantText.trim()) {
             const interruptedText = this.currentTurnAssistantText.trim() + ' (terpotong)';
             console.log(`[LIVE-VOICE] N.E.X.A terpotong: "${interruptedText}"`);
@@ -595,14 +606,9 @@ class LiveVoiceSession {
           });
         }
 
-        // Capture user speech transcript from Google neural transcription
+        // Accumulate user speech transcript from Google neural transcription
         if (msg.serverContent.inputTranscription?.text) {
-          const userTranscript = msg.serverContent.inputTranscription.text.trim();
-          if (userTranscript) {
-            console.log(`[LIVE-VOICE] Didengar dari Tuan Faqih: "${userTranscript}"`);
-            this.turnHistory.push({ role: 'user', text: userTranscript });
-            supabaseMemories.saveChatMemory('user', userTranscript.slice(0, 800), 'live_call').catch(() => {});
-          }
+          this._userTranscriptBuf = (this._userTranscriptBuf || '') + msg.serverContent.inputTranscription.text;
         }
 
         // Accumulate assistant output transcript if provided
@@ -616,6 +622,7 @@ class LiveVoiceSession {
           // Audio chunk (PCM 24kHz Base64)
           if (p.inlineData && p.inlineData.data) {
             if (!this.isAssistantSpeaking) {
+              this._flushUserTurn();
               this.turnsCount = (this.turnsCount || 0) + 1;
               if (!this.hasLoggedFirstAudio) {
                 this.hasLoggedFirstAudio = true;
@@ -643,6 +650,7 @@ class LiveVoiceSession {
 
         // If turnComplete is reached, finalize assistant turn text and reset to LISTENING
         if (msg.serverContent.turnComplete) {
+          this._flushUserTurn();
           const completeAssistantText = (this.currentTurnAssistantText || '').trim();
           if (completeAssistantText.length > 0) {
             console.log(`[LIVE-VOICE] N.E.X.A berbicara: "${completeAssistantText}"`);
@@ -685,6 +693,7 @@ class LiveVoiceSession {
       // ── 3. Tool Calls (Function Execution — Parallel Batching) ──────────
       if (msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0) {
         this.isExecutingTool = true;
+        this._flushUserTurn();
         // Notify HUD that tools are executing (Memproses..)
         this._sendToClient({
           type: 'CALL_STATUS_UPDATE',
@@ -768,8 +777,9 @@ class LiveVoiceSession {
 
     // Decode PCM buffer for energy (RMS) calculation
     let rms = 0;
+    let pcmBuf = null;
     try {
-      const pcmBuf = Buffer.from(pcmBase64, 'base64');
+      pcmBuf = Buffer.from(pcmBase64, 'base64');
       rms = this._calculatePcmRms(pcmBuf);
     } catch (_) {}
 
@@ -991,6 +1001,9 @@ class LiveVoiceSession {
       try { this.googleWs.close(1000, 'Session Closed'); } catch (_) {}
       this.googleWs = null;
     }
+
+    // Flush any pending user speech transcript
+    this._flushUserTurn();
 
     if (this.turnHistory.length === 0) {
       console.log(`[LIVE-VOICE] 📝 No turns to process. Skipping end-of-call pipeline.`);
