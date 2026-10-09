@@ -789,8 +789,8 @@ class LiveVoiceSession {
     }
 
     // ── Server-Side Voice Activity Detection (VAD) & Turn Commit ──
-    // Mic noise floor on phone/TWS hovers at 350-550 RMS. Speech starts at 900+ RMS.
-    const SPEECH_RMS_THRESHOLD = 900;
+    // Ambient noise is ~100-250 RMS. Bluetooth TWS mic speech is ~480-850 RMS. Phone mic is ~1500-4000 RMS.
+    const SPEECH_RMS_THRESHOLD = 480;
 
     // Do not trigger VAD while waiting for model reply or while assistant is speaking
     if (this.isWaitingForModelReply || this.isAssistantSpeaking) {
@@ -820,7 +820,7 @@ class LiveVoiceSession {
     } else if (this.isUserSpeaking) {
       // Silence following user speech
       if (!this.vadSilenceTimer) {
-        // 900ms of consecutive silence commits the turn
+        // 850ms of consecutive silence commits the turn
         this.vadSilenceTimer = setTimeout(() => {
           if (!this.isActive || !this.isSetupComplete) return;
           if (!this.isUserSpeaking) return;
@@ -830,8 +830,8 @@ class LiveVoiceSession {
             return;
           }
 
-          // Require at least 4 chunks (~400ms) of sustained speech to filter out clicks/breaths
-          if (this.userTurnChunkCount >= 4) {
+          // Require at least 3 chunks (~300ms) of sustained speech to filter out clicks/breaths
+          if (this.userTurnChunkCount >= 3) {
             console.log(`[LIVE-VOICE] End of user speech detected (${this.userTurnChunkCount} chunks, RMS: ${rms.toFixed(0)}). Committing turn to Gemini...`);
             this.isUserSpeaking = false;
             this.vadSilenceTimer = null;
