@@ -691,24 +691,9 @@ class LiveVoiceSession {
           }
           this.currentTurnAssistantText = '';
 
-          // Gating logic: Do not revert to LISTENING if tool execution or tool response is active
-          if (hasToolCall || (this.isExecutingTool && !this.isWaitingToolReply)) {
+          // Gating logic: Do not revert to LISTENING if tool execution or post-tool speech synthesis is active
+          if (this.isExecutingTool || hasToolCall) {
             console.log(`[LIVE-VOICE] turnComplete received while tool execution is active (isExecutingTool=${this.isExecutingTool}, hasToolCall=${hasToolCall}). Preserving PROCESSING status.`);
-          } else if (this.isExecutingTool && this.isWaitingToolReply) {
-            console.log(`[LIVE-VOICE] turnComplete received after toolResponse without speech. Resetting to LISTENING.`);
-            if (this._toolSafetyTimer) {
-              clearTimeout(this._toolSafetyTimer);
-              this._toolSafetyTimer = null;
-            }
-            this.isExecutingTool     = false;
-            this.isWaitingToolReply  = false;
-            this.isAssistantSpeaking = false;
-            if (!this.isEndingCall) {
-              this._sendToClient({
-                type: 'CALL_STATUS_UPDATE',
-                status: 'LISTENING'
-              });
-            }
           } else if (!this.isEndingCall) {
             if (this._toolSafetyTimer) {
               clearTimeout(this._toolSafetyTimer);
