@@ -168,6 +168,7 @@ class LiveVoiceSession {
     this.isExecutingTool     = false;
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
+    this.isWaitingForModelReply = false;
     this.lastClientInputTime = Date.now();
     // Server-Side VAD (Voice Activity Detection) state
     this.isUserSpeaking         = false;
@@ -216,6 +217,7 @@ class LiveVoiceSession {
     this.isExecutingTool     = false;
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
+    this.isWaitingForModelReply = false;
     this.lastClientInputTime = Date.now();
 
     const apiKey    = this._getApiKey();
@@ -544,9 +546,11 @@ class LiveVoiceSession {
         };
 
         this.isGreetingPending = true;
+        this.isWaitingForModelReply = true;
         setTimeout(() => {
           if (this.isGreetingPending) {
             this.isGreetingPending = false;
+            this.isWaitingForModelReply = false;
             // If greeting timed out without speech, switch HUD to LISTENING
             if (!this.isAssistantSpeaking) {
               this._sendToClient({
@@ -555,7 +559,7 @@ class LiveVoiceSession {
               });
             }
           }
-        }, 3000);
+        }, 4000);
 
         try {
           this.googleWs.send(JSON.stringify(greetingPayload));
@@ -574,8 +578,9 @@ class LiveVoiceSession {
 
       // ── 2. Server Content: Audio Chunks & Text Transcripts ──────────────
       if (msg.serverContent) {
+        this.isWaitingForModelReply = false;
         if (msg.serverContent.interrupted) {
-          console.log(`[LIVE-VOICE] ⚡ Barge-in / turn transition detected.`);
+          console.log(`[LIVE-VOICE] Barge-in / turn transition detected.`);
           this.isAssistantSpeaking = false;
           // BUG 1 FIX: Signal Android to flush playback queue and re-open mic immediately
           this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
@@ -591,7 +596,7 @@ class LiveVoiceSession {
               this.turnsCount = (this.turnsCount || 0) + 1;
               if (!this.hasLoggedFirstAudio) {
                 this.hasLoggedFirstAudio = true;
-                console.log(`[LIVE-VOICE] 🔊 Audio response streaming from Gemini to client.`);
+                console.log(`[LIVE-VOICE] Audio response streaming from Gemini to client.`);
               }
             }
             this.isAssistantSpeaking = true;
@@ -627,6 +632,7 @@ class LiveVoiceSession {
           this.isAssistantSpeaking = false;
           this.isGreetingPending   = false;
           this.isExecutingTool     = false;
+          this.isWaitingForModelReply = false;
           this._sendToClient({
             type: 'CALL_STATUS_UPDATE',
             status: 'LISTENING'
@@ -653,6 +659,7 @@ class LiveVoiceSession {
 
       // ── 3. Tool Calls (Function Execution — Parallel Batching) ──────────
       if (msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0) {
+        this.isWaitingForModelReply = false;
         this.isExecutingTool = true;
         // Notify HUD that tools are executing (Memproses..)
         this._sendToClient({
@@ -661,14 +668,14 @@ class LiveVoiceSession {
         });
 
         const functionCalls = msg.toolCall.functionCalls;
-        console.log(`[LIVE-VOICE] 🛠️ Processing ${functionCalls.length} tool call(s) in parallel...`);
+        console.log(`[LIVE-VOICE] Processing ${functionCalls.length} tool call(s) in parallel...`);
 
         const responses = await Promise.all(
           functionCalls.map(async (fc) => {
             const callId   = fc.id;
             const funcName = fc.name;
             const funcArgs = fc.args || {};
-            console.log(`[LIVE-VOICE] 🛠️ Executing: ${funcName} [${callId}]`);
+            console.log(`[LIVE-VOICE] Executing: ${funcName} [${callId}]`);
 
             try {
               const toolResult = await executeLiveTool(funcName, funcArgs);
@@ -688,7 +695,7 @@ class LiveVoiceSession {
                 response: { output: toolResult }
               };
             } catch (err) {
-              console.error(`[LIVE-TOOL] ❌ Execution error in ${funcName}:`, err.message);
+              console.error(`[LIVE-TOOL] Execution error in ${funcName}:`, err.message);
               return {
                 id: callId,
                 name: funcName,
@@ -706,7 +713,8 @@ class LiveVoiceSession {
 
         if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
           this.googleWs.send(JSON.stringify(toolResponsePayload));
-          console.log(`[LIVE-VOICE] 📤 Sent ${responses.length} Tool Response(s) back to Google.`);
+          console.log(`[LIVE-VOICE] Sent ${responses.length} Tool Response(s) back to Google.`);
+          this.isWaitingForModelReply = true;
           // Tool gating safety release: after 6 seconds max, unblock mic if Google stays silent
           setTimeout(() => {
             if (this.isExecutingTool) {
@@ -742,7 +750,7 @@ class LiveVoiceSession {
 
     // Periodic stream heartbeat logging (every ~5s / 50 chunks)
     if (this.incomingAudioChunkCount === 1 || this.incomingAudioChunkCount % 50 === 0) {
-      console.log(`[LIVE-VOICE] 🎙️ Audio stream active: ${this.incomingAudioChunkCount} chunks (RMS: ${rms.toFixed(0)}, UserSpeaking: ${this.isUserSpeaking})`);
+      console.log(`[LIVE-VOICE] Audio stream active: ${this.incomingAudioChunkCount} chunks (RMS: ${rms.toFixed(0)}, UserSpeaking: ${this.isUserSpeaking})`);
     }
 
     // GATING: Do not forward mic noise while tool response is being synthesized
@@ -750,15 +758,16 @@ class LiveVoiceSession {
       return;
     }
 
-    // Barge-in: if assistant is speaking and user speaks with clear voice
-    if (this.isAssistantSpeaking && rms > 1200) {
-      console.log(`[LIVE-VOICE] ⚡ User voice barge-in detected (RMS: ${rms.toFixed(0)}).`);
+    // Barge-in: if assistant is speaking or waiting for model reply, and user speaks with loud clear voice
+    if ((this.isAssistantSpeaking || this.isWaitingForModelReply) && rms > 1400) {
+      console.log(`[LIVE-VOICE] Barge-in detected (RMS: ${rms.toFixed(0)}).`);
       this.isAssistantSpeaking = false;
+      this.isWaitingForModelReply = false;
       this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
     }
 
     // Release greeting pending on voice activity
-    if (this.isGreetingPending && rms > 400) {
+    if (this.isGreetingPending && rms > 700) {
       this.isGreetingPending = false;
     }
 
@@ -775,11 +784,12 @@ class LiveVoiceSession {
     try {
       this.googleWs.send(JSON.stringify(realtimeMsg));
     } catch (err) {
-      console.error(`[LIVE-VOICE] ❌ Failed to forward audio to Google:`, err.message);
+      console.error(`[LIVE-VOICE] Failed to forward audio to Google:`, err.message);
     }
 
     // ── Server-Side Voice Activity Detection (VAD) & Turn Commit ──
-    const SPEECH_RMS_THRESHOLD = 400;
+    // Mic noise floor on phone/TWS hovers at 350-550 RMS. Speech starts at 900+ RMS.
+    const SPEECH_RMS_THRESHOLD = 900;
 
     if (rms >= SPEECH_RMS_THRESHOLD) {
       // Voice detected
@@ -788,7 +798,7 @@ class LiveVoiceSession {
         this.isUserSpeaking = true;
         this.userSpeechStartTime = Date.now();
         this.userTurnChunkCount = 0;
-        console.log(`[LIVE-VOICE] 🗣️ User speech started (RMS: ${rms.toFixed(0)} >= ${SPEECH_RMS_THRESHOLD}).`);
+        console.log(`[LIVE-VOICE] User speech started (RMS: ${rms.toFixed(0)} >= ${SPEECH_RMS_THRESHOLD}).`);
         this._sendToClient({
           type: 'CALL_STATUS_UPDATE',
           status: 'LISTENING'
@@ -804,15 +814,22 @@ class LiveVoiceSession {
     } else if (this.isUserSpeaking) {
       // Silence following user speech
       if (!this.vadSilenceTimer) {
-        // 800ms of consecutive silence commits the turn
+        // 1200ms of consecutive silence commits the turn
         this.vadSilenceTimer = setTimeout(() => {
           if (!this.isActive || !this.isSetupComplete) return;
           if (!this.isUserSpeaking) return;
-
-          if (this.userTurnChunkCount >= 2) {
-            console.log(`[LIVE-VOICE] 🎤 End of user speech detected (${this.userTurnChunkCount} chunks, RMS: ${rms.toFixed(0)}). Committing turn to Gemini...`);
+          if (this.isWaitingForModelReply) {
             this.isUserSpeaking = false;
             this.vadSilenceTimer = null;
+            return;
+          }
+
+          // Require at least 4 chunks (~400ms) of sustained speech to filter out clicks/breaths
+          if (this.userTurnChunkCount >= 4) {
+            console.log(`[LIVE-VOICE] End of user speech detected (${this.userTurnChunkCount} chunks, RMS: ${rms.toFixed(0)}). Committing turn to Gemini...`);
+            this.isUserSpeaking = false;
+            this.vadSilenceTimer = null;
+            this.isWaitingForModelReply = true;
 
             try {
               this.googleWs.send(JSON.stringify({
@@ -824,12 +841,13 @@ class LiveVoiceSession {
               });
             } catch (err) {
               console.warn(`[LIVE-VOICE] Failed to commit turnComplete:`, err.message);
+              this.isWaitingForModelReply = false;
             }
           } else {
             this.isUserSpeaking = false;
             this.vadSilenceTimer = null;
           }
-        }, 800);
+        }, 1200);
       }
     }
   }
@@ -963,24 +981,36 @@ class LiveVoiceSession {
         console.warn(`[LIVE-VOICE] Keepalive send warning:`, err.message);
       }
     }, 5000);
-    console.log(`[LIVE-VOICE] 💓 Conditional keepalive heartbeat started (5s interval, idle threshold: 4.5s).`);
+    console.log(`[LIVE-VOICE] Conditional keepalive heartbeat started (5s interval, idle threshold: 4.5s).`);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
   // BUG 4 FIX: Server-Side Watchdog — detect and recover stuck sessions
-  // Checks every 15s; triggers failover if no message from Google in 30s
+  // Checks every 15s; triggers failover only when reply is stuck or connection is dead
   // ──────────────────────────────────────────────────────────────────────────
   _startServerWatchdog() {
     if (this.watchdogInterval) clearInterval(this.watchdogInterval);
     this.watchdogInterval = setInterval(() => {
       if (!this.isActive) return;
-      const silentMs = Date.now() - this.lastActivityTime;
-      if (silentMs > 30000) {
-        console.warn(`[LIVE-VOICE] 🐕 Watchdog: Google silent for ${Math.round(silentMs / 1000)}s — triggering failover.`);
-        this._handleFailover(1006, 'Server silent timeout');
+      const googleSilentMs = Date.now() - this.lastActivityTime;
+      const clientSilentMs = Date.now() - this.lastClientInputTime;
+
+      // Condition A: Waiting for model reply but Google silent for > 30s -> stuck generation!
+      if (this.isWaitingForModelReply && googleSilentMs > 30000) {
+        console.warn(`[LIVE-VOICE] Watchdog: Waiting for model reply but Google silent for ${Math.round(googleSilentMs / 1000)}s - triggering failover.`);
+        this.isWaitingForModelReply = false;
+        this._handleFailover(1006, 'Model reply timeout');
+        return;
+      }
+
+      // Condition B: Total session silence (both Google and client silent > 60s) -> dead connection
+      if (googleSilentMs > 60000 && clientSilentMs > 60000) {
+        console.warn(`[LIVE-VOICE] Watchdog: Total session silence for >60s - triggering failover.`);
+        this._handleFailover(1006, 'Session dead timeout');
+        return;
       }
     }, 15000);
-    console.log(`[LIVE-VOICE] 🐕 Server watchdog started (check: 15s, threshold: 30s).`);
+    console.log(`[LIVE-VOICE] Server watchdog started (check: 15s, stuck threshold: 30s).`);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
