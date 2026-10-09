@@ -135,11 +135,18 @@ function _generateDynamicVocalGreetingInstruction() {
 // ────────────────────────────────────────────────────────────────────────────
 // HELPER: Wrap promise with timeout — non-blocking context enrichment
 // ────────────────────────────────────────────────────────────────────────────
-const withTimeout = (promise, ms = 3000, fallback = null) =>
-  Promise.race([
-    promise,
+const withTimeout = (promiseOrFn, ms = 3000, fallback = null) => {
+  const safePromise = Promise.resolve()
+    .then(() => (typeof promiseOrFn === 'function' ? promiseOrFn() : promiseOrFn))
+    .catch(err => {
+      console.warn('[LIVE-VOICE] Context fetch error (using fallback):', err && err.message ? err.message : err);
+      return fallback;
+    });
+  return Promise.race([
+    safePromise,
     new Promise(resolve => setTimeout(() => resolve(fallback), ms))
-  ]).catch(() => fallback);
+  ]);
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 // LIVE VOICE SESSION CLASS
@@ -308,17 +315,7 @@ class LiveVoiceSession {
     let calendarScheduleBlock = '';
 
     try {
-      const [
-        personalFacts,
-        selfModelData,
-        identityModelData,
-        recentChat,
-        accountsList,
-        categoriesList,
-        recentFinance,
-        calendarData,
-        tasksData
-      ] = await Promise.all([
+      const results = await Promise.allSettled([
         withTimeout(supabaseMemories.getPersonalFacts(), 3000, { userProfile: [], coreIdentity: [], vaultItems: [] }),
         withTimeout(
           supabaseMemories.getSelfModel ? supabaseMemories.getSelfModel(4) : Promise.resolve([]),
@@ -350,6 +347,18 @@ class LiveVoiceSession {
           2000, []
         )
       ]);
+
+      const [
+        personalFacts,
+        selfModelData,
+        identityModelData,
+        recentChat,
+        accountsList,
+        categoriesList,
+        recentFinance,
+        calendarData,
+        tasksData
+      ] = results.map(r => (r.status === 'fulfilled' ? r.value : null));
 
       // A. User Profile — RAM Vector Snapshot (top 15 living facts)
       try {

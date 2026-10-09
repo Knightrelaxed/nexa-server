@@ -656,7 +656,14 @@ Berikan respons refleks dalam format JSON!
     cleanStr = cleanStr.substring(firstBrace, lastBrace + 1);
   }
 
-  const routingData = JSON.parse(cleanStr);
+  let routingData = null;
+  try {
+    routingData = JSON.parse(cleanStr);
+  } catch (parseErr) {
+    console.warn('[AI_ROUTER] Reflex JSON parse failed, falling back to full router:', parseErr.message);
+    return null;
+  }
+
   routingData.intent = 'NORMAL_CHAT';
   routingData.actions = [{ intent: 'NORMAL_CHAT', extracted_data: {} }];
   routingData.mood = (routingData.mood || 'NEUTRAL').toUpperCase();
