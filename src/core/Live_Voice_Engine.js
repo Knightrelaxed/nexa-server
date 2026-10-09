@@ -169,6 +169,7 @@ class LiveVoiceSession {
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
     this.isWaitingForModelReply = false;
+    this.waitingSafetyTimer  = null;
     this.lastClientInputTime = Date.now();
     // Server-Side VAD (Voice Activity Detection) state
     this.isUserSpeaking         = false;
@@ -578,6 +579,10 @@ class LiveVoiceSession {
 
       // ── 2. Server Content: Audio Chunks & Text Transcripts ──────────────
       if (msg.serverContent) {
+        if (this.waitingSafetyTimer) {
+          clearTimeout(this.waitingSafetyTimer);
+          this.waitingSafetyTimer = null;
+        }
         this.isWaitingForModelReply = false;
         if (msg.serverContent.interrupted) {
           console.log(`[LIVE-VOICE] Barge-in / turn transition detected.`);
@@ -659,6 +664,10 @@ class LiveVoiceSession {
 
       // ── 3. Tool Calls (Function Execution — Parallel Batching) ──────────
       if (msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0) {
+        if (this.waitingSafetyTimer) {
+          clearTimeout(this.waitingSafetyTimer);
+          this.waitingSafetyTimer = null;
+        }
         this.isWaitingForModelReply = false;
         this.isExecutingTool = true;
         // Notify HUD that tools are executing (Memproses..)
@@ -758,14 +767,6 @@ class LiveVoiceSession {
       return;
     }
 
-    // Barge-in: if assistant is speaking or waiting for model reply, and user speaks with loud clear voice
-    if ((this.isAssistantSpeaking || this.isWaitingForModelReply) && rms > 1400) {
-      console.log(`[LIVE-VOICE] Barge-in detected (RMS: ${rms.toFixed(0)}).`);
-      this.isAssistantSpeaking = false;
-      this.isWaitingForModelReply = false;
-      this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
-    }
-
     // Release greeting pending on voice activity
     if (this.isGreetingPending && rms > 700) {
       this.isGreetingPending = false;
@@ -791,6 +792,11 @@ class LiveVoiceSession {
     // Mic noise floor on phone/TWS hovers at 350-550 RMS. Speech starts at 900+ RMS.
     const SPEECH_RMS_THRESHOLD = 900;
 
+    // Do not trigger VAD while waiting for model reply or while assistant is speaking
+    if (this.isWaitingForModelReply || this.isAssistantSpeaking) {
+      return;
+    }
+
     if (rms >= SPEECH_RMS_THRESHOLD) {
       // Voice detected
       this.lastVoiceActivityTime = Date.now();
@@ -814,7 +820,7 @@ class LiveVoiceSession {
     } else if (this.isUserSpeaking) {
       // Silence following user speech
       if (!this.vadSilenceTimer) {
-        // 1200ms of consecutive silence commits the turn
+        // 900ms of consecutive silence commits the turn
         this.vadSilenceTimer = setTimeout(() => {
           if (!this.isActive || !this.isSetupComplete) return;
           if (!this.isUserSpeaking) return;
@@ -830,6 +836,15 @@ class LiveVoiceSession {
             this.isUserSpeaking = false;
             this.vadSilenceTimer = null;
             this.isWaitingForModelReply = true;
+
+            // Safety timeout: unlock waiting flag if Google stays silent for > 10s
+            if (this.waitingSafetyTimer) clearTimeout(this.waitingSafetyTimer);
+            this.waitingSafetyTimer = setTimeout(() => {
+              if (this.isWaitingForModelReply) {
+                console.log(`[LIVE-VOICE] Safety timeout: Resetting isWaitingForModelReply after 10s.`);
+                this.isWaitingForModelReply = false;
+              }
+            }, 10000);
 
             try {
               this.googleWs.send(JSON.stringify({
@@ -847,7 +862,7 @@ class LiveVoiceSession {
             this.isUserSpeaking = false;
             this.vadSilenceTimer = null;
           }
-        }, 1200);
+        }, 900);
       }
     }
   }
@@ -1023,10 +1038,11 @@ class LiveVoiceSession {
     const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
     console.log(`[LIVE-VOICE] 🛑 Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);
 
-    // BUG 3 & 4 FIX: Clear keepalive, watchdog intervals, and VAD timer on close
-    if (this.keepaliveInterval) { clearInterval(this.keepaliveInterval); this.keepaliveInterval = null; }
-    if (this.watchdogInterval)  { clearInterval(this.watchdogInterval);  this.watchdogInterval  = null; }
-    if (this.vadSilenceTimer)   { clearTimeout(this.vadSilenceTimer);    this.vadSilenceTimer   = null; }
+    // BUG 3 & 4 FIX: Clear keepalive, watchdog intervals, VAD and safety timers on close
+    if (this.keepaliveInterval)   { clearInterval(this.keepaliveInterval);   this.keepaliveInterval   = null; }
+    if (this.watchdogInterval)    { clearInterval(this.watchdogInterval);    this.watchdogInterval    = null; }
+    if (this.vadSilenceTimer)     { clearTimeout(this.vadSilenceTimer);      this.vadSilenceTimer     = null; }
+    if (this.waitingSafetyTimer)  { clearTimeout(this.waitingSafetyTimer);   this.waitingSafetyTimer  = null; }
 
     if (this.googleWs) {
       try { this.googleWs.close(1000, 'Session Closed'); } catch (_) {}
