@@ -1071,7 +1071,7 @@ async function executeLiveTool(toolName, args = {}) {
         if (action === 'SET_VOLUME') {
           const vol = Number(args.volumeLevel !== undefined ? args.volumeLevel : 80);
           const bridgeRes = await _withToolTimeout(
-            mobileBridgeWs.sendCommand('SET_VOLUME', { volume: vol, streamType: 'STREAM_MUSIC' }, { timeoutMs: 3000 }),
+            mobileBridgeWs.sendCommand('SET_VOLUME', { level: vol, stream: 'MUSIC' }, { timeoutMs: 3000 }),
             4000
           );
           return {

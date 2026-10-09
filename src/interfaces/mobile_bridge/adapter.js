@@ -7,6 +7,7 @@
 
 const mobileBridgeWs = require('./MobileBridge_WS');
 const locationEngine = require('../../infrastructure/Location_Engine');
+const presenceModel = require('../../domain/Presence_Model');
 const env = require('../../config/env');
 
 class NexaBridgeAdapter {
@@ -15,6 +16,7 @@ class NexaBridgeAdapter {
     this.latestTelemetry = null;
     this.contextListeners = new Set();
     this.callEventListeners = new Set();
+    this.lastMorningBriefingDate = null;
 
     // Hook WebSocket telemetry & context listeners on initialization
     this._initWsListeners();
@@ -40,6 +42,13 @@ class NexaBridgeAdapter {
       updated_at: new Date().toISOString()
     };
 
+    if (telemetry.battery_level !== undefined) {
+      presenceModel.batteryLevel = telemetry.battery_level;
+    }
+    if (telemetry.screen_on !== undefined) {
+      presenceModel.isScreenOn = Boolean(telemetry.screen_on);
+    }
+
     // Update location engine / battery telemetry if present
     if (telemetry.battery_level !== undefined) {
       // Broadcast to any registered listener
@@ -51,7 +60,7 @@ class NexaBridgeAdapter {
 
   /**
    * Handle incoming high-level CONTEXT_UPDATE from Android Sensor ContextEngine.
-   * Events: USER_ARRIVED_HOME, USER_ARRIVED_WORK, PHONE_PICKUP_MORNING, ROOM_DARK_NIGHT, etc.
+   * Events: USER_ARRIVED_HOME, USER_ARRIVED_WORK, PICKUP_MORNING, PHONE_PICKUP_MORNING, ROOM_DARK_NIGHT, etc.
    * @param {Object} report 
    */
   handleIncomingContextUpdate(report) {
@@ -60,22 +69,31 @@ class NexaBridgeAdapter {
       received_at: new Date().toISOString()
     };
 
-    console.log(`[NEXA-ADAPTER] 📡 Context Event Received: [${report.event}] - ${report.summary || ''}`);
+    // Feed physical telemetry to centralized Presence Model
+    presenceModel.updateFromContextEvent(report.event, report);
+
+    console.log(`[NEXA-ADAPTER] Context Event Received: [${report.event}] - ${report.summary || ''}`);
 
     // 1. Geofence & Location Sync
     if (report.event === 'USER_ARRIVED_HOME' || report.event === 'USER_LEFT_HOME' ||
         report.event === 'USER_ARRIVED_WORK' || report.event === 'USER_LEFT_WORK') {
       try {
         const isHome = report.event === 'USER_ARRIVED_HOME';
-        console.log(`[NEXA-ADAPTER] 📍 Geofence status updated: isHome=${isHome}`);
+        console.log(`[NEXA-ADAPTER] Geofence status updated: isHome=${isHome}`);
       } catch (err) {
         console.error('[NEXA-ADAPTER] Location sync error:', err.message);
       }
     }
 
-    // 2. Morning Pickup & Alarm Dismiss Trigger
-    if (report.event === 'PHONE_PICKUP_MORNING' || report.event === 'ALARM_DISMISSED') {
-      console.log(`[NEXA-ADAPTER] 🌅 Morning activation trigger detected: ${report.event}`);
+    // 2. Morning Pickup & Alarm Dismiss Trigger (Safe once-per-day guard)
+    if (report.event === 'PICKUP_MORNING' || report.event === 'PHONE_PICKUP_MORNING' || report.event === 'ALARM_DISMISSED') {
+      const todayStr = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+      if (this.lastMorningBriefingDate !== todayStr) {
+        this.lastMorningBriefingDate = todayStr;
+        console.log(`[NEXA-ADAPTER] Morning activation trigger detected: ${report.event} for ${todayStr}.`);
+      } else {
+        console.log(`[NEXA-ADAPTER] Morning trigger already executed for ${todayStr}. Skipping duplicate.`);
+      }
     }
 
     // Notify registered context listeners

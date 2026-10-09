@@ -17,6 +17,7 @@ const supabaseFinance    = require('../infrastructure/Supabase_Finance');
 const googleWorkspace    = require('../infrastructure/Google_Workspace');
 const googleTasks        = require('../infrastructure/Google_Tasks');
 const financeEngine      = require('../domain/Finance_Engine');
+const presenceModel      = require('../domain/Presence_Model');
 
 // AI_Router functions for memory deduplication & passive learning
 const {
@@ -43,6 +44,9 @@ const LIVE_MODELS = {
   TIER_1_SPEED:    'models/gemini-3.8-live',              // Flagship Gemini 3.8 Live (high reasoning, sub-second speech)
   TIER_2_MARATHON: 'models/gemini-3.1-flash-live-preview' // Rock-solid speed failover tier
 };
+
+// Configurable barge-in RMS threshold (optimized for TWS earbuds & mobile mic)
+const BARGE_IN_RMS_THRESHOLD = Number(process.env.NEXA_BARGE_IN_RMS) || 600;
 
 // ────────────────────────────────────────────────────────────────────────────
 // BASE SYSTEM PROMPT — injected into every live session
@@ -91,6 +95,11 @@ Anda memiliki akses langsung ke seluruh infrastruktur backend N.E.X.A. Eksekusi 
 - INTERNET: Berita, cuaca, kurs, pengetahuan umum → searchWeb.
 - VISUAL KAMERA (Jika Tuan mengaktifkan kamera): Tuan bisa mengarahkan kamera HP ke objek, dokumen, layar, atau lingkungan sekitar. Anda akan menerima konteks visual tersebut secara real-time bersamaan dengan suara. Gunakan informasi ini untuk: membaca teks pada dokumen/layar, mengidentifikasi objek fisik, menganalisis produk/kemasan, membantu navigasi visual, atau mendiskusikan apa pun yang dilihat Tuan. Berikan respons visual secara alami dan kontekstual melalui suara, tanpa menyebut frasa teknis seperti "saya menerima frame kamera".
 - RESPON CEPAT & LUGAS: Ketika Tuan bertanya mengenai apa yang dilihat kamera (misal "apa ini?", "baca ini", "lihat ini"), segera jawab secara spontan, padat, dan akurat dalam 1-2 kalimat langsung tanpa bertele-tele atau jeda lama.
+
+[ATURAN MENDENGAR & KEJELASAN AKSI]
+1. Integritas Pendengaran: Jika ucapan Tuan Faqih tidak jelas, terpotong, atau samar karena bising atau gangguan sinyal, DILARANG MENGARANG atau berhalusinasi topik asing yang tidak dibicarakan (seperti menanyakan nomor telepon atau menawarkan bantuan customer service). Mintalah konfirmasi secara ringkas dan hormat: "Maaf Tuan Faqih, suara Tuan agak terputus, boleh diulang?".
+2. Konfirmasi Tindakan Berisiko Tinggi: Untuk tindakan destruktif atau eksternal berisiko seperti mengirim email keluar (sendEmail) atau menghapus jadwal/tugas (deleteCalendarEvent, deleteTask), sebutkan detail target secara eksplisit dan minta persetujuan singkat sebelum mengeksekusi jika ada keraguan.
+3. Larangan Frasa CS: Tetap teguh pada identitas Chief of Staff. Jangan pernah mengeluarkan kalimat robotik template call center.
 `;
 
 
@@ -161,6 +170,7 @@ class LiveVoiceSession {
     this.turnsCount              = 0;
     this.hasLoggedFirstAudio     = false;
     this.incomingAudioChunkCount = 0;
+    this.currentTurnAssistantText = '';
   }
 
   _calculatePcmRms(buffer) {
@@ -435,10 +445,14 @@ class LiveVoiceSession {
       console.warn(`[LIVE-VOICE] ⚠️ Context enrichment partial failure (non-fatal): ${enrichErr.message}`);
     }
 
+    // ── Situational Physical Presence Context ────────────────────────────
+    const presenceModelBlock = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
+
     // ── Assemble Full System Prompt ──────────────────────────────────────
     const fullSystemPrompt =
       NEXA_LIVE_SYSTEM_PROMPT +
       temporalContext +
+      presenceModelBlock +
       profileFactsBlock +
       coreIdentityBlock +
       selfModelBlock +
@@ -451,7 +465,7 @@ class LiveVoiceSession {
       recentChatBlock;
 
     const elapsed = Date.now() - buildStart;
-    console.log(`[LIVE-VOICE] ⚡ Setup payload built in ${elapsed}ms. Prompt: ${fullSystemPrompt.length} chars. Tools: ${LIVE_TOOL_DECLARATIONS.length}. Sending...`);
+    console.log(`[LIVE-VOICE] Setup payload built in ${elapsed}ms. Prompt: ${fullSystemPrompt.length} chars. Tools: ${LIVE_TOOL_DECLARATIONS.length}. Sending...`);
 
     const setupPayload = {
       setup: {
@@ -471,7 +485,9 @@ class LiveVoiceSession {
         },
         tools: [
           { functionDeclarations: LIVE_TOOL_DECLARATIONS }
-        ]
+        ],
+        inputAudioTranscription: {},
+        outputAudioTranscription: {}
       }
     };
 
@@ -564,6 +580,13 @@ class LiveVoiceSession {
         if (msg.serverContent.interrupted) {
           console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
           this.isAssistantSpeaking = false;
+          if (this.currentTurnAssistantText && this.currentTurnAssistantText.trim()) {
+            const interruptedText = this.currentTurnAssistantText.trim() + ' (terpotong)';
+            console.log(`[LIVE-VOICE] N.E.X.A terpotong: "${interruptedText}"`);
+            this.turnHistory.push({ role: 'assistant', text: interruptedText });
+            supabaseMemories.saveChatMemory('nexa', interruptedText.slice(0, 800), 'live_call').catch(() => {});
+          }
+          this.currentTurnAssistantText = '';
           // Signal Android to flush playback queue and re-open mic immediately
           this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
           this._sendToClient({
@@ -572,8 +595,22 @@ class LiveVoiceSession {
           });
         }
 
+        // Capture user speech transcript from Google neural transcription
+        if (msg.serverContent.inputTranscription?.text) {
+          const userTranscript = msg.serverContent.inputTranscription.text.trim();
+          if (userTranscript) {
+            console.log(`[LIVE-VOICE] Didengar dari Tuan Faqih: "${userTranscript}"`);
+            this.turnHistory.push({ role: 'user', text: userTranscript });
+            supabaseMemories.saveChatMemory('user', userTranscript.slice(0, 800), 'live_call').catch(() => {});
+          }
+        }
+
+        // Accumulate assistant output transcript if provided
+        if (msg.serverContent.outputTranscription?.text) {
+          this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + msg.serverContent.outputTranscription.text;
+        }
+
         const parts = msg.serverContent.modelTurn?.parts || [];
-        let turnText = '';
 
         for (const p of parts) {
           // Audio chunk (PCM 24kHz Base64)
@@ -598,30 +635,33 @@ class LiveVoiceSession {
               status: 'SPEAKING'
             });
           }
-          // Text transcript from model (if returned by model)
-          if (p.text) {
-            turnText += p.text;
+          // Text transcript from model parts (if returned by model)
+          if (p.text && !(this.currentTurnAssistantText || '').includes(p.text)) {
+            this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + p.text;
           }
         }
 
-        // Save assistant text turn to history + chat memory for cross-platform continuity
-        if (turnText.trim().length > 0) {
-          this.turnHistory.push({ role: 'assistant', text: turnText });
-          // Async persist to nexa_chat_memories (non-blocking — never delay audio)
-          supabaseMemories.saveChatMemory('nexa', turnText.slice(0, 800), 'live_call').catch(() => {});
-        } else if (this.isAssistantSpeaking && msg.serverContent.turnComplete) {
-          this.turnHistory.push({ role: 'assistant', text: '(Respon suara N.E.X.A)' });
-        }
+        // If turnComplete is reached, finalize assistant turn text and reset to LISTENING
+        if (msg.serverContent.turnComplete) {
+          const completeAssistantText = (this.currentTurnAssistantText || '').trim();
+          if (completeAssistantText.length > 0) {
+            console.log(`[LIVE-VOICE] N.E.X.A berbicara: "${completeAssistantText}"`);
+            this.turnHistory.push({ role: 'assistant', text: completeAssistantText });
+            supabaseMemories.saveChatMemory('nexa', completeAssistantText.slice(0, 800), 'live_call').catch(() => {});
+          } else if (this.isAssistantSpeaking) {
+            this.turnHistory.push({ role: 'assistant', text: '(Respon suara N.E.X.A)' });
+          }
+          this.currentTurnAssistantText = '';
 
-        // If turnComplete is reached, return state to LISTENING (only if call is not ending)
-        if (msg.serverContent.turnComplete && !this.isEndingCall) {
-          this.isAssistantSpeaking = false;
-          this.isGreetingPending   = false;
-          this.isExecutingTool     = false;
-          this._sendToClient({
-            type: 'CALL_STATUS_UPDATE',
-            status: 'LISTENING'
-          });
+          if (!this.isEndingCall) {
+            this.isAssistantSpeaking = false;
+            this.isGreetingPending   = false;
+            this.isExecutingTool     = false;
+            this._sendToClient({
+              type: 'CALL_STATUS_UPDATE',
+              status: 'LISTENING'
+            });
+          }
         }
 
         // If turnComplete is reached AND call is marked to end:
@@ -738,31 +778,28 @@ class LiveVoiceSession {
       console.log(`[LIVE-VOICE] Audio stream active: ${this.incomingAudioChunkCount} chunks (RMS: ${rms.toFixed(0)})`);
     }
 
-    // GATING 1: Do not forward mic noise while tool response is being synthesized
-    if (this.isExecutingTool) {
-      return;
-    }
-
     // Release greeting pending on voice activity
-    if (this.isGreetingPending && rms > 700) {
+    if (this.isGreetingPending && rms > 500) {
       this.isGreetingPending = false;
     }
 
-    // GATING 2: Anti-Barge-in / Echo Suppression Gate
-    // While the assistant is actively speaking, only forward mic audio to Google
-    // IF the user is speaking loudly (intentional barge-in, rms >= 850).
-    // Low/moderate audio (< 850) during playback is acoustic leakage, TWS noise,
-    // or breathing — forwarding it causes Google to falsely trigger 'interrupted: true' and cut off speech!
-    if (this.isAssistantSpeaking && rms < 850) {
-      return;
+    // Barge-in & Echo Suppression:
+    // While the assistant is actively speaking, if speech energy is below BARGE_IN_RMS_THRESHOLD
+    // (default 600, optimized for TWS earbuds & mobile mic), do not drop audio chunks.
+    // Instead, stream an equal-length silence buffer to keep Google's neural audio clock unbroken
+    // while preventing acoustic feedback from assistant playback.
+    let audioDataToSend = pcmBase64;
+    if (this.isAssistantSpeaking && rms < BARGE_IN_RMS_THRESHOLD) {
+      const bufLen = pcmBuf && pcmBuf.length > 0 ? pcmBuf.length : 3200;
+      audioDataToSend = Buffer.alloc(bufLen, 0).toString('base64');
     }
 
-    // Forward raw PCM directly to Google Gemini Multimodal Live API
+    // Forward PCM directly to Google Gemini Multimodal Live API
     const realtimeMsg = {
       realtimeInput: {
         audio: {
           mimeType: 'audio/pcm;rate=16000',
-          data: pcmBase64
+          data: audioDataToSend
         }
       }
     };
@@ -1179,7 +1216,7 @@ function getActiveSessionForClient(clientWs) {
     if (onlySession && onlySession.isActive) {
       if (clientWs && onlySession.clientWs !== clientWs) {
         console.log(`[LIVE-VOICE] Updating clientWs reference for active session [${onlySession.sessionId}]`);
-        onlySession.clientWs = clientWs;
+        rebindClientWs(clientWs);
       }
       return onlySession;
     }
