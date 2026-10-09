@@ -608,7 +608,12 @@ class LiveVoiceSession {
 
         // Accumulate user speech transcript from Google neural transcription
         if (msg.serverContent.inputTranscription?.text) {
-          this._userTranscriptBuf = (this._userTranscriptBuf || '') + msg.serverContent.inputTranscription.text;
+          const chunk = msg.serverContent.inputTranscription.text;
+          if (this._userTranscriptBuf && !this._userTranscriptBuf.endsWith(' ') && !chunk.startsWith(' ')) {
+            this._userTranscriptBuf += ' ' + chunk;
+          } else {
+            this._userTranscriptBuf = (this._userTranscriptBuf || '') + chunk;
+          }
         }
 
         // Accumulate assistant output transcript if provided

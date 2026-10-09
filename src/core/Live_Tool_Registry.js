@@ -493,9 +493,17 @@ const LIVE_TOOL_DECLARATIONS = [
 const _pendingActionConfirmations = new Map();
 
 function _validateActionConfirmation(toolName, key, previewText, confirmed) {
-  if (confirmed === true) {
+  const isConfirmed = confirmed === true || String(confirmed).toLowerCase() === 'true';
+  if (isConfirmed) {
     _pendingActionConfirmations.delete(key);
     return null;
+  }
+  // Prune expired entries to prevent memory accumulation
+  if (_pendingActionConfirmations.size > 100) {
+    const now = Date.now();
+    for (const [k, exp] of _pendingActionConfirmations.entries()) {
+      if (exp < now) _pendingActionConfirmations.delete(k);
+    }
   }
   _pendingActionConfirmations.set(key, Date.now() + 60000);
   return {

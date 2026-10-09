@@ -50,7 +50,7 @@ class PresenceModel {
     }
 
     // 2. Light & Ambient Room Condition
-    const rawLux = d.lux !== undefined ? Number(d.lux) : (typeof report.lux === 'number' ? report.lux : null);
+    const rawLux = (d.lux !== undefined && d.lux !== null) ? Number(d.lux) : (typeof report.lux === 'number' ? report.lux : null);
     const rawState = String(d.state || report.state || report.condition || '').toUpperCase();
 
     if (event === 'ROOM_DARK_NIGHT' || event === 'LIGHT_CHANGED' || (rawLux !== null && Number.isFinite(rawLux)) || rawState) {

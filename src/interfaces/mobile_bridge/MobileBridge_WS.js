@@ -160,7 +160,7 @@ function initWebSocket(server) {
             if (sid) {
               activeSession = liveVoice.getLiveSession(sid);
               if (activeSession && activeSession.clientWs !== ws && activeSession.isActive) {
-                activeSession.clientWs = ws;
+                liveVoice.rebindClientWs(ws);
               }
             }
             if (!activeSession) {
@@ -192,7 +192,7 @@ function initWebSocket(server) {
             if (sid) {
               activeSession = liveVoice.getLiveSession(sid);
               if (activeSession && activeSession.clientWs !== ws && activeSession.isActive) {
-                activeSession.clientWs = ws;
+                liveVoice.rebindClientWs(ws);
               }
             }
             if (!activeSession) {
