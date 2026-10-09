@@ -80,6 +80,12 @@ function initWebSocket(server) {
     }
     activeClient = ws;
 
+    // Immediately rebind active Live Voice Session to the new socket connection
+    try {
+      const liveVoice = require('../../core/Live_Voice_Engine');
+      liveVoice.rebindClientWs(ws);
+    } catch (_) {}
+
     // 3. Message Listener (Nexa Protocol 3.0)
     ws.on('message', (rawMessage) => {
       try {
@@ -149,8 +155,18 @@ function initWebSocket(server) {
         if (payload.type === 'CALL_AUDIO_STREAM' || payload.type === 'AUDIO_STREAM') {
           try {
             const liveVoice = require('../../core/Live_Voice_Engine');
-            const activeSession = liveVoice.getActiveSessionForClient(ws);
-            if (activeSession) {
+            const sid = payload.command_id || payload.sessionId;
+            let activeSession = null;
+            if (sid) {
+              activeSession = liveVoice.getLiveSession(sid);
+              if (activeSession && activeSession.clientWs !== ws && activeSession.isActive) {
+                activeSession.clientWs = ws;
+              }
+            }
+            if (!activeSession) {
+              activeSession = liveVoice.getActiveSessionForClient(ws);
+            }
+            if (activeSession && activeSession.isActive) {
               const pcmData = payload.pcm_chunk || payload.pcm || payload.data;
               if (pcmData) {
                 activeSession.handleIncomingClientAudio(pcmData);
@@ -158,7 +174,7 @@ function initWebSocket(server) {
             } else {
               if (!ws._lastNoSessionWarn || Date.now() - ws._lastNoSessionWarn > 5000) {
                 ws._lastNoSessionWarn = Date.now();
-                console.warn('[NEXA-BRIDGE-WS] ⚠️ Audio stream received but no active LiveVoiceSession found for client');
+                console.warn('[NEXA-BRIDGE-WS] Audio stream received but no active LiveVoiceSession found for client');
               }
             }
           } catch (e) {
@@ -171,8 +187,18 @@ function initWebSocket(server) {
         if (payload.type === 'CALL_VIDEO_FRAME' || payload.type === 'VIDEO_STREAM') {
           try {
             const liveVoice = require('../../core/Live_Voice_Engine');
-            const activeSession = liveVoice.getActiveSessionForClient(ws);
-            if (activeSession) {
+            const sid = payload.command_id || payload.sessionId;
+            let activeSession = null;
+            if (sid) {
+              activeSession = liveVoice.getLiveSession(sid);
+              if (activeSession && activeSession.clientWs !== ws && activeSession.isActive) {
+                activeSession.clientWs = ws;
+              }
+            }
+            if (!activeSession) {
+              activeSession = liveVoice.getActiveSessionForClient(ws);
+            }
+            if (activeSession && activeSession.isActive) {
               const imageChunk = payload.image_chunk || payload.data;
               if (imageChunk) {
                 activeSession.handleIncomingClientVideoFrame(imageChunk);
@@ -214,13 +240,11 @@ function initWebSocket(server) {
       if (activeClient === ws) {
         activeClient = null;
       }
-      // Close any active live voice session for this client
+      // Allow 15-second grace period for Live Voice Session so momentary network drops (code 1006)
+      // do not destroy active calls
       try {
         const liveVoice = require('../../core/Live_Voice_Engine');
-        const session = liveVoice.getActiveSessionForClient(ws);
-        if (session) {
-          session.close();
-        }
+        liveVoice.handleClientDisconnect(ws, 15000);
       } catch (_) {}
 
       // Purge all pending command promises so event loop never deadlocks

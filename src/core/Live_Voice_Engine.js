@@ -180,6 +180,7 @@ class LiveVoiceSession {
     this.turnsCount              = 0;
     this.hasLoggedFirstAudio     = false;
     this.incomingAudioChunkCount = 0;
+    this.ambientNoiseFloor       = 300;
   }
 
   _calculatePcmRms(buffer) {
@@ -198,7 +199,7 @@ class LiveVoiceSession {
    */
   async start() {
     this.isActive = true;
-    console.log(`[LIVE-VOICE] 🚀 Starting Live Session [${this.sessionId}] | Model: ${this.currentModel}`);
+    console.log(`[LIVE-VOICE] Starting Live Session [${this.sessionId}] | Model: ${this.currentModel}`);
     // Keep HUD on standard symmetrical round cyan LISTENING eyes
     this._sendToClient({
       type: 'CALL_STATUS_UPDATE',
@@ -219,6 +220,11 @@ class LiveVoiceSession {
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
     this.isWaitingForModelReply = false;
+    this.isUserSpeaking      = false;
+    if (this.vadSilenceTimer) {
+      clearTimeout(this.vadSilenceTimer);
+      this.vadSilenceTimer = null;
+    }
     this.lastClientInputTime = Date.now();
 
     const apiKey    = this._getApiKey();
@@ -496,10 +502,14 @@ class LiveVoiceSession {
     };
 
     try {
+      if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN) {
+        console.warn('[LIVE-VOICE] Google WebSocket closed or not ready when sending setup payload. Aborting.');
+        return;
+      }
       this.googleWs.send(JSON.stringify(setupPayload));
-      console.log(`[LIVE-VOICE] 📤 Setup payload sent to Google WSS successfully.`);
+      console.log('[LIVE-VOICE] Setup payload sent to Google WSS successfully.');
     } catch (sendErr) {
-      console.error(`[LIVE-VOICE] ❌ Failed to send setup payload:`, sendErr.message);
+      console.error('[LIVE-VOICE] Failed to send setup payload:', sendErr.message);
     }
   }
 
@@ -584,10 +594,15 @@ class LiveVoiceSession {
           this.waitingSafetyTimer = null;
         }
         this.isWaitingForModelReply = false;
+        this.isUserSpeaking = false;
+        if (this.vadSilenceTimer) {
+          clearTimeout(this.vadSilenceTimer);
+          this.vadSilenceTimer = null;
+        }
         if (msg.serverContent.interrupted) {
-          console.log(`[LIVE-VOICE] Barge-in / turn transition detected.`);
+          console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
           this.isAssistantSpeaking = false;
-          // BUG 1 FIX: Signal Android to flush playback queue and re-open mic immediately
+          // Signal Android to flush playback queue and re-open mic immediately
           this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
         }
 
@@ -762,7 +777,7 @@ class LiveVoiceSession {
       console.log(`[LIVE-VOICE] Audio stream active: ${this.incomingAudioChunkCount} chunks (RMS: ${rms.toFixed(0)}, UserSpeaking: ${this.isUserSpeaking})`);
     }
 
-    // GATING: Do not forward mic noise while tool response is being synthesized
+    // GATING 1: Do not forward mic noise while tool response is being synthesized
     if (this.isExecutingTool) {
       return;
     }
@@ -772,7 +787,22 @@ class LiveVoiceSession {
       this.isGreetingPending = false;
     }
 
-    // Google Gemini Multimodal Live API format (media_chunks deprecated, audio required)
+    // GATING 2: Anti-Barge-in / Echo Suppression Gate
+    // While the assistant is actively speaking, only forward mic audio to Google
+    // IF the user is speaking loudly (intentional barge-in, rms >= 850).
+    // Low/moderate audio (< 850) during playback is acoustic leakage, TWS noise,
+    // or breathing — forwarding it causes Google to falsely trigger 'interrupted: true' and cut off speech!
+    if (this.isAssistantSpeaking && rms < 850) {
+      return;
+    }
+
+    // GATING 3: While waiting for model reply, suppress low-energy noise chunks (< 800)
+    // so Google is not confused or delayed right after turnComplete
+    if (this.isWaitingForModelReply && rms < 800) {
+      return;
+    }
+
+    // Google Gemini Multimodal Live API format
     const realtimeMsg = {
       realtimeInput: {
         audio: {
@@ -783,28 +813,52 @@ class LiveVoiceSession {
     };
 
     try {
-      this.googleWs.send(JSON.stringify(realtimeMsg));
+      if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
+        this.googleWs.send(JSON.stringify(realtimeMsg));
+      }
     } catch (err) {
-      console.error(`[LIVE-VOICE] Failed to forward audio to Google:`, err.message);
+      console.error('[LIVE-VOICE] Failed to forward audio to Google:', err.message);
     }
 
-    // ── Server-Side Voice Activity Detection (VAD) & Turn Commit ──
-    // Ambient noise is ~100-250 RMS. Bluetooth TWS mic speech is ~480-850 RMS. Phone mic is ~1500-4000 RMS.
-    const SPEECH_RMS_THRESHOLD = 480;
+    // ── Server-Side Voice Activity Detection (VAD) & Adaptive Turn Commit ──
+    // Track ambient noise floor moving average during non-speech intervals
+    if (!this.isUserSpeaking) {
+      this.ambientNoiseFloor = this.ambientNoiseFloor
+        ? (this.ambientNoiseFloor * 0.95 + rms * 0.05)
+        : Math.max(200, rms);
+    }
 
-    // Do not trigger VAD while waiting for model reply or while assistant is speaking
-    if (this.isWaitingForModelReply || this.isAssistantSpeaking) {
+    // Dynamic speech threshold: Adaptive to environment & headset type
+    // Typical noise floors: Phone quiet room: 100-250 RMS. TWS mic / ambient noise: 450-650 RMS.
+    // Speech is typically 1200 - 3000 RMS.
+    const speechThreshold = Math.max(650, Math.min(1100, Math.round((this.ambientNoiseFloor || 300) * 1.5 + 200)));
+
+    // Do not trigger VAD while assistant is speaking unless genuine loud barge-in
+    if (this.isAssistantSpeaking && rms < 850) {
       return;
     }
 
-    if (rms >= SPEECH_RMS_THRESHOLD) {
+    // If waiting for model reply and user speaks loudly again, cancel wait
+    if (this.isWaitingForModelReply) {
+      if (rms >= speechThreshold) {
+        this.isWaitingForModelReply = false;
+        if (this.waitingSafetyTimer) {
+          clearTimeout(this.waitingSafetyTimer);
+          this.waitingSafetyTimer = null;
+        }
+      } else {
+        return;
+      }
+    }
+
+    if (rms >= speechThreshold) {
       // Voice detected
       this.lastVoiceActivityTime = Date.now();
       if (!this.isUserSpeaking) {
         this.isUserSpeaking = true;
         this.userSpeechStartTime = Date.now();
         this.userTurnChunkCount = 0;
-        console.log(`[LIVE-VOICE] User speech started (RMS: ${rms.toFixed(0)} >= ${SPEECH_RMS_THRESHOLD}).`);
+        console.log(`[LIVE-VOICE] User speech started (RMS: ${rms.toFixed(0)} >= Threshold: ${speechThreshold}, NoiseFloor: ${Math.round(this.ambientNoiseFloor || 0)}).`);
         this._sendToClient({
           type: 'CALL_STATUS_UPDATE',
           status: 'LISTENING'
@@ -817,10 +871,17 @@ class LiveVoiceSession {
         clearTimeout(this.vadSilenceTimer);
         this.vadSilenceTimer = null;
       }
+
+      // Maximum speech duration safety clamp (commit turn if user speech continues > 6 seconds)
+      const speechDuration = Date.now() - this.userSpeechStartTime;
+      if (speechDuration > 6000 && this.userTurnChunkCount >= 10) {
+        console.log(`[LIVE-VOICE] Max speech duration reached (${speechDuration}ms). Auto-committing turn to Gemini...`);
+        this._commitUserTurn(rms);
+      }
     } else if (this.isUserSpeaking) {
       // Silence following user speech
       if (!this.vadSilenceTimer) {
-        // 850ms of consecutive silence commits the turn
+        // 800ms of consecutive silence commits the turn
         this.vadSilenceTimer = setTimeout(() => {
           if (!this.isActive || !this.isSetupComplete) return;
           if (!this.isUserSpeaking) return;
@@ -832,38 +893,50 @@ class LiveVoiceSession {
 
           // Require at least 3 chunks (~300ms) of sustained speech to filter out clicks/breaths
           if (this.userTurnChunkCount >= 3) {
-            console.log(`[LIVE-VOICE] End of user speech detected (${this.userTurnChunkCount} chunks, RMS: ${rms.toFixed(0)}). Committing turn to Gemini...`);
-            this.isUserSpeaking = false;
-            this.vadSilenceTimer = null;
-            this.isWaitingForModelReply = true;
-
-            // Safety timeout: unlock waiting flag if Google stays silent for > 10s
-            if (this.waitingSafetyTimer) clearTimeout(this.waitingSafetyTimer);
-            this.waitingSafetyTimer = setTimeout(() => {
-              if (this.isWaitingForModelReply) {
-                console.log(`[LIVE-VOICE] Safety timeout: Resetting isWaitingForModelReply after 10s.`);
-                this.isWaitingForModelReply = false;
-              }
-            }, 10000);
-
-            try {
-              this.googleWs.send(JSON.stringify({
-                clientContent: { turnComplete: true }
-              }));
-              this._sendToClient({
-                type: 'CALL_STATUS_UPDATE',
-                status: 'THINKING'
-              });
-            } catch (err) {
-              console.warn(`[LIVE-VOICE] Failed to commit turnComplete:`, err.message);
-              this.isWaitingForModelReply = false;
-            }
+            this._commitUserTurn(rms);
           } else {
             this.isUserSpeaking = false;
             this.vadSilenceTimer = null;
           }
-        }, 900);
+        }, 800);
       }
+    }
+  }
+
+  /**
+   * Commit user speech turn to Gemini
+   */
+  _commitUserTurn(rms) {
+    console.log(`[LIVE-VOICE] End of user speech detected (${this.userTurnChunkCount} chunks, RMS: ${rms ? rms.toFixed(0) : 0}). Committing turn to Gemini...`);
+    this.isUserSpeaking = false;
+    if (this.vadSilenceTimer) {
+      clearTimeout(this.vadSilenceTimer);
+      this.vadSilenceTimer = null;
+    }
+    this.isWaitingForModelReply = true;
+
+    // Safety timeout: unlock waiting flag if Google stays silent for > 10s
+    if (this.waitingSafetyTimer) clearTimeout(this.waitingSafetyTimer);
+    this.waitingSafetyTimer = setTimeout(() => {
+      if (this.isWaitingForModelReply) {
+        console.log('[LIVE-VOICE] Safety timeout: Resetting isWaitingForModelReply after 10s.');
+        this.isWaitingForModelReply = false;
+      }
+    }, 10000);
+
+    try {
+      if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
+        this.googleWs.send(JSON.stringify({
+          clientContent: { turnComplete: true }
+        }));
+      }
+      this._sendToClient({
+        type: 'CALL_STATUS_UPDATE',
+        status: 'THINKING'
+      });
+    } catch (err) {
+      console.warn('[LIVE-VOICE] Failed to commit turnComplete:', err.message);
+      this.isWaitingForModelReply = false;
     }
   }
 
@@ -1225,8 +1298,15 @@ Contoh: "N.E.X.A berhasil mengeksekusi pencatatan keuangan dan kalender via suar
 // SESSION MANAGER — Active Sessions Map: sessionId → LiveVoiceSession
 // ────────────────────────────────────────────────────────────────────────────
 const activeSessions = new Map();
+const disconnectTimers = new Map(); // sessionId -> timeoutId
 
 function startLiveSession(sessionId, clientWs) {
+  // Cancel any pending disconnect timer for this session
+  if (disconnectTimers.has(sessionId)) {
+    clearTimeout(disconnectTimers.get(sessionId));
+    disconnectTimers.delete(sessionId);
+  }
+
   // Terminate any existing session for this client
   if (activeSessions.has(sessionId)) {
     activeSessions.get(sessionId).close();
@@ -1254,7 +1334,7 @@ function getActiveSessionForClient(clientWs) {
     const onlySession = activeSessions.values().next().value;
     if (onlySession && onlySession.isActive) {
       if (clientWs && onlySession.clientWs !== clientWs) {
-        console.log(`[LIVE-VOICE] 🔄 Updating clientWs reference for active session [${onlySession.sessionId}]`);
+        console.log(`[LIVE-VOICE] Updating clientWs reference for active session [${onlySession.sessionId}]`);
         onlySession.clientWs = clientWs;
       }
       return onlySession;
@@ -1263,7 +1343,46 @@ function getActiveSessionForClient(clientWs) {
   return null;
 }
 
+function handleClientDisconnect(clientWs, gracePeriodMs = 15000) {
+  for (const session of activeSessions.values()) {
+    if (session.clientWs === clientWs && session.isActive) {
+      const sid = session.sessionId;
+      console.log(`[LIVE-VOICE] Client disconnected for session [${sid}]. Starting ${gracePeriodMs / 1000}s grace period.`);
+      if (disconnectTimers.has(sid)) {
+        clearTimeout(disconnectTimers.get(sid));
+      }
+      const timer = setTimeout(() => {
+        disconnectTimers.delete(sid);
+        if (session.isActive) {
+          console.log(`[LIVE-VOICE] Grace period expired for session [${sid}]. Closing session.`);
+          session.close();
+          activeSessions.delete(sid);
+        }
+      }, gracePeriodMs);
+      disconnectTimers.set(sid, timer);
+    }
+  }
+}
+
+function rebindClientWs(newClientWs) {
+  for (const session of activeSessions.values()) {
+    if (session.isActive) {
+      const sid = session.sessionId;
+      if (disconnectTimers.has(sid)) {
+        clearTimeout(disconnectTimers.get(sid));
+        disconnectTimers.delete(sid);
+        console.log(`[LIVE-VOICE] Client reconnected during grace period. Re-bound session [${sid}] to new socket.`);
+      }
+      session.clientWs = newClientWs;
+    }
+  }
+}
+
 function closeLiveSession(sessionId) {
+  if (disconnectTimers.has(sessionId)) {
+    clearTimeout(disconnectTimers.get(sessionId));
+    disconnectTimers.delete(sessionId);
+  }
   if (activeSessions.has(sessionId)) {
     const session = activeSessions.get(sessionId);
     session.close();
@@ -1272,14 +1391,18 @@ function closeLiveSession(sessionId) {
 }
 
 function markEndingCall() {
-  console.log(`[LIVE-VOICE] 📞 Marking active live sessions to end after current speech turn finishes...`);
+  console.log('[LIVE-VOICE] Marking active live sessions to end after current speech turn finishes...');
   for (const session of activeSessions.values()) {
     session.isEndingCall = true;
   }
 }
 
 function closeAllLiveSessions() {
-  console.log(`[LIVE-VOICE] 🛑 Closing all active live voice sessions (${activeSessions.size} active)...`);
+  console.log(`[LIVE-VOICE] Closing all active live voice sessions (${activeSessions.size} active)...`);
+  for (const timer of disconnectTimers.values()) {
+    clearTimeout(timer);
+  }
+  disconnectTimers.clear();
   for (const [id, session] of activeSessions.entries()) {
     try {
       session._sendToClient({ type: 'CALL_REPLY_COMPLETE' });
@@ -1295,7 +1418,9 @@ module.exports = {
   getActiveSessionForClient,
   closeLiveSession,
   closeAllLiveSessions,
-  markEndingCall
+  markEndingCall,
+  handleClientDisconnect,
+  rebindClientWs
 };
 
 
