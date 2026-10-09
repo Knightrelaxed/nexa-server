@@ -174,6 +174,7 @@ class LiveVoiceSession {
     this.incomingAudioChunkCount = 0;
     this.currentTurnAssistantText = '';
     this._userTranscriptBuf       = '';
+    this._lastTactileInjectionTime = 0;
   }
 
   _flushUserTurn() {
@@ -882,6 +883,99 @@ class LiveVoiceSession {
     this.turnHistory.push({ role: 'user', text: text.trim() });
     // Async persist to nexa_chat_memories — never block audio
     supabaseMemories.saveChatMemory('user', text.trim().slice(0, 800), 'live_call').catch(() => {});
+  }
+
+  /**
+   * Handle physical tactile touch / tap on OLED eyes or face from Android client.
+   * Feeds sensory awareness or wake-up nudge directly into Gemini Multimodal Live API.
+   * @param {Object} payload - { target: 'LEFT'|'RIGHT', tap_count: 1|2, hud_state: string }
+   */
+  handleIncomingTactileEvent(payload) {
+    if (!this.isActive || !this.isSetupComplete || !this.googleWs || this.googleWs.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const now = Date.now();
+    // Debounce rapid tap spam (minimum 1200ms between neural injections)
+    if (this._lastTactileInjectionTime && now - this._lastTactileInjectionTime < 1200) {
+      return;
+    }
+    this._lastTactileInjectionTime = now;
+
+    const targetEye = payload.target === 'LEFT' ? 'mata kiri' : 'mata kanan';
+    const isDoubleTap = (payload.tap_count || 1) >= 2;
+
+    console.log(`[LIVE-VOICE] Tactile touch sensed: target=${payload.target} (${targetEye}), tapCount=${payload.tap_count}, isSpeaking=${this.isAssistantSpeaking}`);
+
+    // Case 1: Assistant is currently speaking & user double taps -> Haptic Barge-in
+    if (this.isAssistantSpeaking && isDoubleTap) {
+      console.log('[LIVE-VOICE] Haptic double-tap barge-in triggered.');
+      this.isAssistantSpeaking = false;
+      this._flushUserTurn();
+      if (this.currentTurnAssistantText && this.currentTurnAssistantText.trim()) {
+        const interruptedText = this.currentTurnAssistantText.trim() + ' (terpotong ketukan)';
+        this.turnHistory.push({ role: 'assistant', text: interruptedText });
+      }
+      this.currentTurnAssistantText = '';
+      this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
+      this._sendToClient({
+        type: 'CALL_STATUS_UPDATE',
+        status: 'LISTENING'
+      });
+
+      const interruptInstruction = `[SENSOR TAKTIL]: Tuan Faqih mengetuk layarmu untuk memotong pembicaraan. Hentikan pembicaraan sebelumnya, dan tanyakan ada apa dengan singkat dan sigap (1 kalimat).`;
+      try {
+        this.googleWs.send(JSON.stringify({
+          clientContent: {
+            turns: [{
+              role: 'user',
+              parts: [{ text: interruptInstruction }]
+            }],
+            turnComplete: true
+          }
+        }));
+      } catch (err) {
+        console.warn('[LIVE-VOICE] Tactile barge-in injection error:', err.message);
+      }
+      return;
+    }
+
+    // Case 2: Wake-Up Nudge (Double tap while idle, stuck, or slow)
+    if (isDoubleTap) {
+      const nudgeInstruction = `[SENSOR TAKTIL - WAKE UP NUDGE]: Tuan Faqih mengetuk layar/wajahmu berturut-turut untuk menyadarkanmu atau meminta perhatian segera. Bangun dari lamunan dan segera tanyakan apa yang bisa dibantu secara sigap dan ramah (1 kalimat pendek).`;
+      try {
+        this.googleWs.send(JSON.stringify({
+          clientContent: {
+            turns: [{
+              role: 'user',
+              parts: [{ text: nudgeInstruction }]
+            }],
+            turnComplete: true
+          }
+        }));
+      } catch (err) {
+        console.warn('[LIVE-VOICE] Tactile wake-up injection error:', err.message);
+      }
+      return;
+    }
+
+    // Case 3: Single Tap (Playful / Casual touch on specific eye)
+    if (!this.isAssistantSpeaking) {
+      const casualInstruction = `[SENSOR TAKTIL]: Tuan Faqih baru saja menyentuh/mengetuk ${targetEye}mu di layar. Berikan respons natural, akrab, sedikit kaget/manja, atau lucu yang sangat singkat (maksimal 1 kalimat pendek).`;
+      try {
+        this.googleWs.send(JSON.stringify({
+          clientContent: {
+            turns: [{
+              role: 'user',
+              parts: [{ text: casualInstruction }]
+            }],
+            turnComplete: true
+          }
+        }));
+      } catch (err) {
+        console.warn('[LIVE-VOICE] Tactile casual injection error:', err.message);
+      }
+    }
   }
 
   /**

@@ -210,6 +210,24 @@ function initWebSocket(server) {
           return;
         }
 
+        // E.3. Tactile Touch / Eye Tap Event (Somatosensory feedback relay)
+        if (payload.type === 'CALL_TACTILE_EVENT') {
+          try {
+            const liveVoice = require('../../core/Live_Voice_Engine');
+            const sid = payload.command_id || payload.sessionId;
+            let activeSession = sid ? liveVoice.getLiveSession(sid) : null;
+            if (!activeSession) {
+              activeSession = liveVoice.getActiveSessionForClient(ws);
+            }
+            if (activeSession && activeSession.isActive) {
+              activeSession.handleIncomingTactileEvent(payload);
+            }
+          } catch (e) {
+            console.error('[NEXA-BRIDGE-WS] Tactile event routing error:', e.message);
+          }
+          return;
+        }
+
 
         // F. App Usage Telemetry & Duration Limiting Engine
         if (payload.type === 'APP_USAGE_TELEMETRY' || payload.type === 'app_usage') {
