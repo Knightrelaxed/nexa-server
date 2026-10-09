@@ -896,21 +896,31 @@ class LiveVoiceSession {
     }
 
     const now = Date.now();
-    // Debounce rapid tap spam (minimum 1200ms between neural injections)
-    if (this._lastTactileInjectionTime && now - this._lastTactileInjectionTime < 1200) {
+    const isDoubleTap = (payload.tap_count || 1) >= 2;
+
+    // Debounce rapid tap spam:
+    // Single tap: 1200ms debounce to prevent chat turn spam
+    // Double tap (urgent wake-up / barge-in): 300ms debounce so it is never blocked by a preceding wink
+    const minInterval = isDoubleTap ? 300 : 1200;
+    if (this._lastTactileInjectionTime && now - this._lastTactileInjectionTime < minInterval) {
       return;
     }
     this._lastTactileInjectionTime = now;
 
     const targetEye = payload.target === 'LEFT' ? 'mata kiri' : 'mata kanan';
-    const isDoubleTap = (payload.tap_count || 1) >= 2;
 
     console.log(`[LIVE-VOICE] Tactile touch sensed: target=${payload.target} (${targetEye}), tapCount=${payload.tap_count}, isSpeaking=${this.isAssistantSpeaking}`);
 
     // Case 1: Assistant is currently speaking & user double taps -> Haptic Barge-in
     if (this.isAssistantSpeaking && isDoubleTap) {
       console.log('[LIVE-VOICE] Haptic double-tap barge-in triggered.');
+      if (this._toolSafetyTimer) {
+        clearTimeout(this._toolSafetyTimer);
+        this._toolSafetyTimer = null;
+      }
       this.isAssistantSpeaking = false;
+      this.isExecutingTool     = false;
+      this.isWaitingToolReply  = false;
       this._flushUserTurn();
       if (this.currentTurnAssistantText && this.currentTurnAssistantText.trim()) {
         const interruptedText = this.currentTurnAssistantText.trim() + ' (terpotong ketukan)';
@@ -942,6 +952,14 @@ class LiveVoiceSession {
 
     // Case 2: Wake-Up Nudge (Double tap while idle, stuck, or slow)
     if (isDoubleTap) {
+      if (this._toolSafetyTimer) {
+        clearTimeout(this._toolSafetyTimer);
+        this._toolSafetyTimer = null;
+      }
+      this.isAssistantSpeaking = false;
+      this.isExecutingTool     = false;
+      this.isWaitingToolReply  = false;
+
       const nudgeInstruction = `[SENSOR TAKTIL - WAKE UP NUDGE]: Tuan Faqih mengetuk layar/wajahmu berturut-turut untuk menyadarkanmu atau meminta perhatian segera. Bangun dari lamunan dan segera tanyakan apa yang bisa dibantu secara sigap dan ramah (1 kalimat pendek).`;
       try {
         this.googleWs.send(JSON.stringify({
@@ -960,7 +978,8 @@ class LiveVoiceSession {
     }
 
     // Case 3: Single Tap (Playful / Casual touch on specific eye)
-    if (!this.isAssistantSpeaking) {
+    // Only inject when assistant is not speaking, not executing tools, and not waiting for tool response
+    if (!this.isAssistantSpeaking && !this.isExecutingTool && !this.isWaitingToolReply) {
       const casualInstruction = `[SENSOR TAKTIL]: Tuan Faqih baru saja menyentuh/mengetuk ${targetEye}mu di layar. Berikan respons natural, akrab, sedikit kaget/manja, atau lucu yang sangat singkat (maksimal 1 kalimat pendek).`;
       try {
         this.googleWs.send(JSON.stringify({
