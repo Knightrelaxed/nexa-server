@@ -164,6 +164,8 @@ class LiveVoiceSession {
     this.lastActivityTime  = Date.now();  // BUG 4: tracks last Google message time
     // Turn Gating: Prevent mic ambient noise from colliding with greeting & tool response synthesis
     this.isExecutingTool     = false;
+    this.isWaitingToolReply  = false;
+    this._toolSafetyTimer    = null;
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
     this.lastClientInputTime = Date.now();
@@ -218,6 +220,11 @@ class LiveVoiceSession {
     // Reset setup and state flags so audio is never sent before setup completes on reconnect
     this.isSetupComplete     = false;
     this.isExecutingTool     = false;
+    this.isWaitingToolReply  = false;
+    if (this._toolSafetyTimer) {
+      clearTimeout(this._toolSafetyTimer);
+      this._toolSafetyTimer = null;
+    }
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
     this.lastClientInputTime = Date.now();
@@ -525,6 +532,12 @@ class LiveVoiceSession {
       // BUG 4 FIX: Update activity timestamp on every message from Google
       this.lastActivityTime = Date.now();
 
+      const hasToolCall = Boolean(msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0);
+      if (hasToolCall) {
+        this.isExecutingTool = true;
+        this.isWaitingToolReply = false;
+      }
+
       // ── 1. Setup Complete ────────────────────────────────────────────────
       if (msg.setupComplete) {
         this.isSetupComplete    = true;
@@ -590,7 +603,13 @@ class LiveVoiceSession {
       if (msg.serverContent) {
         if (msg.serverContent.interrupted) {
           console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
+          if (this._toolSafetyTimer) {
+            clearTimeout(this._toolSafetyTimer);
+            this._toolSafetyTimer = null;
+          }
           this.isAssistantSpeaking = false;
+          this.isExecutingTool     = false;
+          this.isWaitingToolReply  = false;
           this._flushUserTurn();
           if (this.currentTurnAssistantText && this.currentTurnAssistantText.trim()) {
             const interruptedText = this.currentTurnAssistantText.trim() + ' (terpotong)';
@@ -627,6 +646,10 @@ class LiveVoiceSession {
         for (const p of parts) {
           // Audio chunk (PCM 24kHz Base64)
           if (p.inlineData && p.inlineData.data) {
+            if (this._toolSafetyTimer) {
+              clearTimeout(this._toolSafetyTimer);
+              this._toolSafetyTimer = null;
+            }
             if (!this.isAssistantSpeaking) {
               this._flushUserTurn();
               this.turnsCount = (this.turnsCount || 0) + 1;
@@ -638,6 +661,7 @@ class LiveVoiceSession {
             this.isAssistantSpeaking = true;
             this.isGreetingPending   = false;
             this.isExecutingTool     = false;
+            this.isWaitingToolReply  = false;
             this._sendToClient({
               type: 'CALL_AUDIO_PLAY',
               pcm_chunk: p.inlineData.data
@@ -667,10 +691,33 @@ class LiveVoiceSession {
           }
           this.currentTurnAssistantText = '';
 
-          if (!this.isEndingCall) {
+          // Gating logic: Do not revert to LISTENING if tool execution or tool response is active
+          if (hasToolCall || (this.isExecutingTool && !this.isWaitingToolReply)) {
+            console.log(`[LIVE-VOICE] turnComplete received while tool execution is active (isExecutingTool=${this.isExecutingTool}, hasToolCall=${hasToolCall}). Preserving PROCESSING status.`);
+          } else if (this.isExecutingTool && this.isWaitingToolReply) {
+            console.log(`[LIVE-VOICE] turnComplete received after toolResponse without speech. Resetting to LISTENING.`);
+            if (this._toolSafetyTimer) {
+              clearTimeout(this._toolSafetyTimer);
+              this._toolSafetyTimer = null;
+            }
+            this.isExecutingTool     = false;
+            this.isWaitingToolReply  = false;
+            this.isAssistantSpeaking = false;
+            if (!this.isEndingCall) {
+              this._sendToClient({
+                type: 'CALL_STATUS_UPDATE',
+                status: 'LISTENING'
+              });
+            }
+          } else if (!this.isEndingCall) {
+            if (this._toolSafetyTimer) {
+              clearTimeout(this._toolSafetyTimer);
+              this._toolSafetyTimer = null;
+            }
             this.isAssistantSpeaking = false;
             this.isGreetingPending   = false;
             this.isExecutingTool     = false;
+            this.isWaitingToolReply  = false;
             this._sendToClient({
               type: 'CALL_STATUS_UPDATE',
               status: 'LISTENING'
@@ -697,8 +744,9 @@ class LiveVoiceSession {
       }
 
       // ── 3. Tool Calls (Function Execution — Parallel Batching) ──────────
-      if (msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0) {
+      if (hasToolCall) {
         this.isExecutingTool = true;
+        this.isWaitingToolReply = false;
         this._flushUserTurn();
         // Notify HUD that tools are executing (Memproses..)
         this._sendToClient({
@@ -753,12 +801,20 @@ class LiveVoiceSession {
         if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
           this.googleWs.send(JSON.stringify(toolResponsePayload));
           console.log(`[LIVE-VOICE] Sent ${responses.length} Tool Response(s) back to Google.`);
-          // Tool gating safety release: after 6 seconds max, unblock mic if Google stays silent
-          setTimeout(() => {
+          this.isWaitingToolReply = true;
+          if (this._toolSafetyTimer) clearTimeout(this._toolSafetyTimer);
+          // Tool gating safety release: after 10 seconds max, unblock mic and return to LISTENING if Google stays silent
+          this._toolSafetyTimer = setTimeout(() => {
             if (this.isExecutingTool) {
+              console.log('[LIVE-VOICE] Tool response timeout safety triggered (10s). Resetting to LISTENING.');
               this.isExecutingTool = false;
+              this.isWaitingToolReply = false;
+              this._sendToClient({
+                type: 'CALL_STATUS_UPDATE',
+                status: 'LISTENING'
+              });
             }
-          }, 6000);
+          }, 10000);
         }
       }
 
@@ -1000,9 +1056,10 @@ class LiveVoiceSession {
     const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
     console.log(`[LIVE-VOICE] 🛑 Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);
 
-    // BUG 3 & 4 FIX: Clear keepalive and watchdog intervals on close
+    // Clear keepalive, watchdog, and tool safety intervals on close
     if (this.keepaliveInterval) { clearInterval(this.keepaliveInterval); this.keepaliveInterval = null; }
     if (this.watchdogInterval)  { clearInterval(this.watchdogInterval);  this.watchdogInterval  = null; }
+    if (this._toolSafetyTimer)  { clearTimeout(this._toolSafetyTimer);   this._toolSafetyTimer  = null; }
 
     if (this.googleWs) {
       try { this.googleWs.close(1000, 'Session Closed'); } catch (_) {}
