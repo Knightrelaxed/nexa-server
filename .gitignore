@@ -29,4 +29,6 @@ tests/scratch_*
 scripts/scratch_*
 scripts/temp_*
 data/transcripts_dump/
+data/*.json
+data/facts_vectors.json
 *.tmp

@@ -57,7 +57,10 @@ function telegramIdentityLock(req, res, next) {
  */
 function telegramWebhookSecret(req, res, next) {
   const configuredSecret = String(env.TELEGRAM_WEBHOOK_SECRET_TOKEN || '').trim();
-  if (!configuredSecret) return next();
+  if (!configuredSecret) {
+    console.error('[SECURITY] CRITICAL: TELEGRAM_WEBHOOK_SECRET_TOKEN is not configured! Enforcing fail-closed lock.');
+    return res.status(500).send('Server webhook security not configured');
+  }
 
   const provided = String(req.headers['x-telegram-bot-api-secret-token'] || '').trim();
   if (!provided || !safeEqual(provided, configuredSecret)) {

@@ -18,27 +18,32 @@ DROP POLICY IF EXISTS "Allow authenticated full access on transactions" ON trans
 DROP POLICY IF EXISTS "Allow authenticated full access on budget_groups" ON budget_groups;
 DROP POLICY IF EXISTS "Allow authenticated full access on budgets" ON budgets;
 
--- 3. Berikan hak akses penuh untuk pengguna yang telah login (authenticated)
--- Browser dengan anon key TANPA login akan diblokir total (0 rows dikembalikan).
+-- 3. Berikan hak akses penuh KHUSUS untuk akun Tuan Faqih (UID spesifik)
+-- Bahkan jika ada user lain yang berhasil mendaftar, mereka tetap diblokir total!
 CREATE POLICY "Allow authenticated full access on accounts"
   ON accounts FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+  USING (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d')
+  WITH CHECK (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d');
 
 CREATE POLICY "Allow authenticated full access on categories"
   ON categories FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+  USING (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d')
+  WITH CHECK (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d');
 
 CREATE POLICY "Allow authenticated full access on transactions"
   ON transactions FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+  USING (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d')
+  WITH CHECK (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d');
 
 CREATE POLICY "Allow authenticated full access on budget_groups"
   ON budget_groups FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+  USING (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d')
+  WITH CHECK (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d');
 
 CREATE POLICY "Allow authenticated full access on budgets"
   ON budgets FOR ALL TO authenticated
-  USING (true) WITH CHECK (true);
+  USING (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d')
+  WITH CHECK (auth.uid() = '40cb2022-ce53-435e-9690-b1179e25573d');
 
 -- CATATAN PENTING:
 -- Server N.E.X.A (Telegram bot & background cron) harus menggunakan SUPABASE_KEY

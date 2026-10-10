@@ -178,7 +178,11 @@ process.on('uncaughtException', (error) => {
   // Send emergency alert to Telegram if configured
   try {
     const { sendTelegramOutbound } = require('./interfaces/webhook');
-    sendTelegramOutbound(`🚨 <b>[EMERGENCY SYSTEM ALERT]</b>\nTerjadi Uncaught Exception fatal pada N.E.X.A Server:\n<code>${error.message}</code>\n\nSistem melakukan reboot otomatis via PM2...`).catch(() => {});
+    const safeErrorMsg = String(error?.message || 'Unknown error')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    sendTelegramOutbound(`🚨 <b>[EMERGENCY SYSTEM ALERT]</b>\nTerjadi Uncaught Exception fatal pada N.E.X.A Server:\n<code>${safeErrorMsg}</code>\n\nSistem melakukan reboot otomatis via PM2...`).catch(() => {});
   } catch (_) {}
 
   // Allow log and network flush before clean exit (PM2 will auto-restart)

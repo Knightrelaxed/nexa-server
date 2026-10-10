@@ -326,7 +326,13 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     : [...googleGemmaBlock, ...gemini35FlashLiteBlock, ...gemini36Block];
 
   const externalTiers = [
-    // Mistral Codestral (European Datacenter)
+    // 6. Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine)
+    ...groqQwenBlock,
+
+    // 7. Cerebras (4 Keys: PayGo / Fallback)
+    ...cerebrasBlock,
+
+    // 8. Mistral Codestral (European Datacenter)
     ...(env.MISTRAL_API_KEY ? [{
       name: 'Tier X (Mistral Codestral)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
