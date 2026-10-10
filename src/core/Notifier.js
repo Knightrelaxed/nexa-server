@@ -108,7 +108,7 @@ function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
     if (isQuietHour(now(), P)) return { status: 'STILL_QUIET' };
     const rows = await store.claimQueued('QUEUED_DEFERRED', P.digestMaxItems, now().toISOString());
     if (!rows.length) return { status: 'EMPTY' };
-    return _deliver({ kind: 'DEFERRED', priority: 'P1', text: _compose('Ditunda semalam', rows) });
+    return _deliver({ kind: 'SCHEDULED_DEFERRED', priority: 'P1', isScheduled: true, text: _compose('Ditunda semalam', rows) });
   }
 
   /** Call from the Telegram adapter on any user message or button tap. */
@@ -146,7 +146,7 @@ function createMemoryStore() {
     async setStatus(id, status, reason) { const r = rows.find(x => x.id === id); if (r) { r.status = status; r.reason = reason; } },
     async lastSentAt(key) { return rows.filter(r => r.dedupeKey === key && r.status === 'SENT').map(r => r.sentAt).sort().pop() || null; },
     async countSentSince(priority, sinceIso) {
-      return rows.filter(r => r.status === 'SENT' && r.priority === priority && r.sentAt >= sinceIso && !r.isScheduled && !String(r.kind || '').toUpperCase().startsWith('SCHEDULED_')).length;
+      return rows.filter(r => r.status === 'SENT' && r.priority === priority && r.sentAt >= sinceIso && !r.isScheduled && !String(r.kind || '').toUpperCase().startsWith('SCHEDULED_') && r.kind !== 'DEFERRED').length;
     },
     async hasQueued(key) { return rows.some(r => r.dedupeKey === key && String(r.status).startsWith('QUEUED')); },
     async claimQueued(status, limit, nowIso) {
@@ -183,7 +183,7 @@ function createSupabaseStore(sb) {
       return d && d[0] ? d[0].sent_at : null;
     },
     countSentSince: (priority, sinceIso) =>
-      countOf(sb.from(T).select('id', { count: 'exact', head: true }).eq('status', 'SENT').eq('priority', priority).gte('sent_at', sinceIso).not('kind', 'ilike', 'SCHEDULED_%')),
+      countOf(sb.from(T).select('id', { count: 'exact', head: true }).eq('status', 'SENT').eq('priority', priority).gte('sent_at', sinceIso).not('kind', 'ilike', 'SCHEDULED_%').neq('kind', 'DEFERRED')),
     async hasQueued(key) {
       return (await countOf(sb.from(T).select('id', { count: 'exact', head: true }).eq('dedupe_key', key).in('status', ['QUEUED_DIGEST', 'QUEUED_DEFERRED']))) > 0;
     },
