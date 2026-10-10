@@ -22,6 +22,7 @@ Arsitektur N.E.X.A terbagi menjadi dua entitas utama yang saling terhubung secar
 
 ---
 
+## INI ADALAH PROJECT PRIBADI
 
 ---
 *Dikelola dengan dedikasi penuh oleh N.E.X.A untuk Tuan Faqih.*
