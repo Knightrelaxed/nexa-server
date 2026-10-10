@@ -395,18 +395,17 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const allTiersRaw = [...topGoogleBlock, ...externalTiers];
   const tiers = allTiersRaw.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) }));
 
-  // Cek berapa banyak tier yang saat ini aktif (tidak sedang masa cooldown)
-  const activeTiers = tiers.filter(t => !checkCooldown(t.tierId, t.group).cooling);
+  let attemptedCount = 0;
 
   for (const tier of tiers) {
     // Shared Cross-Request Circuit Breaker Check
     const cd = checkCooldown(tier.tierId, tier.group);
-    // Jika semua tier sedang cooldown (edge case/recovery), jangan skip agar sistem bisa self-healing
-    if (cd.cooling && activeTiers.length > 0) {
+    if (cd.cooling) {
       asyncLog(`[CIRCUIT BREAKER] Melewati ${tier.name} (Cooldown aktif: ${cd.reason})...`);
       continue;
     }
 
+    attemptedCount++;
     try {
       asyncLog(`[FALLBACK] Trying ${tier.name}...`);
       const rawRes = await tier.fn();
@@ -430,7 +429,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
 
       const isQuota429 = /429|quota|rate_limit|rate limit|too many requests|resource_exhausted/i.test(errDetail) || e.status === 429 || e.response?.status === 429;
       const isPayment402 = /402|payment_required|insufficient_quota|balance/i.test(errDetail) || e.status === 402 || e.response?.status === 402;
-      const isServerDown = /500|502|503|504|overloaded|service unavailable/i.test(errDetail) || [500, 502, 503, 504].includes(e.status || e.response?.status);
+      const isAuth401 = /401|unauthorized|api key not valid|invalid api key/i.test(errDetail) || e.status === 401 || e.response?.status === 401;
+      const isGroupOutage = /500|502|503|504|404|overloaded|service unavailable|timeout|aborted|econnreset|etimedout|econnrefused/i.test(errDetail)
+        || [500, 502, 503, 504, 404].includes(e.status || e.response?.status);
+      const isJsonParseError = /No valid JSON object found|Empty response string/i.test(e.message);
 
       if (isQuota429) {
         // Individual key hit rate limit / TPM / RPM -> Cooldown 60 detik khusus untuk key/tier tersebut
@@ -438,24 +440,40 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
           setCooldown(`tier:${tier.tierId}`, 60000);
           asyncLog(`[RATE LIMIT] ${tier.name} terkena limit kuota/429. Cooldown 60s aktif untuk key ini. Melanjutkan ke tier berikutnya...`);
         }
-      } else if (isPayment402) {
-        // Akun memerlukan pembayaran / trial habis (402) -> Cooldown 5 menit untuk key ini
+      } else if (isPayment402 || isAuth401) {
+        // Akun memerlukan pembayaran / key invalid -> Cooldown 5 menit untuk key ini
         if (tier.tierId) {
           setCooldown(`tier:${tier.tierId}`, 300000);
-          asyncWarn(`[PAYMENT/QUOTA] ${tier.name} memerlukan pembayaran (402). Cooldown 5m aktif untuk tier ini.`);
+          asyncWarn(`[AUTH/QUOTA] ${tier.name} error auth/pembayaran (${errDetail.substring(0, 60)}). Cooldown 5m aktif untuk tier ini.`);
         }
-      } else if (isServerDown) {
-        // Seluruh model endpoint down / overloaded (5xx) -> Cooldown grup model selama 30 detik lintas request
+      } else if (isGroupOutage) {
+        // Seluruh model endpoint down / overloaded (5xx) / timeout -> Cooldown grup model selama 30 detik lintas request
+        // Ini memastikan sisa kunci dari model yang sedang timeout langsung dilewati seketika
         if (tier.group) {
           setCooldown(`group:${tier.group}`, 30000);
-          asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} mengalami gangguan server (${errDetail.substring(0, 80)}...). Cooldown 30s aktif untuk grup ini.`);
+          asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} mengalami gangguan/timeout (${errDetail.substring(0, 80)}...). Cooldown 30s aktif untuk grup ini.`);
         }
-      } else {
-        // Timeout atau error lainnya -> Cooldown tier selama 30 detik
+      } else if (!isJsonParseError) {
+        // Error tak terduga lainnya (bukan parsing JSON) -> Cooldown tier selama 30 detik
         if (tier.tierId) {
           setCooldown(`tier:${tier.tierId}`, 30000);
         }
       }
+    }
+  }
+
+  // Jika SEMUA tier dilewati karena cooldown dan tidak ada yang dieksekusi sama sekali,
+  // jalankan Tier 1 sebagai probe pemulihan mandiri (self-healing)
+  if (attemptedCount === 0 && tiers.length > 0) {
+    const probeTier = tiers[0];
+    asyncWarn(`[CIRCUIT BREAKER] ⚠️ Semua tier dalam status cooldown. Menjalankan ${probeTier.name} sebagai probe pemulihan mandiri...`);
+    try {
+      const rawRes = await probeTier.fn();
+      const validated = validateResponseJson(rawRes, jsonMode);
+      clearCooldown(probeTier.tierId, probeTier.group);
+      return validated;
+    } catch (e) {
+      asyncWarn(`[CIRCUIT BREAKER] Probe pemulihan ${probeTier.name} gagal.`);
     }
   }
 
