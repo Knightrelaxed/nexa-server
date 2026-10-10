@@ -26,3 +26,6 @@ jobs:
           echo "Checking syntax across codebase..."
           find src -name "*.js" -exec node -c {} +
           echo "All JavaScript files in src/ compiled cleanly!"
+
+      - name: Run Upgrade Unit Tests
+        run: node --test tests/upgrade.test.js

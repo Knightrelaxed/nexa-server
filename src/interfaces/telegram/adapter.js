@@ -85,6 +85,21 @@ function _getAdviceSessionCount(chatId) {
   return session.count;
 }
 
+// Per-chat FIFO execution queue to serialize incoming messages and prevent race conditions
+const _chatQueues = new Map();
+
+function enqueueChat(chatId, fn) {
+  const key = String(chatId || 'default');
+  const prev = _chatQueues.get(key) || Promise.resolve();
+  const next = prev.then(fn, fn).finally(() => {
+    if (_chatQueues.get(key) === next) {
+      _chatQueues.delete(key);
+    }
+  });
+  _chatQueues.set(key, next);
+  return next;
+}
+
 // Pending Vault Context: confirmation loop for metadata
 // Structure: { vaultRowId, driveFileId, driveLink, fileName, mimeType, telegramFileId, category, metadata, askedAt }
 let pendingVaultContext = null;
@@ -613,6 +628,11 @@ async function handleTelegramWebhook(req, res) {
     // Acknowledge Telegram agar tidak timeout (HTTP 200 dulu)
     res.status(200).send('OK');
 
+    try {
+      const { getNotifier } = require("../../core/Notifier");
+      getNotifier().markEngaged('BUTTON_TAP').catch(() => {});
+    } catch (_) {}
+
     const cbData = callbackQuery.data || '';
     const cbChatId = callbackQuery.message?.chat?.id || env.TELEGRAM_CHAT_ID;
     const cbMessageId = callbackQuery.message?.message_id;
@@ -786,12 +806,15 @@ async function handleTelegramWebhook(req, res) {
     action: 'typing'
   });
 
-  // Start auto-refresh loop via Relay (in case AI takes > 5 seconds)
-  const stopTyping = startTypingLoop(message.chat?.id, env.TELEGRAM_BOT_TOKEN?.trim());
+  enqueueChat(message.chat.id, async () => {
+    try {
+      const { getNotifier } = require("../../core/Notifier");
+      getNotifier().markEngaged('REPLY').catch(() => {});
+    } catch (_) {}
 
-  let webhookReply = null;
-
-  setImmediate(async () => {
+    // Start auto-refresh loop via Relay (in case AI takes > 5 seconds)
+    const stopTyping = startTypingLoop(message.chat?.id, env.TELEGRAM_BOT_TOKEN?.trim());
+    let webhookReply = null;
 
     // Helper: escape untrusted strings for HTML parse_mode
     const escapeHtml = (str) => String(str)
@@ -3559,9 +3582,9 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
       webhookReply = `⚠️ N.E.X.A mengalami gangguan internal:\n<code>${escapeHtml(error.message)}</code>\n\nSilakan cek log server di PM2 Dashboard (app.pm2.io) atau jalankan: <code>pm2 logs nexa-server</code>`;
     } finally {
       stopTyping();
-      deliverWebhookReply();
+      await deliverWebhookReply();
     }
-  }); // END setImmediate
+  }); // END enqueueChat
 }
 
 module.exports = { handleTelegramWebhook };

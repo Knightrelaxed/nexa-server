@@ -247,10 +247,16 @@ async function generateAndSaveSnapshot() {
     identities: identityVectors
   };
 
-  fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(payload), 'utf-8');
-  console.log(`[VECTOR-CACHE] ✅ Snapshot berhasil disimpan ke ${SNAPSHOT_PATH} (${Date.now() - start} ms).`);
+  atomicWriteJsonSync(SNAPSHOT_PATH, payload);
+  console.log(`[VECTOR-CACHE] ✅ Snapshot berhasil disimpan secara atomik ke ${SNAPSHOT_PATH} (${Date.now() - start} ms).`);
   loadVectorSnapshot();
   return payload;
+}
+
+function atomicWriteJsonSync(targetPath, data) {
+  const tmpPath = `${targetPath}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
+  fs.renameSync(tmpPath, targetPath);
 }
 
 function isSnapshotReady() {
@@ -288,7 +294,7 @@ async function appendFactToVectorCache(content, type = 'USER_PROFILE') {
       profiles: _cachedProfileVectors,
       identities: _cachedIdentityVectors
     };
-    fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(payload), 'utf-8');
+    atomicWriteJsonSync(SNAPSHOT_PATH, payload);
     console.log(`[VECTOR-CACHE] ⚡ Fakta baru otomatis ter-embed & masuk ke snapshot (${type}): "${content.substring(0, 50)}..."`);
   } catch (e) {
     console.warn('[VECTOR-CACHE] Gagal auto-embed fakta baru:', e.message);

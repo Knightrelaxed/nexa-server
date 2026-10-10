@@ -295,6 +295,40 @@ function getSharedCooldownsStatus() {
   return status;
 }
 
+const _keyCursors = new Map();
+
+/**
+ * Memutar urutan kunci secara round-robin agar Kunci #1 tidak selalu dihabiskan pertama kali.
+ */
+function orderKeys(group, count) {
+  if (count <= 0) return [];
+  const start = (_keyCursors.get(group) || 0) % count;
+  _keyCursors.set(group, (start + 1) % count);
+  return Array.from({ length: count }, (_, i) => (start + i) % count);
+}
+
+function createKeyBlock(keys, group, nameTemplate, fnFactory) {
+  const validKeys = keys.filter(Boolean);
+  const order = orderKeys(group, validKeys.length);
+  return order.map(idx => {
+    const key = validKeys[idx];
+    return {
+      tierId: `${group}-k${idx + 1}`,
+      group,
+      name: `Tier X (${nameTemplate.replace('{i}', idx + 1)})`,
+      fn: () => fnFactory(key)
+    };
+  });
+}
+
+function retryAfterMs(err, errDetail) {
+  const h = err?.response?.headers;
+  const raw = h && (typeof h.get === 'function' ? h.get('retry-after') : h['retry-after']);
+  if (raw && !isNaN(Number(raw))) return Number(raw) * 1000;
+  const m = /retry (?:in|after) ([\d.]+)\s*s/i.exec(String(errDetail || err?.message || ''));
+  return m ? Math.ceil(parseFloat(m[1]) * 1000) : null;
+}
+
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true, options = {}) {
   // --- SMART ADAPTIVE CONTEXT ROUTING (SACR) ---
   // options.forceHeavy = true  → paksa HEAVY mode
@@ -312,65 +346,53 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   // MODE HEAVY : Gemini 3.8 Flash (Tier 1-4) -> Gemini 3.6 Flash (Tier 5-8) -> Google Gemma 4 26B (Tier 9-12) -> Gemini 3.5 Flash (Tier 13-16)
   asyncLog(`[SACR] Mode: ${heavy ? 'HEAVY [Gemini 3.8 -> Gemini 3.6 -> Gemma 4 26B -> Gemini 3.5]' : 'LIGHT [Google Gemma 4 26B -> Gemini 3.5 Lite -> Gemini 3.6]'} | Total chars: ${inputChars}`);
 
-  // 1. Google AI Studio Gemma 4 26B (4 Keys: Ultra-Natural Persona, ~2.8s)
-  const googleGemmaBlock = googleApiKeys
-    .filter(Boolean)
-    .map((key, i) => ({
-      tierId: `gemma-4-26b-k${i + 1}`,
-      group: 'gemma-4-26b',
-      name: `Tier X (Google Gemma 4 26B Key ${i + 1} [Natural Persona])`,
-      fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
-    }));
+  // 1. Google AI Studio Gemma 4 26B (4 Keys: Ultra-Natural Persona, ~2.8s) - Round-Robin Rotated
+  const googleGemmaBlock = createKeyBlock(
+    googleApiKeys,
+    'gemma-4-26b',
+    'Google Gemma 4 26B Key {i} [Natural Persona]',
+    key => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
+  );
 
-  // 2. Gemini 3.8 Flash (4 Keys: High Reasoning, Casual Tone & Fast Response)
-  const gemini38Block = googleApiKeys
-    .filter(Boolean)
-    .map((key, i) => ({
-      tierId: `gemini-3.8-flash-k${i + 1}`,
-      group: 'gemini-3.8-flash',
-      name: `Tier X (Gemini 3.8 Flash Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(key, 'gemini-3.8-flash', prompt, systemInstruction, temperature, jsonMode, 1)
-    }));
+  // 2. Gemini 3.8 Flash (4 Keys: High Reasoning, Casual Tone & Fast Response) - Round-Robin Rotated
+  const gemini38Block = createKeyBlock(
+    googleApiKeys,
+    'gemini-3.8-flash',
+    'Gemini 3.8 Flash Key {i}',
+    key => callGeminiWithRetry(key, 'gemini-3.8-flash', prompt, systemInstruction, temperature, jsonMode, 1)
+  );
 
-  // 3. Gemini 3.6 Flash (4 Keys: Backup Stable Engine 1.5s)
-  const gemini36Block = googleApiKeys
-    .filter(Boolean)
-    .map((key, i) => ({
-      tierId: `gemini-3.6-flash-k${i + 1}`,
-      group: 'gemini-3.6-flash',
-      name: `Tier X (Gemini 3.6 Flash Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
-    }));
+  // 3. Gemini 3.6 Flash (4 Keys: Backup Stable Engine 1.5s) - Round-Robin Rotated
+  const gemini36Block = createKeyBlock(
+    googleApiKeys,
+    'gemini-3.6-flash',
+    'Gemini 3.6 Flash Key {i}',
+    key => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
+  );
 
-  // 4. Gemini 3.5 Flash Lite (4 Keys: Sub-Second Ultra-Fast Secondary Engine for LIGHT mode)
-  const gemini35FlashLiteBlock = googleApiKeys
-    .filter(Boolean)
-    .map((key, i) => ({
-      tierId: `gemini-3.5-flash-lite-k${i + 1}`,
-      group: 'gemini-3.5-flash-lite',
-      name: `Tier X (Gemini 3.5 Flash Lite Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(key, 'gemini-3.5-flash-lite', prompt, systemInstruction, temperature, jsonMode, 1)
-    }));
+  // 4. Gemini 3.5 Flash Lite (4 Keys: Sub-Second Ultra-Fast Secondary Engine for LIGHT mode) - Round-Robin Rotated
+  const gemini35FlashLiteBlock = createKeyBlock(
+    googleApiKeys,
+    'gemini-3.5-flash-lite',
+    'Gemini 3.5 Flash Lite Key {i}',
+    key => callGeminiWithRetry(key, 'gemini-3.5-flash-lite', prompt, systemInstruction, temperature, jsonMode, 1)
+  );
 
-  // 5. Gemini 3.5 Flash (4 Keys: Fast & Balanced Workhorse for HEAVY mode)
-  const gemini35Block = googleApiKeys
-    .filter(Boolean)
-    .map((key, i) => ({
-      tierId: `gemini-3.5-flash-k${i + 1}`,
-      group: 'gemini-3.5-flash',
-      name: `Tier X (Gemini 3.5 Flash Key ${i + 1})`,
-      fn: () => callGeminiWithRetry(key, 'gemini-3.5-flash', prompt, systemInstruction, temperature, jsonMode, 1)
-    }));
+  // 5. Gemini 3.5 Flash (4 Keys: Fast & Balanced Workhorse for HEAVY mode) - Round-Robin Rotated
+  const gemini35Block = createKeyBlock(
+    googleApiKeys,
+    'gemini-3.5-flash',
+    'Gemini 3.5 Flash Key {i}',
+    key => callGeminiWithRetry(key, 'gemini-3.5-flash', prompt, systemInstruction, temperature, jsonMode, 1)
+  );
 
-  // 6. Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine)
-  const groqQwenBlock = groqKeys
-    .filter(Boolean)
-    .map((key, i) => ({
-      tierId: `groq-qwen-k${i + 1}`,
-      group: 'groq-qwen',
-      name: `Tier X (Groq Qwen 3.8 27B Key ${i + 1})`,
-      fn: () => callGroqQwen(key, prompt, systemInstruction, temperature, jsonMode)
-    }));
+  // 6. Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine) - Round-Robin Rotated
+  const groqQwenBlock = createKeyBlock(
+    groqKeys,
+    'groq-qwen',
+    'Groq Qwen 3.8 27B Key {i}',
+    key => callGroqQwen(key, prompt, systemInstruction, temperature, jsonMode)
+  );
 
   // Penataan Dinamis Top Tiers Sesuai Mode Kognitif:
   // LIGHT: Google Gemma 4 26B (Tier 1-4) -> Gemini 3.5 Flash Lite (Tier 5-8) -> Gemini 3.6 Flash (Tier 9-12)
@@ -435,10 +457,14 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       const isJsonParseError = /No valid JSON object found|Empty response string/i.test(e.message);
 
       if (isQuota429) {
-        // Individual key hit rate limit / TPM / RPM -> Cooldown 60 detik khusus untuk key/tier tersebut
+        const isDaily = /per day|daily|\bRPD\b/i.test(errDetail);
+        const waitMs = isDaily 
+          ? 30 * 60 * 1000 
+          : (retryAfterMs(e, errDetail) ?? 60000);
+
         if (tier.tierId) {
-          setCooldown(`tier:${tier.tierId}`, 60000);
-          asyncLog(`[RATE LIMIT] ${tier.name} terkena limit kuota/429. Cooldown 60s aktif untuk key ini. Melanjutkan ke tier berikutnya...`);
+          setCooldown(`tier:${tier.tierId}`, waitMs);
+          asyncLog(`[RATE LIMIT] ${tier.name} limit (${isDaily ? 'kuota harian 30m' : Math.ceil(waitMs / 1000) + 's'}). Cooldown aktif. Lanjut ke tier berikutnya...`);
         }
       } else if (isPayment402 || isAuth401) {
         // Akun memerlukan pembayaran / key invalid -> Cooldown 5 menit untuk key ini
