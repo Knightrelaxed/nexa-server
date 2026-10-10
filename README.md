@@ -1,5 +1,5 @@
 # N.E.X.A: Neural Executive with Xenial Agent
-> Chief of Staff AI: Immortality Protocol v3.1
+> Chief of Staff AI: Immortality Protocol v3.2
 
 **N.E.X.A (Neural Executive with Xenial Agent)** adalah sistem kecerdasan buatan otonom bergaya "J.A.R.V.I.S" yang dirancang khusus untuk bertindak sebagai *Chief of Staff* digital personal bagi Tuan Faqih. Berbeda dengan chatbot konvensional yang bersifat pasif, N.E.X.A beroperasi secara proaktif (*set-and-forget*), mengorkestrasi tata kelola keuangan, agenda akademik dan diplomasi, integrasi ekosistem Google Workspace, manajemen memori jangka panjang, hingga penegakan kedisiplinan digital secara fisik.
 

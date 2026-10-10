@@ -71,7 +71,7 @@ async function searchNearbyPlaces(query, lat, lon, opts = {}) {
           limit: limit + 3,
           addressdetails: 1
         },
-        headers: { 'User-Agent': 'NexaAssistant/3.0 (admin@nexa-assistant.local)' },
+        headers: { 'User-Agent': 'NexaAssistant/3.2 (admin@nexa-assistant.local)' },
         timeout: 5000
       });
 

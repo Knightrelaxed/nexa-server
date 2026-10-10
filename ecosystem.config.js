@@ -1,5 +1,5 @@
 // ============================================================
-// N.E.X.A 3.0 — PM2 ECOSYSTEM CONFIGURATION
+// N.E.X.A 3.2 — PM2 ECOSYSTEM CONFIGURATION
 // Optimized for Azure VPS (Standard_B2ats_v2 - 2 vCPU, 1 GB RAM)
 // ============================================================
 

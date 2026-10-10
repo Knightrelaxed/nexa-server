@@ -1,5 +1,5 @@
 // ============================================================
-// N.E.X.A 3.0 — ULTRA-LIGHTWEIGHT GEMINI VECTOR RETRIEVAL CACHE
+// N.E.X.A 3.2 — ULTRA-LIGHTWEIGHT GEMINI VECTOR RETRIEVAL CACHE
 // Powered by Google Gemini Cloud Embedding (gemini-embedding-2)
 // 0 MB Model Weights on Disk, 0 MB Neural RAM Overhead on VPS.
 // Fully Masked Parallel Execution with In-Memory Snapshot Cache.

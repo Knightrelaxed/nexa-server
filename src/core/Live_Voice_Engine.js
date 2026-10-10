@@ -1,5 +1,5 @@
 // ============================================================
-// N.E.X.A 3.0 — LIVE VOICE ENGINE v2.0 (ORCHESTRATOR)
+// N.E.X.A 3.2 — LIVE VOICE ENGINE (ORCHESTRATOR)
 // Real-time Bidirectional Multimodal Audio Relay linking
 // Nexa Bridge Android App <-> Azure VPS <-> Google Gemini Live API
 // Supports: Sub-second TTFA (669ms), Barge-In, Live Tool Calling,
@@ -366,7 +366,7 @@ class LiveVoiceSession {
           ? geminiVectorCache.getAllSnapshotFacts().slice(0, 15)
           : [];
         if (topFacts.length > 0) {
-          profileFactsBlock = '\n\n[FAKTA PERMANEN TENTANG TUAN FAQIH (SACR v3.0 RAM MEMORY)]:\n• ' +
+          profileFactsBlock = '\n\n[FAKTA PERMANEN TENTANG TUAN FAQIH (SACR v3.2 RAM MEMORY)]:\n• ' +
             topFacts.map(f => f.content || f).join('\n• ');
         }
       } catch (_) {}

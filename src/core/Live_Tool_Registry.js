@@ -1,5 +1,5 @@
 // ============================================================
-// N.E.X.A 3.0 — LIVE TOOL REGISTRY v2.5 (100% ABSOLUTE PARITY)
+// N.E.X.A 3.2 — LIVE TOOL REGISTRY (100% ABSOLUTE PARITY)
 // Real-Time Tool Calling Registry for Google Gemini Multimodal Live API
 // Covers ALL 15 AI_Router Intent Domains:
 // 1. FINANCE, 2. CALENDAR, 3. TASK, 4. DEVICE_CONTROL, 5. WEB_SEARCH,

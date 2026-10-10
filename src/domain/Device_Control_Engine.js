@@ -1,5 +1,5 @@
 // ============================================================
-// N.E.X.A 3.0 — DEVICE CONTROL ENGINE
+// N.E.X.A 3.2 — DEVICE CONTROL ENGINE
 // Domain Layer Dispatcher bridging AI Cognitive Router with NexaBridgeAdapter.
 // Handles parameter normalization, execution routing, result formatting,
 // and media generation for Telegram / Webhook interfaces.

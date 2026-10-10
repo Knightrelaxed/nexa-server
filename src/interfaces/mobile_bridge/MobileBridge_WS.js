@@ -1,7 +1,7 @@
 // ============================================================
-// N.E.X.A 3.0 — MOBILE BRIDGE WEBSOCKET SERVER
+// N.E.X.A 3.2 — MOBILE BRIDGE WEBSOCKET SERVER
 // Clean, Production-Grade Realtime Device Gateway for Nexa Bridge Android App.
-// Protocol: Nexa Protocol v3.0 (Strict Zero-Dirty Code Standard)
+// Protocol: Nexa Protocol v3.2 (Strict Zero-Dirty Code Standard)
 // ============================================================
 'use strict';
 
@@ -83,7 +83,7 @@ function initWebSocket(server) {
       liveVoice.rebindClientWs(ws);
     } catch (_) {}
 
-    // 3. Message Listener (Nexa Protocol 3.0)
+    // 3. Message Listener (Nexa Protocol 3.2)
     ws.on('message', (rawMessage) => {
       try {
         const payload = JSON.parse(rawMessage);

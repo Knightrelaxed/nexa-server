@@ -1,4 +1,4 @@
-# N.E.X.A ARCHITECTURAL WHITEPAPER: EVOLUTIONARY ROADMAP (v1.0 to v3.1)
+# N.E.X.A ARCHITECTURAL WHITEPAPER: EVOLUTIONARY ROADMAP (v1.0 to v3.2)
 **Neural Executive with Xenial Agent (N.E.X.A)**  
 *Chief of Staff & Autonomous Executive Ecosystem for Tuan Faqih Hidayatulloh*  
 
@@ -6,9 +6,9 @@
 
 ## Executive Summary
 
-Dokumen ilmiah ini merangkum kronologi evolusi arsitektur **N.E.X.A (Neural Executive with Xenial Agent)** dari prototipe eksperimental berbasis lingkungan lokal (*Termux Genesis*), evolusi kognisi organik dan *Self-Learning*, migrasi infrastruktur server mandiri **v3.0 — Sovereign Azure Cloud Production (Jakarta Region)**, hingga pematangan ekosistem terpadu **v3.1 — Unified Master OAuth 2.0 & Chrono-Episodic Cognitive Architecture**. 
+Dokumen ilmiah ini merangkum kronologi evolusi arsitektur **N.E.X.A (Neural Executive with Xenial Agent)** dari prototipe eksperimental berbasis lingkungan lokal (*Termux Genesis*), evolusi kognisi organik dan *Self-Learning*, migrasi infrastruktur server mandiri **v3.0 — Sovereign Azure Cloud Production (Jakarta Region)**, konsolidasi ekosistem terpadu **v3.1 — Unified Master OAuth 2.0 & Chrono-Episodic Cognitive Architecture**, hingga arsitektur ketahanan deterministik **v3.2 — Deterministic Resilience, Zero-LLM Finance & Cognitive Traffic Control**. 
 
-Setiap lompatan versi mewakili terobosan dalam rekayasa sistem terdistribusi, manajemen memori autobiografis (*Chrono-Episodic Memory*), ketahanan sistem anti-gagal (*Fault-Tolerant Multi-Tier Fallback*), integrasi multi-antarmuka (Telegram, CLI, Mobile Bridge), serta otomatisasi kognisi proaktif yang dirancang khusus untuk mendukung aspirasi akademik, kedisiplinan, dan karier diplomatik Tuan Faqih Hidayatulloh.
+Setiap lompatan versi mewakili terobosan dalam rekayasa sistem terdistribusi, manajemen memori autobiografis (*Chrono-Episodic Memory*), ketahanan sistem anti-gagal (*Fault-Tolerant Multi-Tier Fallback*), integritas matematika murni tanpa halusinasi LLM, gerbang notifikasi pintar dengan *Quiet Hours*, integrasi multi-antarmuka (Telegram, CLI, Mobile Bridge), serta otomatisasi kognisi proaktif yang dirancang khusus untuk mendukung aspirasi akademik, kedisiplinan, dan karier diplomatik Tuan Faqih Hidayatulloh.
 
 ```mermaid
 flowchart TD
@@ -43,7 +43,11 @@ flowchart TD
         V31["<b>v3.1 (Unified Master & Chrono)</b><br>• Unified Master OAuth 2.0 (16 Scopes)<br>• Chrono-Episodic Daily Narratives (>90d)<br>• Smart Closed-Loop Intention Engine<br>• Identity: Neural Executive with Xenial Agent"]
     end
 
-    V1 --> V20 --> V21 --> V22 --> V23 --> V24 --> V25 --> V26 --> V27 --> V28 --> V29 --> V30 --> V31
+    subgraph S7 ["7. Deterministic Resilience & Traffic Control (v3.2)"]
+        V32["<b>v3.2 (Deterministic Resilience)</b><br>• Zero-LLM Finance Intel Engine<br>• Central Cognitive Traffic Gate & Quiet Hours<br>• Key Ring Circuit Breaker & Retry-After<br>• Non-Blocking FIFO Telegram Queue"]
+    end
+
+    V1 --> V20 --> V21 --> V22 --> V23 --> V24 --> V25 --> V26 --> V27 --> V28 --> V29 --> V30 --> V31 --> V32
 ```
 
 ---
@@ -226,21 +230,76 @@ graph TD
 
 ---
 
-## Kesimpulan & Metrik Spesifikasi v3.1.0
+## Bab 8: Era Ketahanan Deterministik & Manajemen Lalu Lintas Kognitif (v3.2 — Deterministic Resilience, Zero-LLM Finance & Cognitive Traffic Control)
 
-| Parameter Arsitektur | Spesifikasi N.E.X.A v3.1.0 (Production) |
+Versi **v3.2** merepresentasikan lompatan radikal menuju sistem deterministik murni (*zero-hallucination*), ketahanan multi-provider berstandar telekomunikasi enterprise, dan orkestrasi lalu lintas kognitif terpusat.
+
+```mermaid
+graph TD
+    subgraph Cognitive Traffic & Resilience Hub v3.2
+        NOTIF[Notifier.js - Central Dispatcher & Quiet Hours]
+        FIN[Finance_Intel.js - Pure Deterministic Math Engine]
+        HLTH[Provider_Health.js - Key Ring Circuit Breaker]
+        FALL[Fallback_Engine.js - Round-Robin & Retry-After]
+        FIFO[Telegram In-Memory FIFO Queue - Adapter.js]
+    end
+
+    subgraph Supabase Relational Ledger v3.2
+        T_NOTIF[(nexa_notifications - Audit & Dedup)]
+        T_REC[(nexa_recurring_rules - Dynamic Subscriptions)]
+        T_RUN[(nexa_job_runs - Cron Observability)]
+        T_LLM[(nexa_llm_calls - Token & Latency Metrics)]
+    end
+
+    subgraph Deterministic Pipelines
+        NOTIF -->|Atomic Dedup & Cooldown Check| T_NOTIF
+        FIN -->|Read Dynamic Rules & Budgets| T_REC
+        HLTH -->|Stateful Key Cooldown & Health Probe| FALL
+        FALL -->|Telemetry Logging| T_LLM
+        FIFO -->|1 Message/Sec Sequencer| NOTIF
+    end
+```
+
+### 1. Zero-LLM Deterministic Finance Intel (`Finance_Intel.js` & `nexa_recurring_rules`)
+* **Eliminasi Total Halusinasi LLM:** Seluruh kalkulasi finansial harian, proyeksi run-rate, estimasi sisa hari, dan analisis runway kas dihitung menggunakan fungsi matematika murni 100% deterministik.
+* **Tabel Aturan Dinamis Supabase (`nexa_recurring_rules`):** Menghapus seluruh hardcode daftar langganan dan budget. N.E.X.A secara dinamis membaca aturan langganan aktif, interval penagihan (bulanan/tahunan), target budget, dan tanggal jatuh tempo dari database.
+* **Auto-Matching Transaksi:** N.E.X.A mencocokkan transaksi aktual dengan aturan langganan untuk mengetahui apakah tagihan bulan ini sudah dibayar atau belum.
+
+### 2. Central Cognitive Traffic Gate & Notifier (`Notifier.js` & `nexa_notifications`)
+* **Gerbang Tunggal Notifikasi:** Menghilangkan pengiriman pesan Telegram liar yang tersebar di berbagai berkas cron atau modul domain.
+* **Aturan Quiet Hours Cerdas:** Meredam notifikasi berisik (LOW/MEDIUM) pada jam istirahat Tuan Faqih (22:00 - 06:00 WIB), namun tetap meloloskan pesan darurat (`HIGH`/`CRITICAL`) seperti alarm kedisiplinan dan batas overdraft saldo.
+* **Deduplikasi Atomik & Cooldown:** Mencegah pengiriman pesan ganda dalam jendela waktu tertentu menggunakan tabel `nexa_notifications`.
+
+### 3. Key Ring Circuit Breaker & Resilient Fallback (`Provider_Health.js` & `Fallback_Engine.js`)
+* **Round-Robin Key Rotation:** Mencegah key pertama menjadi bottleneck dengan merotasi key awal secara merata di setiap permintaan.
+* **Stateful Cooldown & Retry-After Parsing:** Membaca header `Retry-After` atau pesan error 429 secara presisi dan mendinginkan hanya key yang terkena pembatasan tanpa merusak key lain dalam grup yang sama.
+* **Circuit Breaker Multi-Tier:** Grup provider yang mengalami error 5xx berulang akan beralih ke status `OPEN`, mencegah latensi hang dan segera mengalihkan panggilan ke provider cadangan (Groq, Cerebras).
+
+### 4. Non-Blocking Telegram FIFO Queue & Safe Atomic Vectors
+* **Antrean FIFO Dalam Memori (`adapter.js`):** Mengatur laju pesan keluar ke Telegram maksimal 1 pesan/detik secara non-blocking, sepenuhnya aman dari error `429 Too Many Requests (Flood Control)`.
+* **Atomic File Write Cache (`gemini_vector_cache.js`):** Menulis snapshot vektor secara atomik menggunakan berkas temporer (`.tmp`) sebelum di-rename, mencegah korupsi file JSON saat proses server restart atau I/O konkuren.
+
+---
+
+## Kesimpulan & Metrik Spesifikasi v3.2.0
+
+| Parameter Arsitektur | Spesifikasi N.E.X.A v3.2.0 (Production Release) |
 | :--- | :--- |
 | **Official Name & Title** | **N.E.X.A (Neural Executive with Xenial Agent)** |
+| **Architectural Edition** | **Immortality Protocol v3.2: Deterministic Resilience & Cognitive Traffic Control** |
 | **Core Compute Infrastructure** | Azure Virtual Machine `Standard_B2ats_v2` (Ubuntu 24.04 ARM, Jakarta `indonesiacentral`) |
 | **Process Management & Auto-Healing** | PM2 Process Manager v5.4 + Systemd Auto-Revive + PM2 Plus Cloud Dashboard |
 | **Edge Web Server & Security** | Caddy v2 Reverse Proxy + Automated Let's Encrypt TLS/SSL |
 | **Production Domain** | `https://nexa-server.indonesiacentral.cloudapp.azure.com` |
-| **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~18-25 MB) |
+| **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~20-28 MB) |
 | **Google Cloud Integration** | Unified Master OAuth 2.0 Client (16 Master Scopes, Zero Service Account) |
-| **Memory Architecture** | Dual-Tier Chrono-Episodic System (Raw 90d Buffer + Daily Narratives + pgvector) |
-| **Cognitive Autonomy** | Closed-Loop Intention Engine + Auto-Reconciliation + Anti-Spam Single Follow-up |
-| **Interface Ecosystem** | Telegram Webhook (Zero-Outbound) + NPM CLI (`nexa-cli`) + Mobile Bridge Android (`ws`) + Web UI (`nexa-finance-web`) |
+| **Financial Engine** | Zero-LLM Deterministic Intelligence + Dynamic Recurring Rules (`nexa_recurring_rules`) |
+| **Notification Traffic Control** | Centralized Notifier + Quiet Hours Protection + Dedup Cooldown (`nexa_notifications`) |
+| **AI Resilience Matrix** | Round-Robin Key Ring Circuit Breaker + 429 Retry-After Parser + 11-Tier Fallback |
+| **Messaging Pipeline** | Non-Blocking In-Memory FIFO Queue (1 msg/sec rate-limit compliant) |
+| **Observability & Telemetry** | Persistent Cron Job Runs (`nexa_job_runs`) + LLM Token & Latency Metrics (`nexa_llm_calls`) |
 | **Primary Beneficiary** | **Tuan Faqih Hidayatulloh** |
 
 ---
-*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v3.1.0. Diverifikasi dan disinkronkan dengan Azure Cloud Core.*
+*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v3.2.0. Diverifikasi dan disinkronkan dengan Azure Cloud Core.*
+

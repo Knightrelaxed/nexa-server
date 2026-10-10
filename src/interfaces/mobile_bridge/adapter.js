@@ -1,5 +1,5 @@
 // ============================================================
-// N.E.X.A 3.0 — MOBILE BRIDGE ADAPTER
+// N.E.X.A 3.2 — MOBILE BRIDGE ADAPTER
 // Master Neural-Peripheral Adapter linking N.E.X.A Cloud Server (Azure VPS)
 // to Physical Android Hardware (Samsung Galaxy A33 5G - Android 16 / One UI 8).
 // ============================================================

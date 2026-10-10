@@ -2,7 +2,7 @@
 // N.E.X.A — DISCIPLINE & GOD MODE ENFORCEMENT ENGINE
 // Multi-Tier Progressive Enforcement Engine (4-Level Escalation)
 // Optimized for Samsung Galaxy A33 5G (Android 14 / One UI 6)
-// Immortality Protocol v3.1 — Surgical & Dynamic Enforcement
+// Immortality Protocol v3.2 — Surgical & Dynamic Enforcement
 // ============================================================
 'use strict';
 

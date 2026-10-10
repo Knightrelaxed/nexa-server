@@ -228,7 +228,7 @@ function initCronJobs() {
       console.error('[CRON] Daily Memory Decay Pass failed:', e.message);
     }
 
-    // 3. Vector Snapshot Full Sync [SACR v3.0]
+    // 3. Vector Snapshot Full Sync [SACR v3.2]
     try {
       const { generateAndSaveSnapshot } = require('../utils/gemini_vector_cache.js');
       const snap = await generateAndSaveSnapshot();
