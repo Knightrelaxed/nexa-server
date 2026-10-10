@@ -61,7 +61,13 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Telegram-Bot-Api-Secret-Token']
 }));
 
-app.use(morgan('dev', {
+// Custom morgan token to mask sensitive query parameters (e.g., token, secret, key)
+morgan.token('safe-url', (req) => {
+  const url = req.originalUrl || req.url || '';
+  return url.replace(/([?&](?:token|secret|key)=)[^&]+/gi, '$1***MASKED***');
+});
+
+app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]', {
   skip: (req, res) => {
     // Skip noisy automated web scanner hits (404s like .env, .git, config)
     if (res.statusCode === 404) return true;
@@ -165,10 +171,20 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('[SAFETY NET] Uncaught Exception — server continues running:');
+  console.error('[SAFETY NET] Fatal Uncaught Exception — Initiating clean reboot via PM2:');
   console.error('  Error:', error.message);
   console.error('  Stack:', error.stack);
-  // Server stays alive — no process.exit()
+
+  // Send emergency alert to Telegram if configured
+  try {
+    const { sendTelegramOutbound } = require('./interfaces/webhook');
+    sendTelegramOutbound(`🚨 <b>[EMERGENCY SYSTEM ALERT]</b>\nTerjadi Uncaught Exception fatal pada N.E.X.A Server:\n<code>${error.message}</code>\n\nSistem melakukan reboot otomatis via PM2...`).catch(() => {});
+  } catch (_) {}
+
+  // Allow log and network flush before clean exit (PM2 will auto-restart)
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
 });
 
 module.exports = app;

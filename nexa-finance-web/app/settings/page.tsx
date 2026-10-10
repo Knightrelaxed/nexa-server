@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SettingsCategories } from '@/components/settings/settings-categories';
 import { SettingsAccounts } from '@/components/settings/settings-accounts';
+import { SettingsAccountProfile } from '@/components/settings/settings-account-profile';
 import { AppShell } from '@/components/wallet/app-shell';
 
 export const metadata: Metadata = {
@@ -43,6 +44,8 @@ export default function SettingsPage() {
             <SettingsAccounts />
           </TabsContent>
         </Tabs>
+
+        <SettingsAccountProfile />
     </AppShell>
   );
 }

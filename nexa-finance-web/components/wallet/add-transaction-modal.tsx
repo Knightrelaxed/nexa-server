@@ -77,8 +77,9 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         icon_key: initialData.category_icon_key || "wallet",
         icon_bg: initialData.category_icon_bg || "bg-slate-100",
         icon_color: initialData.category_icon_color || "text-slate-700",
+        color_hex: null,
+        sort_order: 0,
         is_archived: false,
-        user_id: userId || "",
         created_at: new Date().toISOString()
       })
     }

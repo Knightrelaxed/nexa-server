@@ -623,11 +623,11 @@ Instruksi:
 
   // ================================================================
 
-  // 11. Daily Memory Consolidation (23:59 WIB)
+  // 11. Daily Memory Consolidation (23:50 WIB - 5 min stagger)
   // Reads all chat memories from today, extracts new permanent facts about the user,
   // and saves them to the User Profile table to give N.E.X.A long-term organic memory.
   // [v2] DEDUP-AWARE: Reads existing memories first to prevent duplicate facts.
-  cron.schedule('59 23 * * *', async () => {
+  cron.schedule('50 23 * * *', async () => {
     console.log('[CRON-MEM] Executing Daily Memory Consolidation (Dedup-Aware v2)...');
     try {
       const supabaseMemories = require('../infrastructure/Supabase_Memories');
@@ -718,8 +718,8 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
-  // 12. Weekly Budget Recap (Sunday 23:59 WIB)
-  cron.schedule('59 23 * * 0', async () => {
+  // 12. Weekly Budget Recap (Sunday 23:55 WIB - 5 min stagger)
+  cron.schedule('55 23 * * 0', async () => {
     console.log('[CRON-BUDGET] Executing Weekly Budget Recap...');
     try {
       const budgetEngine = require('../domain/Budget_Engine');

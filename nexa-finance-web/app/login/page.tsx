@@ -27,6 +27,7 @@ export default function LoginPage() {
       setError(authErr.message)
       setLoading(false)
     } else {
+      document.cookie = "nexa-auth-token=active; path=/; max-age=2592000; SameSite=Lax"
       toast.success("Berhasil masuk!")
       window.location.href = "/dashboard"
     }

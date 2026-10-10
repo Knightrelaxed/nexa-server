@@ -576,9 +576,36 @@ async function downloadTelegramFileToTemp(fileId, preferredExt = '') {
 }
 
 // ============================================================
+// TELEGRAM UPDATE_ID DEDUPLICATION CACHE
+// Mencegah double-execution jika Telegram me-retry webhook akibat glitch jaringan.
+// ============================================================
+const _processedUpdateIds = new Set();
+const MAX_UPDATE_ID_CACHE = 1000;
+
+function isDuplicateUpdate(updateId) {
+  if (!updateId) return false;
+  const idStr = String(updateId);
+  if (_processedUpdateIds.has(idStr)) {
+    return true;
+  }
+  _processedUpdateIds.add(idStr);
+  if (_processedUpdateIds.size > MAX_UPDATE_ID_CACHE) {
+    const oldest = _processedUpdateIds.values().next().value;
+    _processedUpdateIds.delete(oldest);
+  }
+  return false;
+}
+
+// ============================================================
 // TELEGRAM ROUTE HANDLER
 // ============================================================
 async function handleTelegramWebhook(req, res) {
+  const updateId = req.body?.update_id;
+  if (isDuplicateUpdate(updateId)) {
+    console.warn(`[TELEGRAM-DEDUP] ⚠️ Duplicate update_id ${updateId} received. Acknowledging with 200 OK without re-processing.`);
+    return res.status(200).send('OK');
+  }
+
   const callbackQuery = req.body?.callback_query;
 
   // ── Handle klik tombol Inline Keyboard ──────────────────────

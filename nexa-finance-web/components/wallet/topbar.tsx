@@ -4,9 +4,10 @@ import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { Plus, Server, Settings } from "lucide-react"
+import { Plus, Server, Settings, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AddTransactionModal } from "./add-transaction-modal"
+import { useAuth } from "@/components/providers/supabase-provider"
 import { cn } from "@/lib/utils"
 
 const tabs = [
@@ -20,6 +21,7 @@ const tabs = [
 
 export function Topbar() {
   const pathname = usePathname()
+  const { signOut } = useAuth()
   const [modalOpen, setModalOpen] = useState(false)
 
   return (
@@ -89,6 +91,15 @@ export function Topbar() {
             >
               <Server className="h-4 w-4 sm:h-4 sm:w-4" />
             </Link>
+
+            {/* Logout Button - Desktop Only */}
+            <button
+              onClick={() => signOut()}
+              className="hidden sm:flex items-center justify-center h-9 w-9 sm:h-10 sm:w-10 rounded-full border border-border bg-white hover:bg-red-50 text-slate-500 hover:text-red-600 shadow-sm transition-all duration-300 shrink-0 cursor-pointer"
+              title="Keluar (Logout)"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
 
             {/* Mobile Settings Shortcut Link */}
             <Link

@@ -10,18 +10,31 @@ const PUBLIC_ROUTES = ['/login']
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow public routes and static assets
+  // Allow static assets, next internal routes, and api routes
   if (
-    PUBLIC_ROUTES.includes(pathname) ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
+    pathname.startsWith('/icons') ||
     pathname.includes('.')
   ) {
     return NextResponse.next()
   }
 
-  // Single User Mode: No Auth Required
-  // Allow all traffic
+  const isPublicRoute = PUBLIC_ROUTES.includes(pathname)
+  const hasAuthToken = request.cookies.get('nexa-auth-token')?.value === 'active'
+
+  // Unauthenticated user attempting to access private route
+  if (!hasAuthToken && !isPublicRoute) {
+    const loginUrl = new URL('/login', request.url)
+    return NextResponse.redirect(loginUrl)
+  }
+
+  // Authenticated user attempting to access /login
+  if (hasAuthToken && isPublicRoute) {
+    const dashboardUrl = new URL('/dashboard', request.url)
+    return NextResponse.redirect(dashboardUrl)
+  }
+
   return NextResponse.next()
 }
 

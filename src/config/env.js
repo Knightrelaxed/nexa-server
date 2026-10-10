@@ -106,6 +106,7 @@ module.exports = {
   // ============================================================
   NEXA_DEVICE_SECRET: process.env.NEXA_DEVICE_SECRET || process.env.NEXA_GODMODE_SECRET,
   NEXA_GODMODE_SECRET: process.env.NEXA_GODMODE_SECRET,
+  GMAIL_WEBHOOK_SECRET: process.env.GMAIL_WEBHOOK_SECRET || process.env.NEXA_GODMODE_SECRET,
   NEXA_CLI_SECRET: process.env.NEXA_CLI_SECRET, // Strict CLI isolation (No Fallback)
   WHATSAPP_OWNER_NUMBER: process.env.WHATSAPP_OWNER_NUMBER,
   WHATSAPP_OWNER_JID: process.env.WHATSAPP_OWNER_JID,
