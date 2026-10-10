@@ -119,7 +119,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            Hubungi admin untuk membuat akun baru.
+            Akses Terbatas • Portal Keuangan Pribadi
           </p>
         </div>
       </div>
