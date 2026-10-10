@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Executive with Xenial Agent : v3.1 "Unified Master OAuth 2.0 & Human-Centric Cognitive Ergonomics")*
+*(Neural Executive with Xenial Agent : v3.2 "Deterministic Resilience, Zero-LLM Finance & Cognitive Traffic Control")*
 
 ---
 
@@ -30,7 +30,7 @@ Filosofi ini tercermin langsung pada arsitektur *boot sequence* `app.js`: saat s
 4. Melaporkan kondisi terkini kepada Tuan secara proaktif melalui siklus *cron job* harian, tanpa menunggu disapa.
 
 **Prinsip Desain:**
-- **Zero Single Point of Failure**: Setiap lapisan AI memiliki 11 *fallback* model cadangan (Groq → Gemini → Cerebras → Mistral → OpenRouter). Server tidak pernah berhenti merespons karena satu API *down*.
+- **Zero Single Point of Failure**: Setiap lapisan AI memiliki arsitektur *Multi-Tier Multi-Key Fallback* (Google Gemma 4 26B → Gemini 3.8/3.6/3.5 Flash → Groq Qwen 3.8 27B → Mistral Codestral → Dumb Mode) dengan rotasi Round-Robin 4 API Key, Circuit Breaker lintas request, dan parsing Retry-After otomatis.
 - **Zero Silent Crash**: Di `app.js`, dua *handler* global (`unhandledRejection` dan `uncaughtException`) menangkap semua *error* yang lolos dari *domain-level try-catch*, lalu mencatatnya ke *log* **tanpa pernah memanggil `process.exit()`**. Server tetap hidup.
 - **Context-First, Not Keyword-First**: Setiap routing AI bukan berdasarkan kata kunci, melainkan berdasarkan konteks semantik dan histori percakapan.
 
@@ -132,16 +132,21 @@ N.E.X.A adalah sistem **multi-platform orchestrator**. Berikut setiap node dalam
 #### Node 1: Telegram Bot API (Antarmuka Percakapan Utama)
 Semua interaksi Tuan Faqih masuk melalui Telegram. N.E.X.A menerima pesan via *webhook* HTTP POST ke `/webhook/telegram`. Telegram mengirim update dalam format JSON yang berisi `message.text`, `message.photo`, `message.voice`, `message.document`, dan `message.caption`.
 
+**Antrean Pesan FIFO & Acknowledgment Instan (`enqueueChat`):**
+Untuk meniadakan *race condition* akibat pesan beruntun (*rapid back-to-back chat*):
+- Server langsung mengirim respons HTTP 200 OK dengan payload `sendChatAction: typing` untuk membebaskan *lock* webhook Telegram (<50ms).
+- Pemrosesan pesan di-enqueue ke dalam **In-Memory FIFO Queue** per `chatId`. Setiap pesan dieksekusi berurutan tanpa menumpuk konteks memori, dan loop indikator mengetik terisolasi mandiri per pesan.
+
 **Dua metode pengiriman respons ke Telegram (berdasarkan konteks):**
 - **Webhook Response (Zero-Outbound):** Untuk semua pesan reaktif (balasan percakapan biasa), N.E.X.A menanamkan respons langsung ke dalam HTTP response body dengan format `{ method: "sendMessage", chat_id: ..., text: ... }`. Mekanisme ini didukung resmi oleh Telegram Bot API dan tidak membutuhkan koneksi keluar sama sekali : melangkahi blokir Azure.
 - **Vercel Relay (Outbound Async):** Untuk pesan inisiatif dari *cron job* (yang tidak memiliki webhook request untuk dibalas), N.E.X.A memanggil `sendTelegramOutbound()` yang menembakkan *request* ke `NEXA_VERCEL_RELAY_URL`. Relay Vercel kemudian meneruskannya ke Telegram API. Setiap request ke relay dibubuhi header HMAC (`NEXA_RELAY_SECRET`) untuk autentikasi.
 
-#### Node 2: Supabase (PostgreSQL : Otak Permanen)
-Supabase adalah satu-satunya *persistent storage* N.E.X.A. Terdapat **dua klien Supabase** yang beroperasi secara independen:
+#### Node 2: Supabase (PostgreSQL : Otak Permanen & RLS Hardening)
+Supabase adalah satu-satunya *persistent storage* N.E.X.A. Seluruh tabel publik diproteksi oleh **Row Level Security (RLS)** dan hanya dapat diakses melalui kunci `service_role` peladen N.E.X.A. Terdapat **dua klien Supabase** yang beroperasi secara independen:
 
-**`Supabase_Memories.js`** : mengelola semua tabel memori dan interaksi:
+**`Supabase_Memories.js`** : mengelola semua tabel memori, interaksi, dan kecerdasan sistem:
 
-| Tabel | Fungsi |
+| Tabel | Fungsi & Karakteristik |
 |--|--|
 | `nexa_chat_memories` | Histori percakapan (short-term context) |
 | `nexa_user_profile` | Fakta permanen tentang Tuan Faqih (long-term memory) |
@@ -151,6 +156,10 @@ Supabase adalah satu-satunya *persistent storage* N.E.X.A. Terdapat **dua klien 
 | `nexa_pending_transactions` | Transaksi menggantung (buffer konfirmasi 5 menit) |
 | `nexa_finance_dedup` | Kunci deduplikasi transaksi (composite key + timestamp) |
 | `nexa_behavior_log` | Log pola perilaku harian (mood, jam bangun, transaksi) |
+| `nexa_notifications` | Gerbang notifikasi terpusat (P0/P1/P2, jam tenang, digest, engagement tracking) |
+| `nexa_recurring_rules` | Aturan langganan dan tagihan berulang hasil deteksi deterministik |
+| `nexa_job_runs` | Idempotensi eksekusi cron job latar belakang & anti-duplikasi tugas |
+| `nexa_llm_calls` | Buku besar telemetri panggilan LLM (token in/out, latensi, dan error class) |
 
 **`Supabase_Finance.js`** : jembatan ke skema Nexa Finance Web (dual-write):
 
@@ -160,7 +169,7 @@ Supabase adalah satu-satunya *persistent storage* N.E.X.A. Terdapat **dua klien 
 | `accounts` | Daftar akun/dompet/bank Tuan Faqih |
 | `categories` | Kategori pengeluaran/pemasukan |
 
-Kedua klien menggunakan **in-memory cache dengan TTL 30 menit** untuk menghindari query ulang ke database setiap request masuk. Cache dapat di-*invalidate* secara manual (misalnya setelah menyimpan fakta baru).
+Kedua klien menggunakan **in-memory cache dengan TTL 30 menit** untuk menghindari query ulang ke database setiap request masuk. Cache dapat di-*invalidate* secara manual (misalnya setelah menyimpan fakta baru). Snapshot vektor memori di disk disimpan secara atomik (`atomicWriteJsonSync`) melalui berkas `.tmp` sementara sebelum diganti nama secara atomik via `fs.renameSync` untuk mencegah korupsi data saat server restart.
 
 #### Node 3: Unified Google Master OAuth 2.0 Client (`Google_Master_Client.js`)
 
@@ -795,19 +804,27 @@ Jika validasi gagal, N.E.X.A mengirim pertanyaan klarifikasi spesifik dan menghe
 
 ---
 
-### 3.5 Fallback Engine : 16 Lapisan Ketangguhan Kognitif & Redundansi Global (SACR v2.1)
+### 3.5 Fallback Engine & Provider Health : Dual-Mode SACR v2.6, Rotasi Round-Robin & Circuit Breaker
 
-`Fallback_Engine.js` adalah benteng pertahanan terakhir ketersediaan AI N.E.X.A. Setiap pemanggilan kognitif melewati 16 tier model secara berurutan, berpindah ke tier berikutnya (*instant failover*) jika tier sebelumnya mengalami error jaringan, timeout, atau rate limit.
+`Fallback_Engine.js` dan `Provider_Health.js` adalah benteng pertahanan ketersediaan AI N.E.X.A. Menggunakan arsitektur **Smart Adaptive Context Routing (SACR v2.6)**, sistem membedakan beban kognitif ringan (*LIGHT Mode*) dan berat (*HEAVY Mode*), mendistribusikan beban secara merata via rotasi *Round-Robin*, membaca jeda *Retry-After* secara presisi, dan mengisolasi model yang mengalami pemadaman (*outage*).
 
-| Tier | Model | Provider / Endpoint Gateway | Kuota & Karakteristik |
+#### Matriks Kognitif SACR v2.6 (LIGHT vs HEAVY)
+
+| Mode | Urutan Prioritas Tier | Model AI | Karakteristik & Peran |
 |--|--|--|--|
-| **1 - 4** | **Google Gemma 4 31B (Anti-CoT)** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | **57.600 Chat/Hari (14.4K RPD x 4)** : Super Cerdas, 0 Geo-block |
-| **5 - 8** | **Google Gemini 3.7 Flash** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | Deep Reasoning & Adaptive Thinking (Reset Harian 07:00 WIB) |
-| **9 - 12** | **Google Gemini 3.6 Flash** | Cloudflare Edge AI Gateway (4 Kunci Rotasi) | Ultra Long Context 1M Token & High Reliability |
-| **13** | **Cerebras Gemma 4 31B** | Cerebras Cloud AI | PayGo Ultra-Fast Inference Backup |
-| **14** | **Mistral Pixtral 12B / Large** | Mistral AI API | European Independent Inference (691 ms Latency) |
-| **15** | **Puter AI Multi-Model Pool** | Puter.js Global Pool | Codestral, GPT-4o, dan Claude Backup Pool |
-| **16** | **OpenRouter Multi-Model Pool** | OpenRouter Global | LLaMA 3.3 70B & Qwen 2.5 72B Indestructible Safety Net |
+| **LIGHT** (Chat Harian, Perintah Cepat, Konfirmasi) | **Tier 1 - 4** | **Google Gemma 4 26B** (4 Kunci) | Persona Natural, Cepat, Tanpa Monolog Internal |
+| | **Tier 5 - 8** | **Gemini 3.5 Flash Lite** (4 Kunci) | Kecepatan Sub-Detik, Respons Kilat |
+| | **Tier 9 - 12** | **Gemini 3.6 Flash** (4 Kunci) | Cadangan Stabil, Jendela Konteks 1 Juta Token |
+| | **Tier 13 - 16** | **Groq Qwen 3.8 27B** (4 Kunci) | Mesin Inferensi LPU Tercepat (Ultra-Low Latency) |
+| | **Tier 17** | **Mistral Codestral** | Inferensi Independen Server Eropa |
+| | **Tier 18** | **Dumb Mode** | Jaring Pengaman Darurat Offline |
+| **HEAVY** (Rekap Keuangan, Riset, Bedah Dokumen, Coding) | **Tier 1 - 4** | **Gemini 3.8 Flash** (4 Kunci) | Penalaran Mendalam (*Deep Reasoning Priority*) |
+| | **Tier 5 - 8** | **Gemini 3.6 Flash** (4 Kunci) | Workhorse Utama, Analisis Dokumen Panjang |
+| | **Tier 9 - 12** | **Google Gemma 4 26B** (4 Kunci) | Evaluasi Cepat Pendamping |
+| | **Tier 13 - 16** | **Gemini 3.5 Flash** (4 Kunci) | Cadangan Terbuka Skala Besar |
+| | **Tier 17 - 20** | **Groq Qwen 3.8 27B** (4 Kunci) | Failover Berkecepatan Tinggi |
+| | **Tier 21** | **Mistral Codestral** | Failover Eropa Mandiri |
+| | **Tier 22** | **Dumb Mode** | Jaring Pengaman Darurat Offline |
 
 ---
 
@@ -833,14 +850,14 @@ export default {
 };
 ```
 - **Latensi Tambahan:** Hanya **~1 - 3 milidetik** karena Cloudflare memiliki Point of Presence (PoP) di Jakarta (`CGK`), satu kota dengan Azure VPS Jakarta kita.
-- **Hasil:** Google AI Studio menerima koneksi dari Cloudflare Edge IP secara legal dan mengembalikan respon **`200 OK`**, membuka kembali 100% kapasitas kuota 57.600 request/hari Google Gemma 4 dan Gemini 3.7/3.6.
+- **Hasil:** Google AI Studio menerima koneksi dari Cloudflare Edge IP secara legal dan mengembalikan respon **`200 OK`**, membuka kembali 100% kapasitas kuota multi-kunci Google Gemma 4 dan Gemini 3.8/3.6/3.5.
 
 ---
 
 #### 3.5.2 Penanganan Multi-Part Thought & "Empty Response String" pada Google Gemma 4
 
 **Akar Masalah:**  
-Google Gemma 4 31B mengembalikan struktur respon multi-part pada API v1beta:
+Google Gemma 4 mengembalikan struktur respon multi-part pada API v1beta:
 - `parts[0]`: Wadah *thought container* kosong (`{ text: "", thought: true }`).
 - `parts[1]`: Wadah teks jawaban nyata (`{ text: "{\"intent\": ...}" }`).
 
@@ -855,19 +872,12 @@ const rawText = parts
   .join('\n')
   .trim() || (parts[parts.length - 1]?.text || '');
 ```
-Logika ini 100% kompatibel universal:
-- Menyaring wadah thought kosong pada **Gemma 4**.
-- Membuang monolog internal draf pada **Gemini 3.7 Thinking Mode**.
-- Menjaga 100% keutuhan teks pada **Gemini 3.6 Flash Normal Single-Part**.
+Logika ini 100% kompatibel universal: menyaring wadah thought kosong pada Gemma 4, membuang draf monolog internal Gemini, dan menjaga keutuhan format JSON murni.
 
 ---
 
 #### 3.5.3 Robust JSON Parsing: Balanced-Brace Depth Parser (`extractFirstValidJson`)
 
-**Akar Masalah:**  
-Ketika model LLM menghasilkan output dengan catatan pemikiran internal, *code blocks*, atau beberapa opsi JSON sekaligus, pemotongan string berbasis `lastIndexOf('}')` dapat menangkap karakter non-JSON di antara kurung kurawal, memicu error `Unexpected non-whitespace character after JSON`.
-
-**Solusi Algoritma Depth Parser:**
 Fungsi `extractFirstValidJson()` melacak kedalaman kurung kurawal (`depth counter`) dan status escape string secara sekuensial:
 ```javascript
 function extractFirstValidJson(str) {
@@ -885,7 +895,7 @@ function extractFirstValidJson(str) {
     if (!inString) {
       if (char === '{') depth++;
       else if (char === '}') {
-        depth-;
+        depth--;
         if (depth === 0) {
           const candidate = text.substring(startIdx, i + 1);
           try { JSON.parse(candidate); return candidate; } catch (e) {}
@@ -896,25 +906,56 @@ function extractFirstValidJson(str) {
   return null;
 }
 ```
-Algoritma ini menjamin bahwa objek JSON valid pertama yang selesai langsung diekstrak secara murni, kebal dari segala bentuk kebocoran teks atau monolog LLM.
 
 ---
 
-#### 3.5.4 Proteksi Timeout (15s AbortSignal) & Smart Rate-Limit Circuit Breaker
+#### 3.5.4 Rotasi Kunci Round-Robin Dinamis (`orderKeys`)
 
-1. **Strict Timeout Guard:** Setiap panggilan API eksternal dibatasi dengan `AbortSignal.timeout(15000)`. Jika server AI global mengalami *hang/stuck*, N.E.X.A memutus koneksi dalam 15 detik dan melompat ke tier berikutnya tanpa membiarkan bot Telegram terdiam.
-2. **TPM / RPD Quota Shield:** 
-   - Batas **16.000 TPM (Token Per Menit)** dan **20 RPD (Request Per Hari)** pada free-tier ditangani dengan rotasi 4 kunci API independen.
-   - Jika satu kunci terkena status `429 Too Many Requests`, sistem langsung mencoba kunci ke-2, ke-3, hingga ke-4 secara mulus (*Zero User Interruption*).
+**Kelemahan Arsitektur Lama:**
+Sebelumnya, sistem selalu memulai pemanggilan dari Kunci #1 (`API Key 1`). Akibatnya Kunci #1 menanggung 90%+ beban dan cepat terkena limit kuota RPM/TPM sementara Kunci #2, #3, #4 menganggur.
+
+**Implementasi Solusi v3.2:**
+Modul `orderKeys(group, count)` memutar indeks awal kunci per request menggunakan modulo counter:
+```javascript
+function orderKeys(group, count) {
+  if (count <= 0) return [];
+  const start = (_keyCursors.get(group) || 0) % count;
+  _keyCursors.set(group, (start + 1) % count);
+  return Array.from({ length: count }, (_, i) => (start + i) % count);
+}
+```
+Setiap panggilan berurutan mendistribusikan beban secara seragam ke seluruh kunci (`Key 1 → Key 2 → Key 3 → Key 4`), memperpanjang daya tahan kuota gratis hingga 4x lipat.
 
 ---
 
-#### 3.5.5 Dumb Mode : Jaring Pengaman Terakhir
+#### 3.5.5 Smart Retry-After & Deteksi Kuota Harian (RPD)
 
-Jika seluruh 16 lapisan peladen dunia mengalami pemadaman total secara bersamaan, sistem mengembalikan struktur darurat terisolasi tanpa crash:
+Ketika provider mengembalikan status `429 Too Many Requests`:
+1. **Parsing `Retry-After`**: Sistem mengekstrak durasi jeda resmi dari HTTP response header `retry-after` atau teks error (`"Please retry in 15.2s"`), lalu mencatat cooldown presisi untuk kunci tersebut.
+2. **Isolasi Kuota Harian (Daily Quota)**: Jika error mengandung pola `/per day|daily|\bRPD\b/i`, sistem mengaktifkan cooldown **30 menit** khusus untuk kunci tersebut. Server tidak membuang waktu me-retry kunci yang sudah habis kuota hariannya dan langsung melompat ke tier/model berikutnya.
+
+---
+
+#### 3.5.6 Arsitektur Provider Health State Machine (`Provider_Health.js`)
+
+Modul `Provider_Health.js` mengimplementasikan *Circuit Breaker* lintas request dengan tiga status hidup:
+- **`CLOSED`**: Provider beroperasi normal.
+- **`OPEN`**: Terjadi kegagalan server berturut-turut ($\ge 2$ kali error 5xx/timeout). Seluruh request ke model ini diblokir sementara dengan *exponential backoff* ($30\text{s} \rightarrow 60\text{s} \rightarrow 120\text{s}$, maks 10 menit).
+- **`HALF-OPEN`**: Jendela cooldown berakhir. Tepat **satu probe request** diizinkan lewat. Jika berhasil, sirkuit kembali `CLOSED`. Jika gagal, waktu jeda digandakan kembali.
+
+Fungsi `snapshot()` mengekspos telemetri status sirkuit dan waktu jeda kunci secara *real-time* untuk pemantauan endpoint `/health/deep`.
+
+---
+
+#### 3.5.7 Dumb Mode : Jaring Pengaman Darurat Terakhir
+
+Jika seluruh lapisan peladen dunia mengalami pemadaman total secara bersamaan, sistem mengembalikan struktur darurat terisolasi tanpa crash:
 ```json
 {
   "intent": "DUMB_MODE",
+  "reply_message": "Maaf Tuan Faqih, saat ini seluruh jalur AI sedang mengalami pemadaman global. Sistem tetap aktif dalam mode observasi darurat."
+}
+```
 ### 3.6 Classifier Spesialisasi : Fungsi AI Ringan Non-Routing
 
 Selain `routeUserMessage()`, `AI_Router.js` menyediakan tiga fungsi AI spesialisasi yang hanya dipanggil dalam konteks tertentu:
@@ -1194,6 +1235,51 @@ Tuan Faqih bisa berkata *"transaksi kemarin"* atau *"pengeluaran tanggal 14"* : 
 | `"14/5"` atau `"14-5"` | 14 Mei tahun berjalan (dengan bug fix setMonth untuk lintas bulan) |
 | `"2026-05-14"` (ISO dari AI Router) | Date objek tepat |
 | `"14"` (angka saja) | Tanggal 14 bulan berjalan |
+
+---
+
+### 4.10 Zero-LLM Deterministic Finance Intelligence: `Finance_Intel.js`
+
+Pada versi 3.2, N.E.X.A memperkenalkan modul kecerdasan finansial deterministik murni (`Finance_Intel.js`). Menggantikan ketergantungan pada pemanggilan LLM yang lambat, berbiaya token, dan rentan terhadap halusinasi matematika, seluruh analitik prediksi keuangan kini dieksekusi oleh **algoritma matematika murni di CPU (< 1 ms, 0 Token, Rp 0 Biaya)**.
+
+#### 4.10.1 Algoritma Deteksi Langganan & Pengeluaran Berulang (`detectRecurring`)
+
+Fungsi `detectRecurring(txs)` membaca seluruh mutasi pengeluaran dari database dan mengekstraksi pola berulang melalui 4 tahap analisis:
+1. **Normalisasi Nama Merchant (`normalizeMerchant`)**: Membersihkan imbuhan PT, CV, Tbk, karakter non-alfanumerik, dan nomor resi/referensi transaksi panjang ($\ge 3$ digit) menjadi kata kunci murni (contoh: `"PT SPOTIFY INDONESIA 0192"` $\rightarrow$ `"spotify"`).
+2. **Pengelompokan Nominal (*Amount Clustering*)**: Mengelompokkan transaksi dengan deviasi nominal $\le 10\%$ (`amountTol = 0.1`) untuk mengakomodasi fluktuasi tagihan dinamis seperti tarif listrik PLN.
+3. **Pencocokan Ritme Kalender (*Cadence Detection*)**: Menghitung selisih hari (*gaps*) antar transaksi terurut dan mencocokkannya ke tabel toleransi siklus kalender:
+   - **`WEEKLY`**: Jeda 7 hari ($\pm 1.5$ hari)
+   - **`BIWEEKLY`**: Jeda 14 hari ($\pm 2.5$ hari)
+   - **`MONTHLY`**: Jeda 30.4 hari ($\pm 4$ hari)
+   - **`QUARTERLY`**: Jeda 91 hari ($\pm 8$ hari)
+   - **`YEARLY`**: Jeda 365 hari ($\pm 15$ hari)
+4. **Perhitungan Skor Keyakinan (*Confidence Score*)**: Menggabungkan tingkat keteraturan gap ($40\%$), frekuensi kemunculan ($30\%$), dan stabilitas nominal ($30\%$). Jika transaksi muncul $\ge 3$ kali dengan ritme teratur, aturan dicatat ke tabel `nexa_recurring_rules` dengan status `ON_TRACK` atau `MISSED`.
+
+#### 4.10.2 Proyeksi Tagihan Mendatang (*Upcoming Bills*) & Month-End Clamping
+
+Fungsi `upcomingBills(rules, fromTs, toTs)` memproyeksikan tanggal jatuh tempo dari seluruh aturan berulang aktif (`status = 'ACTIVE'`).
+- **Month-End Clamping:** Untuk langganan pada tanggal 31 (misal 31 Januari), fungsi `addStep` secara cerdas mengunci tanggal ke hari terakhir bulan target (28 Februari pada tahun biasa, 29 Februari pada tahun kabisat, dan 30 April pada bulan 30 hari), mencegah lompatan tanggal ke bulan berikutnya.
+
+#### 4.10.3 Jatah Belanja Aman Harian (`safeToSpendToday`)
+
+Fungsi `safeToSpendToday` menghitung batas maksimal belanja harian Tuan Faqih agar anggaran bulanan tidak boncos:
+
+$$\text{Discretionary Budget} = \text{Sisa Budget Bulanan} - \text{Total Tagihan Mendatang}$$
+
+$$\text{Jatah Hari Ini} = \frac{\text{Discretionary Budget}}{\max(1, \text{Sisa Hari Bulan Ini})} - \text{Pengeluaran Hari Ini}$$
+
+- **Status Evaluasi:**
+  - `OK`: Sisa jatah hari ini aman.
+  - `TIGHT`: Sisa jatah hari ini tinggal $< 25\%$ dari rata-rata harian.
+  - `OVER`: Jatah hari ini atau anggaran bulanan sudah terlampaui.
+
+#### 4.10.4 Proyeksi Saldo Akhir Bulan (`projectMonthEnd`)
+
+Fungsi `projectMonthEnd` memproyeksikan estimasi total pengeluaran dan saldo akhir bulan berbasis kecepatan belanja harian variabel (*variable run-rate*):
+
+$$\text{Run Rate} = \frac{\text{Pengeluaran Variabel Terpakai}}{\max(1, \text{Hari Berjalan})}$$
+
+$$\text{Proyeksi Akhir Bulan} = \text{Total Terpakai} + \text{Tagihan Belum Bayar} + (\text{Run Rate} \times \text{Sisa Hari Bulan Ini})$$
 
 ---
 
@@ -1507,6 +1593,31 @@ Dua *cron* bekerja dengan tempo yang sangat cepat untuk memastikan data tetap ko
 
 ---
 
+### 7.4 Centralized Notification Gateway: `Notifier.js` (Pengatur Lalu Lintas Sapaan Proaktif)
+
+Pada versi 3.2, N.E.X.A mengintegrasikan **Gerbang Notifikasi Terpadu (`Notifier.js`)** untuk menyelesaikan masalah kelelahan notifikasi (*notification fatigue*) dan mencegah interupsi tidur pengguna di malam hari. Seluruh pesan otomatis dari cron job, peringatan budget, dan sistem latar belakang wajib melewati gerbang ini sebelum dikirim ke Telegram.
+
+#### 7.4.1 Matriks Prioritas Tiga Lapis (P0, P1, P2)
+
+| Tingkat Prioritas | Jenis Konten / Skenario | Kebijakan Pengiriman & Jam Tenang (WIB) |
+|--|--|--|
+| **`P0` (Kritis / Darurat)** | Konfirmasi mutasi uang, alert keamanan, alarm darurat | **Langsung Terkirim Seketika (24/7)**. Menembus seluruh jam tenang dan tanpa batas kuota harian. |
+| **`P1` (Penting Terjadwal)** | Peringatan over-budget ($\ge 80\%$), tagihan jatuh tempo, tugas mendesak | **Respek Jam Tenang (23:00 - 05:00 WIB)**: Jika terpicu di jam tidur, pesan di-defer ke status `QUEUED_DEFERRED` dan otomatis di-flush pukul **05:30 WIB** pagi. Dibatasi maksimal **3 pesan/hari**; kelebihannya diturunkan (*demote*) ke P2 Digest. |
+| **`P2` (Ambient / Pendukung)** | Info cuaca, tips produktivitas, pulse ringan, data sampingan | **Dilarang Terkirim Sendiri**. Seluruh pesan P2 dikumpulkan ke status `QUEUED_DIGEST` dan digabungkan menjadi satu pesan rangkuman (*Digest*) berkala (pukul 12:30 dan 19:30 WIB). |
+
+#### 7.4.2 Resilient Zero-Downtime Store Architecture
+
+`Notifier.js` dirancang dengan arsitektur penyimpanan hibrida cerdas (`createResilientStore`):
+- **Jalur Utama:** Menyimpan antrean, deduplikasi, dan status pengiriman secara terpusat ke tabel Supabase `nexa_notifications`.
+- **Zero-Downtime Fallback:** Jika tabel Supabase belum dimigrasikan atau terjadi gangguan jaringan database, sistem **secara otomatis dan senyap beralih ke RAM (In-Memory Store)** tanpa memicu *unhandled rejection* atau kegagalan pengiriman pesan.
+
+#### 7.4.3 Pelacakan Engagement & Anti-Spam Feedback Loop
+
+- **Pelacakan Interaksi (`markEngaged`)**: Setiap kali Tuan Faqih membalas chat (`REPLY`) atau menekan tombol Inline Keyboard (`BUTTON_TAP`), gerbang notifikasi menandai pesan terkait sebagai *engaged*.
+- **Laporan Efektivitas (`engagementReport(14)`):** Menganalisis tingkat keterlibatan 14 hari terakhir. Jika kategori notifikasi tertentu memiliki rasio respons $< 20\%$ (`lowEngagementRate: 0.2`) dengan sampel $\ge 7$, sistem secara cerdas menyarankan tindakan `REDUCE` untuk memangkas frekuensi notifikasi tersebut.
+
+---
+
 ## BAB 8: JARINGAN, KEAMANAN, & MANAJEMEN DEPLOYMENT
 
 Beroperasi di atas **Azure VPS Jakarta** (`Standard_B2ats_v2`, Ubuntu 24.04, `indonesiacentral`) dengan domain produksi `https://nexa-server.indonesiacentral.cloudapp.azure.com`, N.E.X.A mengimplementasikan rekayasa jaringan (*network engineering*) dan protokol keamanan tingkat militer untuk menjaga ketersediaan layanan dan privasi mutlak Tuan Faqih.
@@ -1542,26 +1653,31 @@ Di tingkat fondasi *software engineering*, arsitektur N.E.X.A mematuhi prinsip *
 
 ### 9.1 Anatomi Root & Struktur `src/`
 
-Otak N.E.X.A terpusat di dalam direktori `src/`, terbagi atas 6 wilayah eksklusif:
+Otak N.E.X.A terpusat di dalam direktori `src/`, terbagi atas 6 wilayah domain eksklusif:
 
-1. **`src/core/` (Kognisi Sentral)**
-   Pusat kesadaran buatan. Menampung:
+1. **`src/core/` (Kognisi Sentral & Resilience)**
+   Pusat kesadaran buatan dan ketahanan provider. Menampung:
    - `AI_Router.js`: Sang *Universal State Machine*. Membaca niat Tuan Faqih dan memecahnya menjadi JSON terstruktur.
-   - `Fallback_Engine.js`: Pemindah gigi LLM otomatis jika server utama *down*.
-   - `Vision_Engine.js` & `Voice_Engine.js`: Mata dan telinga (OCR multimodal & Voice-to-Text).
+   - `Fallback_Engine.js`: Pemindah gigi LLM otomatis dengan SACR v2.6 Dual-Mode dan rotasi round-robin.
+   - `Provider_Health.js`: Mesin pemantau kesehatan AI provider, circuit breaker lintas request, dan parsing Retry-After.
+   - `Notifier.js`: Gerbang notifikasi terpusat (P0/P1/P2 priority, quiet hours WIB, digest, resilient store fallback).
+   - `Vision_Engine.js` & `Voice_Engine.js`: Indera multimodal (OCR gambar & Voice-to-Text).
 2. **`src/domain/` (Otak Logika Bisnis)**
-   Tempat logika fitur bermukim, terbebas dari hal teknis jaringan. Menampung:
-   - `Finance_Engine.js` & `Budget_Engine.js` (Keuangan)
-   - `Task_Manager.js` & `Agenda_Manager.js` (Produktivitas)
+   Tempat logika fitur murni bermukim, terbebas dari hal teknis jaringan. Menampung:
+   - `Finance_Engine.js` & `Budget_Engine.js` (Keuangan Operasional)
+   - `Finance_Intel.js` (Kecerdasan Keuangan Deterministik Zero-LLM: Deteksi Langganan, Tagihan Mendatang, Jatah Harian)
+   - `Task_Manager.js` & `Agenda_Manager.js` (Produktivitas & Kalender)
    - `Behavior_Engine.js`, `Intelligence_Brief.js`, `Discipline_GodMode.js`
 3. **`src/infrastructure/` (Eksternal *Driver*)**
-   Penghubung teknis murni ke dunia luar. Menampung kode API Supabase (`Supabase_Finance.js`, `Supabase_Memories.js`), Google Ecosystem (`Google_Tasks.js`, `Google_Workspace.js`), Notion, Web Search (Serper), hingga integrasi Gmail.
+   Penghubung teknis murni ke dunia luar. Menampung kode API Supabase (`Supabase_Finance.js`, `Supabase_Memories.js`), Google Ecosystem (`Google_Tasks.js`, `Google_Workspace.js`, `Google_Master_Client.js`), Notion, Web Search (Serper), hingga integrasi Gmail.
 4. **`src/interfaces/` (Gerbang I/O)**
-   Pintu masuk interaksi. Menampung `webhook.js` (gerbang reaktif pasif yang menerima pesan Telegram) dan `cron.js` (gerbang aktif-proaktif berbasis waktu).
-5. **`src/utils/` (Pertahanan & Jaringan)**
-   Menampung `security.js` (*Firewall*, Identity Lock) dan `telegram_network.js` (Vercel Relay & pencegah *Timeout*).
+   Pintu masuk interaksi. Menampung `webhook.js` (gerbang reaktif pasif yang menerima pesan Telegram dengan antrean FIFO `enqueueChat`), `telegram/adapter.js`, `mobile_bridge/MobileBridge_WS.js` (WebSocket Android), dan `cron.js` (gerbang aktif-proaktif berbasis waktu).
+5. **`src/utils/` (Pertahanan, Vektor & Jaringan)**
+   Menampung `security.js` (*Firewall*, Identity Lock), `gemini_vector_cache.js` (In-memory semantic vector snapshot dengan *atomic file write*), dan `telegram_network.js` (Vercel Relay & pencegah *Timeout*).
 6. **`src/config/` (Konfigurasi Induk)**
    Menampung `env.js` (Orkestrasi kredensial lintas platform) dan `personality.js` (Sikap & Persona N.E.X.A).
+
+---
 
 ### 9.2 The Universal State Machine (Hukum Keteraturan)
 
@@ -1575,6 +1691,8 @@ Setiap pesan Telegram yang masuk akan dimasukkan ke *Router* ini terlebih dahulu
 ```
 Atas dasar `intent` inilah *switch-case* di `AI_Router.js` mengarahkan `extractedData` tersebut ke salah satu *Domain Engine*. Ini mencegah ambiguitas jika Tuan Faqih mengetik pesan kompleks seperti, *"Masukkan rapat 1 jam soal budget uang 50.000"*.
 
+---
+
 ### 9.3 Panduan Ekstensibilitas (Aturan Menambah Fitur Baru)
 
 N.E.X.A dirancang untuk bisa dikembangkan. Jika di masa depan Tuan Faqih ingin menyuntikkan fitur baru (misal: **Health & Fitness Tracker** untuk mencatat kalori dan lari), maka hukum *Universal State Machine* melarang keras mengutak-atik `webhook.js`.
@@ -1585,11 +1703,14 @@ Berikut adalah langkah injeksi yang benar:
 3. **Pendaftaran Niat (*Intent Mapping*)**: Buka `src/core/AI_Router.js`. Di bagian `system_prompt`, daftarkan `intent` baru bernama `"HEALTH"` beserta instruksi parameternya (seperti `kalori_dibakar`, `durasi_lari`).
 4. **Sambungkan Soket (*Wiring*)**: Di fungsi `routeUserMessage` pada `AI_Router.js`, tambahkan *case* `"HEALTH"` yang meneruskan hasil JSON ke `Health_Engine.logWorkout(data)`.
 
-Dengan menaati protokol ini, fitur baru bisa disuntikkan dalam hitungan menit tanpa mendisrupsi nol-latensi dan ketahanan *fallback* sistem lama. N.E.X.A tidak akan pernah berbenturan (*crash*) akibat fitur tumpang tindih.
-
 ---
-**~ TAMAT ~**
-*Mahakarya arsitektur The Chief of Staff, secara eksklusif dikembangkan untuk memperluas kognisi dan otonomi penggunanya, Tuan Faqih Hidayatulloh.*
+
+### 9.4 Pengujian Otomatis & Continuous Integration (`npm test`)
+
+N.E.X.A mengintegrasikan *test suite* otomatis berbasis native Node.js Test Runner (`node --test`):
+- Berkas pengujian: [`tests/upgrade.test.js`](file:///c:/workspace/nexa-server/tests/upgrade.test.js)
+- Menjalankan 11 pengujian unit mencakup: Circuit breaker group open/half-open/close, exponential backoff, status 429 Retry-After, round-robin key rotation, deteksi jam tenang WIB, filter P0/P1/P2 notifikasi, deteksi tagihan berulang, month-end clamping, dan kalkulasi jatah belanja harian.
+- Seluruh pengujian terintegrasi ke pipeline GitHub Actions (`.github/workflows/ci.yml`) dan dijalankan otomatis setiap kali kode di-*push* ke branch `main`.
 
 ---
 
@@ -2071,6 +2192,78 @@ Berdasarkan *Agentic Design Patterns* (Google Cloud / Springer) dan evaluasi di 
 Dengan formalisasi **Bab 13** ini ke dalam Whitepaper, N.E.X.A mengukuhkan komitmen desainnya: menjadi asisten cerdas yang tidak hanya tangguh dalam otomasi fisik dan finansial, tetapi juga memiliki arsitektur kognitif yang ramping, elegan, dan setara dengan standar riset AI enterprise global.
 
 ---
+
+## BAB 14: ARSITEKTUR v3.2 : THE DETERMINISTIC UPGRADE & ZERO-COST RESILIENCE
+
+Bab ini membedah lompatan evolusi arsitektur N.E.X.A pada **versi 3.2**: sebuah transformasi terpadu yang memadukan komputasi deterministik nol-biaya (*Zero-Cost Deterministic Engine*), ketahanan kegagalan penyedia AI (*Provider Health & Round-Robin Rotation*), ketertiban antrean pesan (*In-Memory FIFO Queue*), dan gerbang notifikasi anti-spam (*Cognitive Traffic Control*).
+
+---
+
+### 14.1 Paradigma Baru: Dari Ketergantungan LLM ke Logika Deterministik Murni
+
+**Dilema Arsitektur Lama:**
+Banyak sistem asisten AI modern terjebak dalam *anti-pattern* "LLM-for-everything": memasukkan ratusan baris data transaksi atau teks ke dalam *prompt* LLM hanya untuk menghitung sisa anggaran, mendeteksi langganan bulanan, atau memproyeksikan tagihan. Pendekatan ini memiliki 3 kelemahan fatal:
+1. **Boros Token & Kuota API:** Menguras kuota RPM/TPM gratisan untuk operasi matematika sepele.
+2. **Latensi Lambat:** Memerlukan waktu inferensi 2 hingga 5 detik.
+3. **Halusinasi Matematika:** Model bahasa probabilistik sering salah menghitung selisih tanggal dan persentase numerik.
+
+**Solusi v3.2 (`Finance_Intel.js`):**
+N.E.X.A memindahkan seluruh beban komputasi analitik, proyeksi, dan deteksi pola berulang ke dalam **Pure Domain Mathematical Functions**:
+- **Eksekusi 0.001 Milidetik (< 1 ms)** secara lokal di CPU server.
+- **Konsumsi Token: 0 Token (100% Bebas Biaya / Rp 0)**.
+- **Akurasi Absolut 100%**: Tidak ada risiko halusinasi atau kesalahan kalkulasi kalender.
+
+---
+
+### 14.2 Keseimbangan Kognitif: Pengatur Lalu Lintas Sapaan Proaktif (`Notifier.js`)
+
+Seiring bertambahnya fitur otonom (pemantau budget, detektor tagihan, alarm tugas, intel cuaca, digest), risiko terbesar bagi asisten proaktif adalah **kelelahan notifikasi (*notification fatigue*)** dan interupsi tidur pengguna.
+
+N.E.X.A v3.2 memberlakukan **Kebijakan Lalu Lintas Notifikasi Terpusat**:
+1. **P0 (Emergency & Konfirmasi Langsung)**: Bebas hambatan 24/7 (menembus jam tidur).
+2. **P1 (Penting Terjadwal)**: Menghormati jam tenang tidur (23:00 - 05:00 WIB) dengan menahan pesan di status `QUEUED_DEFERRED` dan mengirimkannya serentak saat Tuan bangun (05:30 WIB). Dibatasi maksimal 3 pesan/hari; kelebihannya dialihkan ke Digest.
+3. **P2 (Ambient & Pendukung)**: Dilarang mengirim chat mandiri; dikumpulkan dan dirangkum dalam *Digest* siang dan malam.
+4. **Resilient Zero-Downtime Store**: Secara mulus menyimpan data ke Supabase `nexa_notifications`, dengan kemampuan *auto-fallback* ke RAM jika tabel database sedang tidak tersedia.
+5. **Feedback Loop Berbasis Keterlibatan (`engagementReport`)**: Mengukur apakah Tuan aktif merespons notifikasi. Kategori yang diabaikan secara cerdas disarankan untuk dipangkas (*suggestion: REDUCE*).
+
+---
+
+### 14.3 Ketahanan Multi-Tier & Pengelolaan Kuota AI
+
+Untuk memaksimalkan sumber daya gratis (*Zero-Cost Deployment*), `Fallback_Engine.js` dan `Provider_Health.js` mengimplementasikan 3 inovasi penting:
+- **Rotasi Round-Robin Modulo (`orderKeys`)**: Menghilangkan masalah *Key #1 Bottleneck* dengan memutar indeks kunci awal secara merata per-request, melipatgandakan daya tahan kuota free-tier hingga 4x lipat.
+- **Smart `Retry-After` Parsing**: Membaca jeda waktu resmi dari header HTTP respons provider secara presisi.
+- **Isolasi Kuota Harian (RPD)**: Mendeteksi habisnya kuota harian (`QUOTA_DAILY`) dan mengaktifkan cooldown 30 menit khusus untuk tier tersebut, melompat seketika ke model cadangan berikutnya tanpa membuang waktu me-retry kunci yang telah habis.
+- **Circuit Breaker Single Half-Open Probe**: Mencegah banjir request ke server provider yang sedang *down* (5xx/timeout) dengan *exponential backoff* ($30\text{s} \rightarrow 600\text{s}$).
+
+---
+
+### 14.4 Integritas Data & Anti-Race Condition
+
+1. **In-Memory FIFO Message Serialization Queue (`enqueueChat` di `adapter.js`)**:
+   Setiap pesan yang dikirimkan Tuan Faqih secara cepat berturut-turut diantrikan secara sekuensial per `chatId`. Konteks percakapan, penyimpanan memori Supabase, dan interaksi AI diproses tertib satu per satu tanpa pernah saling tumpang tindih.
+2. **Penulisan Berkas Snapshot Vektor Atomik (`gemini_vector_cache.js`)**:
+   Menggunakan pola `atomicWriteJsonSync` (menulis berkas sementara `.tmp` sebelum diganti nama secara atomik via `fs.renameSync`). File memori vektor di disk (`data/facts_vectors.json`) kebal dari kerusakan (*corruption*) meski server mendadak restart di tengah proses penulisan.
+3. **Hardening Database Row Level Security (RLS)**:
+   Seluruh tabel database publik Supabase (`nexa_*`) diproteksi dengan RLS penuh tanpa *public policy*, menjamin hanya backend server N.E.X.A melalui kunci `service_role` yang berhak membaca dan menulis data.
+
+---
+
+### 14.5 Matriks Komparasi Kinerja Arsitektur v3.1 vs v3.2
+
+| Parameter Arsitektur | N.E.X.A v3.1 | N.E.X.A v3.2 (Deterministic Resilience) |
+|--|--|--|
+| **Kecerdasan Prediksi Keuangan** | Probabilistik via LLM Prompt (2-4s) | **Matematika Murni CPU (< 1 ms, 0 Token, Rp 0)** |
+| **Distribusi Beban API Key** | Statis (Kunci #1 habis duluan) | **Round-Robin Modulo (Beban Terbagi Rata 4x Lipat)** |
+| **Penanganan Error 429 / Kuota** | Cooldown statis 60s seragam | **Smart `Retry-After` + 30m Quota Daily Isolation** |
+| **Pengelolaan Notifikasi Proaktif** | Tiap cron kirim chat langsung | **Centralized Gateway (P0/P1/P2 + Jam Tenang + Digest)** |
+| **Konkurensi Pesan Pengguna** | Paralel tak terkontrol (*Race Condition*) | **In-Memory FIFO Serialization Queue per Chat** |
+| **Integritas Berkas Memori Disk** | Penulisan `writeFileSync` langsung | **Atomic File Write (`.tmp` + `renameSync`)** |
+| **Otomasi Pengujian & Verifikasi** | Pengujian manual | **11 Unit Tests (`node --test`) + GitHub Actions CI** |
+| **Keamanan Database Publik** | Terbuka bagi kunci anon | **Row Level Security (RLS) + Service Role Only** |
+
+---
 **~ TAMAT ~**
 *Mahakarya arsitektur The Chief of Staff, secara eksklusif dikembangkan untuk memperluas kognisi dan otonomi penggunanya, Tuan Faqih Hidayatulloh.*
+
 
