@@ -240,6 +240,61 @@ function getAccumulatedTokenUsage() {
   return { ...currentSessionTokenUsage };
 }
 
+// ============================================================
+// SHARED CROSS-REQUEST CIRCUIT BREAKER & COOLDOWN REGISTRY
+// ============================================================
+const _sharedCooldowns = new Map();
+
+/**
+ * Memeriksa apakah sebuah tier atau grup model sedang dalam masa cooldown lintas-request.
+ * Membersihkan entri yang sudah kedaluwarsa secara otomatis.
+ */
+function checkCooldown(tierId, group) {
+  const now = Date.now();
+
+  // 1. Cek group-level cooldown (misal seluruh endpoint model 5xx/overloaded/outage)
+  if (group && _sharedCooldowns.has(`group:${group}`)) {
+    const expiresAt = _sharedCooldowns.get(`group:${group}`);
+    if (now < expiresAt) {
+      return { cooling: true, reason: `gangguan model '${group}' (${Math.ceil((expiresAt - now) / 1000)}s tersisa)` };
+    }
+    _sharedCooldowns.delete(`group:${group}`);
+  }
+
+  // 2. Cek tier-level cooldown (misal key tertentu terkena 429 quota/rate limit)
+  if (tierId && _sharedCooldowns.has(`tier:${tierId}`)) {
+    const expiresAt = _sharedCooldowns.get(`tier:${tierId}`);
+    if (now < expiresAt) {
+      return { cooling: true, reason: `rate-limit key '${tierId}' (${Math.ceil((expiresAt - now) / 1000)}s tersisa)` };
+    }
+    _sharedCooldowns.delete(`tier:${tierId}`);
+  }
+
+  return { cooling: false };
+}
+
+function setCooldown(key, durationMs) {
+  _sharedCooldowns.set(key, Date.now() + durationMs);
+}
+
+function clearCooldown(tierId, group) {
+  if (tierId) _sharedCooldowns.delete(`tier:${tierId}`);
+  if (group) _sharedCooldowns.delete(`group:${group}`);
+}
+
+function getSharedCooldownsStatus() {
+  const now = Date.now();
+  const status = {};
+  for (const [k, exp] of _sharedCooldowns.entries()) {
+    if (exp > now) {
+      status[k] = Math.ceil((exp - now) / 1000) + 's';
+    } else {
+      _sharedCooldowns.delete(k);
+    }
+  }
+  return status;
+}
+
 async function executeWithFallback(prompt, systemInstruction = "", temperature = 0.3, jsonMode = true, options = {}) {
   // --- SMART ADAPTIVE CONTEXT ROUTING (SACR) ---
   // options.forceHeavy = true  → paksa HEAVY mode
@@ -261,6 +316,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const googleGemmaBlock = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
+      tierId: `gemma-4-26b-k${i + 1}`,
       group: 'gemma-4-26b',
       name: `Tier X (Google Gemma 4 26B Key ${i + 1} [Natural Persona])`,
       fn: () => callGoogleGemma(key, prompt, systemInstruction, temperature, jsonMode, 1)
@@ -270,6 +326,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const gemini38Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
+      tierId: `gemini-3.8-flash-k${i + 1}`,
       group: 'gemini-3.8-flash',
       name: `Tier X (Gemini 3.8 Flash Key ${i + 1})`,
       fn: () => callGeminiWithRetry(key, 'gemini-3.8-flash', prompt, systemInstruction, temperature, jsonMode, 1)
@@ -279,6 +336,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const gemini36Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
+      tierId: `gemini-3.6-flash-k${i + 1}`,
       group: 'gemini-3.6-flash',
       name: `Tier X (Gemini 3.6 Flash Key ${i + 1})`,
       fn: () => callGeminiWithRetry(key, 'gemini-3.6-flash', prompt, systemInstruction, temperature, jsonMode, 1)
@@ -288,6 +346,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const gemini35FlashLiteBlock = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
+      tierId: `gemini-3.5-flash-lite-k${i + 1}`,
       group: 'gemini-3.5-flash-lite',
       name: `Tier X (Gemini 3.5 Flash Lite Key ${i + 1})`,
       fn: () => callGeminiWithRetry(key, 'gemini-3.5-flash-lite', prompt, systemInstruction, temperature, jsonMode, 1)
@@ -297,6 +356,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const gemini35Block = googleApiKeys
     .filter(Boolean)
     .map((key, i) => ({
+      tierId: `gemini-3.5-flash-k${i + 1}`,
       group: 'gemini-3.5-flash',
       name: `Tier X (Gemini 3.5 Flash Key ${i + 1})`,
       fn: () => callGeminiWithRetry(key, 'gemini-3.5-flash', prompt, systemInstruction, temperature, jsonMode, 1)
@@ -306,16 +366,10 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const groqQwenBlock = groqKeys
     .filter(Boolean)
     .map((key, i) => ({
+      tierId: `groq-qwen-k${i + 1}`,
+      group: 'groq-qwen',
       name: `Tier X (Groq Qwen 3.8 27B Key ${i + 1})`,
       fn: () => callGroqQwen(key, prompt, systemInstruction, temperature, jsonMode)
-    }));
-
-  // 7. Cerebras (4 Keys: PayGo / Fallback)
-  const cerebrasBlock = cerebrasKeys
-    .filter(Boolean)
-    .map((key, i) => ({
-      name: `Tier X (Cerebras Key ${i + 1})`,
-      fn: () => callCerebras(key, prompt, systemInstruction, temperature, jsonMode)
     }));
 
   // Penataan Dinamis Top Tiers Sesuai Mode Kognitif:
@@ -326,14 +380,13 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     : [...googleGemmaBlock, ...gemini35FlashLiteBlock, ...gemini36Block];
 
   const externalTiers = [
-    // 6. Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine)
+    // Groq LPU Qwen 3.8 27B (4 Keys: Dense 27B Fast Secondary Engine)
     ...groqQwenBlock,
 
-    // 7. Cerebras (4 Keys: PayGo / Fallback)
-    ...cerebrasBlock,
-
-    // 8. Mistral Codestral (European Datacenter)
+    // Mistral Codestral (European Datacenter)
     ...(env.MISTRAL_API_KEY ? [{
+      tierId: 'mistral-codestral',
+      group: 'mistral',
       name: 'Tier X (Mistral Codestral)',
       fn: () => callMistral(prompt, systemInstruction, temperature, jsonMode, 'codestral-latest')
     }] : [])
@@ -342,11 +395,15 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
   const allTiersRaw = [...topGoogleBlock, ...externalTiers];
   const tiers = allTiersRaw.map((t, i) => ({ ...t, name: t.name.replace('Tier X', `Tier ${i + 1}`) }));
 
-  const failedGroups = new Set();
+  // Cek berapa banyak tier yang saat ini aktif (tidak sedang masa cooldown)
+  const activeTiers = tiers.filter(t => !checkCooldown(t.tierId, t.group).cooling);
 
   for (const tier of tiers) {
-    if (tier.group && failedGroups.has(tier.group)) {
-      asyncLog(`[CIRCUIT BREAKER] Melewati ${tier.name} (model ${tier.group} mengalami gangguan server/timeout)...`);
+    // Shared Cross-Request Circuit Breaker Check
+    const cd = checkCooldown(tier.tierId, tier.group);
+    // Jika semua tier sedang cooldown (edge case/recovery), jangan skip agar sistem bisa self-healing
+    if (cd.cooling && activeTiers.length > 0) {
+      asyncLog(`[CIRCUIT BREAKER] Melewati ${tier.name} (Cooldown aktif: ${cd.reason})...`);
       continue;
     }
 
@@ -354,6 +411,9 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       asyncLog(`[FALLBACK] Trying ${tier.name}...`);
       const rawRes = await tier.fn();
       const validated = validateResponseJson(rawRes, jsonMode);
+
+      // Berhasil: Bersihkan status cooldown pada tier dan group ini
+      clearCooldown(tier.tierId, tier.group);
 
       // Accumulate token usage (1 token ≈ 3.8 chars in Indonesian/English mix)
       const outputChars = validated?.length || 0;
@@ -368,16 +428,32 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       const errDetail = getErrDetails(e);
       asyncWarn(`[FALLBACK] ${tier.name} failed:`, errDetail);
 
-      if (tier.group) {
-        // Cek apakah error merupakan 429 Too Many Requests / Rate Limit / Quota Exceeded
-        const isQuota429 = /429|quota|rate_limit|rate limit|too many requests|resource_exhausted/i.test(errDetail) || e.status === 429 || e.response?.status === 429;
-        
-        if (isQuota429) {
-          asyncLog(`[RATE LIMIT] ${tier.name} terkena limit kuota/429. Melanjutkan ke kunci berikutnya untuk model ${tier.group}...`);
-        } else {
-          // Error non-429 (500, 503, 502, 504, 404, Timeout/Aborted): langsung lewati sisa kunci model ini
-          failedGroups.add(tier.group);
-          asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} mengalami gangguan non-429 (${errDetail.substring(0, 80)}...). Melewati sisa kunci untuk model ini.`);
+      const isQuota429 = /429|quota|rate_limit|rate limit|too many requests|resource_exhausted/i.test(errDetail) || e.status === 429 || e.response?.status === 429;
+      const isPayment402 = /402|payment_required|insufficient_quota|balance/i.test(errDetail) || e.status === 402 || e.response?.status === 402;
+      const isServerDown = /500|502|503|504|overloaded|service unavailable/i.test(errDetail) || [500, 502, 503, 504].includes(e.status || e.response?.status);
+
+      if (isQuota429) {
+        // Individual key hit rate limit / TPM / RPM -> Cooldown 60 detik khusus untuk key/tier tersebut
+        if (tier.tierId) {
+          setCooldown(`tier:${tier.tierId}`, 60000);
+          asyncLog(`[RATE LIMIT] ${tier.name} terkena limit kuota/429. Cooldown 60s aktif untuk key ini. Melanjutkan ke tier berikutnya...`);
+        }
+      } else if (isPayment402) {
+        // Akun memerlukan pembayaran / trial habis (402) -> Cooldown 5 menit untuk key ini
+        if (tier.tierId) {
+          setCooldown(`tier:${tier.tierId}`, 300000);
+          asyncWarn(`[PAYMENT/QUOTA] ${tier.name} memerlukan pembayaran (402). Cooldown 5m aktif untuk tier ini.`);
+        }
+      } else if (isServerDown) {
+        // Seluruh model endpoint down / overloaded (5xx) -> Cooldown grup model selama 30 detik lintas request
+        if (tier.group) {
+          setCooldown(`group:${tier.group}`, 30000);
+          asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} mengalami gangguan server (${errDetail.substring(0, 80)}...). Cooldown 30s aktif untuk grup ini.`);
+        }
+      } else {
+        // Timeout atau error lainnya -> Cooldown tier selama 30 detik
+        if (tier.tierId) {
+          setCooldown(`tier:${tier.tierId}`, 30000);
         }
       }
     }
@@ -704,5 +780,6 @@ module.exports = {
   resetTokenAccumulator,
   getAccumulatedTokenUsage,
   extractFirstValidJson,
-  validateResponseJson
+  validateResponseJson,
+  getSharedCooldownsStatus
 };

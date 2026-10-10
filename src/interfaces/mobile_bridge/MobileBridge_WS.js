@@ -32,9 +32,6 @@ function initWebSocket(server) {
       wss.clients.forEach((ws) => {
         if (ws.isAlive === false) {
           console.warn('[NEXA-BRIDGE-WS] ⚠️ Dead socket detected by watchdog (No Pong). Terminating...');
-          if (activeClient === ws) {
-            activeClient = null;
-          }
           return ws.terminate();
         }
         ws.isAlive = false;

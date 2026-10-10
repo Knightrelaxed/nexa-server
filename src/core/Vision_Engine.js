@@ -425,24 +425,19 @@ async function processTelegramImage(fileId, caption = '', systemPromptOverride =
 
   // Build tier list dynamically from available keys
   const tiers = [
-    // Tier 1-4: Cerebras Gemma 4 31B Vision (Ultra-Fast WSE-3, DCAB order)
-    ...CEREBRAS_VISION_KEYS.map((key, i) => ({
-      name: `Tier${i + 1} (Cerebras Gemma 4 Vision Key ${i + 1})`,
-      fn: () => callCerebrasVision(key, imageData, caption, 2, systemPromptOverride)
-    })),
-    // Tier 5-8: Gemini 3.6 Flash (Premium Quality, 4 Keys)
+    // Tier 1-4: Gemini 3.6 Flash (Premium Quality, 4 Keys)
     ...GEMINI_25_KEYS.map((key, i) => ({
-      name: `Tier${CEREBRAS_VISION_KEYS.length + i + 1} (Gemini 3.6 Flash Key ${i + 1})`,
+      name: `Tier${i + 1} (Gemini 3.6 Flash Key ${i + 1})`,
       fn: () => callGeminiVision(key, 'gemini-3.6-flash', imageData, caption, 3, systemPromptOverride)
     })),
-    // Tier 9-12: Groq Vision (Balanced, 4 Keys)
+    // Tier 5-8: Groq Vision (Balanced, 4 Keys)
     ...GROQ_KEYS.map((key, i) => ({
-      name: `Tier${CEREBRAS_VISION_KEYS.length + GEMINI_25_KEYS.length + i + 1} (Groq Vision Key ${i + 1})`,
+      name: `Tier${GEMINI_25_KEYS.length + i + 1} (Groq Vision Key ${i + 1})`,
       fn: () => callGroqVision(key, imageData, caption, 3, systemPromptOverride)
     })),
-    // Tier 13: Hugging Face Qwen2-VL (Safety Net — No daily quota)
+    // Tier 9: Hugging Face Qwen2-VL (Safety Net — No daily quota)
     {
-      name: `Tier${CEREBRAS_VISION_KEYS.length + GEMINI_25_KEYS.length + GROQ_KEYS.length + 1} (HuggingFace Qwen2-VL)`,
+      name: `Tier${GEMINI_25_KEYS.length + GROQ_KEYS.length + 1} (HuggingFace Qwen2-VL)`,
       fn: () => callHuggingFaceVision(imageData, caption, systemPromptOverride)
     }
   ];

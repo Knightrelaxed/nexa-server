@@ -31,4 +31,5 @@ scripts/temp_*
 data/transcripts_dump/
 data/*.json
 data/facts_vectors.json
+docs/*identity_dump*.json
 *.tmp
