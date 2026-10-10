@@ -27,6 +27,7 @@ const env = require('./config/env');
 
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1); // Trust first reverse proxy (Caddy) for accurate client IP in rate limiting
 
 // ============================================================
 // MIDDLEWARES & SECURITY HARDENING
