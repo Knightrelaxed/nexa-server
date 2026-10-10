@@ -135,7 +135,13 @@ if (require.main === module) {
     console.log(`[N.E.X.A 3.0] 💻 CLI Local URL  : http://127.0.0.1:${port}`);
     // Load Gemini Semantic Vector Snapshot (0.001s in-memory load)
     const geminiVectorCache = require('./utils/gemini_vector_cache');
-    geminiVectorCache.loadVectorSnapshot();
+    const isLoaded = geminiVectorCache.loadVectorSnapshot();
+    if (!isLoaded) {
+      console.log('[VECTOR-CACHE] 🔄 Snapshot belum ada di disk, membuat snapshot otomatis dari Supabase di background...');
+      geminiVectorCache.generateAndSaveSnapshot().catch(err => {
+        console.warn('[VECTOR-CACHE] ⚠️ Pembuatan snapshot otomatis gagal (non-blocking):', err.message);
+      });
+    }
 
     // Recover pending transactions that were never sent to Telegram (e.g. after server restart)
     const financeEngine = require('./domain/Finance_Engine');
