@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { Plus, Server, Settings, LogOut } from "lucide-react"
+import { Plus, Settings, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AddTransactionModal } from "./add-transaction-modal"
 import { useAuth } from "@/components/providers/supabase-provider"
@@ -81,16 +81,7 @@ export function Topbar() {
               <span className="hidden sm:inline">Catatan Baru</span>
             </Button>
 
-            {/* HuggingFace Server Logs Link - Desktop Only */}
-            <Link 
-              href="https://huggingface.co/spaces/nexa-asistant/NEXA-Core-Server?logs=container" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="hidden sm:flex items-center justify-center h-9 w-9 sm:h-10 sm:w-10 rounded-full border border-border bg-white hover:bg-slate-50 text-slate-500 hover:text-emerald-600 shadow-sm transition-all duration-300 shrink-0"
-              title="Lihat Log Server"
-            >
-              <Server className="h-4 w-4 sm:h-4 sm:w-4" />
-            </Link>
+
 
             {/* Logout Button - Desktop Only */}
             <button
