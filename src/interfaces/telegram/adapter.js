@@ -91,7 +91,26 @@ const _chatQueues = new Map();
 function enqueueChat(chatId, fn) {
   const key = String(chatId || 'default');
   const prev = _chatQueues.get(key) || Promise.resolve();
-  const next = prev.then(fn, fn).finally(() => {
+
+  const executeWithTimeout = async () => {
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`[QUEUE_TIMEOUT] Message processing on chat ${key} exceeded 120s timeout`));
+      }, 120_000);
+      if (timer && timer.unref) timer.unref();
+    });
+
+    try {
+      return await Promise.race([fn(), timeoutPromise]);
+    } catch (err) {
+      console.error(`[TELEGRAM-QUEUE] Error or timeout on chat ${key}:`, err.message);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const next = prev.then(executeWithTimeout, executeWithTimeout).finally(() => {
     if (_chatQueues.get(key) === next) {
       _chatQueues.delete(key);
     }

@@ -802,6 +802,113 @@ async function getExpenseSumByCategories(categoryIds, startDate, endDate) {
   return (data || []).reduce((sum, tx) => sum + Number(tx.amount), 0);
 }
 
+/**
+ * Ambil daftar aturan langganan berulang (nexa_recurring_rules)
+ */
+async function getRecurringRules(statusFilter = null) {
+  if (!supabaseFinance) return [];
+  try {
+    let query = supabaseFinance
+      .from('nexa_recurring_rules')
+      .select('*')
+      .order('confidence', { ascending: false });
+    if (statusFilter) {
+      query = query.eq('status', statusFilter);
+    }
+    const { data, error } = await query;
+    if (error) {
+      console.warn('[SUPABASE_FINANCE] getRecurringRules error:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('[SUPABASE_FINANCE] getRecurringRules exception:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Upsert kandidat atau aturan langganan berulang ke nexa_recurring_rules
+ */
+async function upsertRecurringRules(rules = []) {
+  if (!supabaseFinance || !rules || rules.length === 0) return { upserted: 0 };
+  try {
+    const rows = rules.map(r => ({
+      merchant_key: r.merchantKey,
+      display_name: r.displayName || r.merchantKey,
+      cadence: r.cadence,
+      amount_median: r.amountMedian,
+      next_expected: r.nextExpected,
+      last_seen: r.lastSeen,
+      occurrences: r.occurrences,
+      confidence: r.confidence,
+      status: r.confidence >= 0.85 ? 'ACTIVE' : 'CANDIDATE',
+      updated_at: new Date().toISOString()
+    }));
+
+    const { data, error } = await supabaseFinance
+      .from('nexa_recurring_rules')
+      .upsert(rows, { onConflict: 'merchant_key,cadence' })
+      .select('id');
+
+    if (error) {
+      console.warn('[SUPABASE_FINANCE] upsertRecurringRules error:', error.message);
+      return { upserted: 0, error: error.message };
+    }
+    return { upserted: (data || []).length };
+  } catch (err) {
+    console.warn('[SUPABASE_FINANCE] upsertRecurringRules exception:', err.message);
+    return { upserted: 0, error: err.message };
+  }
+}
+
+/**
+ * Ambil seluruh transaksi dalam rentang hari tertentu secara aman tanpa terpotong limit 1.000 Supabase
+ */
+async function getAllTransactionsForAnalysis(days = 180) {
+  if (!supabaseFinance) return [];
+  try {
+    const cutoffDate = new Date(Date.now() - days * 24 * 3600 * 1000)
+      .toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    
+    let allRows = [];
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabaseFinance
+        .from('transactions')
+        .select('id, amount, type, transaction_date, description')
+        .gte('transaction_date', cutoffDate)
+        .order('transaction_date', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('[SUPABASE_FINANCE] getAllTransactionsForAnalysis error:', error.message);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allRows = allRows.concat(data);
+        from += PAGE_SIZE;
+        if (data.length < PAGE_SIZE) hasMore = false;
+      } else {
+        hasMore = false;
+      }
+    }
+
+    return allRows.map(tx => ({
+      merchant: tx.description || 'Pengeluaran',
+      nominal: Number(tx.amount),
+      date: tx.transaction_date,
+      type: (tx.type || 'EXPENSE').toUpperCase()
+    }));
+  } catch (err) {
+    console.error('[SUPABASE_FINANCE] getAllTransactionsForAnalysis exception:', err.message);
+    return [];
+  }
+}
 
 module.exports = {
   writeTransaction,
@@ -824,6 +931,9 @@ module.exports = {
   getBudgetGroups,
   getBudgets,
   getExpenseSumByCategories,
+  getRecurringRules,
+  upsertRecurringRules,
+  getAllTransactionsForAnalysis,
   // Helper untuk Split_Engine: akses langsung ke Supabase client
   _getClient: () => supabaseFinance,
 };

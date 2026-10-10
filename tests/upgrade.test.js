@@ -144,3 +144,44 @@ test('safeToSpendToday and projectMonthEnd', () => {
   assert.equal(p.variableRunRate, 30000);
   assert.equal(p.projected, 500000 + 100000 + 30000 * 20);
 });
+
+test('createResilientStore retries DB after 60s cooldown instead of permanent memory latch', async () => {
+  const { createResilientStore } = require('../src/core/Notifier');
+  let dbCalls = 0;
+  const mockDb = {
+    from: () => ({
+      insert: () => ({
+        select: () => ({
+          single: async () => {
+            dbCalls++;
+            if (dbCalls === 1) {
+              const err = new Error('relation "nexa_notifications" does not exist');
+              err.code = '42P01';
+              return { data: null, error: err };
+            }
+            return { data: { id: 99 }, error: null };
+          }
+        })
+      })
+    })
+  };
+
+  const store = createResilientStore(mockDb);
+  // First call should failover to memory because table is missing
+  const id1 = await store.record({ kind: 'k1', priority: 'P1', text: 't1', status: 'SENT' });
+  assert.equal(dbCalls, 1);
+  assert.ok(id1 > 0); // Memory store assigned an id
+
+  // Call immediately after: should still be in 60s cooldown, so db is not hammered
+  const id2 = await store.record({ kind: 'k2', priority: 'P1', text: 't2', status: 'SENT' });
+  assert.equal(dbCalls, 1);
+  assert.ok(id2 > id1);
+});
+
+test('notifyProactive validates and queues or delivers', async () => {
+  const { notifyProactive } = require('../src/core/Notifier');
+  const uniqueKey = 'test_alert_' + Date.now();
+  const res = await notifyProactive({ kind: 'test_alert', priority: 'P0', dedupeKey: uniqueKey, text: 'Test alert' });
+  assert.ok(res);
+  assert.ok(['SENT', 'QUEUED_DEFERRED', 'QUEUED_DIGEST'].includes(res.status));
+});

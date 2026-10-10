@@ -127,7 +127,7 @@ async function generateMorningBriefing() {
     }
   } catch (_) { /* Non-critical */ }
 
-  // ── 6. Ringkasan Keuangan Terkini ─────────────────────────
+  // ── 6. Ringkasan Keuangan Terkini & Alokasi Belanja Aman ───
   let financeContextStr = '';
   try {
     const financeEngine = require('./Finance_Engine');
@@ -135,7 +135,37 @@ async function generateMorningBriefing() {
     if (recentTx && !recentTx.includes('(Tidak ada transaksi')) {
       financeContextStr = recentTx;
     }
-  } catch (_) { /* Non-critical */ }
+
+    // Hitung Safe to Spend Hari Ini secara Deterministik (Finance_Intel)
+    const financeIntel = require('./Finance_Intel');
+    const supabaseFinance = require('../infrastructure/Supabase_Finance');
+    const balances = await supabaseFinance.getAccountBalances();
+    const totalBalance = (balances || []).reduce((acc, b) => acc + (Number(b.balance) || 0), 0);
+    const recurringRules = await supabaseFinance.getRecurringRules('ACTIVE');
+
+    const nowWib = new Date(Date.now() + 7 * 3600 * 1000);
+    const year = nowWib.getUTCFullYear();
+    const month = nowWib.getUTCMonth();
+    const todayDate = nowWib.getUTCDate();
+    const totalDaysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const daysLeft = Math.max(1, totalDaysInMonth - todayDate + 1);
+
+    const endOfMonthIso = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59)).toISOString();
+    const upcoming = financeIntel.upcomingBills(recurringRules, new Date().toISOString(), endOfMonthIso);
+    const billsDue = upcoming.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+
+    const safeToday = financeIntel.safeToSpendToday({
+      balance: totalBalance,
+      daysLeftInMonth: daysLeft,
+      billsDueBeforeMonthEnd: billsDue,
+      safetyBufferRatio: 0.1
+    });
+
+    const safeSpendNotice = `Alokasi Belanja Aman Hari Ini: Rp ${safeToday.toLocaleString('id-ID')} (Sisa ${daysLeft} hari bulan ini, Tagihan Tertunda: Rp ${billsDue.toLocaleString('id-ID')})`;
+    financeContextStr = financeContextStr ? `${financeContextStr}\n• ${safeSpendNotice}` : safeSpendNotice;
+  } catch (finErr) {
+    console.warn('[INTELLIGENCE] Warning computing safeToSpendToday:', finErr.message);
+  }
 
   // ── 7. Susun Pesan Executive Morning Briefing dengan AI ───
   const greeting = _getWibGreeting();
@@ -149,7 +179,7 @@ KOMPONEN DATA HARI INI:
 4. Tugas Prioritas: ${taskWarning ? taskWarning.replace(/\n/g, ' ') : 'Tidak ada tugas terlambat/mendesak.'}
 5. Komitmen Intensi Aktif: ${activeIntentionsStr || 'Semua komitmen jangka pendek berada pada jalurnya.'}
 6. Konteks Emosi & Kebugaran: ${moodContextStr || 'Stabil dan berenergi.'}
-7. Catatan Keuangan: ${financeContextStr || 'Kondisi kas terkendali.'}
+7. Catatan Keuangan & Alokasi Aman: ${financeContextStr || 'Kondisi kas terkendali.'}
 8. Refleksi Singkat Kemarin: Hubungkan dengan satu benang merah produktif dari obrolan kemarin jika relevan.
 9. Check-In Kebugaran Pagi: Tutup dengan menanyakan kualitas tidur semalam (skor 1-5 & cerita), tingkat energi sekarang (skor 1-5 & cerita), dan satu fokus mutlak hari ini. Beri panduan format jawaban natural.
 

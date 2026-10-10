@@ -139,9 +139,16 @@ async function sendIdentityProposalToTelegram(proposal) {
 async function sendEveningBriefing() {
   try {
     const intelligenceBrief = require('../../domain/Intelligence_Brief');
+    const { notifyProactive } = require('../../core/Notifier');
     const briefText = await intelligenceBrief.generateEveningBriefing();
-    await sendTelegramOutbound(briefText);
-    console.log('[INTELLIGENCE] Evening Briefing sent successfully.');
+    const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    await notifyProactive({
+      kind: 'evening_briefing',
+      priority: 'P1',
+      dedupeKey: `evening:${todayKey}`,
+      text: briefText
+    });
+    console.log('[INTELLIGENCE] Evening Briefing sent successfully via Notifier.');
   } catch (err) {
     console.error('[INTELLIGENCE] Failed to send Evening Briefing:', err.message);
   }

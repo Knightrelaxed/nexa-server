@@ -192,19 +192,22 @@ function createResilientStore(sb) {
   const mem = createMemoryStore();
   if (!sb) return mem;
   const db = createSupabaseStore(sb);
-  let tableMissing = false;
+  let tableMissingUntil = 0;
 
   async function wrap(dbFn, memFn) {
-    if (tableMissing) return memFn();
+    const now = Date.now();
+    if (now < tableMissingUntil) return memFn();
     try {
       return await dbFn();
     } catch (err) {
       const msg = String(err && err.message || '');
-      if (/schema cache|does not exist|42P01|PGRST/i.test(msg)) {
-        if (!tableMissing) {
-          console.warn('[NOTIFIER] ℹ️ Table nexa_notifications belum ada di Supabase. Menggunakan fallback memory store (Zero-Downtime).');
-          tableMissing = true;
+      const code = String(err && err.code || '');
+      // Only treat genuine missing relation / missing table as missing, not all PGRST codes
+      if (code === '42P01' || code === 'PGRST205' || /schema cache|does not exist|42P01/i.test(msg)) {
+        if (tableMissingUntil < now) {
+          console.warn('[NOTIFIER] ℹ️ Table nexa_notifications belum terbaca di Supabase. Menggunakan memory fallback (retry 60s).');
         }
+        tableMissingUntil = now + 60_000;
         return memFn();
       }
       throw err;
@@ -248,11 +251,23 @@ function getNotifier() {
   return _defaultNotifier;
 }
 
+/**
+ * Proactive notification entry point for all background tasks and cron jobs.
+ * Enforces Quiet Hours (22:00 - 06:00 WIB), deduplication, and rate limiting.
+ */
+async function notifyProactive({ kind = 'general', priority = 'P1', dedupeKey = null, text }) {
+  if (!text) return null;
+  const notifier = getNotifier();
+  return notifier.notify({ kind, priority, dedupeKey, text });
+}
+
 module.exports = {
   createNotifier,
   createMemoryStore,
   createSupabaseStore,
+  createResilientStore,
   getNotifier,
+  notifyProactive,
   isQuietHour,
   startOfDayIso,
   DEFAULT_POLICY

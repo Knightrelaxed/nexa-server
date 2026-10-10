@@ -242,69 +242,53 @@ function getAccumulatedTokenUsage() {
 
 // ============================================================
 // SHARED CROSS-REQUEST CIRCUIT BREAKER & COOLDOWN REGISTRY
+// Powered by Provider_Health.js (Single Source of Truth)
 // ============================================================
-const _sharedCooldowns = new Map();
+const health = require('./Provider_Health');
 
-/**
- * Memeriksa apakah sebuah tier atau grup model sedang dalam masa cooldown lintas-request.
- * Membersihkan entri yang sudah kedaluwarsa secara otomatis.
- */
 function checkCooldown(tierId, group) {
-  const now = Date.now();
-
-  // 1. Cek group-level cooldown (misal seluruh endpoint model 5xx/overloaded/outage)
-  if (group && _sharedCooldowns.has(`group:${group}`)) {
-    const expiresAt = _sharedCooldowns.get(`group:${group}`);
-    if (now < expiresAt) {
-      return { cooling: true, reason: `gangguan model '${group}' (${Math.ceil((expiresAt - now) / 1000)}s tersisa)` };
-    }
-    _sharedCooldowns.delete(`group:${group}`);
+  const keyId = tierId ? tierId.replace(`${group}-`, '') : '0';
+  const allowed = health.acquire(group, keyId);
+  if (!allowed) {
+    return { cooling: true, reason: `circuit breaker aktif untuk ${group} key ${keyId}` };
   }
-
-  // 2. Cek tier-level cooldown (misal key tertentu terkena 429 quota/rate limit)
-  if (tierId && _sharedCooldowns.has(`tier:${tierId}`)) {
-    const expiresAt = _sharedCooldowns.get(`tier:${tierId}`);
-    if (now < expiresAt) {
-      return { cooling: true, reason: `rate-limit key '${tierId}' (${Math.ceil((expiresAt - now) / 1000)}s tersisa)` };
-    }
-    _sharedCooldowns.delete(`tier:${tierId}`);
-  }
-
   return { cooling: false };
 }
 
-function setCooldown(key, durationMs) {
-  _sharedCooldowns.set(key, Date.now() + durationMs);
-}
-
 function clearCooldown(tierId, group) {
-  if (tierId) _sharedCooldowns.delete(`tier:${tierId}`);
-  if (group) _sharedCooldowns.delete(`group:${group}`);
+  const keyId = tierId ? tierId.replace(`${group}-`, '') : '0';
+  health.reportSuccess(group, keyId);
 }
 
 function getSharedCooldownsStatus() {
-  const now = Date.now();
-  const status = {};
-  for (const [k, exp] of _sharedCooldowns.entries()) {
-    if (exp > now) {
-      status[k] = Math.ceil((exp - now) / 1000) + 's';
-    } else {
-      _sharedCooldowns.delete(k);
-    }
-  }
-  return status;
+  return health.snapshot();
 }
 
-const _keyCursors = new Map();
+function orderKeys(group, count) {
+  return health.orderKeys(group, count);
+}
 
 /**
- * Memutar urutan kunci secara round-robin agar Kunci #1 tidak selalu dihabiskan pertama kali.
+ * Non-blocking telemetry logger to Supabase nexa_llm_calls
  */
-function orderKeys(group, count) {
-  if (count <= 0) return [];
-  const start = (_keyCursors.get(group) || 0) % count;
-  _keyCursors.set(group, (start + 1) % count);
-  return Array.from({ length: count }, (_, i) => (start + i) % count);
+function logLlmCall({ task = 'general', tier, tokensIn = 0, tokensOut = 0, latencyMs, ok, validationOk = true, errorClass = null }) {
+  setImmediate(async () => {
+    try {
+      const supabaseMemories = require('../infrastructure/Supabase_Memories');
+      const sb = supabaseMemories.supabase;
+      if (!sb) return;
+      await sb.from('nexa_llm_calls').insert({
+        task,
+        tier: String(tier || 'unknown'),
+        tokens_in: tokensIn,
+        tokens_out: tokensOut,
+        latency_ms: latencyMs,
+        ok,
+        validation_ok: validationOk,
+        error_class: errorClass
+      });
+    } catch (_) {}
+  });
 }
 
 function createKeyBlock(keys, group, nameTemplate, fnFactory) {
@@ -428,6 +412,7 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
     }
 
     attemptedCount++;
+    const t0 = Date.now();
     try {
       asyncLog(`[FALLBACK] Trying ${tier.name}...`);
       const rawRes = await tier.fn();
@@ -444,47 +429,43 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       currentSessionTokenUsage.output_tokens += outTok;
       currentSessionTokenUsage.total_tokens += (inTok + outTok);
 
+      // Catat ke nexa_llm_calls (non-blocking)
+      logLlmCall({
+        task: options.task || (heavy ? 'heavy_reasoning' : 'fast_inference'),
+        tier: tier.name,
+        tokensIn: inTok,
+        tokensOut: outTok,
+        latencyMs: Date.now() - t0,
+        ok: true,
+        validationOk: true
+      });
+
       return validated;
     } catch (e) {
       const errDetail = getErrDetails(e);
       asyncWarn(`[FALLBACK] ${tier.name} failed:`, errDetail);
 
-      const isQuota429 = /429|quota|rate_limit|rate limit|too many requests|resource_exhausted/i.test(errDetail) || e.status === 429 || e.response?.status === 429;
-      const isPayment402 = /402|payment_required|insufficient_quota|balance/i.test(errDetail) || e.status === 402 || e.response?.status === 402;
-      const isAuth401 = /401|unauthorized|api key not valid|invalid api key/i.test(errDetail) || e.status === 401 || e.response?.status === 401;
-      const isGroupOutage = /500|502|503|504|404|overloaded|service unavailable|timeout|aborted|econnreset|etimedout|econnrefused/i.test(errDetail)
-        || [500, 502, 503, 504, 404].includes(e.status || e.response?.status);
+      const keyId = tier.tierId ? tier.tierId.replace(`${tier.group}-`, '') : '0';
       const isJsonParseError = /No valid JSON object found|Empty response string/i.test(e.message);
 
-      if (isQuota429) {
-        const isDaily = /per day|daily|\bRPD\b/i.test(errDetail);
-        const waitMs = isDaily 
-          ? 30 * 60 * 1000 
-          : (retryAfterMs(e, errDetail) ?? 60000);
-
-        if (tier.tierId) {
-          setCooldown(`tier:${tier.tierId}`, waitMs);
-          asyncLog(`[RATE LIMIT] ${tier.name} limit (${isDaily ? 'kuota harian 30m' : Math.ceil(waitMs / 1000) + 's'}). Cooldown aktif. Lanjut ke tier berikutnya...`);
-        }
-      } else if (isPayment402 || isAuth401) {
-        // Akun memerlukan pembayaran / key invalid -> Cooldown 5 menit untuk key ini
-        if (tier.tierId) {
-          setCooldown(`tier:${tier.tierId}`, 300000);
-          asyncWarn(`[AUTH/QUOTA] ${tier.name} error auth/pembayaran (${errDetail.substring(0, 60)}). Cooldown 5m aktif untuk tier ini.`);
-        }
-      } else if (isGroupOutage) {
-        // Seluruh model endpoint down / overloaded (5xx) / timeout -> Cooldown grup model selama 30 detik lintas request
-        // Ini memastikan sisa kunci dari model yang sedang timeout langsung dilewati seketika
-        if (tier.group) {
-          setCooldown(`group:${tier.group}`, 30000);
-          asyncWarn(`[CIRCUIT BREAKER] Model ${tier.group} mengalami gangguan/timeout (${errDetail.substring(0, 80)}...). Cooldown 30s aktif untuk grup ini.`);
-        }
-      } else if (!isJsonParseError) {
-        // Error tak terduga lainnya (bukan parsing JSON) -> Cooldown tier selama 30 detik
-        if (tier.tierId) {
-          setCooldown(`tier:${tier.tierId}`, 30000);
-        }
+      // Laporkan kegagalan ke Provider_Health circuit breaker
+      if (isJsonParseError) {
+        health.reportFailure(tier.group, keyId, Object.assign(e, { isValidation: true }));
+      } else {
+        health.reportFailure(tier.group, keyId, e);
       }
+
+      // Catat telemetry kegagalan ke nexa_llm_calls
+      logLlmCall({
+        task: options.task || (heavy ? 'heavy_reasoning' : 'fast_inference'),
+        tier: tier.name,
+        tokensIn: Math.ceil(inputChars / 3.8),
+        tokensOut: 0,
+        latencyMs: Date.now() - t0,
+        ok: false,
+        validationOk: !isJsonParseError,
+        errorClass: health.classifyError(e)
+      });
     }
   }
 

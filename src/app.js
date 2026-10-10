@@ -159,6 +159,21 @@ if (require.main === module) {
     // ── Pintu 2: WhatsApp (DINONAKTIFKAN) ─────────────────────────
     // WhatsApp adapter telah dinonaktifkan untuk deployment cloud.
     // Lihat src/interfaces/whatsapp/ untuk implementasi lokal.
+
+    function gracefulShutdown(signal) {
+      console.log(`[LIFECYCLE] 🛑 Received ${signal}. Draining connections and initiating clean shutdown...`);
+      server.close(() => {
+        console.log('[LIFECYCLE] ✅ Server HTTP/WS closed cleanly.');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.error('[LIFECYCLE] ⚠️ Forced shutdown due to timeout (10s).');
+        process.exit(1);
+      }, 10000).unref();
+    }
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
   });
 }
 

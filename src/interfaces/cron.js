@@ -2,24 +2,135 @@ const cron = require('node-cron');
 const axios = require('axios');
 const env = require('../config/env');
 const intelligenceBrief = require('../domain/Intelligence_Brief');
+const { notifyProactive, getNotifier } = require('../core/Notifier');
+
+/**
+ * Audit wrapper for background cron jobs in nexa_job_runs
+ */
+async function trackJobRun(jobName, runKey, jobFn) {
+  const supabaseMemories = require('../infrastructure/Supabase_Memories');
+  const sb = supabaseMemories.supabase;
+  let jobRecordId = null;
+
+  if (sb) {
+    try {
+      const { data, error } = await sb
+        .from('nexa_job_runs')
+        .insert({
+          job_name: jobName,
+          run_key: runKey,
+          status: 'RUNNING',
+          started_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
+      if (!error && data) jobRecordId = data.id;
+    } catch (_) {}
+  }
+
+  try {
+    const res = await jobFn();
+    if (sb && jobRecordId) {
+      await sb
+        .from('nexa_job_runs')
+        .update({
+          status: 'OK',
+          finished_at: new Date().toISOString()
+        })
+        .eq('id', jobRecordId)
+        .catch(() => {});
+    }
+    return res;
+  } catch (err) {
+    if (sb && jobRecordId) {
+      await sb
+        .from('nexa_job_runs')
+        .update({
+          status: 'FAILED',
+          finished_at: new Date().toISOString(),
+          error: String(err && err.message || err).substring(0, 500)
+        })
+        .eq('id', jobRecordId)
+        .catch(() => {});
+    }
+    throw err;
+  }
+}
 
 function initCronJobs() {
   console.log('[CRON] Initializing N.E.X.A background jobs...');
 
+  // 0. The Recurring Subscription & Bill Detector (03:40 WIB)
+  // Menganalisis riwayat transaksi 180 hari terakhir, mendeteksi langganan rutin secara deterministik,
+  // dan menyimpan ke nexa_recurring_rules di Supabase.
+  cron.schedule('40 3 * * *', async () => {
+    const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    await trackJobRun('detect_recurring_bills', todayKey, async () => {
+      console.log('[CRON] Executing Recurring Bills Detection (Finance_Intel)...');
+      try {
+        const supabaseFinance = require('../infrastructure/Supabase_Finance');
+        const financeIntel = require('../domain/Finance_Intel');
+        const txs = await supabaseFinance.getAllTransactionsForAnalysis(180);
+        if (txs && txs.length > 0) {
+          const detected = financeIntel.detectRecurring(txs, { minOccurrences: 2 });
+          if (detected && detected.length > 0) {
+            const { upserted } = await supabaseFinance.upsertRecurringRules(detected);
+            console.log(`[CRON] ✅ Recurring Bills Detection done: ${upserted} rules updated.`);
+          }
+        }
+      } catch (err) {
+        console.error('[CRON] Recurring Bills Detection failed:', err.message);
+      }
+    });
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
+  // 0.5. Notifier Flush Digest Pass (12:30 & 19:30 WIB)
+  cron.schedule('30 12,19 * * *', async () => {
+    try {
+      console.log('[CRON] Flushing queued digest notifications...');
+      await getNotifier().flushDigest();
+    } catch (err) {
+      console.warn('[CRON] Flush digest error:', err.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
+  // 0.6. Notifier Weekly Engagement Report (Minggu 21:30 WIB)
+  cron.schedule('30 21 * * 0', async () => {
+    try {
+      const rep = await getNotifier().engagementReport();
+      console.log('[CRON] Weekly Engagement Report:', JSON.stringify(rep));
+    } catch (err) {
+      console.warn('[CRON] Weekly engagement report error:', err.message);
+    }
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
   // 1. The Diplomat's Morning Briefing (05:30 WIB)
   cron.schedule('30 5 * * *', async () => {
-    console.log('[CRON] Executing Morning Briefing...');
-    try {
-      const briefingText = await intelligenceBrief.generateMorningBriefing();
-      if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-        const { sendTelegramOutbound } = require('./webhook');
-        await sendTelegramOutbound(briefingText);
-      } else {
-        console.warn('[CRON] Telegram bot not configured. Briefing not sent.');
+    const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    await trackJobRun('morning_briefing', todayKey, async () => {
+      console.log('[CRON] Executing Morning Briefing & Flushing Deferred Notifications...');
+      // A. Flush deferred notifications dari semalam (Quiet Hours berakhir)
+      try {
+        await getNotifier().flushDeferred();
+      } catch (flushErr) {
+        console.warn('[CRON] Flush deferred error:', flushErr.message);
       }
-    } catch (e) {
-      console.error('[CRON] Morning briefing failed:', e.message);
-    }
+
+      // B. Generate dan kirim Morning Briefing via Notifier Gate
+      try {
+        const briefingText = await intelligenceBrief.generateMorningBriefing();
+        if (briefingText) {
+          await notifyProactive({
+            kind: 'morning_briefing',
+            priority: 'P1',
+            dedupeKey: `briefing:${todayKey}`,
+            text: briefingText
+          });
+        }
+      } catch (e) {
+        console.error('[CRON] Morning briefing failed:', e.message);
+      }
+    });
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // 1.5. The Midnight Check-in (01:00 WIB)
@@ -380,10 +491,12 @@ function initCronJobs() {
           alertMsg += `${i + 1}. ${t.title} (terlambat ${diffDays} hari)\n`;
         });
         
-        if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-          const { sendTelegramOutbound } = require('./webhook');
-          await sendTelegramOutbound(alertMsg);
-        }
+        await notifyProactive({
+          kind: 'overdue_tasks',
+          priority: 'P1',
+          dedupeKey: `overdue:${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })}`,
+          text: alertMsg
+        });
       }
     } catch (e) {
       console.error('[CRON] Overdue Task Alert failed:', e.message);
@@ -400,7 +513,6 @@ function initCronJobs() {
   cron.schedule('*/10 * * * *', async () => {
     try {
       const googleWorkspace = require('../infrastructure/Google_Workspace');
-      const { sendTelegramOutbound } = require('./webhook');
 
       // Ambil event yang dimulai dalam 45 menit ke depan
       const events = await googleWorkspace.getUpcomingEvents(45, 5);
@@ -421,7 +533,12 @@ function initCronJobs() {
           const msg = `⏰ <b>Pengingat ${minutesLeft} Menit!</b>\n\n` +
             `<b>${e.summary || '(Tanpa Judul)'}</b> dimulai pukul <b>${timeLabel} WIB</b>.${locationPart}\n\nSudah siap, Tuan?`;
 
-          await sendTelegramOutbound(msg);
+          await notifyProactive({
+            kind: 'event_proximity',
+            priority: 'P1',
+            dedupeKey: `proximity:${e.id}`,
+            text: msg
+          });
           _notifiedEventIds.add(e.id);
 
           // Hapus dari cache setelah 2 jam
