@@ -31,27 +31,29 @@ async function trackJobRun(jobName, runKey, jobFn) {
   try {
     const res = await jobFn();
     if (sb && jobRecordId) {
-      await sb
-        .from('nexa_job_runs')
-        .update({
-          status: 'OK',
-          finished_at: new Date().toISOString()
-        })
-        .eq('id', jobRecordId)
-        .catch(() => {});
+      try {
+        await sb
+          .from('nexa_job_runs')
+          .update({
+            status: 'OK',
+            finished_at: new Date().toISOString()
+          })
+          .eq('id', jobRecordId);
+      } catch (_) {}
     }
     return res;
   } catch (err) {
     if (sb && jobRecordId) {
-      await sb
-        .from('nexa_job_runs')
-        .update({
-          status: 'FAILED',
-          finished_at: new Date().toISOString(),
-          error: String(err && err.message || err).substring(0, 500)
-        })
-        .eq('id', jobRecordId)
-        .catch(() => {});
+      try {
+        await sb
+          .from('nexa_job_runs')
+          .update({
+            status: 'FAILED',
+            finished_at: new Date().toISOString(),
+            error: String(err && err.message || err).substring(0, 500)
+          })
+          .eq('id', jobRecordId);
+      } catch (_) {}
     }
     throw err;
   }
