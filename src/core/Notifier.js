@@ -188,13 +188,48 @@ function createSupabaseStore(sb) {
   };
 }
 
+function createResilientStore(sb) {
+  const mem = createMemoryStore();
+  if (!sb) return mem;
+  const db = createSupabaseStore(sb);
+  let tableMissing = false;
+
+  async function wrap(dbFn, memFn) {
+    if (tableMissing) return memFn();
+    try {
+      return await dbFn();
+    } catch (err) {
+      const msg = String(err && err.message || '');
+      if (/schema cache|does not exist|42P01|PGRST/i.test(msg)) {
+        if (!tableMissing) {
+          console.warn('[NOTIFIER] ℹ️ Table nexa_notifications belum ada di Supabase. Menggunakan fallback memory store (Zero-Downtime).');
+          tableMissing = true;
+        }
+        return memFn();
+      }
+      throw err;
+    }
+  }
+
+  return {
+    record: r => wrap(() => db.record(r), () => mem.record(r)),
+    setStatus: (id, s, r) => wrap(() => db.setStatus(id, s, r), () => mem.setStatus(id, s, r)),
+    lastSentAt: k => wrap(() => db.lastSentAt(k), () => mem.lastSentAt(k)),
+    countSentSince: (p, s) => wrap(() => db.countSentSince(p, s), () => mem.countSentSince(p, s)),
+    hasQueued: k => wrap(() => db.hasQueued(k), () => mem.hasQueued(k)),
+    claimQueued: (st, lim, n) => wrap(() => db.claimQueued(st, lim, n), () => mem.claimQueued(st, lim, n)),
+    markEngagedLatest: (w, h, n) => wrap(() => db.markEngagedLatest(w, h, n), () => mem.markEngagedLatest(w, h, n)),
+    statsSince: s => wrap(() => db.statsSince(s), () => mem.statsSince(s))
+  };
+}
+
 let _defaultNotifier = null;
 function getNotifier() {
   if (!_defaultNotifier) {
     let store;
     try {
       const supabaseMemories = require('../infrastructure/Supabase_Memories');
-      store = supabaseMemories.supabase ? createSupabaseStore(supabaseMemories.supabase) : createMemoryStore();
+      store = createResilientStore(supabaseMemories.supabase);
     } catch (_) {
       store = createMemoryStore();
     }
