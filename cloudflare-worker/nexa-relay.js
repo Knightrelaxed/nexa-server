@@ -35,6 +35,15 @@ export default {
 
     const url = new URL(request.url);
 
+    // Auth Guard: Fail-closed jika NEXA_RELAY_SECRET dikonfigurasi di Worker
+    const requiredSecret = env.NEXA_RELAY_SECRET;
+    if (requiredSecret) {
+      const providedSecret = request.headers.get('x-nexa-relay-secret') || url.searchParams.get('secret');
+      if (providedSecret !== requiredSecret) {
+        return jsonResponse({ ok: false, error: 'Forbidden: Invalid or missing relay secret' }, 403);
+      }
+    }
+
     // ================================================================
     // MODE 0: GOOGLE AI STUDIO / GEMINI GATEWAY v4.1
     // Proxy dengan geo-bypass aktif:

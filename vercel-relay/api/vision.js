@@ -11,8 +11,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
 
   const secret = process.env.NEXA_RELAY_SECRET;
-  if (secret && req.headers['x-nexa-relay-secret'] !== secret) {
-    return res.status(403).json({ ok: false, error: 'Forbidden' });
+  if (!secret || req.headers['x-nexa-relay-secret'] !== secret) {
+    return res.status(403).json({ ok: false, error: 'Forbidden: Invalid or missing relay secret' });
   }
 
   const { file_path, bot_token, gemini_key, prompt, system_prompt } = req.body || {};

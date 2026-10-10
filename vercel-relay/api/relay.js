@@ -15,11 +15,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const secret = process.env.NEXA_RELAY_SECRET;
-  if (secret) {
-    const provided = req.headers['x-nexa-relay-secret'] || '';
-    if (provided !== secret) {
-      return res.status(403).json({ ok: false, error: 'Forbidden' });
-    }
+  if (!secret || req.headers['x-nexa-relay-secret'] !== secret) {
+    return res.status(403).json({ ok: false, error: 'Forbidden: Invalid or missing relay secret' });
   }
 
   if (req.method !== 'GET' && req.method !== 'POST') {
