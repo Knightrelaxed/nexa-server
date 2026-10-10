@@ -61,6 +61,17 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Telegram-Bot-Api-Secret-Token']
 }));
 
+// 3. Rate Limiting (Security Defense against DDoS & Brute-force)
+const rateLimit = require('express-rate-limit');
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 180, // Limit each IP to 180 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests from this IP, please try again later.' }
+});
+app.use(apiLimiter);
+
 // Custom morgan token to mask sensitive query parameters (e.g., token, secret, key)
 morgan.token('safe-url', (req) => {
   const url = req.originalUrl || req.url || '';

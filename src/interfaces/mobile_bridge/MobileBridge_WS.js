@@ -23,7 +23,31 @@ let telemetryListener = null;
  * @param {import('http').Server} server 
  */
 function initWebSocket(server) {
-  wss = new WebSocket.Server({ server, path: '/ws' });
+  const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || env.NEXA_GODMODE_SECRET || '').trim();
+
+  wss = new WebSocket.Server({
+    server,
+    path: '/ws',
+    maxPayload: 1024 * 1024, // 1MB payload ceiling (Security Harden)
+    verifyClient: (info, cb) => {
+      // Handshake Authentication at HTTP Upgrade stage
+      const authHeader = info.req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ') || !configuredSecret) {
+        console.warn('[NEXA-BRIDGE-WS] ⚠️ Unauthorized handshake attempt rejected at HTTP upgrade.');
+        return cb(false, 401, 'Unauthorized');
+      }
+
+      const token = authHeader.slice('Bearer '.length).trim();
+      const aBuf = Buffer.from(token, 'utf8');
+      const bBuf = Buffer.from(configuredSecret, 'utf8');
+      if (aBuf.length !== bBuf.length || !crypto.timingSafeEqual(aBuf, bBuf)) {
+        console.warn('[NEXA-BRIDGE-WS] ⚠️ Forbidden handshake attempt (token mismatch).');
+        return cb(false, 403, 'Forbidden');
+      }
+
+      cb(true);
+    }
+  });
 
   // Active Keepalive Watchdog (Runs every 25 seconds to prevent NAT / Proxy timeout)
   if (!heartbeatInterval) {
@@ -42,33 +66,13 @@ function initWebSocket(server) {
     }, 25000);
   }
 
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', (ws) => {
     ws.isAlive = true;
     ws.on('pong', () => {
       ws.isAlive = true;
     });
 
-    // 1. Handshake Authentication (Bearer Token with constant-time equality)
-    const authHeader = req.headers.authorization;
-    const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_GODMODE_SECRET || '').trim();
-
-    let isAuthorized = false;
-    if (authHeader && authHeader.startsWith('Bearer ') && configuredSecret.length > 0) {
-      const token = authHeader.slice('Bearer '.length).trim();
-      const aBuf = Buffer.from(token, 'utf8');
-      const bBuf = Buffer.from(configuredSecret, 'utf8');
-      if (aBuf.length === bBuf.length && crypto.timingSafeEqual(aBuf, bBuf)) {
-        isAuthorized = true;
-      }
-    }
-
-    if (!isAuthorized) {
-      console.warn('[NEXA-BRIDGE-WS] ⚠️ Unauthorized handshake attempt rejected.');
-      ws.close(4001, 'Unauthorized');
-      return;
-    }
-
-    console.log('[NEXA-BRIDGE-WS] 📱 Nexa Bridge Android connected successfully.');
+    console.log('[NEXA-BRIDGE-WS] 📱 Nexa Bridge Android connected successfully (authenticated via verifyClient).');
 
     // 2. Single-Device Connection Binding (Instantly terminate old socket if reconnected)
     if (activeClient && activeClient !== ws) {

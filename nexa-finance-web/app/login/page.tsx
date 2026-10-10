@@ -22,12 +22,13 @@ export default function LoginPage() {
     }
     setLoading(true)
     setError(null)
-    const { error: authErr } = await supabase.auth.signInWithPassword({ email, password })
+    const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
     if (authErr) {
       setError(authErr.message)
       setLoading(false)
     } else {
-      document.cookie = "nexa-auth-token=active; path=/; max-age=2592000; SameSite=Lax"
+      const sessionToken = authData?.session?.access_token || ""
+      document.cookie = `nexa-auth-token=${encodeURIComponent(sessionToken)}; path=/; max-age=2592000; SameSite=Lax`
       toast.success("Berhasil masuk!")
       window.location.href = "/dashboard"
     }

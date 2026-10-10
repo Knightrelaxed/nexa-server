@@ -155,13 +155,18 @@ async function generateMorningBriefing() {
     const billsDue = upcoming.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
 
     const safeToday = financeIntel.safeToSpendToday({
-      balance: totalBalance,
-      daysLeftInMonth: daysLeft,
-      billsDueBeforeMonthEnd: billsDue,
+      budgetRemainingBeforeToday: totalBalance,
+      upcomingBillsTotal: billsDue,
+      daysLeftInclusive: daysLeft,
+      spentToday: 0,
       safetyBufferRatio: 0.1
     });
 
-    const safeSpendNotice = `Alokasi Belanja Aman Hari Ini: Rp ${safeToday.toLocaleString('id-ID')} (Sisa ${daysLeft} hari bulan ini, Tagihan Tertunda: Rp ${billsDue.toLocaleString('id-ID')})`;
+    const safeAmount = (safeToday && typeof safeToday.remainingToday === 'number' && !isNaN(safeToday.remainingToday))
+      ? safeToday.remainingToday
+      : 0;
+
+    const safeSpendNotice = `Alokasi Belanja Aman Hari Ini: Rp ${safeAmount.toLocaleString('id-ID')} (Sisa ${daysLeft} hari bulan ini, Tagihan Tertunda: Rp ${billsDue.toLocaleString('id-ID')})`;
     financeContextStr = financeContextStr ? `${financeContextStr}\n• ${safeSpendNotice}` : safeSpendNotice;
   } catch (finErr) {
     console.warn('[INTELLIGENCE] Warning computing safeToSpendToday:', finErr.message);

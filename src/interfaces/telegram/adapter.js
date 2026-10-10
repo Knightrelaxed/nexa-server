@@ -94,16 +94,19 @@ function enqueueChat(chatId, fn) {
 
   const executeWithTimeout = async () => {
     let timer;
+    const ac = new AbortController();
     const timeoutPromise = new Promise((_, reject) => {
       timer = setTimeout(() => {
+        ac.abort();
         reject(new Error(`[QUEUE_TIMEOUT] Message processing on chat ${key} exceeded 120s timeout`));
       }, 120_000);
       if (timer && timer.unref) timer.unref();
     });
 
     try {
-      return await Promise.race([fn(), timeoutPromise]);
+      return await Promise.race([fn(ac.signal), timeoutPromise]);
     } catch (err) {
+      ac.abort();
       console.error(`[TELEGRAM-QUEUE] Error or timeout on chat ${key}:`, err.message);
     } finally {
       clearTimeout(timer);
@@ -798,6 +801,30 @@ async function handleTelegramWebhook(req, res) {
       return;
     }
 
+    // ── [RECURRING RULES] APPROVE / REJECT ──────────────────────
+    if (cbData.startsWith('REC_OK:') || cbData.startsWith('REC_NO:')) {
+      const isApprove = cbData.startsWith('REC_OK:');
+      const ruleId = cbData.split(':')[1];
+      try {
+        const supabaseFinance = require('../../infrastructure/Supabase_Finance');
+        const newStatus = isApprove ? 'ACTIVE' : 'REJECTED';
+        const ok = await supabaseFinance.updateRecurringRuleStatus(ruleId, newStatus);
+        if (ok) {
+          await editTelegramMessage(
+            isApprove
+              ? `✅ <b>Langganan Rutin Disetujui (ACTIVE)!</b>\nAturan ini kini aktif dan akan dihitung dalam proyeksi tagihan.`
+              : `❌ <b>Langganan Rutin Ditolak (REJECTED).</b>\nAturan ini telah dinonaktifkan dan tidak akan ditagihkan lagi.`
+          );
+        } else {
+          await editTelegramMessage(`⚠️ Gagal memperbarui status aturan langganan.`);
+        }
+      } catch (e) {
+        console.error('[REC-CB] Error updating rule:', e.message);
+        await editTelegramMessage(`❌ Error: ${e.message}`);
+      }
+      return;
+    }
+
     // Callback query lain yang tidak dikenal — abaikan saja
     console.log(`[WEBHOOK] Unknown callback_query data: ${cbData}`);
     return;
@@ -825,7 +852,7 @@ async function handleTelegramWebhook(req, res) {
     action: 'typing'
   });
 
-  enqueueChat(message.chat.id, async () => {
+  enqueueChat(message.chat.id, async (abortSignal) => {
     try {
       const { getNotifier } = require("../../core/Notifier");
       getNotifier().markEngaged('REPLY').catch(() => {});
@@ -846,6 +873,7 @@ async function handleTelegramWebhook(req, res) {
     // respondToTelegram — Capture reply
     // ============================================================
     const respondToTelegram = async (text, skipMemory = false) => {
+      if (abortSignal && abortSignal.aborted) return;
       const cleanText = stripSurroundingQuotes(String(text));
       if (!skipMemory) {
         await supabaseMemories.saveChatMemory('nexa', cleanText.substring(0, 4000)).catch(() => { });
@@ -855,6 +883,10 @@ async function handleTelegramWebhook(req, res) {
 
     const deliverWebhookReply = async () => {
       stopTyping();
+      if (abortSignal && abortSignal.aborted) {
+        console.warn(`[TELEGRAM] Suppressed late reply due to queue timeout on chat ${message.chat.id}`);
+        return;
+      }
       if (webhookReply) {
         const replyToSend = webhookReply;
         webhookReply = null; // Clear immediately to prevent double-delivery from finally blocks

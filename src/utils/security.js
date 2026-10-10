@@ -126,6 +126,34 @@ function cliAuth(req, res, next) {
 }
 
 /**
+ * Middleware to protect incoming Mobile Bridge webhooks (/webhook/bridge/*)
+ * Strictly requires 'Authorization: Bearer <NEXA_DEVICE_SECRET || NEXA_BRIDGE_SECRET>'
+ * Completely separated from NEXA_CLI_SECRET.
+ */
+function bridgeAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || env.NEXA_GODMODE_SECRET || '').trim();
+
+  if (!configuredSecret) {
+    console.error('[SECURITY] NEXA_DEVICE_SECRET is missing. Rejecting Bridge webhook request.');
+    return res.status(500).json({ error: 'Server Bridge auth not configured' });
+  }
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+
+  const token = String(authHeader.slice('Bearer '.length)).trim();
+
+  if (!token || !safeEqual(token, configuredSecret)) {
+    console.warn('[SECURITY] Unauthorized Bridge webhook attempt with invalid token');
+    return res.status(403).json({ error: 'Forbidden: Invalid bridge token' });
+  }
+
+  next();
+}
+
+/**
  * Security Guard to ensure WhatsApp messages ONLY come from Tuan Faqih (authorized owner).
  * Works both as direct validator function (returning boolean) and as Express/WebSocket middleware.
  * @param {Object|string} messageOrReq - WhatsApp message object, sender JID string, or Express req object.
@@ -182,5 +210,6 @@ module.exports = {
   whatsappIdentityLock,
   telegramWebhookSecret,
   webhookAuth,
-  cliAuth
+  cliAuth,
+  bridgeAuth
 };

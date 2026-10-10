@@ -31,7 +31,12 @@ const stripSurroundingQuotes = (str) => {
 // ============================================================
 async function sendTelegramOutbound(text, skipMemory = false, platform = 'telegram') {
   try {
-    const cleanText = stripSurroundingQuotes(String(text));
+    const rawStr = String(text || '');
+    if (/\[object Object\]|\bNaN\b|\bundefined\b/i.test(rawStr)) {
+      console.error(`[TELEGRAM-OUTBOUND] ⚠️ Corrupted text blocked from outbound delivery: "${rawStr.slice(0, 100)}"`);
+      return;
+    }
+    const cleanText = stripSurroundingQuotes(rawStr);
     if (!skipMemory) {
       await supabaseMemories.saveChatMemory('nexa', cleanText.substring(0, 4000), platform).catch(() => { });
     }
@@ -143,10 +148,11 @@ async function sendEveningBriefing() {
     const briefText = await intelligenceBrief.generateEveningBriefing();
     const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
     await notifyProactive({
-      kind: 'evening_briefing',
+      kind: 'SCHEDULED_EVENING_BRIEFING',
       priority: 'P1',
       dedupeKey: `evening:${todayKey}`,
-      text: briefText
+      text: briefText,
+      isScheduled: true
     });
     console.log('[INTELLIGENCE] Evening Briefing sent successfully via Notifier.');
   } catch (err) {

@@ -10,7 +10,7 @@
 const DEFAULT_POLICY = {
   timezone: 'Asia/Jakarta',
   utcOffset: '+07:00',                       // Indonesia has no DST
-  quiet: { startHour: 23, endHour: 5 },      // [23:00, 05:00)
+  quiet: { startHour: 23, endHour: 5 },      // [23:00, 05:00) WIB Quiet Hours
   p1DailyCap: 3,
   cooldownMs: { P0: 5 * 60e3, P1: 6 * 3600e3, P2: 12 * 3600e3 },
   digestMaxItems: 6,
@@ -31,6 +31,8 @@ function startOfDayIso(date, P) {
   const ymd = new Intl.DateTimeFormat('en-CA', { timeZone: P.timezone }).format(date); // YYYY-MM-DD
   return new Date(`${ymd}T00:00:00${P.utcOffset}`).toISOString();
 }
+
+const CORRUPTED_CONTENT_REGEX = /\[object Object\]|\bNaN\b|\bundefined\b/i;
 
 function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
   const P = {
@@ -59,9 +61,18 @@ function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
     return { status, id };
   }
 
-  /** n = { kind, priority, text, dedupeKey?, expiresAt? } */
+  /** n = { kind, priority, text, dedupeKey?, expiresAt?, isScheduled?, timeSensitive? } */
   async function notify(n) {
-    const note = { ...n, priority: ['P0', 'P1', 'P2'].includes(n.priority) ? n.priority : 'P2' };
+    if (!n || !n.text) return _drop(n || {}, 'empty_text');
+    if (CORRUPTED_CONTENT_REGEX.test(n.text)) {
+      console.error(`[NOTIFIER] Corrupted outbound content rejected: "${String(n.text).slice(0, 100)}"`);
+      return _drop(n, 'corrupted_content');
+    }
+
+    let priority = ['P0', 'P1', 'P2'].includes(n.priority) ? n.priority : 'P2';
+    if (n.timeSensitive) priority = 'P0';
+
+    const note = { ...n, priority };
     const t = now();
     if (note.expiresAt && new Date(note.expiresAt) <= t) return _drop(note, 'expired');
     if (note.dedupeKey) {
@@ -71,8 +82,13 @@ function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
     if (note.priority === 'P0') return _deliver(note);
     if (note.priority === 'P2') return _queue(note, 'QUEUED_DIGEST');
     if (isQuietHour(t, P)) return _queue(note, 'QUEUED_DEFERRED', 'quiet-hours');
-    const sent = await store.countSentSince('P1', startOfDayIso(t, P));
-    if (sent >= P.p1DailyCap) return _queue({ ...note, priority: 'P2' }, 'QUEUED_DIGEST', 'p1-cap');
+
+    // Scheduled pulses (morning/evening briefings) do NOT consume discretionary nudge cap
+    const isScheduledReport = Boolean(note.isScheduled || String(note.kind || '').toUpperCase().startsWith('SCHEDULED_'));
+    if (!isScheduledReport) {
+      const sent = await store.countSentSince('P1', startOfDayIso(t, P));
+      if (sent >= P.p1DailyCap) return _queue({ ...note, priority: 'P2' }, 'QUEUED_DIGEST', 'p1-cap');
+    }
     return _deliver(note);
   }
 
@@ -129,7 +145,9 @@ function createMemoryStore() {
     async record(r) { const row = { id: ++seq, engagedAt: null, ...r }; rows.push(row); return row.id; },
     async setStatus(id, status, reason) { const r = rows.find(x => x.id === id); if (r) { r.status = status; r.reason = reason; } },
     async lastSentAt(key) { return rows.filter(r => r.dedupeKey === key && r.status === 'SENT').map(r => r.sentAt).sort().pop() || null; },
-    async countSentSince(priority, sinceIso) { return rows.filter(r => r.status === 'SENT' && r.priority === priority && r.sentAt >= sinceIso).length; },
+    async countSentSince(priority, sinceIso) {
+      return rows.filter(r => r.status === 'SENT' && r.priority === priority && r.sentAt >= sinceIso && !r.isScheduled && !String(r.kind || '').toUpperCase().startsWith('SCHEDULED_')).length;
+    },
     async hasQueued(key) { return rows.some(r => r.dedupeKey === key && String(r.status).startsWith('QUEUED')); },
     async claimQueued(status, limit, nowIso) {
       const picked = rows.filter(r => r.status === status && (!r.expiresAt || r.expiresAt > nowIso)).slice(0, limit);
@@ -165,7 +183,7 @@ function createSupabaseStore(sb) {
       return d && d[0] ? d[0].sent_at : null;
     },
     countSentSince: (priority, sinceIso) =>
-      countOf(sb.from(T).select('id', { count: 'exact', head: true }).eq('status', 'SENT').eq('priority', priority).gte('sent_at', sinceIso)),
+      countOf(sb.from(T).select('id', { count: 'exact', head: true }).eq('status', 'SENT').eq('priority', priority).gte('sent_at', sinceIso).not('kind', 'ilike', 'SCHEDULED_%')),
     async hasQueued(key) {
       return (await countOf(sb.from(T).select('id', { count: 'exact', head: true }).eq('dedupe_key', key).in('status', ['QUEUED_DIGEST', 'QUEUED_DEFERRED']))) > 0;
     },
@@ -255,10 +273,26 @@ function getNotifier() {
  * Proactive notification entry point for all background tasks and cron jobs.
  * Enforces Quiet Hours (22:00 - 06:00 WIB), deduplication, and rate limiting.
  */
-async function notifyProactive({ kind = 'general', priority = 'P1', dedupeKey = null, text }) {
+async function notifyProactive({
+  kind = 'general',
+  priority = 'P1',
+  dedupeKey = null,
+  text,
+  expiresAt = null,
+  isScheduled = false,
+  timeSensitive = false
+}) {
   if (!text) return null;
   const notifier = getNotifier();
-  return notifier.notify({ kind, priority, dedupeKey, text });
+  return notifier.notify({
+    kind,
+    priority,
+    dedupeKey,
+    text,
+    expiresAt,
+    isScheduled,
+    timeSensitive
+  });
 }
 
 module.exports = {

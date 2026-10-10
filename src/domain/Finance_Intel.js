@@ -129,17 +129,31 @@ function upcomingBills(rules, fromTs, toTs) {
 const floorTo = (x, step = 1000) => Math.floor(x / step) * step;
 
 /**
- * budgetRemainingBeforeToday = monthly budget - spent through YESTERDAY
+ * budgetRemainingBeforeToday = monthly budget - spent through YESTERDAY (or current available balance)
  * daysLeftInclusive          = days from today to the budget period end, inclusive
  */
-function safeToSpendToday({ budgetRemainingBeforeToday, upcomingBillsTotal = 0, daysLeftInclusive, spentToday = 0 }) {
-  const discretionary = budgetRemainingBeforeToday - upcomingBillsTotal;
-  const perDay = discretionary / Math.max(1, daysLeftInclusive);
+function safeToSpendToday(args = {}) {
+  const budget = Number(args.budgetRemainingBeforeToday ?? args.balance ?? 0);
+  const bills = Number(args.upcomingBillsTotal ?? args.billsDueBeforeMonthEnd ?? 0);
+  const days = Math.max(1, Number(args.daysLeftInclusive ?? args.daysLeftInMonth ?? 1));
+  const bufferRatio = Math.max(0, Math.min(0.5, Number(args.safetyBufferRatio ?? 0)));
+  const buffer = budget * bufferRatio;
+
+  const discretionary = Math.max(0, budget - bills - buffer);
+  const perDay = isFinite(discretionary / days) ? discretionary / days : 0;
+  const spentToday = Number(args.spentToday ?? 0);
   const remainingToday = perDay - spentToday;
+
   let status = 'OK';
-  if (discretionary <= 0 || remainingToday < 0) status = 'OVER';
+  if (discretionary <= 0 || remainingToday <= 0) status = 'OVER';
   else if (remainingToday < 0.25 * perDay) status = 'TIGHT';
-  return { discretionary, perDay: floorTo(Math.max(0, perDay)), remainingToday: floorTo(remainingToday), status };
+
+  return {
+    discretionary: floorTo(discretionary),
+    perDay: floorTo(Math.max(0, perDay)),
+    remainingToday: floorTo(Math.max(0, remainingToday)),
+    status
+  };
 }
 
 function projectMonthEnd({ spentSoFar, recurringPaidSoFar = 0, recurringStillDue = 0, dayOfMonth, daysInMonth }) {

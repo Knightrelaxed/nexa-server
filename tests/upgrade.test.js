@@ -185,3 +185,89 @@ test('notifyProactive validates and queues or delivers', async () => {
   assert.ok(res);
   assert.ok(['SENT', 'QUEUED_DEFERRED', 'QUEUED_DIGEST'].includes(res.status));
 });
+
+// ---------------- Regression & Hardening Tests ----------------
+
+test('safeToSpendToday handles parameter aliases and formats number safely without [object Object] or NaN', () => {
+  // Alias signature as invoked by Intelligence_Brief
+  const res = fi.safeToSpendToday({
+    balance: 1_000_000,
+    daysLeftInMonth: 10,
+    billsDueBeforeMonthEnd: 200_000,
+    safetyBufferRatio: 0.1
+  });
+
+  assert.equal(typeof res.remainingToday, 'number');
+  assert.ok(!isNaN(res.remainingToday));
+  assert.equal(res.remainingToday, 70_000); // (1M - 200k - 100k) / 10 = 70k
+
+  // Formatting check: must format as numeric string, never "[object Object]"
+  const formatted = `Alokasi Belanja Aman Hari Ini: Rp ${res.remainingToday.toLocaleString('id-ID')}`;
+  assert.ok(!formatted.includes('[object Object]'));
+  assert.ok(!formatted.includes('NaN'));
+  assert.match(formatted, /Rp 70\.000/);
+});
+
+test('Notifier outbound guard drops corrupted text containing [object Object], NaN, or undefined', async () => {
+  const { n } = setup('2026-10-12T10:00:00+07:00');
+  const corrupted1 = await n.notify({ kind: 'BRIEF', priority: 'P0', text: 'Saldo: Rp [object Object]' });
+  assert.equal(corrupted1.status, 'DROPPED');
+  assert.equal(corrupted1.reason, 'corrupted_content');
+
+  const corrupted2 = await n.notify({ kind: 'BRIEF', priority: 'P0', text: 'Saldo: Rp NaN' });
+  assert.equal(corrupted2.status, 'DROPPED');
+  assert.equal(corrupted2.reason, 'corrupted_content');
+
+  const corrupted3 = await n.notify({ kind: 'BRIEF', priority: 'P0', text: 'Agenda: undefined' });
+  assert.equal(corrupted3.status, 'DROPPED');
+  assert.equal(corrupted3.reason, 'corrupted_content');
+});
+
+test('Event proximity alerts marked timeSensitive (P0) bypass quiet hours and daily P1 cap', async () => {
+  const { n, sent } = setup('2026-10-12T02:00:00+07:00'); // In the middle of Quiet Hours
+  // Trigger 3 P1 messages first
+  for (let i = 0; i < 3; i++) {
+    await n.notify({ kind: 'NUDGE', priority: 'P1', text: 'nudge ' + i });
+  }
+
+  // Time-sensitive event proximity alert
+  const eventRes = await n.notify({
+    kind: 'event_proximity',
+    priority: 'P1',
+    timeSensitive: true, // Elevates to P0 immediate
+    expiresAt: '2026-10-12T02:30:00+07:00',
+    text: '⏰ Pengingat 15 Menit: Rapat Tim'
+  });
+
+  assert.equal(eventRes.status, 'SENT');
+  assert.equal(sent[0].text, '⏰ Pengingat 15 Menit: Rapat Tim');
+});
+
+test('Scheduled reports (isScheduled: true) do not consume discretionary P1 nudge cap', async () => {
+  const { n } = setup('2026-10-12T10:00:00+07:00');
+  // Send scheduled morning briefing
+  const scheduled1 = await n.notify({
+    kind: 'SCHEDULED_MORNING_BRIEFING',
+    priority: 'P1',
+    isScheduled: true,
+    text: 'Executive Morning Briefing'
+  });
+  assert.equal(scheduled1.status, 'SENT');
+
+  // Should still be able to send 3 discretionary P1 nudges without being demoted to digest
+  for (let i = 0; i < 3; i++) {
+    const nudge = await n.notify({ kind: 'TASK_NUDGE', priority: 'P1', text: 'Tugas ' + i });
+    assert.equal(nudge.status, 'SENT');
+  }
+
+  // 4th discretionary nudge hits the cap
+  const capped = await n.notify({ kind: 'TASK_NUDGE', priority: 'P1', text: 'Tugas ke-4' });
+  assert.equal(capped.status, 'QUEUED_DIGEST');
+});
+
+test('controlDeviceHardware allow-list blocks unknown/malicious hardware commands', async () => {
+  const { executeLiveTool } = require('../src/core/Live_Tool_Registry');
+  const res = await executeLiveTool('controlDeviceHardware', { action: 'FORMAT_SD_CARD' });
+  assert.equal(res.status, 'REJECTED');
+  assert.match(res.message, /daftar izin keamanan/);
+});

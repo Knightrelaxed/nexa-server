@@ -21,7 +21,9 @@ export function middleware(request: NextRequest) {
   }
 
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname)
-  const hasAuthToken = request.cookies.get('nexa-auth-token')?.value === 'active'
+  const tokenVal = request.cookies.get('nexa-auth-token')?.value || ''
+  // Reject static strings like "active" or empty tokens; require actual JWT token format
+  const hasAuthToken = Boolean(tokenVal && tokenVal !== 'active' && tokenVal.length > 20)
 
   // Unauthenticated user attempting to access private route
   if (!hasAuthToken && !isPublicRoute) {

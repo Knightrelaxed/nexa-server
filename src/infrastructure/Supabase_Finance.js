@@ -828,23 +828,42 @@ async function getRecurringRules(statusFilter = null) {
 }
 
 /**
- * Upsert kandidat atau aturan langganan berulang ke nexa_recurring_rules
+ * Upsert kandidat atau aturan langganan berulang ke nexa_recurring_rules.
+ * Mempertahankan status eksisting (ACTIVE, REJECTED, PAUSED) agar tidak tertimpa deteksi otomatis.
  */
 async function upsertRecurringRules(rules = []) {
   if (!supabaseFinance || !rules || rules.length === 0) return { upserted: 0 };
   try {
-    const rows = rules.map(r => ({
-      merchant_key: r.merchantKey,
-      display_name: r.displayName || r.merchantKey,
-      cadence: r.cadence,
-      amount_median: r.amountMedian,
-      next_expected: r.nextExpected,
-      last_seen: r.lastSeen,
-      occurrences: r.occurrences,
-      confidence: r.confidence,
-      status: r.confidence >= 0.85 ? 'ACTIVE' : 'CANDIDATE',
-      updated_at: new Date().toISOString()
-    }));
+    // 1. Ambil aturan yang sudah ada agar keputusan user tidak tertimpa
+    const existingRules = await getRecurringRules();
+    const existingMap = new Map();
+    for (const ex of existingRules) {
+      existingMap.set(`${ex.merchant_key}:${ex.cadence}`, ex);
+    }
+
+    const rows = rules.map(r => {
+      const existing = existingMap.get(`${r.merchantKey}:${r.cadence}`);
+      let status;
+      if (existing) {
+        // Pertahankan status yang sudah ada (misal REJECTED, ACTIVE, PAUSED)
+        status = existing.status;
+      } else {
+        status = r.confidence >= 0.85 ? 'ACTIVE' : 'CANDIDATE';
+      }
+
+      return {
+        merchant_key: r.merchantKey,
+        display_name: existing?.display_name || r.displayName || r.merchantKey,
+        cadence: r.cadence,
+        amount_median: r.amountMedian,
+        next_expected: r.nextExpected,
+        last_seen: r.lastSeen,
+        occurrences: r.occurrences,
+        confidence: r.confidence,
+        status,
+        updated_at: new Date().toISOString()
+      };
+    });
 
     const { data, error } = await supabaseFinance
       .from('nexa_recurring_rules')
@@ -859,6 +878,23 @@ async function upsertRecurringRules(rules = []) {
   } catch (err) {
     console.warn('[SUPABASE_FINANCE] upsertRecurringRules exception:', err.message);
     return { upserted: 0, error: err.message };
+  }
+}
+
+/**
+ * Update status aturan langganan (ACTIVE, REJECTED, PAUSED) dari tombol interaktif
+ */
+async function updateRecurringRuleStatus(ruleId, status) {
+  if (!supabaseFinance || !ruleId) return false;
+  try {
+    const { error } = await supabaseFinance
+      .from('nexa_recurring_rules')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', ruleId);
+    return !error;
+  } catch (err) {
+    console.error('[SUPABASE_FINANCE] updateRecurringRuleStatus error:', err.message);
+    return false;
   }
 }
 
@@ -933,6 +969,7 @@ module.exports = {
   getExpenseSumByCategories,
   getRecurringRules,
   upsertRecurringRules,
+  updateRecurringRuleStatus,
   getAllTransactionsForAnalysis,
   // Helper untuk Split_Engine: akses langsung ke Supabase client
   _getClient: () => supabaseFinance,

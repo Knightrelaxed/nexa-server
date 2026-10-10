@@ -61,8 +61,8 @@ router.post('/wa-logout', security.webhookAuth, async (req, res) => {
   }
 });
 
-// 6. Mobile Bridge Remote Command Dispatcher
-router.post('/bridge/command', security.cliAuth, async (req, res) => {
+// 6. Mobile Bridge Remote Command Dispatcher (Guarded by dedicated bridgeAuth)
+router.post('/bridge/command', security.bridgeAuth, async (req, res) => {
   try {
     const { action, params } = req.body;
     const adapter = require('./mobile_bridge/adapter');
@@ -73,7 +73,7 @@ router.post('/bridge/command', security.cliAuth, async (req, res) => {
   }
 });
 
-router.post('/bridge/simulate-call', security.cliAuth, async (req, res) => {
+router.post('/bridge/simulate-call', security.bridgeAuth, async (req, res) => {
   try {
     const { callerName, message, playRingtone } = req.body;
     const adapter = require('./mobile_bridge/adapter');

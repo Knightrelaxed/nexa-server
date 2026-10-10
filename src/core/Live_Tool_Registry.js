@@ -974,9 +974,16 @@ async function executeLiveTool(toolName, args = {}) {
 
         if (!to || !content) return { status: 'ERROR', message: 'Alamat penerima dan isi pesan email wajib diisi.' };
 
+        const crypto = require('crypto');
+        const emailContentHash = crypto
+          .createHash('sha256')
+          .update(`${to.toLowerCase()}|${subject}|${content}`)
+          .digest('hex')
+          .slice(0, 16);
+
         const confirmCheck = _validateActionConfirmation(
           'sendEmail',
-          `send_email_${to.toLowerCase()}`,
+          `send_email_${emailContentHash}`,
           `Kirim email ke ${to} dengan subjek "${subject}"`,
           args.confirmed
         );
@@ -1096,6 +1103,17 @@ async function executeLiveTool(toolName, args = {}) {
       case 'saveCoreIdentityFact': {
         const fact = String(args.fact || '').trim();
         if (!fact) return { status: 'ERROR', message: 'Fakta identitas tidak boleh kosong.' };
+
+        // Security Quarantine: Core Identity rules modify assistant behavior and MUST require confirmation
+        const crypto = require('crypto');
+        const factHash = crypto.createHash('sha256').update(fact.toLowerCase()).digest('hex').slice(0, 16);
+        const confirmCheck = _validateActionConfirmation(
+          'saveCoreIdentityFact',
+          `save_identity_${factHash}`,
+          `Simpan aturan identitas permanen: "${fact}"`,
+          args.confirmed
+        );
+        if (confirmCheck) return confirmCheck;
 
         // 1. Direct Instant DB Save (< 100ms)
         await _withToolTimeout(
@@ -1243,7 +1261,34 @@ async function executeLiveTool(toolName, args = {}) {
           return await executeLiveTool('endCall', args);
         }
 
-        // Generic Passthrough for other Hardware actions (PLAY_RINGTONE, TAKE_PHOTO, TAKE_SCREENSHOT, GO_HOME_SCREEN, etc.)
+        // Strict Security Allow-list for Mobile Device Bridge Hardware Actions
+        const ALLOWED_HARDWARE_ACTIONS = new Set([
+          'TOGGLE_FLASHLIGHT', 'FLASHLIGHT',
+          'SET_VOLUME',
+          'FORCE_DND',
+          'LOCK_SCREEN',
+          'GET_BATTERY_STATUS',
+          'GET_LOCATION',
+          'LAUNCH_APP',
+          'END_CALL', 'HANGUP',
+          'PLAY_RINGTONE',
+          'TAKE_PHOTO',
+          'TAKE_SCREENSHOT',
+          'GO_HOME_SCREEN',
+          'VIBRATE',
+          'MUTE'
+        ]);
+
+        if (!ALLOWED_HARDWARE_ACTIONS.has(action)) {
+          console.warn(`[SECURITY] ⚠️ Blocked unpermitted hardware bridge action: "${action}"`);
+          return {
+            status: 'REJECTED',
+            action,
+            message: `Aksi hardware "${action}" ditolak karena tidak berada dalam daftar izin keamanan (allowlist).`
+          };
+        }
+
+        // Generic Passthrough for permitted Hardware actions
         const genericRes = await _withToolTimeout(
           mobileBridgeWs.sendCommand(action, args, { timeoutMs: 4000 }),
           5000
