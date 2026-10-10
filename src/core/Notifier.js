@@ -301,6 +301,7 @@ module.exports = {
   createSupabaseStore,
   createResilientStore,
   getNotifier,
+  _setNotifier: (n) => { _defaultNotifier = n; },
   notifyProactive,
   isQuietHour,
   startOfDayIso,

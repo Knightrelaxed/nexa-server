@@ -179,11 +179,19 @@ test('createResilientStore retries DB after 60s cooldown instead of permanent me
 });
 
 test('notifyProactive validates and queues or delivers', async () => {
-  const { notifyProactive } = require('../src/core/Notifier');
+  const { notifyProactive, _setNotifier, createNotifier, createMemoryStore } = require('../src/core/Notifier');
+  const mockSent = [];
+  const testNotifier = createNotifier({
+    store: createMemoryStore(),
+    send: async (text, meta) => { mockSent.push({ text, ...meta }); }
+  });
+  _setNotifier(testNotifier);
   const uniqueKey = 'test_alert_' + Date.now();
   const res = await notifyProactive({ kind: 'test_alert', priority: 'P0', dedupeKey: uniqueKey, text: 'Test alert' });
   assert.ok(res);
-  assert.ok(['SENT', 'QUEUED_DEFERRED', 'QUEUED_DIGEST'].includes(res.status));
+  assert.equal(res.status, 'SENT');
+  assert.equal(mockSent.length, 1);
+  assert.equal(mockSent[0].text, 'Test alert');
 });
 
 // ---------------- Regression & Hardening Tests ----------------
