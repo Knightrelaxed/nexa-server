@@ -13,7 +13,7 @@ const fs                 = require('fs');
 const path               = require('path');
 const os                 = require('os');
 const env                = require('../config/env');
-const { LIVE_TOOL_DECLARATIONS, executeLiveTool, noteUserTurn } = require('./Live_Tool_Registry');
+const { LIVE_TOOL_DECLARATIONS, executeLiveTool, noteUserTurn, cancelEndCallSafetyTimer } = require('./Live_Tool_Registry');
 const geminiVectorCache  = require('../utils/gemini_vector_cache');
 const supabaseMemories   = require('../infrastructure/Supabase_Memories');
 const supabaseFinance    = require('../infrastructure/Supabase_Finance');
@@ -59,12 +59,11 @@ const BARGE_IN_RMS_THRESHOLD = (process.env.NEXA_BARGE_IN_RMS ?? '') !== '' ? Nu
 const NEXA_LIVE_SYSTEM_PROMPT = `
 Anda adalah N.E.X.A (Neural Executive with Xenial Agent), Chief of Staff digital otonom, sahabat terpercaya, dan asisten eksekutif pribadi Tuan Faqih Hidayatulloh.
 
-[KEBIJAKAN BAHASA MUTLAK (STRICT BAHASA INDONESIA ONLY)]
-- BAHASA UTAMA: Anda WAJIB SELALU berbicara dalam BAHASA INDONESIA dalam seluruh giliran bicara tanpa pengecualian.
-- DILARANG KERAS BERGANTI BAHASA: DILARANG KERAS merespons dalam bahasa Spanyol, Hindi, Portugis, Jerman, Korea, Arab, Inggris, atau bahasa asing apa pun, meskipun Anda mendengar kata-kata atau frasa yang mirip bahasa asing.
-- PENANGANAN KATA ASING & DERAU AUDIO ASR: Tuan Faqih adalah penutur asli Bahasa Indonesia. Jika transkripsi suara menangkap kata-kata yang tampak asing atau aneh (seperti karakter Spanyol, Hindi, Portugis, atau derau acak), ITU ADALAH ARTIFAK GANGGUAN NOISE MIKROFON, BUKAN BAHASA ASING! JANGAN PERNAH merespons dalam bahasa asing tersebut. Jangan pula masuk ke jebakan meminta maaf berulang kali ("suara kurang jelas / boleh diulang"). Tetaplah tenang, simpulkan topik dari konteks pembicaraan sebelumnya, dan tanggapi dalam Bahasa Indonesia yang alami, ramah, dan solutif.
-- PENALARAN BAHASA INDONESIA LISAN & KASUAL: Tuan Faqih berbicara dalam Bahasa Indonesia percakapan sehari-hari. Pahami kata-kata pendek, ekspresi santai, dan istilah sehari-hari secara cerdas dan kontekstual (contoh: "haus" berarti butuh minum air/dehidrasi, "capek" berarti lelah, "lapar" berarti butuh makan, "bentar" berarti menunggu, "oke/iya" berarti setuju). Tanggapi langsung esensinya dengan empati tinggi dan kecerdasan alami tanpa meminta konfirmasi berulang.
-- HANYA berbicara bahasa lain jika Tuan Faqih secara eksplisit meminta dalam Bahasa Indonesia: misalnya "NEXA, tolong jawab dalam bahasa Inggris" atau "Terjemahkan ke bahasa Arab".
+[BAHASA KOMUNIKASI]
+- Tuan Faqih berkomunikasi dalam Bahasa Indonesia santai sehari-hari. Pahami kata-kata kasual secara kontekstual dan responlah dengan ramah, wajar, dan mengalir alami.
+- Pahami ekspresi pendek dan idiom lisan: "haus" = butuh minum, "capek" = lelah, "lapar" = butuh makan, "bentar" = tunggu sebentar, "oke/iya" = setuju, "udah/udahan" = sudah selesai, "gapapa" = tidak apa-apa.
+- Jika audio terdengar tidak jelas atau potongan kata terdengar aneh, tetap tenang, simpulkan maksud dari konteks percakapan sebelumnya, dan tanggapi dalam Bahasa Indonesia. Jangan pernah terjebak mengulang-ulang permintaan maaf atau minta pengulangan.
+- Berbicara dalam bahasa lain hanya jika Tuan Faqih secara eksplisit memintanya, misalnya "NEXA, jawab dalam bahasa Inggris".
 
 [JIWA, IDENTITAS & KARAKTER N.E.X.A]
 1. Sapaan Wajib: Selalu sapa pengguna dengan "Tuan Faqih" atau "Tuan". DILARANG KERAS menggunakan kata "Bapak", "Mas", atau "Kakak".
@@ -142,7 +141,7 @@ function _generateDynamicVocalGreetingInstruction() {
     timeOfDay = 'larut malam';
   }
 
-  return `Halo N.E.X.A, panggilan telepon baru saja terhubung pada waktu ${timeOfDay}.`;
+  return `Halo N.E.X.A, panggilan suara telepon berbahasa Indonesia baru saja terhubung pada waktu ${timeOfDay}. Sapa Tuan Faqih dengan hangat dalam Bahasa Indonesia.`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -211,7 +210,7 @@ class LiveVoiceSession {
     const text = (this._userTranscriptBuf || '').trim();
     this._userTranscriptBuf = '';
     if (!text) return;
-    noteUserTurn();
+    noteUserTurn(text);
     console.log(`[LIVE-VOICE] Didengar dari Tuan Faqih: "${text}"`);
     this.turnHistory.push({ role: 'user', text });
     supabaseMemories.saveChatMemory('user', text.slice(0, 800), 'live_call').catch(() => {});
@@ -505,11 +504,10 @@ class LiveVoiceSession {
 
     // ── Language Lock Directive (Anchor Attention to Indonesian) ───────────
     const languageLockPrefix =
-      `[INSTRUKSI BAHASA MUTLAK: WAJIB BAHASA INDONESIA]\n` +
-      `Anda berkomunikasi dengan Tuan Faqih. Anda WAJIB SELALU merespons dalam BAHASA INDONESIA secara konsisten, santai, dan alami. ` +
-      `DILARANG KERAS merespons dalam bahasa Spanyol, Hindi, Portugis, Jerman, Korea, Inggris, atau bahasa asing lainnya. ` +
-      `Pahami kata-kata pendek atau kasual Bahasa Indonesia (seperti "haus", "capek", "lapar", "bentar", "oke") dengan penalaran kontekstual tinggi. ` +
-      `Jika transkripsi pendengaran menangkap kata asing atau tidak lazim akibat derau mikrofon, abaikan halusinasi bahasa tersebut, JANGAN mengulang-ulang kalimat minta maaf robotik, dan tetaplah merespons dalam Bahasa Indonesia yang relevan.\n\n`;
+      `[BAHASA: INDONESIA]\n` +
+      `Percakapan telepon suara ini berlangsung sepenuhnya dalam Bahasa Indonesia. ` +
+      `Tuan Faqih berbicara dengan gaya santai sehari-hari. ` +
+      `Pahami ucapan kasual dan potongan kata dengan penalaran kontekstual, lalu tanggapi secara alami dalam Bahasa Indonesia.\n\n`;
 
     // ── Assemble Full System Prompt ──────────────────────────────────────
     const fullSystemPrompt =
@@ -596,7 +594,7 @@ class LiveVoiceSession {
       if (msg.setupComplete) {
         this.isSetupComplete    = true;
         this.reconnectAttempts  = 0;
-        console.log(`[LIVE-VOICE] ✅ Session Setup Confirmed by Google. Ready for live audio stream!`);
+        console.log(`[LIVE-VOICE] Session Setup Confirmed by Google. Ready for live audio stream!`);
 
         // Notify Android client that live session is open
         this._sendToClient({
@@ -958,7 +956,7 @@ class LiveVoiceSession {
    */
   handleIncomingClientText(text) {
     if (!text || !text.trim()) return;
-    noteUserTurn();
+    noteUserTurn(text.trim());
     this.lastClientInputTime = Date.now();
     this.turnHistory.push({ role: 'user', text: text.trim() });
     // Async persist to nexa_chat_memories — never block audio
@@ -1293,7 +1291,7 @@ class LiveVoiceSession {
   async _runPassiveLearningPipeline(durationSec) {
     if (!this.turnHistory || this.turnHistory.length === 0) return;
 
-    // Filter substantive user turns (require at least 2 real user turns to prevent Gemma meta-refusals)
+    // Filter substantive user turns (require at least 3 real user turns to prevent noise-driven extraction)
     const substantiveUserTurns = this.turnHistory.filter(t =>
       t.role === 'user' &&
       t.text &&
@@ -1301,12 +1299,20 @@ class LiveVoiceSession {
       !t.text.includes('panggilan telepon baru saja terhubung')
     );
 
-    if (substantiveUserTurns.length < 2) {
-      console.log(`[LIVE-VOICE] 🧠 Passive Learning skipped: only ${substantiveUserTurns.length} substantive user turn(s).`);
+    if (substantiveUserTurns.length < 3) {
+      console.log(`[LIVE-VOICE] Passive Learning skipped: only ${substantiveUserTurns.length} substantive user turn(s), minimum 3 required.`);
       return;
     }
 
-    console.log(`[LIVE-VOICE] 🧠 Starting End-of-Call Passive Learning Pipeline (${this.turnHistory.length} turns, ${substantiveUserTurns.length} user turns, ${durationSec}s)...`);
+    // Guard: Skip passive learning if transcript contains foreign ASR noise artifacts
+    const FOREIGN_ARTIFACT_RE = /[\u00BF\u00A1\u00F1]/;  // inverted question/exclamation marks, tilde-n
+    const fullTranscriptText = this.turnHistory.map(t => t.text || '').join(' ');
+    if (FOREIGN_ARTIFACT_RE.test(fullTranscriptText)) {
+      console.log(`[LIVE-VOICE] Passive Learning skipped: foreign ASR noise artifacts detected in transcript. Refusing to learn from corrupted session.`);
+      return;
+    }
+
+    console.log(`[LIVE-VOICE] Starting End-of-Call Passive Learning Pipeline (${this.turnHistory.length} turns, ${substantiveUserTurns.length} user turns, ${durationSec}s)...`);
 
     // Build conversation text for AI analysis
     const conversationText = this.turnHistory
@@ -1365,7 +1371,7 @@ Jika tidak ada fakta baru, balas dengan: []`;
       const userFacts = parseLearnedFacts(userFactsRaw);
 
       if (userFacts.length > 0) {
-        console.log(`[LIVE-VOICE] 🧠 Passive Learning: ${userFacts.length} user facts detected. Saving via Supersede Engine...`);
+        console.log(`[LIVE-VOICE] Passive Learning: ${userFacts.length} user facts detected. Saving via Supersede Engine...`);
         for (const fact of userFacts) {
           if (typeof fact === 'string' && fact.trim().length > 5) {
             await deduplicateAndSaveFact(fact.trim(), 'USER_PROFILE').catch(() => {});
@@ -1373,42 +1379,64 @@ Jika tidak ada fakta baru, balas dengan: []`;
         }
         // Invalidate RAM cache so next chat session immediately reflects new facts
         invalidatePersonalFactsCache();
-        console.log(`[LIVE-VOICE] ✅ User facts saved. Cache invalidated.`);
+        console.log(`[LIVE-VOICE] User facts saved. Cache invalidated.`);
       } else {
-        console.log(`[LIVE-VOICE] 🧠 No new user facts detected in this call.`);
+        console.log(`[LIVE-VOICE] No new user facts detected in this call.`);
       }
     } catch (err) {
       console.warn(`[LIVE-VOICE] User fact extraction error:`, err.message);
     }
 
     // ── B2. Extract learned_core_identities about N.E.X.A ───────────────
-    try {
-      const coreIdPrompt = `Berikut adalah transkrip percakapan telepon suara:
+    // Guard: Only extract CORE_IDENTITY if user explicitly gave directives
+    // This prevents casual conversation or ASR hallucinations from poisoning identity rules
+    const DIRECTIVE_KEYWORDS_RE = /\b(harus|wajib|dilarang|jangan|aturan|mulai sekarang|mulai dari sekarang|ingat ya|catat ya|peraturan)\b/i;
+    const userTurnTexts = this.turnHistory
+      .filter(t => t.role === 'user' && t.text)
+      .map(t => t.text)
+      .join(' ');
+    const hasExplicitDirective = DIRECTIVE_KEYWORDS_RE.test(userTurnTexts);
+
+    if (!hasExplicitDirective) {
+      console.log(`[LIVE-VOICE] CORE_IDENTITY extraction skipped: no explicit directive keywords found in user turns.`);
+    } else {
+      try {
+        const coreIdPrompt = `Berikut adalah transkrip percakapan telepon suara:
 
 ${conversationText}
 
 TUGAS: Ekstrak instruksi, koreksi, atau aturan baru yang Tuan Faqih berikan kepada N.E.X.A (sistem AI) dalam percakapan ini.
 Fokus pada: cara N.E.X.A harus berperilaku, format respons, batasan, kemampuan yang disebutkan, atau koreksi atas respons N.E.X.A.
 ABAIKAN percakapan biasa yang tidak berisi instruksi untuk N.E.X.A.
+ABAIKAN jika instruksi berasal dari konteks yang ambigu atau tidak jelas.
 
 Balas HANYA dengan JSON array string. Contoh:
 ["Saat di telepon, N.E.X.A harus berbicara lebih singkat", "N.E.X.A sudah bisa mencatat keuangan via suara telepon"]
 Jika tidak ada, balas dengan: []`;
 
-      const coreIdRaw = await callAI(coreIdPrompt);
-      const coreIds = parseLearnedFacts(coreIdRaw);
+        const coreIdRaw = await callAI(coreIdPrompt);
+        const coreIds = parseLearnedFacts(coreIdRaw);
 
-      if (coreIds.length > 0) {
-        console.log(`[LIVE-VOICE] 🧠 Passive Learning: ${coreIds.length} N.E.X.A identity facts. Saving...`);
-        for (const fact of coreIds) {
-          if (typeof fact === 'string' && fact.trim().length > 5) {
-            await deduplicateAndSaveFact(fact.trim(), 'CORE_IDENTITY').catch(() => {});
+        if (coreIds.length > 0) {
+          // Double-check: each extracted fact must itself contain a directive-like keyword
+          const validCoreIds = coreIds.filter(fact =>
+            DIRECTIVE_KEYWORDS_RE.test(fact) || /\b(N\.?E\.?X\.?A|nexa)\b/i.test(fact)
+          );
+          if (validCoreIds.length > 0) {
+            console.log(`[LIVE-VOICE] Passive Learning: ${validCoreIds.length}/${coreIds.length} N.E.X.A identity facts passed validation. Saving...`);
+            for (const fact of validCoreIds) {
+              if (typeof fact === 'string' && fact.trim().length > 5) {
+                await deduplicateAndSaveFact(fact.trim(), 'CORE_IDENTITY').catch(() => {});
+              }
+            }
+            console.log(`[LIVE-VOICE] Core identity facts saved.`);
+          } else {
+            console.log(`[LIVE-VOICE] CORE_IDENTITY extraction: ${coreIds.length} candidates found but none passed directive keyword validation. Skipping save.`);
           }
         }
-        console.log(`[LIVE-VOICE] ✅ Core identity facts saved.`);
+      } catch (err) {
+        console.warn(`[LIVE-VOICE] Core identity extraction error:`, err.message);
       }
-    } catch (err) {
-      console.warn(`[LIVE-VOICE] Core identity extraction error:`, err.message);
     }
 
     // ── B3. Self-Model Update (N.E.X.A behavioral reflection) ───────────
@@ -1433,7 +1461,7 @@ Contoh: "N.E.X.A berhasil mengeksekusi pencatatan keuangan dan kalender via suar
           'PASSIVE_LEARNING',
           `Live call session ${this.sessionId} — ${durationSec}s`
         ).catch(() => {});
-        console.log(`[LIVE-VOICE] ✅ Self-model reflection saved in COMMUNICATION_STYLE: ${cleanReflection.substring(0, 80)}...`);
+        console.log(`[LIVE-VOICE] Self-model reflection saved in COMMUNICATION_STYLE: ${cleanReflection.substring(0, 80)}...`);
       }
     } catch (err) {
       console.warn(`[LIVE-VOICE] Self-model update error:`, err.message);
@@ -1450,6 +1478,9 @@ const activeSessions = new Map();
 const disconnectTimers = new Map(); // sessionId -> timeoutId
 
 function startLiveSession(sessionId, clientWs) {
+  // Cancel any pending endCall fallback timer
+  cancelEndCallSafetyTimer();
+
   // Cancel any pending disconnect timer for this session
   if (disconnectTimers.has(sessionId)) {
     clearTimeout(disconnectTimers.get(sessionId));

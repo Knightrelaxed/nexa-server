@@ -455,11 +455,11 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 21. CALL: END CALL / HANG UP ──────────────────────────────
   {
     name: 'endCall',
-    description: 'Mengakhiri atau menutup sesi panggilan telepon saat Tuan Faqih secara eksplisit berpamitan atau meminta mematikan panggilan ("sudah ya nexa", "tutup teleponnya", "matikan panggilannya", "akhiri panggilan", "sampai jumpa", "bye nexa", "cukup nexa"). DILARANG KERAS MEMANGGIL TOOL INI jika mendengar kata yang mirip seperti "daftar panggilan" atau jika Tuan Faqih sedang membicarakan hal lain. Anda WAJIB mengucapkan salam perpisahan yang hangat ("Baik Tuan Faqih, panggilan saya akhiri. Sampai jumpa!") dalam kalimat suara Anda.',
+    description: 'Mengakhiri atau menutup sesi panggilan telepon HANYA saat Tuan Faqih secara eksplisit meminta menutup panggilan ("tutup teleponnya", "matikan panggilannya", "akhiri panggilan", "sampai jumpa", "bye nexa"). DILARANG KERAS MEMANGGIL TOOL INI jika Tuan sedang membicarakan hal lain, membahas matematika, tugas, kalender, uang, atau percakapan biasa. Anda WAJIB mengucapkan salam perpisahan yang hangat dalam kalimat suara Anda.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        reason: { type: 'STRING', description: 'Alasan penutupan panggilan. Contoh: "User requested hangup", "Conversation completed".' }
+        reason: { type: 'STRING', description: 'Alasan penutupan panggilan yang diminta Tuan.' }
       }
     }
   },
@@ -495,9 +495,25 @@ const LIVE_TOOL_DECLARATIONS = [
 // ────────────────────────────────────────────────────────────────────────────
 const _pendingActionConfirmations = new Map();
 let _userTurnSeq = 0;
+let _lastUserTurnText = '';
+let _endCallSafetyTimer = null;
 
-function noteUserTurn() {
+function noteUserTurn(text) {
   _userTurnSeq++;
+  if (text && typeof text === 'string') {
+    _lastUserTurnText = text.trim();
+  }
+}
+
+function getLastUserTurnText() {
+  return _lastUserTurnText;
+}
+
+function cancelEndCallSafetyTimer() {
+  if (_endCallSafetyTimer) {
+    clearTimeout(_endCallSafetyTimer);
+    _endCallSafetyTimer = null;
+  }
 }
 
 function _validateActionConfirmation(toolName, key, previewText, confirmed) {
@@ -1433,7 +1449,19 @@ async function executeLiveTool(toolName, args = {}) {
       // 23. CALL MANAGEMENT: END CALL / HANG UP
       // ─────────────────────────────────────────────────────────────
       case 'endCall': {
-        console.log(`[LIVE-TOOL] 📞 Autonomous Call Hangup requested: "${args.reason || 'Requested by user'}"`);
+        const lastText = (_lastUserTurnText || '').toLowerCase();
+        const HANGUP_EXPLICIT_RE = /\b(tutup|matikan|akhiri|selesai|sampai jumpa|bye|goodbye|stop|hang up|tutup telepon|matikan panggilan)\b/i;
+        const isExplicitHangup = HANGUP_EXPLICIT_RE.test(lastText) || HANGUP_EXPLICIT_RE.test(args.reason || '');
+
+        if (!isExplicitHangup && lastText.length > 0) {
+          console.warn(`[LIVE-TOOL] endCall guard blocked: lastUserText="${_lastUserTurnText}", reason="${args.reason || ''}"`);
+          return {
+            status: 'NEEDS_CONFIRMATION',
+            message: `Tuan Faqih tidak secara eksplisit meminta menutup telepon (ucapan terakhir: "${_lastUserTurnText}"). Jangan akhiri panggilan. Konfirmasikan secara singkat: "Mau saya akhiri panggilannya sekarang, Tuan?" atau lanjutkan menjawab instruksi Tuan.`
+          };
+        }
+
+        console.log(`[LIVE-TOOL] Autonomous Call Hangup requested: "${args.reason || 'Requested by user'}" (matched: "${_lastUserTurnText}")`);
 
         // Schedule closing of the Live Voice WebSocket session and sending END_CALL after speech finishes
         try {
@@ -1441,9 +1469,11 @@ async function executeLiveTool(toolName, args = {}) {
           liveVoice.markEndingCall();
 
           // Safety fallback: ensure session terminates after 8 seconds even if turnComplete is delayed
-          setTimeout(() => {
+          cancelEndCallSafetyTimer();
+          _endCallSafetyTimer = setTimeout(() => {
             mobileBridgeWs.sendCommand('END_CALL', { reason: args.reason || 'User requested hangup' }, { timeoutMs: 3000 }).catch(() => {});
             liveVoice.closeAllLiveSessions();
+            _endCallSafetyTimer = null;
           }, 8000);
         } catch (e) {
           console.warn('[LIVE-TOOL] Failed to schedule live session close:', e.message);
@@ -1460,7 +1490,7 @@ async function executeLiveTool(toolName, args = {}) {
         return { status: 'UNKNOWN_TOOL', message: `Tool "${toolName}" tidak terdaftar.` };
     }
   } catch (err) {
-    console.error(`[LIVE-TOOL] ❌ Error executing ${toolName}:`, err.message);
+    console.error(`[LIVE-TOOL] Error executing ${toolName}:`, err.message);
     return { status: 'ERROR', message: `Gagal mengeksekusi ${toolName}: ${err.message}` };
   }
 }
@@ -1468,5 +1498,7 @@ async function executeLiveTool(toolName, args = {}) {
 module.exports = {
   LIVE_TOOL_DECLARATIONS,
   executeLiveTool,
-  noteUserTurn
+  noteUserTurn,
+  getLastUserTurnText,
+  cancelEndCallSafetyTimer
 };
