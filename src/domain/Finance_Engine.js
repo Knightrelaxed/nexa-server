@@ -258,9 +258,9 @@ async function processTransaction(data, source) {
 
   const transactionTime = new Date(data.time || new Date().toISOString());
 
-  // Composite dedup key: "NOMINAL_MERCHANT"
+  // Composite dedup key: "NOMINAL_MERCHANT" or explicit compositeKey (e.g. gmail_id)
   const cleanMerchant = (data.destination || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const compositeKey = `${nominal}_${cleanMerchant}`;
+  const compositeKey = data.compositeKey || `${nominal}_${cleanMerchant}`;
   console.log(`[FINANCE] Evaluating transaction: ${compositeKey} from ${source}`);
 
   // Deduplication — only for passive (automated) inputs, not manual Telegram entries
@@ -1346,11 +1346,13 @@ async function pollFinanceEmails() {
         destination,
         category: guessedCategory,
         description: '[Menunggu Detail User]',
-        time: dateIso
+        time: dateIso,
+        compositeKey,
+        isAutoSyncEmail: true
       };
 
       try {
-        const msg = await requestTransactionConfirmation(tx, 'SINKRONISASI KEUANGAN TERBARU');
+        const msg = await requestTransactionConfirmation(tx, 'SINKRONISASI KEUANGAN TERBARU', compositeKey);
         if (msg) {
           // AUDIT FIX: Use sendTelegramOutbound (Cloudflare proxy) instead of direct axios.post.
           // Direct calls to api.telegram.org are BLOCKED on HF Docker. Previously relied on
@@ -1503,12 +1505,15 @@ async function _autoSavePending(compositeKey, tx) {
  * Does NOT send to Telegram itself — the caller (webhook.js) handles delivery.
  * Waits 5 minutes before auto-saving.
  */
-async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN KEUANGAN BARU') {
+async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN KEUANGAN BARU', customKey = null) {
   const nominal = txData.nominal;
   const destination = txData.destination || 'Unknown';
 
   // AI auto-categorize IMMEDIATELY so the confirmation message shows the real category
   const aiCategory = await _autoCategorizeMerchant(destination, txData.category);
+
+  const cleanMerchant = destination.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const compositeKey = customKey || txData.compositeKey || `${nominal}_${cleanMerchant}`;
 
   const tx = {
     nominal,
@@ -1518,11 +1523,10 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
     description: txData.description && txData.description !== '-' ? txData.description : '[Menunggu Detail User]',
     time: txData.time || new Date().toISOString(),
     payment_method: txData.payment_method || null,
-    account: txData.account || null
+    account: txData.account || null,
+    compositeKey,
+    isAutoSyncEmail: !!txData.isAutoSyncEmail
   };
-
-  const cleanMerchant = tx.destination.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const compositeKey = `${nominal}_${cleanMerchant}`;
 
   // Idempotency: if this key is already pending in memory, don't re-register
   if (pendingConfirmations.has(compositeKey)) {

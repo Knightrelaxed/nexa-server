@@ -412,8 +412,9 @@ const LIVE_TOOL_DECLARATIONS = [
     parameters: {
       type: 'OBJECT',
       properties: {
-        fact:     { type: 'STRING', description: 'Informasi atau fakta tentang TUAN FAQIH yang harus diingat.' },
-        category: { type: 'STRING', description: 'Kategori memori: "USER_PROFILE", "PREFERENCE", "ACADEMIC", "PROJECT", "PERSONAL".' }
+        fact:      { type: 'STRING', description: 'Informasi atau fakta tentang TUAN FAQIH yang harus diingat.' },
+        category:  { type: 'STRING', description: 'Kategori memori: "USER_PROFILE", "PREFERENCE", "ACADEMIC", "PROJECT", "PERSONAL".' },
+        confirmed: { type: 'BOOLEAN', description: 'Konfirmasi eksplisit dari Tuan Faqih (wajib bernilai true jika sudah disetujui).' }
       },
       required: ['fact']
     }
@@ -426,7 +427,8 @@ const LIVE_TOOL_DECLARATIONS = [
     parameters: {
       type: 'OBJECT',
       properties: {
-        fact: { type: 'STRING', description: 'Fakta atau aturan tentang N.E.X.A sendiri (bukan tentang Tuan).' }
+        fact:      { type: 'STRING', description: 'Fakta atau aturan tentang N.E.X.A sendiri (bukan tentang Tuan).' },
+        confirmed: { type: 'BOOLEAN', description: 'Konfirmasi eksplisit dari Tuan Faqih (wajib bernilai true jika sudah disetujui).' }
       },
       required: ['fact']
     }
@@ -443,7 +445,8 @@ const LIVE_TOOL_DECLARATIONS = [
         enabled:     { type: 'BOOLEAN', description: 'true/false untuk senter atau DND.' },
         volumeLevel: { type: 'NUMBER', description: 'Tingkat volume 0–100.' },
         packageName: { type: 'STRING', description: 'Package name aplikasi untuk LAUNCH_APP.' },
-        appName:     { type: 'STRING', description: 'Nama aplikasi yang ingin dibuka (contoh: "YouTube", "WhatsApp", "Chrome").' }
+        appName:     { type: 'STRING', description: 'Nama aplikasi yang ingin dibuka (contoh: "YouTube", "WhatsApp", "Chrome").' },
+        confirmed:   { type: 'BOOLEAN', description: 'Konfirmasi eksplisit dari Tuan Faqih untuk aksi sensitif privasi (foto/lokasi/kunci).' }
       },
       required: ['action']
     }
