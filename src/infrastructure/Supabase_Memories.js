@@ -19,7 +19,9 @@ const SUPABASE_TABLES = [
   'nexa_identity_model',       // [PHASE 6 — Cognitive Identity Layer]
   'nexa_identity_proposals',   // [PHASE 6 — Git-Style Proposal Staging]
   'nexa_self_model',           // [PHASE 8 — Self-Learning Engine]
-  'nexa_app_limits'            // App Usage & Duration Limiting System
+  'nexa_app_limits',           // App Usage & Duration Limiting System
+  'nexa_learning_events',      // [v3.3 — Closed Learning Loop Events]
+  'nexa_playbooks'             // [v3.3 — Procedural Memory Playbooks]
 ];
 
 function resolveAllowedTableName(tableName) {
@@ -876,6 +878,9 @@ async function upsertIdentityTrait(trait) {
     trait_key: String(trait.trait_key).toLowerCase().trim(),
     trait_value: String(trait.trait_value).trim(),
     confidence: parseFloat(trait.confidence) || 0.90,
+    directive: trait.directive ? String(trait.directive).slice(0, 160) : null,
+    scope: trait.scope || 'global',
+    sensitivity: trait.sensitivity || 'normal',
     inferred_from_summary: trait.inferred_from_summary ? String(trait.inferred_from_summary) : null,
     last_reinforced_at: trait.last_reinforced_at || new Date().toISOString(), // [PHASE 7 M1] Reset decay clock
     updated_at: new Date().toISOString()
@@ -1308,8 +1313,132 @@ async function getSelfModelByLayer(layer) {
   return data || [];
 }
 
+// ── [PHASE 13 / v3.3] Closed Learning Loop & Playbooks ─────────────
+async function recordLearningEvent(eventPayload) {
+  if (!supabase) return { success: false, error: 'Supabase tidak terhubung.' };
+  try {
+    const { data, error } = await supabase
+      .from('nexa_learning_events')
+      .insert([eventPayload])
+      .select();
+    if (error) {
+      console.warn('[SUPABASE] Error recording learning event:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true, data: data?.[0] };
+  } catch (err) {
+    console.warn('[SUPABASE] Failed to record learning event:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+async function getUnprocessedLearningEvents(limit = 20) {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('nexa_learning_events')
+      .select('*')
+      .is('processed_at', null)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+    if (error) {
+      console.warn('[SUPABASE] Error fetching unprocessed learning events:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+async function markLearningEventsProcessed(eventIds = []) {
+  if (!supabase || !eventIds.length) return false;
+  try {
+    const { error } = await supabase
+      .from('nexa_learning_events')
+      .update({ processed_at: new Date().toISOString() })
+      .in('id', eventIds);
+    if (error) {
+      console.warn('[SUPABASE] Error marking events processed:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function getActivePlaybook(intent) {
+  if (!supabase || !intent) return null;
+  try {
+    const { data, error } = await supabase
+      .from('nexa_playbooks')
+      .select('*')
+      .eq('intent', intent.toUpperCase())
+      .eq('status', 'ACTIVE')
+      .maybeSingle();
+    if (error) {
+      console.warn('[SUPABASE] Error fetching active playbook:', error.message);
+      return null;
+    }
+    return data || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+async function getAllActivePlaybooks() {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('nexa_playbooks')
+      .select('*')
+      .eq('status', 'ACTIVE')
+      .order('intent', { ascending: true });
+    if (error) return [];
+    return data || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+async function upsertPlaybook(playbook) {
+  if (!supabase || !playbook || !playbook.intent || !playbook.rendered) {
+    return { success: false, error: 'Intent and rendered content are required.' };
+  }
+  try {
+    const payload = {
+      intent: String(playbook.intent).toUpperCase().trim(),
+      version: playbook.version || 1,
+      status: playbook.status || 'ACTIVE',
+      rules: playbook.rules || {},
+      rendered: String(playbook.rendered).slice(0, 700), // Enforce hard cap <= 700
+      pinned: Boolean(playbook.pinned),
+      updated_at: new Date().toISOString()
+    };
+    if (playbook.evidence_event_ids) payload.evidence_event_ids = playbook.evidence_event_ids;
+    if (playbook.parent_id) payload.parent_id = playbook.parent_id;
+
+    const { data, error } = await supabase
+      .from('nexa_playbooks')
+      .upsert([payload], { onConflict: 'intent' })
+      .select();
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: data?.[0] };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   supabase,
+  // ── [PHASE 13 / v3.3] Closed Learning Loop & Playbooks ─────────────
+  recordLearningEvent,
+  getUnprocessedLearningEvents,
+  markLearningEventsProcessed,
+  getActivePlaybook,
+  getAllActivePlaybooks,
+  upsertPlaybook,
   // ── Chat & Memory ──────────────────────────────────────────
   saveChatMemory,
   getRecentMemories,

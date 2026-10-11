@@ -1,11 +1,11 @@
 {
   "name": "nexa-server",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
-    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js"
+    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js tests/signal_detector.test.js"
   },
   "keywords": [],
   "author": "",

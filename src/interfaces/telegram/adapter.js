@@ -3626,6 +3626,25 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
       // Save ONLY the actual final message that the user receives centrally.
       // We removed scattered saves in AI_Router so this is the authoritative save point.
       await respondToTelegram(finalReply, false);
+
+      // [v3.3 POST-TURN HOOK] Zero-Token Signal & Over-Citation Detector (Non-blocking)
+      setImmediate(() => {
+        try {
+          const signalDetector = require('../../domain/Signal_Detector');
+          signalDetector.evaluateTurn({
+            userText: textInput,
+            assistantReply: finalReply,
+            intent: routingData.intent,
+            topic: routingData._topicContext || 'DEFAULT',
+            injectedTraits: routingData._injectedTraits || [],
+            sessionKey: `tg:${chatId || 'default'}`
+          }).catch(err => {
+            console.warn('[TELEGRAM] Signal Detector background evaluation error:', err.message);
+          });
+        } catch (hookErr) {
+          console.warn('[TELEGRAM] Failed to trigger Signal Detector hook:', hookErr.message);
+        }
+      });
     }
 
     } catch (error) {

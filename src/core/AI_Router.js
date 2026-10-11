@@ -250,12 +250,14 @@ function _detectTopicContext(text) {
 }
 
 /**
- * Pilih layer identitas yang relevan dan format menjadi string prompt.
- * @param {object} identityModel - Map layer → [{trait_key, trait_value}]
+ * Pilih layer identitas yang relevan dan format menjadi string prompt operasional laten.
+ * [v3.3 RE-FRAMING — ANTI-STALKER & OPERATIONAL DIRECTIVES]
+ * @param {object} identityModel - Map layer → [{trait_key, trait_value, directive, sensitivity}]
  * @param {string} topicContext - Hasil dari _detectTopicContext()
+ * @param {Array} [outInjectedList] - Array opsional untuk menampung traits yang diinjeksi
  * @returns {string} - String siap diinjeksi ke prompt, atau '' jika kosong
  */
-function _buildIdentityContextBlock(identityModel, topicContext) {
+function _buildIdentityContextBlock(identityModel, topicContext, outInjectedList = null) {
   if (!identityModel || Object.keys(identityModel).length === 0) return '';
 
   // Mapping konteks → layer yang akan diinjeksi
@@ -280,14 +282,43 @@ function _buildIdentityContextBlock(identityModel, topicContext) {
       VALUES: '⚖️', DECISION_STYLE: '🧠', WEAKNESSES: '⚡', MOTIVATIONS: '🚀'
     }[layer] || '•';
 
-    const traitLines = traits.map(t => `  - ${t.trait_key}: ${t.trait_value}`).join('\n');
-    lines.push(`${emoji} ${layer}:\n${traitLines}`);
+    const validTraitLines = [];
+    for (const t of traits) {
+      // 1. Sanitasi Kelemahan & Sifat Privat (Anti-Stalker Protection)
+      if (layer === 'WEAKNESSES') {
+        // Jika tidak ada arahan operasional spesifik, jangan pernah bocorkan kelemahan mentah
+        if (!t.directive) continue;
+        validTraitLines.push(`  - [PANDUAN BANTUAN] ${t.trait_key}: ${t.directive}`);
+        if (outInjectedList) outInjectedList.push(t);
+        continue;
+      }
+
+      if (t.sensitivity === 'private') {
+        // Trait private hanya boleh masuk jika punya directive operasional
+        if (!t.directive) continue;
+        validTraitLines.push(`  - [PANDUAN RAHASIA] ${t.trait_key}: ${t.directive}`);
+        if (outInjectedList) outInjectedList.push(t);
+        continue;
+      }
+
+      // 2. Trait Normal: Prioritaskan directive jika tersedia, fallback ke trait_value
+      const content = t.directive ? `[ARAHAN] ${t.directive}` : t.trait_value;
+      validTraitLines.push(`  - ${t.trait_key}: ${content}`);
+      if (outInjectedList) outInjectedList.push(t);
+    }
+
+    if (validTraitLines.length > 0) {
+      lines.push(`${emoji} ${layer}:\n${validTraitLines.join('\n')}`);
+    }
   }
 
   if (lines.length === 0) return '';
 
-  return `\n[COGNITIVE IDENTITY MODEL — PEMAHAMAN MENDALAM TUAN FAQIH]\n` +
-    `Gunakan pemahaman ini untuk merespons dengan sangat kontekstual dan personal:\n` +
+  return `\n[LATENT OPERATIONAL DIRECTIVES — PANDUAN PERILAKU SISTEM]\n` +
+    `Panduan berikut adalah parameter internal untuk mengatur NADA, STRUKTUR, dan METODE solusi Anda:\n` +
+    `ATURAN KRUSIAL:\n` +
+    `1. DILARANG KERAS mengutip, membeberkan, atau menyebutkan data kelemahan/kebiasaan pribadi Tuan Faqih secara eksplisit (e.g. jangan pernah berkata "karena Tuan sering menunda..." atau sejenisnya).\n` +
+    `2. Terapkan pemahaman ini secara diam-diam (latent) HANYA melalui kepraktisan tindakan, pemilihan sudut pandang, dan efisiensi format jawaban.\n` +
     lines.join('\n\n') + '\n';
 }
 
@@ -1256,7 +1287,8 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // Deteksi konteks topik dari pesan user dan pilih layer identitas yang paling relevan.
   // Prinsip: injeksi selektif — hanya layer yang dibutuhkan, bukan semua 7 layer sekaligus.
   const _topicContext = _detectTopicContext(textInput);
-  const _identityContextBlock = _buildIdentityContextBlock(_identityModel, _topicContext);
+  const _injectedTraitsList = [];
+  const _identityContextBlock = _buildIdentityContextBlock(_identityModel, _topicContext, _injectedTraitsList);
   if (_identityContextBlock) {
     factsContext += _identityContextBlock;
     console.log(`[ROUTER] Identity injection: context=${_topicContext}, layers=${Object.keys(_identityModel).filter(l => _identityContextBlock.includes(l)).join(',')}`);
@@ -1534,6 +1566,8 @@ function _normalizeRoutingOutput(routingData, sentimentScore) {
   if (typeof routingData.reply_message === 'string') {
     routingData.reply_message = _cleanEmDashes(routingData.reply_message);
   }
+  routingData._injectedTraits = _injectedTraitsList || [];
+  routingData._topicContext = _topicContext || 'DEFAULT';
   return routingData;
 }
 
