@@ -267,6 +267,14 @@ async function undoPlaybook(intent) {
   };
 }
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 /**
  * Format ringkasan seluruh playbook untuk perintah Telegram /playbook
  */
@@ -279,7 +287,7 @@ async function formatPlaybooksSummary() {
   const lines = [];
   for (const [intent, pb] of cache.entries()) {
     const pinnedBadge = pb.pinned ? ' 📌' : '';
-    lines.push(`• <b>${intent}</b> (v${pb.version}${pinnedBadge})\n  <i>"${pb.rendered}"</i>`);
+    lines.push(`• <b>${escapeHtml(intent)}</b> (v${pb.version}${pinnedBadge})\n  <i>"${escapeHtml(pb.rendered)}"</i>`);
   }
 
   return `📋 <b>N.E.X.A Playbooks — Memori Prosedural Aktif</b>\n\n` +
@@ -294,7 +302,7 @@ async function formatPlaybooksSummary() {
 async function formatPlaybookDetail(intent) {
   const targetIntent = resolvePlaybookIntent(intent, false);
   if (!targetIntent) {
-    return `❌ Intent <b>${String(intent || '').trim()}</b> tidak dikenal.\n\n` +
+    return `❌ Intent <b>${escapeHtml(String(intent || '').trim())}</b> tidak dikenal.\n\n` +
       `<b>Pilihan intent yang tersedia:</b>\n` +
       `• <code>EMAIL</code> (EMAIL_DRAFT)\n` +
       `• <code>FINANCE</code>\n` +
@@ -307,18 +315,18 @@ async function formatPlaybookDetail(intent) {
   }
   const pb = await getPlaybookForIntent(targetIntent);
   if (!pb) {
-    return `❌ Playbook untuk intent <b>${targetIntent}</b> tidak ditemukan.`;
+    return `❌ Playbook untuk intent <b>${escapeHtml(targetIntent)}</b> tidak ditemukan.`;
   }
 
   const rulesFormatted = JSON.stringify(pb.rules || {}, null, 2);
-  return `📖 <b>Detail Playbook: ${pb.intent} (v${pb.version})</b>\n\n` +
-    `<b>Panduan Rendered:</b>\n<i>"${pb.rendered}"</i>\n\n` +
-    `<b>Aturan Terstruktur:</b>\n<code>${rulesFormatted}</code>\n\n` +
+  return `📖 <b>Detail Playbook: ${escapeHtml(pb.intent)} (v${pb.version})</b>\n\n` +
+    `<b>Panduan Rendered:</b>\n<i>"${escapeHtml(pb.rendered)}"</i>\n\n` +
+    `<b>Aturan Terstruktur:</b>\n<code>${escapeHtml(rulesFormatted)}</code>\n\n` +
     `• Dipakai: <b>${pb.use_count || 0} kali</b>\n` +
     `• Koreksi diterima: <b>${pb.correction_count || 0} kali</b>\n` +
-    `• Status: <b>${pb.status}</b>${pb.pinned ? ' (PINNED)' : ''}\n` +
+    `• Status: <b>${escapeHtml(pb.status)}</b>${pb.pinned ? ' (PINNED)' : ''}\n` +
     `• Terakhir diupdate: <b>${new Date(pb.updated_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</b>\n\n` +
-    `💡 <i>Ketik <code>/playbook undo ${pb.intent}</code> jika ingin kembali ke versi sebelumnya.</i>`;
+    `💡 <i>Ketik <code>/playbook undo ${escapeHtml(pb.intent)}</code> jika ingin kembali ke versi sebelumnya.</i>`;
 }
 
 module.exports = {

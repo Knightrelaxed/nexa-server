@@ -61,4 +61,8 @@ test('Playbook_Engine: formatPlaybooksSummary and formatPlaybookDetail return va
   const unknownDetail = await playbookEngine.formatPlaybookDetail('INVALID_INTENT');
   assert.ok(unknownDetail.includes('tidak dikenal'));
   assert.ok(unknownDetail.includes('Pilihan intent yang tersedia:'));
+
+  const xssDetail = await playbookEngine.formatPlaybookDetail('<script>alert("hack")</script>');
+  assert.ok(xssDetail.includes('&lt;script&gt;'));
+  assert.ok(!xssDetail.includes('<script>'));
 });
