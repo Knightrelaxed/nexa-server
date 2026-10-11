@@ -45,8 +45,8 @@ const LIVE_MODELS = {
   TIER_2_MARATHON: 'models/gemini-3.1-flash-live-preview' // Rock-solid speed failover tier
 };
 
-// Configurable barge-in RMS threshold (optimized for TWS earbuds & mobile mic)
-const BARGE_IN_RMS_THRESHOLD = (process.env.NEXA_BARGE_IN_RMS ?? '') !== '' ? Number(process.env.NEXA_BARGE_IN_RMS) : 600;
+// Configurable barge-in RMS threshold (optimized for normal speech vs ambient noise)
+const BARGE_IN_RMS_THRESHOLD = (process.env.NEXA_BARGE_IN_RMS ?? '') !== '' ? Number(process.env.NEXA_BARGE_IN_RMS) : 120;
 
 // ────────────────────────────────────────────────────────────────────────────
 // BASE SYSTEM PROMPT — injected into every live session
@@ -55,6 +55,12 @@ const BARGE_IN_RMS_THRESHOLD = (process.env.NEXA_BARGE_IN_RMS ?? '') !== '' ? Nu
 // ────────────────────────────────────────────────────────────────────────────
 const NEXA_LIVE_SYSTEM_PROMPT = `
 Anda adalah N.E.X.A (Neural Executive with Xenial Agent), Chief of Staff digital otonom, sahabat terpercaya, dan asisten eksekutif pribadi Tuan Faqih Hidayatulloh.
+
+[KEBIJAKAN BAHASA MUTLAK (STRICT BAHASA INDONESIA ONLY)]
+- BAHASA UTAMA: Anda WAJIB SELALU berbicara dalam BAHASA INDONESIA dalam seluruh giliran bicara tanpa pengecualian.
+- DILARANG KERAS BERGANTI BAHASA: DILARANG KERAS merespons dalam bahasa Spanyol, Hindi, Portugis, Jerman, Korea, Arab, Inggris, atau bahasa asing apa pun, meskipun Anda mendengar kata-kata atau frasa yang mirip bahasa asing.
+- PENANGANAN KATA ASING / NOISE ASR: Tuan Faqih adalah penutur asli Bahasa Indonesia. Jika transkripsi suara terdengar seperti kata-kata asing atau tidak masuk akal (contoh: "¿Qué más?", "tare ko", "beta", "malai ko", "cagüeyapa", karakter Devanagari/Hindi, dsb.), ITU ADALAH GANGGUAN NOISE AUDIO / ARTIFAK PENGENAL SUARA, BUKAN BAHASA ASING! JANGAN PERNAH mengikuti atau merespons dalam bahasa asing tersebut. Tetaplah merespons dalam Bahasa Indonesia: tanyakan secara sopan dan ringkas: "Maaf Tuan, suara Tuan agak kurang jelas di saya, boleh diulang?".
+- HANYA berbicara bahasa lain jika Tuan Faqih secara eksplisit meminta dalam Bahasa Indonesia: misalnya "NEXA, tolong jawab dalam bahasa Inggris" atau "Terjemahkan ke bahasa Arab".
 
 [JIWA, IDENTITAS & KARAKTER N.E.X.A]
 1. Sapaan Wajib: Selalu sapa pengguna dengan "Tuan Faqih" atau "Tuan". DILARANG KERAS menggunakan kata "Bapak", "Mas", atau "Kakak".
@@ -97,9 +103,11 @@ Anda memiliki akses langsung ke seluruh infrastruktur backend N.E.X.A. Eksekusi 
 - RESPON CEPAT & LUGAS: Ketika Tuan bertanya mengenai apa yang dilihat kamera (misal "apa ini?", "baca ini", "lihat ini"), segera jawab secara spontan, padat, dan akurat dalam 1-2 kalimat langsung tanpa bertele-tele atau jeda lama.
 
 [ATURAN MENDENGAR & KEJELASAN AKSI]
-1. Integritas Pendengaran: Jika ucapan Tuan Faqih tidak jelas, terpotong, atau samar karena bising atau gangguan sinyal, DILARANG MENGARANG atau berhalusinasi topik asing yang tidak dibicarakan (seperti menanyakan nomor telepon atau menawarkan bantuan customer service). Mintalah konfirmasi secara ringkas dan hormat: "Maaf Tuan Faqih, suara Tuan agak terputus, boleh diulang?".
-2. Konfirmasi Tindakan Berisiko Tinggi: Untuk tindakan destruktif atau eksternal berisiko seperti mengirim email keluar (sendEmail) atau menghapus jadwal/tugas (deleteCalendarEvent, deleteTask), sebutkan detail target secara eksplisit dan minta persetujuan singkat sebelum mengeksekusi jika ada keraguan.
-3. Larangan Frasa CS: Tetap teguh pada identitas Chief of Staff. Jangan pernah mengeluarkan kalimat robotik template call center.
+1. Integritas Pendengaran: Jika ucapan Tuan Faqih tidak jelas, terpotong, atau samar karena bising atau gangguan sinyal, DILARANG MENGARANG atau berhalusinasi topik asing yang tidak dibicarakan. Mintalah konfirmasi secara ringkas dan hormat: "Maaf Tuan Faqih, suara Tuan agak terputus, boleh diulang?".
+2. Integritas Aksi Finansial: Jika ucapan Tuan Faqih terpotong atau maknanya belum lengkap (misal hanya menyebut angka acak seperti "11 000 400 40", atau nama makanan/barang aneh), DILARANG MENGARANG deskripsi transaksi atau memanggil recordExpense! Mintalah klarifikasi secara ringkas: "Siap Tuan, untuk pengeluaran 11 ribu, keterangannya untuk apa ya Tuan?".
+3. Proteksi Tutup Panggilan: DILARANG memanggil endCall jika ucapan Tuan tidak jelas atau hanya mirip (seperti "daftar panggilan", "catat panggilan"). Hanya panggil endCall jika Tuan Faqih jelas-jelas ingin menutup telepon ("tutup telepon", "matikan panggilannya", "sampai jumpa", "bye nexa").
+4. Konfirmasi Tindakan Berisiko Tinggi: Untuk tindakan destruktif atau eksternal berisiko seperti mengirim email keluar (sendEmail) atau menghapus jadwal/tugas (deleteCalendarEvent, deleteTask), sebutkan detail target secara eksplisit dan minta persetujuan singkat sebelum mengeksekusi jika ada keraguan.
+5. Larangan Frasa CS: Tetap teguh pada identitas Chief of Staff. Jangan pernah mengeluarkan kalimat robotik template call center.
 `;
 
 
@@ -175,6 +183,7 @@ class LiveVoiceSession {
     this._toolSafetyTimer    = null;
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
+    this._assistantSpeechDecayTimer = null;
     this.lastClientInputTime = Date.now();
     this.turnsCount              = 0;
     this.hasLoggedFirstAudio     = false;
@@ -476,8 +485,16 @@ class LiveVoiceSession {
     // ── Situational Physical Presence Context ────────────────────────────
     const presenceModelBlock = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
 
+    // ── Language Lock Directive (Anchor Attention to Indonesian) ───────────
+    const languageLockPrefix =
+      `[INSTRUKSI BAHASA MUTLAK: WAJIB BAHASA INDONESIA]\n` +
+      `Anda berkomunikasi dengan Tuan Faqih. Anda WAJIB SELALU merespons dalam BAHASA INDONESIA secara konsisten dan alami. ` +
+      `DILARANG KERAS merespons dalam bahasa Spanyol, Hindi, Portugis, Jerman, Korea, Inggris, atau bahasa asing lainnya. ` +
+      `Jika transkripsi pendengaran menangkap kata-kata asing atau tidak lazim, itu adalah gangguan derau suara/ASR, BUKAN bahasa asing. Abaikan halusinasi bahasa tersebut dan tetaplah merespons dalam Bahasa Indonesia.\n\n`;
+
     // ── Assemble Full System Prompt ──────────────────────────────────────
     const fullSystemPrompt =
+      languageLockPrefix +
       NEXA_LIVE_SYSTEM_PROMPT +
       temporalContext +
       presenceModelBlock +
@@ -617,6 +634,10 @@ class LiveVoiceSession {
             clearTimeout(this._toolSafetyTimer);
             this._toolSafetyTimer = null;
           }
+          if (this._assistantSpeechDecayTimer) {
+            clearTimeout(this._assistantSpeechDecayTimer);
+            this._assistantSpeechDecayTimer = null;
+          }
           this.isAssistantSpeaking = false;
           this.isExecutingTool     = false;
           this.isWaitingToolReply  = false;
@@ -669,6 +690,11 @@ class LiveVoiceSession {
               }
             }
             this.isAssistantSpeaking = true;
+            if (this._assistantSpeechDecayTimer) clearTimeout(this._assistantSpeechDecayTimer);
+            this._assistantSpeechDecayTimer = setTimeout(() => {
+              this.isAssistantSpeaking = false;
+            }, 700);
+
             this.isGreetingPending   = false;
             this.isExecutingTool     = false;
             this.isWaitingToolReply  = false;
@@ -691,6 +717,11 @@ class LiveVoiceSession {
         // If turnComplete is reached, finalize assistant turn text and reset to LISTENING
         if (msg.serverContent.turnComplete) {
           this._flushUserTurn();
+          if (this._assistantSpeechDecayTimer) {
+            clearTimeout(this._assistantSpeechDecayTimer);
+            this._assistantSpeechDecayTimer = null;
+          }
+          this.isAssistantSpeaking = false;
           const completeAssistantText = (this.currentTurnAssistantText || '').trim();
           if (completeAssistantText.length > 0) {
             console.log(`[LIVE-VOICE] N.E.X.A berbicara: "${completeAssistantText}"`);
@@ -709,7 +740,6 @@ class LiveVoiceSession {
               clearTimeout(this._toolSafetyTimer);
               this._toolSafetyTimer = null;
             }
-            this.isAssistantSpeaking = false;
             this.isGreetingPending   = false;
             this.isExecutingTool     = false;
             this.isWaitingToolReply  = false;
@@ -1167,6 +1197,7 @@ class LiveVoiceSession {
     if (this.keepaliveInterval) { clearInterval(this.keepaliveInterval); this.keepaliveInterval = null; }
     if (this.watchdogInterval)  { clearInterval(this.watchdogInterval);  this.watchdogInterval  = null; }
     if (this._toolSafetyTimer)  { clearTimeout(this._toolSafetyTimer);   this._toolSafetyTimer  = null; }
+    if (this._assistantSpeechDecayTimer) { clearTimeout(this._assistantSpeechDecayTimer); this._assistantSpeechDecayTimer = null; }
 
     if (this.googleWs) {
       try { this.googleWs.close(1000, 'Session Closed'); } catch (_) {}

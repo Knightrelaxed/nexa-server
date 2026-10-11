@@ -161,7 +161,7 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 1. FINANCE: RECORD EXPENSE ────────────────────────────────
   {
     name: 'recordExpense',
-    description: 'Mencatat transaksi pengeluaran keuangan Tuan Faqih ke database Supabase secara real-time. Panggil segera saat Tuan menyebutkan pembelian, pembayaran, atau pengeluaran.',
+    description: 'Mencatat transaksi pengeluaran keuangan Tuan Faqih ke database Supabase secara real-time. Panggil saat Tuan menyebutkan pembelian, pembayaran, atau pengeluaran secara jelas beserta nominal dan barangnya. JANGAN panggil jika kalimat Tuan tidak jelas atau terpotong (misal hanya menyebut angka tanpa keterangan barang yang jelas); tanyakan klarifikasi terlebih dahulu.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -455,7 +455,7 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 21. CALL: END CALL / HANG UP ──────────────────────────────
   {
     name: 'endCall',
-    description: 'Mengakhiri atau menutup sesi panggilan telepon saat Tuan Faqih berpamitan atau meminta mematikan panggilan ("sudah ya", "tutup teleponnya", "matikan panggilannya", "akhiri panggilan", "sampai jumpa", "bye nexa", "cukup nexa"). PANGGIL TOOL INI dan Anda WAJIB mengucapkan salam perpisahan yang hangat dan ramah ("Baik Tuan Faqih, panggilan saya akhiri. Sampai jumpa!") dalam kalimat suara Anda.',
+    description: 'Mengakhiri atau menutup sesi panggilan telepon saat Tuan Faqih secara eksplisit berpamitan atau meminta mematikan panggilan ("sudah ya nexa", "tutup teleponnya", "matikan panggilannya", "akhiri panggilan", "sampai jumpa", "bye nexa", "cukup nexa"). DILARANG KERAS MEMANGGIL TOOL INI jika mendengar kata yang mirip seperti "daftar panggilan" atau jika Tuan Faqih sedang membicarakan hal lain. Anda WAJIB mengucapkan salam perpisahan yang hangat ("Baik Tuan Faqih, panggilan saya akhiri. Sampai jumpa!") dalam kalimat suara Anda.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -572,10 +572,17 @@ async function executeLiveTool(toolName, args = {}) {
         );
 
         const elapsed = Date.now() - startTime;
-        console.log(`[LIVE-TOOL] ✅ Expense recorded in ${elapsed}ms: Rp${nominal.toLocaleString('id-ID')} (${desc}) → Status: ${writeRes?.status}`);
+        console.log(`[LIVE-TOOL] Expense recorded in ${elapsed}ms: Rp${nominal.toLocaleString('id-ID')} (${desc}) -> Status: ${writeRes?.status}`);
+
+        if (writeRes?.status !== 'SUCCESS') {
+          return {
+            status: 'ERROR',
+            message: `Gagal mencatat transaksi: ${writeRes?.reason || 'Terjadi kesalahan basis data.'}`
+          };
+        }
 
         return {
-          status: writeRes?.status === 'SUCCESS' ? 'SUCCESS' : 'SAVED',
+          status: 'SUCCESS',
           message: `Pengeluaran Rp${nominal.toLocaleString('id-ID')} untuk ${desc} (Kategori: ${category}) berhasil dicatat menggunakan ${normalizedAccount}.`,
           amount: nominal,
           description: desc,
@@ -616,8 +623,15 @@ async function executeLiveTool(toolName, args = {}) {
           5000
         );
 
+        if (writeRes?.status !== 'SUCCESS') {
+          return {
+            status: 'ERROR',
+            message: `Gagal mencatat pemasukan: ${writeRes?.reason || 'Terjadi kesalahan basis data.'}`
+          };
+        }
+
         return {
-          status: writeRes?.status === 'SUCCESS' ? 'SUCCESS' : 'SAVED',
+          status: 'SUCCESS',
           message: `Pemasukan Rp${nominal.toLocaleString('id-ID')} (${desc}) berhasil dicatat masuk ke rekening ${account}.`,
           amount: nominal,
           destinationAccount: account,
@@ -943,6 +957,7 @@ async function executeLiveTool(toolName, args = {}) {
         const kw    = args.searchKeyword || null;
 
         let emailList = [];
+        let fetchFailed = false;
         try {
           emailList = await _withToolTimeout(
             gmailClient.getLatestEmails(limit, kw),
@@ -950,6 +965,11 @@ async function executeLiveTool(toolName, args = {}) {
           );
         } catch (e) {
           console.warn('[LIVE-TOOL] Gmail read error:', e.message);
+          fetchFailed = true;
+        }
+
+        if (fetchFailed) {
+          return { status: 'ERROR', message: 'Koneksi ke kotak masuk Gmail sedang mengalami kendala jaringan singkat.' };
         }
 
         if (!emailList || emailList.length === 0) {

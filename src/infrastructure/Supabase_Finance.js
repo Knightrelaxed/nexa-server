@@ -270,6 +270,22 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
 
   const dbType = txType.toUpperCase() === 'INCOME' ? 'income' : 'expense';
 
+  // Normalize payment_method to strictly match PostgreSQL check constraint:
+  // ('QRIS', 'Transfer bank', 'Kartu Kredit', 'Tunai')
+  let cleanPaymentMethod = null;
+  if (paymentMethod) {
+    const pmLower = String(paymentMethod).toLowerCase().trim();
+    if (pmLower.includes('qris') || pmLower.includes('qr') || pmLower.includes('kris')) {
+      cleanPaymentMethod = 'QRIS';
+    } else if (pmLower.includes('transfer') || pmLower.includes('tf') || pmLower.includes('bank') || pmLower.includes('atm')) {
+      cleanPaymentMethod = 'Transfer bank';
+    } else if (pmLower.includes('kredit') || pmLower.includes('credit') || pmLower.includes('cc')) {
+      cleanPaymentMethod = 'Kartu Kredit';
+    } else if (pmLower.includes('tunai') || pmLower.includes('cash') || pmLower.includes('kontan')) {
+      cleanPaymentMethod = 'Tunai';
+    }
+  }
+
   // Build row data — split_group_id dan split_label hanya diisi jika ini adalah split item
   const rowData = {
     account_id:       accountId,
@@ -279,7 +295,7 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
     transaction_date: dateISO,             // YYYY-MM-DD
     transaction_time: timeHHMM ? timeHHMM.replace(/\./g, ':') : null,    // HH:MM atau null
     description:      description || null,
-    payment_method:   paymentMethod || null, // QRIS | Transfer bank | Kartu Kredit | Tunai
+    payment_method:   cleanPaymentMethod,  // QRIS | Transfer bank | Kartu Kredit | Tunai | null
   };
   // Tambahkan kolom split hanya jika nilainya disediakan (backward-compatible)
   if (splitGroupId) rowData.split_group_id = splitGroupId;
