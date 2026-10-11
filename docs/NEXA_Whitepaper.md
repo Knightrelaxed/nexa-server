@@ -156,8 +156,8 @@ Supabase adalah satu-satunya *persistent storage* N.E.X.A. Seluruh tabel publik 
 | `nexa_pending_transactions` | Transaksi menggantung (buffer konfirmasi 5 menit) |
 | `nexa_finance_dedup` | Kunci deduplikasi transaksi (composite key + timestamp) |
 | `nexa_behavior_log` | Log pola perilaku harian (mood, jam bangun, transaksi) |
-| `nexa_notifications` | Gerbang notifikasi terpusat (P0/P1/P2, jam tenang, digest, engagement tracking) |
-| `nexa_recurring_rules` | Aturan langganan dan tagihan berulang hasil deteksi deterministik |
+| `nexa_notifications` | Gerbang notifikasi terpusat (P0/P1/P2, jam tenang, digest, closed-loop engagement) |
+| `nexa_recurring_rules` | Aturan langganan & tagihan rutin (status: CANDIDATE, ACTIVE, REJECTED, ENDED; tombol inline Telegram) |
 | `nexa_job_runs` | Idempotensi eksekusi cron job latar belakang & anti-duplikasi tugas |
 | `nexa_llm_calls` | Buku besar telemetri panggilan LLM (token in/out, latensi, dan error class) |
 
@@ -196,6 +196,8 @@ Sejak v3.1, N.E.X.A mengonsolidasikan seluruh autentikasi Google API yang sebelu
 
 `Gmail_Client.js` mendelegasikan autentikasi ke `Google_Master_Client.getGmail()`. Fitur kritis yang berjalan otomatis:
 - **Continuous Polling 3 Menit:** `pollFinanceEmails()` berjalan tanpa henti via *cron cycle* di Azure VPS, mendeteksi mutasi Bank Mandiri (Livin') dan BCA, mengekstrak data nominal, dan mencatat transaksi ke database tanpa campur tangan Tuan.
+- **Idempotensi Mutlak Berbasis Pesan Gmail (`e.id`):** Deduplikasi transaksi kini menggunakan kunci komposit permanen `gmail_${e.id}`. Hal ini mengeliminasi masalah transaksi berulang sah yang tertelan karena memiliki nominal dan nama merchant yang sama di menit berdekatan.
+- **Pembaruan Otomatis Push Watch Mailbox:** Cron mingguan (Minggu 02:00 WIB) otomatis memperbarui masa aktif `watchMailbox` Google Pub/Sub sebelum batas kedaluwarsa 7 hari berakhir.
 - **Zero-Interruption Token Handling:** Menggunakan Master Refresh Token yang tidak pernah kadaluarsa selama aplikasi berstatus *Production Ready* di Google Cloud Console.
 
 #### Node 5: Google Tasks : Dynamic Discovery & Dual-Write ke Notion
@@ -1253,7 +1255,11 @@ Fungsi `detectRecurring(txs)` membaca seluruh mutasi pengeluaran dari database d
    - **`MONTHLY`**: Jeda 30.4 hari ($\pm 4$ hari)
    - **`QUARTERLY`**: Jeda 91 hari ($\pm 8$ hari)
    - **`YEARLY`**: Jeda 365 hari ($\pm 15$ hari)
-4. **Perhitungan Skor Keyakinan (*Confidence Score*)**: Menggabungkan tingkat keteraturan gap ($40\%$), frekuensi kemunculan ($30\%$), dan stabilitas nominal ($30\%$). Jika transaksi muncul $\ge 3$ kali dengan ritme teratur, aturan dicatat ke tabel `nexa_recurring_rules` dengan status `ON_TRACK` atau `MISSED`.
+4. **Perhitungan Skor Keyakinan (*Confidence Score*)**: Menggabungkan tingkat keteraturan gap ($40\%$), frekuensi kemunculan ($30\%$), dan stabilitas nominal ($30\%$). Jika transaksi muncul $\ge 3$ kali (`minOccurrences = 3`) dengan ritme teratur, aturan dicatat ke tabel `nexa_recurring_rules`.
+5. **Alur Persetujuan Interaktif (*Interactive Candidate Approval*)**:
+   - Aturan baru dengan keyakinan $< 0.85$ disimpan sebagai status `CANDIDATE`.
+   - Cron harian (03:40 WIB) secara otomatis mengirimkan proposal Telegram dengan Inline Keyboard: `[ ✅ Setujui ]` (`REC_OK:<id>`) dan `[ ❌ Tolak ]` (`REC_NO:<id>`).
+   - Kepatuhan Database Schema: Kolom status dibatasi oleh constraint ketat `CHECK (status IN ('CANDIDATE','ACTIVE','REJECTED','ENDED'))`. Status lama `PAUSED` secara otomatis dipetakan menjadi `ENDED` untuk menjamin integritas basis data.
 
 #### 4.10.2 Proyeksi Tagihan Mendatang (*Upcoming Bills*) & Month-End Clamping
 
@@ -1264,7 +1270,7 @@ Fungsi `upcomingBills(rules, fromTs, toTs)` memproyeksikan tanggal jatuh tempo d
 
 Fungsi `safeToSpendToday` menghitung batas maksimal belanja harian Tuan Faqih agar anggaran bulanan tidak boncos:
 
-$$\text{Discretionary Budget} = \text{Sisa Budget Bulanan} - \text{Total Tagihan Mendatang}$$
+$$\text{Discretionary Budget} = \text{Sisa Budget Bulanan} - \text{Total Tagihan Mendatang} - \text{Safety Buffer (10\%)}$$
 
 $$\text{Jatah Hari Ini} = \frac{\text{Discretionary Budget}}{\max(1, \text{Sisa Hari Bulan Ini})} - \text{Pengeluaran Hari Ini}$$
 
@@ -1272,6 +1278,8 @@ $$\text{Jatah Hari Ini} = \frac{\text{Discretionary Budget}}{\max(1, \text{Sisa 
   - `OK`: Sisa jatah hari ini aman.
   - `TIGHT`: Sisa jatah hari ini tinggal $< 25\%$ dari rata-rata harian.
   - `OVER`: Jatah hari ini atau anggaran bulanan sudah terlampaui.
+  - `INSUFFICIENT_DATA`: Jika parameter anggaran atau sisa hari tidak lengkap/invalid, fungsi mengembalikan nilai `null` (bukan Rp 0).
+- **Isolasi Saldo Likuid Operasional:** Di tingkat penyusunan *Morning Briefing*, saldo akun tabungan (`savings`), deposito, dan investasi dikecualikan dari anggaran belanja harian agar dana simpanan jangka panjang tidak tergerus. Jika berstatus `INSUFFICIENT_DATA`, baris belanja aman disembunyikan secara otomatis dari briefing pagi.
 
 #### 4.10.4 Proyeksi Saldo Akhir Bulan (`projectMonthEnd`)
 
@@ -1611,10 +1619,19 @@ Pada versi 3.2, N.E.X.A mengintegrasikan **Gerbang Notifikasi Terpadu (`Notifier
 - **Jalur Utama:** Menyimpan antrean, deduplikasi, dan status pengiriman secara terpusat ke tabel Supabase `nexa_notifications`.
 - **Zero-Downtime Fallback:** Jika tabel Supabase belum dimigrasikan atau terjadi gangguan jaringan database, sistem **secara otomatis dan senyap beralih ke RAM (In-Memory Store)** tanpa memicu *unhandled rejection* atau kegagalan pengiriman pesan.
 
-#### 7.4.3 Pelacakan Engagement & Anti-Spam Feedback Loop
+#### 7.4.3 Pelacakan Engagement & Closed-Loop Anti-Spam Feedback Loop
 
 - **Pelacakan Interaksi (`markEngaged`)**: Setiap kali Tuan Faqih membalas chat (`REPLY`) atau menekan tombol Inline Keyboard (`BUTTON_TAP`), gerbang notifikasi menandai pesan terkait sebagai *engaged*.
-- **Laporan Efektivitas (`engagementReport(14)`):** Menganalisis tingkat keterlibatan 14 hari terakhir. Jika kategori notifikasi tertentu memiliki rasio respons $< 20\%$ (`lowEngagementRate: 0.2`) dengan sampel $\ge 7$, sistem secara cerdas menyarankan tindakan `REDUCE` untuk memangkas frekuensi notifikasi tersebut.
+- **Closed-Loop Demotion Otomatis:** Menganalisis keterlibatan 14 hari terakhir. Jika kategori notifikasi diskresioner (`P1`) memiliki rasio respons $< 20\%$ (`lowEngagementRate: 0.2`) dengan sampel $\ge 5$ (`minSamples: 5`), sistem **secara otomatis menurunkannya menjadi `P2` (*Queued Digest*)**. Kategori yang diabaikan tidak lagi menginterupsi layar, melainkan dirangkum dalam Digest berkala (12:30 & 19:30 WIB).
+- **Penyampaian Laporan Mingguan:** Setiap Minggu pukul 21:30 WIB, rangkuman `engagementReport(14)` dikirim langsung ke obrolan Telegram Tuan Faqih via `notifyProactive`.
+
+#### 7.4.4 Pagar Anti-Korupsi Teks Outbound (*Text Corruption Guard*)
+
+Untuk mencegah teks cacat atau kegagalan formatting keluar ke Telegram Tuan Faqih, gerbang `Notifier.js` dan `actions.js` menerapkan filter regex deterministik:
+```javascript
+const CORRUPTED_CONTENT_REGEX = /\[object Object\]|\bNaN\b|(?:\b(?:[Rr]p|[Ss]aldo|[Nn]ominal|[Bb]iaya|[Tt]otal|[Hh]arga|[Ss]tatus|[Aa]genda|[Ww]aktu|[Pp]ukul|[Ii]d)\s*[:=]?\s*undefined\b)/;
+```
+Pagar ini bersifat case-sensitive dan terikat konteks data moneter/agenda. Kata nama sah seperti *"Warung Nan"* (karena bukan `NaN`) dan tugas teknis pengguna seperti *"fix undefined error di API"* tetap lolos dan terkirim aman, sementara teks yang benar-benar rusak seketika dibatalkan pengirimannya.
 
 ---
 
@@ -1636,8 +1653,11 @@ Semua lalu lintas HTTP masuk dijaga oleh *middleware* keamanan sebelum mencapai 
 
 1. **Telegram Identity Lock**: N.E.X.A membedah struktur Webhook Telegram (*message*, *callback_query*, *channel_post*). Jika *Chat ID* pengirim tidak sama persis dengan `TELEGRAM_CHAT_ID` Tuan Faqih, koneksi seketika digugurkan dengan respons *403 Forbidden*.
 2. **Anti-Spoofing Webhook**: Mencegah *hacker* mengirim *request* palsu ke *endpoint* N.E.X.A. Sistem memverifikasi *Header* `X-Telegram-Bot-Api-Secret-Token` murni dari *server* Telegram.
-3. **Mobile Bridge WebSocket Handshake Authentication**: Sambungan WebSocket dari ponsel Android Samsung Galaxy A33 5G (`wss://.../ws`) dijaga dengan verifikasi `Authorization: Bearer <NEXA_DEVICE_SECRET>` pada saat handshake koneksi awal.
+3. **Mobile Bridge WebSocket Handshake Authentication**: Sambungan WebSocket dari ponsel Android Samsung Galaxy A33 5G (`wss://.../ws`) dijaga dengan verifikasi `Authorization: Bearer <NEXA_DEVICE_SECRET>` pada saat handshake koneksi awal tanpa fallback diam-diam ke God Mode.
 4. **Timing Attack Immunity**: Seluruh pencocokan *password/secret* di N.E.X.A menggunakan `crypto.timingSafeEqual()`, memastikan peretas tidak bisa menebak *password* berdasarkan waktu respons CPU.
+5. **Karantina Konfirmasi Aksi Hardware Sensitif & Memori Permanen (`_validateActionConfirmation`)**: Aksi hardware berdampak privasi (`TAKE_PHOTO`, `TAKE_SCREENSHOT`, `GET_LOCATION`, `LOCK_SCREEN`, `END_CALL`) serta penyimpan memori profil (`savePersonalFact`, `saveCoreIdentityFact`) wajib meminta persetujuan verbal eksplisit dari Tuan Faqih sebelum dieksekusi oleh AI.
+6. **Hardware Action Allowlist pada REST `/bridge/command`**: Endpoint HTTP dibatasi oleh daftar izin ketat (`ALLOWED_BRIDGE_ACTIONS`), menolak perintah di luar allowlist dengan status HTTP 403 Forbidden.
+7. **Verifikasi Kriptografis JWT di Edge Runtime (`nexa-finance-web/middleware.ts`)**: Middleware dasbor keuangan memvalidasi struktur 3-bagian token JWT, memeriksa timestamp masa berlaku `exp`, subjek `sub`, dan peran `aud: 'authenticated'` dengan Base64 padding, serta menyelaraskan TTL cookie ke masa aktif sesi `expires_in`.
 
 ### 8.3 Orkestrasi *Environment Variables* Terpusat (`env.js`)
 
@@ -1707,10 +1727,24 @@ Berikut adalah langkah injeksi yang benar:
 
 ### 9.4 Pengujian Otomatis & Continuous Integration (`npm test`)
 
-N.E.X.A mengintegrasikan *test suite* otomatis berbasis native Node.js Test Runner (`node --test`):
-- Berkas pengujian: [`tests/upgrade.test.js`](file:///c:/workspace/nexa-server/tests/upgrade.test.js)
-- Menjalankan 11 pengujian unit mencakup: Circuit breaker group open/half-open/close, exponential backoff, status 429 Retry-After, round-robin key rotation, deteksi jam tenang WIB, filter P0/P1/P2 notifikasi, deteksi tagihan berulang, month-end clamping, dan kalkulasi jatah belanja harian.
-- Seluruh pengujian terintegrasi ke pipeline GitHub Actions (`.github/workflows/ci.yml`) dan dijalankan otomatis setiap kali kode di-*push* ke branch `main`.
+N.E.X.A mengintegrasikan *test suite* otomatis komprehensif berbasis native Node.js Test Runner (`node --test`), dijalankan melalui satu perintah `npm test`:
+- **Berkas Pengujian Terpadu**:
+  - [`tests/upgrade.test.js`](file:///c:/workspace/nexa-server/tests/upgrade.test.js) (21 skenario pengujian ketahanan & determinisme)
+  - [`tests/day_simulation.test.js`](file:///c:/workspace/nexa-server/tests/day_simulation.test.js) (Simulasi siklus hidup 24 jam penuh)
+  - [`tests/signal_detector.test.js`](file:///c:/workspace/nexa-server/tests/signal_detector.test.js) (6 pengujian deteksi sinyal & koreksi feedback pengguna)
+  - [`tests/playbook_engine.test.js`](file:///c:/workspace/nexa-server/tests/playbook_engine.test.js) (4 pengujian injeksi kontekstual SOP & playbook)
+- **Cakupan 32 Pengujian Unit & Sistem (32/32 Passing)**:
+  1. **Circuit Breaker & Multi-Tier AI**: Transisi status circuit breaker (open/half-open/close), penggandaan jeda saat probe gagal, isolasi error 429 ke kunci bersangkutan, kepatuhan header `Retry-After`, dan rotasi round-robin modulo kunci API.
+  2. **Traffic Control Notifikasi**: Deteksi jam tenang malam WIB (23:00–05:00), perlakuan P0 menembus jam tenang, penundaan P1 ke status `QUEUED_DEFERRED` dan morning flush (05:30 WIB), pemangkasan kuota harian P1 ke digest, penggabungan multi-pesan P2 dalam digest, dan deduplikasi berbasis expiry window.
+  3. **Pagar Anti-Korupsi Outbound**: Pengecekan regex deterministik case-sensitive context-anchored untuk membatalkan pengiriman teks cacat (`[object Object]`, `NaN`, `undefined`).
+  4. **Matematika Keuangan Deterministik**: Deteksi tagihan berulang berkala (`minOccurrences = 3`), proyeksi tagihan mendatang (`upcomingBills`) dengan filter status `ACTIVE` dan perataan akhir bulan (*month-end clamping*), kalkulasi batas belanja aman (`safeToSpendToday`) dengan deteksi `INSUFFICIENT_DATA` (mengembalikan `null`), isolasi tabungan non-operasional dari anggaran harian, dan validasi status aturan berulang (pemetaan otomatis `PAUSED` $\rightarrow$ `ENDED`).
+  5. **Keamanan & Karantina Hardware/Memori**: Blokade aksi hardware asing via allowlist (`ALLOWED_BRIDGE_ACTIONS`), serta karantina konfirmasi verbal untuk aksi berdampak privasi (`TAKE_PHOTO`, `GET_LOCATION`, `LOCK_SCREEN`, dsb.) dan penulisan memori permanen (`savePersonalFact`).
+  6. **Simulasi Siklus 24 Jam Penuh**: Menjalankan seluruh alur 24 jam secara realistis untuk membuktikan bahwa morning briefing, pulse berkala, digest siang & malam, quiet hours, dan pembatasan frekuensi berjalan harmonis tanpa kelelahan notifikasi.
+  7. **Signal Detection & Procedural Memory**: Deteksi koreksi pengguna secara deterministik (< 1 ms, 0 token LLM), anti-stalker re-framing untuk mencegah *creepy over-citation*, dan resolusi playbook SOP prosedural.
+- **Pipeline Otomatisasi GitHub Actions (`.github/workflows/ci.yml`)**:
+  - Pemeriksaan sintaks menyeluruh (`find src -name "*.js" -exec node -c {} +`).
+  - Eksekusi test suite otomatis (`npm test`).
+  - Audit kerentanan dependensi produksi (`npm audit --omit=dev --audit-level=high`).
 
 ---
 
@@ -1769,6 +1803,20 @@ Sistem menjunjung tinggi kontrol pengguna. Fakta yang berada di ambang batas pem
 - **[ 🔍 Pilih Manual ]**: Memungkinkan Tuan Faqih mengatur secara manual baris demi baris via chat teks.
 
 Keseluruhan sistem ini menjadikan N.E.X.A asisten pertama yang memiliki kognisi organik : mengingat sekuat komputer, namun memilah serelevan manusia.
+
+---
+
+### 10.4 Closed Learning Loop & Procedural Memory Playbooks (`Playbook_Engine.js`)
+
+Pada evolusi **v3.3**, N.E.X.A memperkenalkan memori prosedural (*Procedural Memory*) yang melengkapi memori episodik dan semantik:
+- **Zero-Token Signal Detector (`Signal_Detector.js`)**:
+  Mendeteksi koreksi gaya bahasa dan preferensi pengguna (seperti *"terlalu panjang"*, *"buat lebih ringkas"*, *"jangan pakai bullet"*, *"ingat ini"*, atau *"bukan begitu"*) menggunakan pencocokan pola deterministik berbasis regex murni (< 1 ms, 0 token LLM).
+- **Anti-Stalker Re-framing**:
+  Mencegah AI mengutip memori pribadi secara menyeramkan (*creepy over-citation*). Alih-alih berkata *"Berdasarkan database memori, Tuan suka kopi hitam"*, N.E.X.A secara alami merefleksikan pemahaman tersebut langsung ke dalam aksi dan nada responsnya tanpa mengumumkan bahwa hal itu dibaca dari log memori.
+- **Procedural Playbook Cache & Context Injection**:
+  Playbook operasional (SOP penulisan draf email, pelaporan keuangan, ringkasan riset, dan pengingat disiplin) dimuat ke dalam cache RAM dan disuntikkan secara dinamis ke dalam prompt AI sesuai intent aktif, dengan pembatasan ketat $\le 700$ karakter per playbook untuk menghemat token.
+- **Manajemen Interaktif via Telegram (`/playbook`)**:
+  Tuan Faqih dapat memeriksa, mengaktifkan, menonaktifkan, atau meninjau detail SOP operasional N.E.X.A langsung dari chat Telegram.
 
 ---
 
@@ -2256,10 +2304,11 @@ Untuk memaksimalkan sumber daya gratis (*Zero-Cost Deployment*), `Fallback_Engin
 | **Kecerdasan Prediksi Keuangan** | Probabilistik via LLM Prompt (2-4s) | **Matematika Murni CPU (< 1 ms, 0 Token, Rp 0)** |
 | **Distribusi Beban API Key** | Statis (Kunci #1 habis duluan) | **Round-Robin Modulo (Beban Terbagi Rata 4x Lipat)** |
 | **Penanganan Error 429 / Kuota** | Cooldown statis 60s seragam | **Smart `Retry-After` + 30m Quota Daily Isolation** |
-| **Pengelolaan Notifikasi Proaktif** | Tiap cron kirim chat langsung | **Centralized Gateway (P0/P1/P2 + Jam Tenang + Digest)** |
+| **Pengelolaan Notifikasi Proaktif** | Tiap cron kirim chat langsung | **Centralized Gateway (P0/P1/P2 + Jam Tenang + Closed-Loop Digest Demotion + Anti-Corruption Guard)** |
 | **Konkurensi Pesan Pengguna** | Paralel tak terkontrol (*Race Condition*) | **In-Memory FIFO Serialization Queue per Chat** |
 | **Integritas Berkas Memori Disk** | Penulisan `writeFileSync` langsung | **Atomic File Write (`.tmp` + `renameSync`)** |
-| **Otomasi Pengujian & Verifikasi** | Pengujian manual | **11 Unit Tests (`node --test`) + GitHub Actions CI** |
+| **Keamanan Hardware & Privasi** | Akses bebas tanpa batasan | **Strict Allowlist + Karantina Konfirmasi Verbal + Edge JWT Verify** |
+| **Otomasi Pengujian & Verifikasi** | Pengujian manual | **32 Unit Tests + Simulasi 24 Jam (`npm test`) + CI Audit** |
 | **Keamanan Database Publik** | Terbuka bagi kunci anon | **Row Level Security (RLS) + Service Role Only** |
 
 ---
