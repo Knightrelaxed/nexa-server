@@ -281,18 +281,56 @@ graph TD
 
 ---
 
-## Kesimpulan & Metrik Spesifikasi v3.2.0
+---
 
-| Parameter Arsitektur | Spesifikasi N.E.X.A v3.2.0 (Production Release) |
+## Bab 9: Era Memori Prosedural Adaptif & Closed-Loop Learning (v3.3 — Hermes Agent Adaptation & Dynamic Prompt Caching)
+
+Versi **v3.3** menghadirkan evolusi kognitif revolusioner: transformasi dari memori fakta statis menuju **Memori Prosedural Adaptif (*Adaptive Procedural Memory*)** yang mampu belajar secara mandiri dari koreksi pengguna (*Closed-Loop Feedback Loop*). Diadaptasi dari prinsip *Hermes Agent Framework*, v3.3 memadukan pembelajaran aturan berbasis domain, *Dynamic Situational Stance*, optimasi *Prompt Caching*, dan atribusi koreksi antar-turn ($N-1$).
+
+```mermaid
+graph TD
+    UserMsg["Pesan Pengguna (Turn N)"] --> SigDet["Signal Detector (0 Token Regex)"]
+    SigDet --> Attrib["Atribusi Konteks (Turn N-1 vs N)"]
+    Attrib --> EvtTable[("nexa_learning_events")]
+    
+    subgraph Asynchronous Reviewer
+        EvtTable --> MicroRev["Micro-Reviewer LLM (Background Cron)"]
+        MicroRev --> PlayTable[("nexa_playbooks (Atomic Versioning)")]
+    end
+
+    subgraph Runtime Injection v3.3
+        PlayTable --> PB["Active Domain Playbook (<=700 Karakter)"]
+        Dialectic["Dialectic Stance Note (250 Karakter)"] --> Stance
+        PB --> BottomInject["Bottom Dynamic Injection (Recency Bias)"]
+        Stance --> BottomInject
+        StaticSys["Static System Prompt (100% Cache Friendly)"] --> Router["AI Router Runtime"]
+        BottomInject --> Router
+    end
+```
+
+### 1. Inovasi & Pilar Utama Arsitektur v3.3
+* **Adaptive Procedural Playbooks:** Aturan perilaku dinamis per domain (Finance, Discipline, Task, dll.) yang diekstrak dan diperbarui secara otomatis tanpa menulis ulang kode dasar.
+* **Deterministic Signal Detection (0 Token):** Deteksi sinyal koreksi berbasis ekspresi reguler yang diperkuat untuk mencegah *false positives*.
+* **Cross-Turn Context Attribution ($N-1$):** Koreksi gaya atau format di turn $N$ diatribusikan secara presisi ke intensi dan playbook pada giliran sebelumnya ($N-1$).
+* **Prompt Caching Friendly Layout:** Memisahkan system prompt statis murni dari blok dinamis (Playbook & Stance) yang ditaruh di akhir prompt pengguna, mengoptimalkan rasio cache hit Gemini/Groq dan memaksimalkan *instruction salience*.
+* **Atomic Versioning & Pinned Rule Protection:** Penyimpanan versi playbook secara atomik dengan proteksi rollback instan dan kekebalan aturan yang ditandai `pinned: true`.
+
+---
+
+## Kesimpulan & Metrik Spesifikasi v3.3.0
+
+| Parameter Arsitektur | Spesifikasi N.E.X.A v3.3.0 (Production Release) |
 | :--- | :--- |
 | **Official Name & Title** | **N.E.X.A (Neural Executive with Xenial Agent)** |
-| **Architectural Edition** | **Immortality Protocol v3.2: Deterministic Resilience & Cognitive Traffic Control** |
+| **Architectural Edition** | **Adaptive Procedural Memory & Closed-Loop Learning (Hermes Adaptation v3.3)** |
 | **Core Compute Infrastructure** | Azure Virtual Machine `Standard_B2ats_v2` (Ubuntu 24.04 ARM, Jakarta `indonesiacentral`) |
 | **Process Management & Auto-Healing** | PM2 Process Manager v5.4 + Systemd Auto-Revive + PM2 Plus Cloud Dashboard |
 | **Edge Web Server & Security** | Caddy v2 Reverse Proxy + Automated Let's Encrypt TLS/SSL |
 | **Production Domain** | `https://nexa-server.indonesiacentral.cloudapp.azure.com` |
 | **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~20-28 MB) |
-| **Google Cloud Integration** | Unified Master OAuth 2.0 Client (16 Master Scopes, Zero Service Account) |
+| **Google Cloud Integration** | Unified Master OAuth 2.0 Client (16 Master Scopes, Zero Hardcoded Secrets) |
+| **Procedural Learning Engine** | Hermes-Inspired Closed-Loop Playbook Reviewer + Turn N-1 Signal Attribution |
+| **Prompt Cache Strategy** | Static System Prefix + Dynamic Tail Injection (Gemini/Groq Cache Optimized) |
 | **Financial Engine** | Zero-LLM Deterministic Intelligence + Dynamic Recurring Rules (`nexa_recurring_rules`) |
 | **Notification Traffic Control** | Centralized Notifier + Quiet Hours Protection + Dedup Cooldown (`nexa_notifications`) |
 | **AI Resilience Matrix** | Round-Robin Key Ring Circuit Breaker + 429 Retry-After Parser + 11-Tier Fallback |
@@ -301,5 +339,5 @@ graph TD
 | **Primary Beneficiary** | **Tuan Faqih Hidayatulloh** |
 
 ---
-*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v3.2.0. Diverifikasi dan disinkronkan dengan Azure Cloud Core.*
+*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v3.3.0. Diverifikasi dan disinkronkan dengan Azure Cloud Core.*
 
