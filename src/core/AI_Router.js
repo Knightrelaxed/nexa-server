@@ -224,46 +224,54 @@ function invalidateSelfModelCache() {
  */
 function _detectTopicContext(text) {
   if (!text) return 'DEFAULT';
-  const t = String(text).toLowerCase();
+  const t = String(text).toLowerCase().trim();
 
-  // 1. FINANCE: Transaksi, pembayaran, beli, saldo (Prioritas tinggi agar "beli kopi hari ini 20rb" tidak tertelan scheduling)
-  if (/\b(beli|bayar|transfer|saldo|dompet|keuangan|uang|pengeluaran|tabungan|budget|qris|tagihan|ongkir|makan\s+(siang|malam|pagi))\b/.test(t) ||
-      /\b\d+\s*(rb|k|ribu|rupiah|jt|juta)\b/.test(t)) {
-    return 'FINANCE';
-  }
-
-  // 2. EMAIL_DRAFT: Penulisan, draf, email
-  if (/\b(email|surel|draf\s+email|balas\s+email|kirim\s+email|tulis\s+email|inbox)\b/.test(t)) {
-    return 'EMAIL_DRAFT';
-  }
-
-  // 3. BRIEFING_MORNING: Ringkasan atau briefing pagi
-  if (/\b(briefing|morning\s+briefing|ringkasan\s+pagi|update\s+pagi|selamat\s+pagi)\b/.test(t)) {
-    return 'BRIEFING_MORNING';
-  }
-
-  // 4. DISCIPLINE_NUDGE: Fokus, anti-prokrastinasi, god mode
-  if (/\b(fokus|jangan\s+menunda|prokrastinasi|disiplin|god\s+mode|blokir\s+sosmed|terdistraksi)\b/.test(t)) {
-    return 'DISCIPLINE_NUDGE';
-  }
-
-  // 5. SCHEDULING: Topik waktu, jadwal, tugas, agenda
-  if (/\b(jadwal|kalender|deadline|tugas|agenda|besok|hari\s+ini|lusa|meeting|kelas|matkul|reminder|alarm|bangun)\b/.test(t)) {
+  // 1. SCHEDULING ACTION VERBS (Prioritas tertinggi: aksi penjadwalan & pengingat)
+  // Menghindari false-positive seperti "jadwalkan makan siang" atau "ingatkan beli galon" masuk ke FINANCE
+  if (/\b(jadwalkan|agendakan|ingatkan|remind|set\s+alarm|buat\s+jadwal|atur\s+jadwal)\b/.test(t) &&
+      !/\b(pengeluaran|tabungan|saldo|mutasi|qris|transfer)\b/.test(t)) {
     return 'SCHEDULING';
   }
 
-  // 6. RESEARCH: Pencarian, riset, artikel, berita
-  if (/\b(cari|cek|googling|research|artikel|baca|informasi|berita)\b/.test(t)) {
+  // 2. EMAIL_DRAFT: Penulisan, draf, balas, kirim email (TIDAK termasuk membaca/meringkas inbox)
+  if (/\b(draf\s+email|balas\s+email|kirim\s+email|tulis\s+email|buat\s+email)\b/.test(t)) {
+    return 'EMAIL_DRAFT';
+  }
+
+  // 3. RESEARCH & EMAIL READING: Membaca inbox/email, pencarian, riset, artikel, berita
+  if (/\b(cek\s+inbox|baca\s+email|ringkas\s+email|inbox|cek\s+email|cari|cek|googling|research|artikel|baca|informasi|berita)\b/.test(t)) {
     return 'RESEARCH';
   }
 
-  // 7. STRATEGIC: Keputusan, rencana besar, pilihan penting
+  // 4. BRIEFING_MORNING: Hanya untuk permintaan briefing/ringkasan pagi terstruktur
+  if (/\b(briefing|morning\s+briefing|ringkasan\s+pagi|update\s+pagi|agenda\s+pagi)\b/.test(t)) {
+    return 'BRIEFING_MORNING';
+  }
+
+  // 5. DISCIPLINE_NUDGE: Eksplisit anti-prokrastinasi, god mode, distraksi sosmed
+  if (/\b(jangan\s+menunda|prokrastinasi|disiplin|god\s+mode|blokir\s+sosmed|terdistraksi|susah\s+fokus|malas\s+gerak)\b/.test(t)) {
+    return 'DISCIPLINE_NUDGE';
+  }
+
+  // 6. STRATEGIC: Keputusan, rencana besar, prioritas, skripsi, karir
   if (/\b(rencana|strategi|pilihan|memilih|keputusan|planning|prioritas|tujuan|target|goals|skripsi|karir)\b/.test(t)) {
     return 'STRATEGIC';
   }
 
-  // 8. CASUAL: Obrolan santai
-  if (/\b(halo|hai|apa kabar|gimana|bagaimana|cerita|curhat|lagi ngapain)\b/.test(t)) {
+  // 7. FINANCE: Transaksi keuangan, pembayaran, saldo, atau belanja dengan nominal uang
+  if (/\b(bayar|transfer|saldo|dompet|keuangan|uang|pengeluaran|tabungan|budget|qris|tagihan|ongkir|mutasi)\b/.test(t) ||
+      (/\b(beli|belanja|makan\s+(siang|malam|pagi)|jajan)\b/.test(t) && /\b\d+\s*(rb|k|ribu|rupiah|jt|juta)\b/.test(t)) ||
+      (/\b\d+\s*(rb|k|ribu|rupiah|jt|juta)\b/.test(t) && !/\b(jam|pukul|menit|detik)\b/.test(t))) {
+    return 'FINANCE';
+  }
+
+  // 8. GENERAL SCHEDULING: Waktu, jadwal, tugas, agenda umum
+  if (/\b(jadwal|kalender|deadline|tugas|agenda|besok|hari\s+ini|lusa|meeting|kelas|matkul|reminder|alarm|bangun)\b/.test(t)) {
+    return 'SCHEDULING';
+  }
+
+  // 9. CASUAL: Obrolan santai, sapaan pagi/malam, curhat
+  if (/\b(halo|hai|selamat\s+(pagi|siang|sore|malam)|morning|pagi|apa kabar|gimana|bagaimana|cerita|curhat|lagi ngapain)\b/.test(t)) {
     return 'CASUAL';
   }
   return 'DEFAULT';
@@ -281,13 +289,14 @@ function _buildIdentityContextBlock(identityModel, topicContext, outInjectedList
   if (!identityModel || Object.keys(identityModel).length === 0) return '';
 
   // Mapping konteks → layer yang akan diinjeksi
+  // [v3.3] WEAKNESSES dihapus dari DISCIPLINE_NUDGE untuk mencegah kesan creepy/stalker
   const CONTEXT_TO_LAYERS = {
     SCHEDULING: ['HABITS', 'WEAKNESSES', 'PREFERENCES'],
     FINANCE: ['WEAKNESSES', 'VALUES', 'HABITS'],
     RESEARCH: ['DECISION_STYLE', 'PREFERENCES'],
     EMAIL_DRAFT: ['PREFERENCES', 'DECISION_STYLE'],
     BRIEFING_MORNING: ['HABITS', 'MOTIVATIONS'],
-    DISCIPLINE_NUDGE: ['WEAKNESSES', 'MOTIVATIONS'],
+    DISCIPLINE_NUDGE: ['HABITS', 'MOTIVATIONS'],
     STRATEGIC: ['VALUES', 'DECISION_STYLE', 'MOTIVATIONS'],
     CASUAL: ['PREFERENCES', 'MOTIVATIONS'],
     DEFAULT: ['PREFERENCES'],
@@ -1494,22 +1503,26 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const presenceContext = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
   const _dynamicOperationalBlock = `${_playbookBlock || ''}${_stanceBlock || ''}`.trim();
 
+  // [v3.3 CACHING & SALIENCE OPTIMIZATION]
+  // Letakkan referensi stabil (kategori, akun, profil) dan riwayat obrolan di atas
+  // agar prefix teks tetap stabil untuk implicit caching (Gemini / Groq).
+  // Komponen temporal (waktu, kalender dinamis, playbook, stance) ditaruh di bawah tepat sebelum pesan user.
   const prompt = `
-[WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
-${currentJakartaTime}
-ISO Date Hari Ini: ${currentJakartaISO}
-${presenceContext}
-${miniCalStr ? `
-[KALENDER REFERENSI${hasCal ? ' (7 HARI KE DEPAN)' : ''}]
-${miniCalStr}
-(Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)
-` : ''}
-${factsContext}${activeAccountsBlock}${activeCategoriesBlock}${sentimentBlock}${crossDomainBlock}
+${activeAccountsBlock}${activeCategoriesBlock}
+${factsContext}
 [RIWAYAT KONTEKS RUNTIME]
 ${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
 
 [RIWAYAT OBROLAN]
 ${_applyTokenBudgetGuard(factsContext + activeAccountsBlock + activeCategoriesBlock + sentimentBlock + crossDomainBlock + runtimeContextBlock, contextStr, routerSystemPrompt)}
+
+[WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
+${currentJakartaTime}
+ISO Date Hari Ini: ${currentJakartaISO}
+${presenceContext}${miniCalStr ? `
+[KALENDER REFERENSI${hasCal ? ' (7 HARI KE DEPAN)' : ''}]
+${miniCalStr}
+(Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)` : ''}${sentimentBlock}${crossDomainBlock}
 ${_dynamicOperationalBlock ? `\n[PANDUAN OPERASIONAL & SIKAP SAAT INI (PLAYBOOK & STANCE)]\n${_dynamicOperationalBlock}\n` : ''}
 [PESAN TERBARU TUAN FAQIH]
 ${textInput}

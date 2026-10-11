@@ -41,7 +41,7 @@ const PATTERNS = {
   MISUNDERSTANDING: /\b(bukan\s+(gitu|begitu|itu\s+maksudku|maksud saya)|salah\s+paham|maksudku\s+bukan|kamu\s+salah\s+tangkap|bukan\s+itu\s+yang\s+kutanya)\b/i,
 
   // 5. INSTRUKSI EKSPLISIT MENYIMPAN / PERATURAN OPERASIONAL
-  EXPLICIT_REMEMBER: /\b(ingat\s+(ini\s+ya|aturan\s+ini|bahwa\s+aku|preferensiku|selalu|kebiasaanku)|catat\s+(aturan\s+ini|bahwa\s+aku|preferensiku|gaya\s+ini)|mulai\s+sekarang|patenkan\s+(ini|aturan\s+ini)|simpan\s+aturan\s+ini|jangan\s+lupa\s+kalau\s+aku)\b/i,
+  EXPLICIT_REMEMBER: /\b(ingat\s+(ini\s+ya|aturan\s+ini|bahwa\s+aku|preferensiku|selalu|kebiasaanku)|catat\s+(aturan\s+ini|bahwa\s+aku|preferensiku|gaya\s+ini)|mulai\s+sekarang\s+(kamu\s+harus|jangan\s+pernah|jawab|format|bicara|pakai|selalu|panggil|atur)|patenkan\s+(ini|aturan\s+ini)|simpan\s+aturan\s+ini|jangan\s+lupa\s+kalau\s+aku\s+(suka|tidak\s+suka|alergi|lebih\s+suka|prefer))\b/i,
 
   // 6. ACCEPT / KEPUASAN (Positive Feedback)
   ACCEPT: /\b(oke\s+mantap|mantap\s+(bro|nexa|betul)?|siap\s+laksanakan|sudah\s+pas|bagus\s+(banget|ini)?|keren|pas\s+banget|nah\s+gitu\s+dong|makasih\s+(banyak|ya|nexa)?|terima\s+kasih)\b/i,
@@ -124,10 +124,14 @@ function detectUserSignals(userText, lastAssistantReply = '') {
 
   // 5. Cek Explicit Remember
   if (PATTERNS.EXPLICIT_REMEMBER.test(text)) {
-    signals.push({
-      event_type: 'EXPLICIT_REMEMBER',
-      signal: { trigger: 'explicit_command' }
-    });
+    // Abaikan jika ini sebenarnya perintah pengingat agenda harian
+    const isDailyReminder = /\b(ingatkan\s+aku|set\s+alarm|besok\s+ada|hari\s+ini\s+ada|lusa\s+ada|jam\s+\d+|kuis|tugas|rapat|meeting|minum\s+obat)\b/i.test(text);
+    if (!isDailyReminder) {
+      signals.push({
+        event_type: 'EXPLICIT_REMEMBER',
+        signal: { trigger: 'explicit_command' }
+      });
+    }
   }
 
   // 6. Cek Override

@@ -196,7 +196,7 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAAS
 
 # Token-token Terpecah (HAPUS)
 GMAIL_CLIENT_ID=xxx.apps.googleusercontent.com
-GMAIL_CLIENT_SECRET=GOCSPX-xxx
+GMAIL_CLIENT_SECRET=YOUR_CLIENT_SECRET_PLACEHOLDER
 GMAIL_REFRESH_TOKEN=1//0g_gmail_token
 TASKS_REFRESH_TOKEN=1//0g_tasks_token
 GOOGLE_DRIVE_REFRESH_TOKEN=1//0g_drive_token
@@ -208,7 +208,7 @@ GOOGLE_DRIVE_REFRESH_TOKEN=1//0g_drive_token
 # GOOGLE UNIFIED MASTER OAUTH 2.0 (ALL-IN-ONE)
 # ════════════════════════════════════════════════════════════
 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-xxx
+GOOGLE_CLIENT_SECRET=YOUR_CLIENT_SECRET_PLACEHOLDER
 GOOGLE_MASTER_REFRESH_TOKEN=1//0g_unified_master_token_disini
 
 # Resource Target IDs (Alamat File & Folder Target di Akun Tuan)

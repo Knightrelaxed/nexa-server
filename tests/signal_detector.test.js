@@ -182,6 +182,26 @@ test('Signal_Detector: false-positive resistance for natural everyday sentences'
   // Calendar cancellation with 'batalkan' should NOT be general OVERRIDE
   const resBatal = signalDetector.detectUserSignals('Batalkan rapat besok jam 10 pagi');
   assert.equal(resBatal.length, 0);
+
+  // Natural reminders starting with 'mulai sekarang' or 'jangan lupa' should NOT be EXPLICIT_REMEMBER
+  const resReminder1 = signalDetector.detectUserSignals('mulai sekarang ingatkan aku minum obat jam 8');
+  assert.equal(resReminder1.length, 0);
+
+  const resReminder2 = signalDetector.detectUserSignals('jangan lupa kalau aku besok ada kuis');
+  assert.equal(resReminder2.length, 0);
+});
+
+test('AI_Router: detectTopicContext accurate classification without collisions', () => {
+  assert.equal(aiRouter.detectTopicContext('jadwalkan makan siang dengan dosen besok'), 'SCHEDULING');
+  assert.equal(aiRouter.detectTopicContext('ingatkan aku beli galon besok'), 'SCHEDULING');
+  assert.equal(aiRouter.detectTopicContext('selamat pagi nexa'), 'CASUAL');
+  assert.equal(aiRouter.detectTopicContext('cek inbox ada apa hari ini'), 'RESEARCH');
+  assert.equal(aiRouter.detectTopicContext('tolong ringkas email dari dosen'), 'RESEARCH');
+  assert.equal(aiRouter.detectTopicContext('tulis draf email konfirmasi'), 'EMAIL_DRAFT');
+  assert.equal(aiRouter.detectTopicContext('fokus ke skripsi hari ini'), 'STRATEGIC');
+  assert.equal(aiRouter.detectTopicContext('aku prokrastinasi terus seharian, tolong aktifkan god mode'), 'DISCIPLINE_NUDGE');
+  assert.equal(aiRouter.detectTopicContext('catat pengeluaran 25rb makan siang'), 'FINANCE');
+  assert.equal(aiRouter.detectTopicContext('beli kopi 20k tadi pagi'), 'FINANCE');
 });
 
 test('Signal_Detector: Turn Attribution routes feedback to previous turn context', async () => {

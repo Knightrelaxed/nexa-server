@@ -41,6 +41,8 @@ let pendingDatabaseContext = null;
 // Global conversation context for cross-feature follow-up continuity
 // Structure: { intent, extractedData, lastUserText, lastAssistantReply, askedAt }
 let conversationContext = null;
+// [v3.3] Track true turn metadata for cross-turn N-1 signal attribution
+let lastTurnMeta = null; // { intent, topic, injectedPlaybook, injectedTraits, reply, at }
 
 // [BUG FIX #3] Session Advice Counter — melacak berapa kali intent ADVICE muncul
 // dalam satu sesi percakapan beruntun (window: 1 jam).
@@ -853,6 +855,18 @@ async function handleTelegramWebhook(req, res) {
   });
 
   enqueueChat(message.chat.id, async (abortSignal) => {
+    // [v3.3] Snapshot Turn N-1 context before any processing modifies state (15 min TTL)
+    const previousTurnContext = (lastTurnMeta && (Date.now() - lastTurnMeta.at < 15 * 60 * 1000))
+      ? {
+          intent: lastTurnMeta.intent,
+          topic: lastTurnMeta.topic,
+          injectedPlaybook: lastTurnMeta.injectedPlaybook,
+          injectedTraits: lastTurnMeta.injectedTraits,
+          lastAssistantReply: lastTurnMeta.reply,
+          askedAt: lastTurnMeta.at
+        }
+      : null;
+
     try {
       const { getNotifier } = require("../../core/Notifier");
       getNotifier().markEngaged('REPLY').catch(() => {});
@@ -3681,7 +3695,6 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
     if (finalReply) {
       // Save ONLY the actual final message that the user receives
       console.log('[TELEGRAM] Replying with intent:', routingData.intent);
-      const previousContext = conversationContext ? { ...conversationContext } : null;
       conversationContext = {
         ...(conversationContext || {}),
         intent: routingData.intent,
@@ -3690,6 +3703,15 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
         injectedPlaybook: routingData._injectedPlaybook || null,
         lastAssistantReply: finalReply,
         askedAt: Date.now()
+      };
+      // [v3.3] Record true turn metadata for next turn's N-1 signal attribution
+      lastTurnMeta = {
+        intent: routingData.intent,
+        topic: routingData._topicContext || 'DEFAULT',
+        injectedTraits: routingData._injectedTraits || [],
+        injectedPlaybook: routingData._injectedPlaybook || null,
+        reply: finalReply,
+        at: Date.now()
       };
       // Save ONLY the actual final message that the user receives centrally.
       // We removed scattered saves in AI_Router so this is the authoritative save point.
@@ -3706,7 +3728,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             topic: routingData._topicContext || 'DEFAULT',
             injectedTraits: routingData._injectedTraits || [],
             injectedPlaybook: routingData._injectedPlaybook || null,
-            previousContext,
+            previousContext: previousTurnContext,
             sessionKey: `tg:${chatId || 'default'}`
           }).catch(err => {
             console.warn('[TELEGRAM] Signal Detector background evaluation error:', err.message);

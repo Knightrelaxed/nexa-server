@@ -40,6 +40,9 @@ let _lastReviewDateKey = '';
 let _turnCounter = 0;
 let _idleTimer = null;
 let _isReviewing = false;
+// [v3.3 POISON-PILL GUARD] Melacak percobaan gagal agar event error tidak memblokir antrean
+const _failedEventAttempts = new Map();
+const MAX_EVENT_ATTEMPTS = 3;
 
 /**
  * Sanitasi entitas HTML untuk pesan Telegram
@@ -215,21 +218,43 @@ async function runMicroReview(triggerReason = 'MANUAL') {
 
     const updatedPlaybooks = [];
     const processedEventIds = [];
+    let llmCallsAttempted = false;
 
     // 5. Evaluasi tiap kelompok intent
     for (const [intentClass, groupEvents] of eventsByIntent.entries()) {
       const currentPlaybook = await playbookEngine.getPlaybookForIntent(intentClass);
       if (!currentPlaybook) continue;
 
-      console.log(`[MICRO-REVIEWER] Meninjau playbook ${intentClass} (v${currentPlaybook.version}) dengan ${groupEvents.length} event...`);
-      const reviewResult = await callReviewLLM(currentPlaybook, groupEvents);
-
       const groupEventIds = groupEvents.map(e => e.id);
 
+      // [v3.3 POISON-PILL FIX #1] Cek status PINNED SEBELUM memanggil LLM!
+      // Playbook yang diproteksi Tuan Faqih (pinned: true) tidak boleh dimodifikasi otomatis.
+      // Langsung tandai event selesai agar tidak membakar token dan tidak memblokir antrean.
+      if (currentPlaybook.pinned) {
+        console.log(`[MICRO-REVIEWER] 🔒 Playbook ${intentClass} berstatus PINNED. Modifikasi diabaikan dan ${groupEventIds.length} event ditandai selesai.`);
+        await supabaseMemories.markLearningEventsProcessed(groupEventIds);
+        processedEventIds.push(...groupEventIds);
+        continue;
+      }
+
+      console.log(`[MICRO-REVIEWER] Meninjau playbook ${intentClass} (v${currentPlaybook.version}) dengan ${groupEvents.length} event...`);
+      llmCallsAttempted = true;
+      const reviewResult = await callReviewLLM(currentPlaybook, groupEvents);
+
       // JIKA PANGGILAN LLM GAGAL (karena error jaringan, 429, atau format invalid):
-      // JANGAN tandai event sebagai processed! Biarkan tetap pending agar dicoba lagi nanti.
+      // Lacak kegagalan via attempt guard. Jika gagal berulang kali (>= 3x), drop event agar tidak macet (Poison Pill).
       if (!reviewResult || reviewResult.success === false) {
-        console.warn(`[MICRO-REVIEWER] ⚠️ Review LLM gagal untuk ${intentClass}: ${reviewResult?.reason || 'Unknown error'}. Event disimpan untuk dicoba kembali.`);
+        console.warn(`[MICRO-REVIEWER] ⚠️ Review LLM gagal untuk ${intentClass}: ${reviewResult?.reason || 'Unknown error'}.`);
+        for (const evId of groupEventIds) {
+          const attempts = (_failedEventAttempts.get(evId) || 0) + 1;
+          _failedEventAttempts.set(evId, attempts);
+          if (attempts >= MAX_EVENT_ATTEMPTS) {
+            console.warn(`[MICRO-REVIEWER] 🗑️ [POISON-PILL DROP] Event #${evId} gagal ${attempts}x berturut-turut. Ditandai selesai agar antrean tidak macet.`);
+            await supabaseMemories.markLearningEventsProcessed([evId]);
+            processedEventIds.push(evId);
+            _failedEventAttempts.delete(evId);
+          }
+        }
         continue;
       }
 
@@ -264,9 +289,10 @@ async function runMicroReview(triggerReason = 'MANUAL') {
             rendered: renderedText
           });
 
-          // Tandai event telah diproses
+          // Tandai event telah diproses dan bersihkan attempt tracker
           await supabaseMemories.markLearningEventsProcessed(groupEventIds);
           processedEventIds.push(...groupEventIds);
+          for (const evId of groupEventIds) _failedEventAttempts.delete(evId);
 
           // Invalidate cache RAM Playbook Engine
           playbookEngine.invalidatePlaybooksCache();
@@ -292,16 +318,23 @@ async function runMicroReview(triggerReason = 'MANUAL') {
           }
         } else {
           console.warn(`[MICRO-REVIEWER] Upsert playbook ditolak atau gagal untuk ${intentClass}:`, upsertRes?.error);
+          // Tandai event selesai agar tidak terjadi pengulangan tak berujung
+          await supabaseMemories.markLearningEventsProcessed(groupEventIds);
+          processedEventIds.push(...groupEventIds);
+          for (const evId of groupEventIds) _failedEventAttempts.delete(evId);
         }
       } else {
         // LLM sukses dievaluasi dan memutuskan tidak ada perubahan yang diperlukan
         await supabaseMemories.markLearningEventsProcessed(groupEventIds);
         processedEventIds.push(...groupEventIds);
+        for (const evId of groupEventIds) _failedEventAttempts.delete(evId);
         console.log(`[MICRO-REVIEWER] Playbook ${intentClass} tidak memerlukan update. Alasan: ${reviewResult.reason}`);
       }
     }
 
-    _reviewsTodayCount++;
+    if (llmCallsAttempted) {
+      _reviewsTodayCount++;
+    }
     console.log(`[MICRO-REVIEWER] Siklus review selesai (${triggerReason}). ${updatedPlaybooks.length} playbook diupdate, kuota hari ini: ${_reviewsTodayCount}/${MAX_REVIEWS_PER_DAY}.`);
 
     return {
@@ -366,6 +399,7 @@ function resetReviewerState() {
     _idleTimer = null;
   }
   _isReviewing = false;
+  _failedEventAttempts.clear();
 }
 
 /**
