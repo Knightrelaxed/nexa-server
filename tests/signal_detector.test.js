@@ -98,6 +98,14 @@ test('Signal_Detector: detectOverCitation flags creepy stalker verbalization', (
   );
   assert.equal(legitimateViolations.length, 0);
 
+  // User mentions the topic himself -> NO violation (no false positive)
+  const userInitiatedViolations = signalDetector.detectOverCitation(
+    'Iya Tuan, mari kita selesaikan tugas administratif itu bersama.',
+    injectedTraits,
+    'Aku sedang kewalahan dengan banyak tugas administratif hari ini.'
+  );
+  assert.equal(userInitiatedViolations.length, 0);
+
   // Normal preference trait -> NO violation
   const normalTraits = [
     {

@@ -171,6 +171,7 @@ function detectOverCitation(assistantReply, injectedTraits = [], userText = '') 
   const userAskedAboutSelf = /\b(kelemahan|kekurangan|kebiasaan\s+buruk|sifatku|profilku|data\s+pribadi)\b/i.test(userLower);
   if (userAskedAboutSelf) return [];
 
+  const userWords = tokenize(userText);
   const violations = [];
 
   for (const trait of injectedTraits) {
@@ -179,17 +180,19 @@ function detectOverCitation(assistantReply, injectedTraits = [], userText = '') 
     if (!isSensitive) continue;
 
     // Ambil kata kunci dari trait_value atau directive
-    const valueWords = (trait.trait_value || '')
+    const combinedText = `${trait.trait_value || ''} ${trait.directive || ''}`;
+    const valueWords = combinedText
       .toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
-      .filter(w => w.length >= 4 && !['sering', 'selalu', 'tuan', 'faqih', 'suka', 'dalam'].includes(w));
+      .filter(w => w.length >= 4 && !['sering', 'selalu', 'tuan', 'faqih', 'suka', 'dalam', 'tanpa', 'harus', 'bukan'].includes(w));
 
     if (valueWords.length === 0) continue;
 
-    // Cek jika balasan mengandung 2 atau lebih kata kunci sensitif dari trait ini secara berdekatan
-    const matchedWords = valueWords.filter(word => replyLower.includes(word));
-    if (matchedWords.length >= 2 || (valueWords.length === 1 && matchedWords.length === 1 && valueWords[0].length >= 7)) {
+    // Cek jika balasan mengandung 2 atau lebih kata kunci sensitif dari trait ini secara berdekatan,
+    // KECUALI jika kata tersebut sudah disebutkan oleh Tuan Faqih sendiri dalam pesannya.
+    const matchedWords = valueWords.filter(word => replyLower.includes(word) && !userWords.has(word));
+    if (matchedWords.length >= 2 || (valueWords.length === 1 && matchedWords.length === 1 && valueWords[0].length >= 7 && !userWords.has(valueWords[0]))) {
       violations.push({
         event_type: 'OVER_CITATION',
         signal: {

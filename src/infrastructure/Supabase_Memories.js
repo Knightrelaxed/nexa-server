@@ -1402,29 +1402,54 @@ async function getAllActivePlaybooks() {
   }
 }
 
-async function upsertPlaybook(playbook) {
+async function upsertPlaybook(playbook, createNewVersion = false) {
   if (!supabase || !playbook || !playbook.intent || !playbook.rendered) {
     return { success: false, error: 'Intent and rendered content are required.' };
   }
   try {
+    const intentUpper = String(playbook.intent).toUpperCase().trim();
+    const existing = await getActivePlaybook(intentUpper);
+
     const payload = {
-      intent: String(playbook.intent).toUpperCase().trim(),
-      version: playbook.version || 1,
-      status: playbook.status || 'ACTIVE',
-      rules: playbook.rules || {},
+      intent: intentUpper,
+      version: playbook.version || (existing ? existing.version : 1),
+      status: 'ACTIVE',
+      rules: playbook.rules || (existing ? existing.rules : {}),
       rendered: String(playbook.rendered).slice(0, 700), // Enforce hard cap <= 700
-      pinned: Boolean(playbook.pinned),
+      pinned: playbook.pinned !== undefined ? Boolean(playbook.pinned) : (existing ? existing.pinned : false),
       updated_at: new Date().toISOString()
     };
     if (playbook.evidence_event_ids) payload.evidence_event_ids = playbook.evidence_event_ids;
-    if (playbook.parent_id) payload.parent_id = playbook.parent_id;
 
-    const { data, error } = await supabase
-      .from('nexa_playbooks')
-      .upsert([payload], { onConflict: 'intent' })
-      .select();
-    if (error) return { success: false, error: error.message };
-    return { success: true, data: data?.[0] };
+    if (existing) {
+      if (createNewVersion) {
+        // Archive existing version and insert new version
+        await supabase
+          .from('nexa_playbooks')
+          .update({ status: 'ARCHIVED', updated_at: new Date().toISOString() })
+          .eq('id', existing.id);
+
+        payload.version = (existing.version || 1) + 1;
+        payload.parent_id = existing.id;
+        const { data, error } = await supabase.from('nexa_playbooks').insert([payload]).select();
+        if (error) return { success: false, error: error.message };
+        return { success: true, data: data?.[0] };
+      } else {
+        // Update active version in-place
+        const { data, error } = await supabase
+          .from('nexa_playbooks')
+          .update(payload)
+          .eq('id', existing.id)
+          .select();
+        if (error) return { success: false, error: error.message };
+        return { success: true, data: data?.[0] };
+      }
+    } else {
+      // First time insert for this intent
+      const { data, error } = await supabase.from('nexa_playbooks').insert([payload]).select();
+      if (error) return { success: false, error: error.message };
+      return { success: true, data: data?.[0] };
+    }
   } catch (err) {
     return { success: false, error: err.message };
   }
