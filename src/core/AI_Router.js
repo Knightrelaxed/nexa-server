@@ -1329,6 +1329,22 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // ISO date string in Jakarta (for AI date arithmetic in TASK/CALENDAR intents)
   const currentJakartaISO = `${_jktYear}-${String(_jktMonth + 1).padStart(2, '0')}-${String(_jktDate).padStart(2, '0')}`;
 
+  // [v3.3] 3.7. Inject Dialectic Stance Note (Honcho Dialectic adaptation, <= 60 tokens)
+  try {
+    const dialecticEngine = require('../domain/Dialectic_Engine');
+    const _activeDirectives = (_injectedTraitsList || []).map(t => t.directive).filter(Boolean);
+    const _stanceBlock = dialecticEngine.getStanceNoteBlock({
+      topicContext: _topicContext,
+      jktHour: _jktHour,
+      directives: _activeDirectives
+    });
+    if (_stanceBlock) {
+      factsContext += _stanceBlock;
+    }
+  } catch (_stanceErr) {
+    // Non-blocking
+  }
+
   // Build mini-calendar: conditionally gated by pre-flight classifier and domain
   const _calDays = _loadCalendarContext ? (hasCal ? 7 : (hasTime ? 3 : 0)) : 0;
   const _miniCal = [];

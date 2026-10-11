@@ -1052,6 +1052,37 @@ async function handleTelegramWebhook(req, res) {
     }
 
     // ============================================================
+    // [v3.3] FULL-TEXT SEARCH PAST CHATS COMMAND INTERCEPTOR (/search)
+    // Pencarian riwayat chat via PostgreSQL FTS (0-token LLM-free)
+    // ============================================================
+    if (textInput && /^\/search\b/i.test(textInput.trim())) {
+      const query = textInput.trim().replace(/^\/search\s*/i, '').trim();
+      if (!query) {
+        await respondToTelegram('🔍 Format: <code>/search &lt;kata kunci&gt;</code>\nContoh: <code>/search VPS</code> atau <code>/search anggaran kopi</code>', false);
+        deliverWebhookReply();
+        return;
+      }
+
+      console.log(`[TELEGRAM-CMD] FTS Search query: "${query}"`);
+      const results = await supabaseMemories.searchPastChats(query, 5);
+      let replyText = '';
+      if (!results || results.length === 0) {
+        replyText = `🔍 Tidak ditemukan riwayat percakapan untuk kata kunci: "<b>${escapeHtml(query)}</b>".`;
+      } else {
+        const lines = results.map(r => {
+          const dt = new Date(r.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+          const roleLabel = (r.role || 'user').toLowerCase() === 'user' ? 'Tuan Faqih' : 'N.E.X.A';
+          return `• <b>[${dt} WIB] ${roleLabel}:</b>\n  <i>"${escapeHtml(String(r.content || '').substring(0, 150))}${String(r.content || '').length > 150 ? '...' : ''}"</i>`;
+        });
+        replyText = `🔍 <b>Hasil Pencarian Riwayat: "${escapeHtml(query)}"</b>\n\n${lines.join('\n\n')}`;
+      }
+
+      await respondToTelegram(replyText, false);
+      deliverWebhookReply();
+      return;
+    }
+
+    // ============================================================
     // [PHASE 6] AWAITING IDENTITY REJECTION REASON
     // Jika user membalas setelah klik REJECT pada proposal identitas
     // ============================================================
@@ -3674,8 +3705,16 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
           }).catch(err => {
             console.warn('[TELEGRAM] Signal Detector background evaluation error:', err.message);
           });
+
+          // [v3.3 POST-TURN HOOK] Micro-Reviewer Nudge Counter & Idle Timer Trigger
+          const microReviewer = require('../../domain/Micro_Reviewer');
+          microReviewer.handlePostTurn({
+            userText: textInput,
+            intent: routingData.intent,
+            sessionKey: `tg:${chatId || 'default'}`
+          });
         } catch (hookErr) {
-          console.warn('[TELEGRAM] Failed to trigger Signal Detector hook:', hookErr.message);
+          console.warn('[TELEGRAM] Failed to trigger Signal Detector / Micro-Reviewer hook:', hookErr.message);
         }
       });
     }

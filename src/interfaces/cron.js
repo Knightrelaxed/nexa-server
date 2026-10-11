@@ -420,6 +420,15 @@ function initCronJobs() {
       } catch (vErr) {
         console.warn('[CRON] Vector snapshot sync failed (non-blocking):', vErr.message);
       }
+
+      // 4. [v3.3] Micro-Reviewer Daily Evening Pass (Closed Learning Loop)
+      try {
+        const microReviewer = require('../domain/Micro_Reviewer');
+        const reviewResult = await microReviewer.runMicroReview('CRON_DAILY');
+        console.log(`[CRON] Micro-Reviewer Pass done: reviewed=${reviewResult.reviewed} updated=${reviewResult.updatedPlaybooks ? reviewResult.updatedPlaybooks.length : 0}`);
+      } catch (mrErr) {
+        console.warn('[CRON] Micro-Reviewer daily pass failed (non-blocking):', mrErr.message);
+      }
     });
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 

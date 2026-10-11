@@ -1455,6 +1455,46 @@ async function upsertPlaybook(playbook, createNewVersion = false) {
   }
 }
 
+/**
+ * [v3.3] Search past chat memories using PostgreSQL Full-Text Search (FTS) index.
+ * Ultra-fast indexed search over raw chat memories without LLM invocation.
+ * @param {string} query - Search phrase / keywords
+ * @param {number} [limit=5] - Maximum number of matches
+ * @returns {Promise<Array<{id: string, role: string, content: string, platform: string, created_at: string}>>}
+ */
+async function searchPastChats(query, limit = 5) {
+  if (!supabase || !query || typeof query !== 'string') return [];
+  const cleanQuery = query.trim();
+  if (cleanQuery.length < 2) return [];
+
+  try {
+    // 1. Coba pencarian berbasis GIN index fts dengan websearch syntax
+    const { data, error } = await supabase
+      .from('nexa_chat_memories')
+      .select('id, role, content, platform, created_at')
+      .textSearch('fts', cleanQuery, { config: 'simple', type: 'websearch' })
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data;
+    }
+
+    // 2. Fallback jika FTS kosong atau error: gunakan ILIKE query
+    const { data: fallbackData } = await supabase
+      .from('nexa_chat_memories')
+      .select('id, role, content, platform, created_at')
+      .ilike('content', `%${cleanQuery}%`)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    return fallbackData || [];
+  } catch (err) {
+    console.warn('[SUPABASE_MEMORIES] searchPastChats error:', err.message);
+    return [];
+  }
+}
+
 module.exports = {
   supabase,
   // ── [PHASE 13 / v3.3] Closed Learning Loop & Playbooks ─────────────
@@ -1464,6 +1504,7 @@ module.exports = {
   getActivePlaybook,
   getAllActivePlaybooks,
   upsertPlaybook,
+  searchPastChats,
   // ── Chat & Memory ──────────────────────────────────────────
   saveChatMemory,
   getRecentMemories,

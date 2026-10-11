@@ -5,7 +5,7 @@
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
-    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js tests/signal_detector.test.js tests/playbook_engine.test.js"
+    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js tests/signal_detector.test.js tests/playbook_engine.test.js tests/micro_reviewer.test.js"
   },
   "keywords": [],
   "author": "",
