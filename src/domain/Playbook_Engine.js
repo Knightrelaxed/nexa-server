@@ -17,6 +17,14 @@
 
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 
+// [v3.3.1] Injectable store: tests pass a fake so they never depend on production data.
+let _store = supabaseMemories;
+function setStore(store) {
+  _store = store || supabaseMemories;
+  _playbookCache = null;
+  _playbookCacheTime = 0;
+}
+
 // ── PLAYBOOK INTENT MAPPING ──────────────────────────────────
 const INTENT_TO_PLAYBOOK_MAP = {
   // Email
@@ -146,13 +154,13 @@ async function loadPlaybooksCache(forceRefresh = false) {
   }
 
   try {
-    let playbooks = await supabaseMemories.getAllActivePlaybooks();
+    let playbooks = await _store.getAllActivePlaybooks();
 
     // Auto-seed default jika tabel di database masih kosong
     if (!playbooks || playbooks.length === 0) {
       console.log('[PLAYBOOK] nexa_playbooks kosong. Menjalankan auto-seed playbook standar...');
       await seedDefaultPlaybooks();
-      playbooks = await supabaseMemories.getAllActivePlaybooks();
+      playbooks = await _store.getAllActivePlaybooks();
     }
 
     const map = new Map();
@@ -207,7 +215,7 @@ async function formatPlaybookContextBlock(intentOrTopic) {
 async function seedDefaultPlaybooks() {
   for (const pb of DEFAULT_PLAYBOOKS) {
     try {
-      await supabaseMemories.upsertPlaybook(pb);
+      await _store.upsertPlaybook(pb);
     } catch (e) {
       console.warn(`[PLAYBOOK] Gagal seed ${pb.intent}:`, e.message);
     }
@@ -223,7 +231,7 @@ async function undoPlaybook(intent) {
   if (!targetIntent) {
     return { success: false, message: `❌ Intent <b>${String(intent || '').trim()}</b> tidak dikenal.` };
   }
-  const current = await supabaseMemories.getActivePlaybook(targetIntent);
+  const current = await _store.getActivePlaybook(targetIntent);
   if (!current) {
     return { success: false, message: `Playbook untuk intent ${targetIntent} tidak ditemukan.` };
   }
@@ -232,7 +240,7 @@ async function undoPlaybook(intent) {
     return { success: false, message: `Playbook ${targetIntent} (v${current.version}) tidak memiliki versi sebelumnya untuk di-undo.` };
   }
 
-  const sb = supabaseMemories.supabase;
+  const sb = _store.supabase;
   if (!sb) return { success: false, message: 'Supabase tidak terhubung.' };
 
   // 1. Ambil parent record
@@ -337,6 +345,7 @@ module.exports = {
   formatPlaybookContextBlock,
   seedDefaultPlaybooks,
   undoPlaybook,
+  setStore,
   formatPlaybooksSummary,
   formatPlaybookDetail,
   DEFAULT_PLAYBOOKS

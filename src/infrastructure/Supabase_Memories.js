@@ -1510,12 +1510,71 @@ async function searchPastChats(query, limit = 5) {
   }
 }
 
+/**
+ * [v3.3.1] Persist poison-pill attempts on the event row so a restart cannot reset the counter.
+ * Returns { [eventId]: attempts } or null when the column/table is unavailable (caller falls back).
+ */
+async function incrementLearningEventAttempts(eventIds = []) {
+  if (!supabase || !eventIds.length) return null;
+  try {
+    const { data, error } = await supabase
+      .from('nexa_learning_events').select('id, attempts').in('id', eventIds);
+    if (error) return null;
+    const out = {};
+    for (const row of data || []) {
+      const next = (row.attempts || 0) + 1;
+      const { error: upErr } = await supabase
+        .from('nexa_learning_events').update({ attempts: next }).eq('id', row.id);
+      if (upErr) return null;
+      out[row.id] = next;
+    }
+    return out;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** [v3.3.1] Persisted count of micro-review runs for a WIB date key (null if unavailable). */
+async function countMicroReviewRunsToday(dateKey) {
+  if (!supabase) return null;
+  try {
+    const { count, error } = await supabase
+      .from('nexa_job_runs')
+      .select('id', { count: 'exact', head: true })
+      .eq('job_name', 'micro_review')
+      .like('run_key', `${dateKey}:%`);
+    if (error) return null;
+    return count || 0;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** [v3.3.1] Record one micro-review run so the daily cap survives restarts. */
+async function recordMicroReviewRun(dateKey) {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from('nexa_job_runs').insert({
+      job_name: 'micro_review',
+      run_key: `${dateKey}:${Date.now()}`,
+      status: 'OK',
+      finished_at: new Date().toISOString()
+    });
+    return !error;
+  } catch (_) {
+    return false;
+  }
+}
+
 module.exports = {
   supabase,
   // ── [PHASE 13 / v3.3] Closed Learning Loop & Playbooks ─────────────
   recordLearningEvent,
   getUnprocessedLearningEvents,
   markLearningEventsProcessed,
+  incrementLearningEventAttempts,
+  countMicroReviewRunsToday,
+  recordMicroReviewRun,
   getActivePlaybook,
   getAllActivePlaybooks,
   upsertPlaybook,

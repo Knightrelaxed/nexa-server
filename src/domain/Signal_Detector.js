@@ -22,6 +22,10 @@
 
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 
+// [v3.3.1] Injectable store: tests pass a fake so they never touch the production database.
+let _store = supabaseMemories;
+function setStore(store) { _store = store || supabaseMemories; }
+
 // ── REGEX PATTERNS UNTUK SINYAL KOREKSI (Bahasa Indonesia & Slang) ─────────
 
 const PATTERNS = {
@@ -30,7 +34,7 @@ const PATTERNS = {
   LENGTH_LONGER: /\b(terlalu\s+(singkat|pendek)|kependekan|kurang\s+(jelas|lengkap|detail)|jelaskan\s+(lebih\s+detail|panjang)|tambah\s+penjelasan)\b/i,
 
   // 2. KOREKSI FORMAT
-  FORMAT_NO_BULLETS: /\b(jangan\s+pakai\s+(bullet|poin|list|angka|nomor|daftar)|tanpa\s+(bullet|poin|list)|prosa\s+(aja|saja)|paragraf\s+(aja|saja)|nggak\s+usah\s+di[- ]?list)\b/i,
+  FORMAT_NO_BULLETS: /\b((?:jangan|gak|nggak|ngga|tidak|tak|stop|hentikan)\s+(?:(?:usah|perlu|pernah|lagi|mau|harus|dulu)\s+)*(?:pakai|pake|bikin|buat(?:kan)?)\s+(?:bullet|poin|list|angka|nomor|daftar)|tanpa\s+(bullet|poin|list)|prosa\s+(aja|saja)|paragraf\s+(aja|saja)|nggak\s+usah\s+di[- ]?list)\b/i,
   FORMAT_BULLETS: /\b(pakai\s+(bullet|poin|list|angka|nomor|daftar)|bikin\s+(list|daftar|poin)|buatkan\s+(list|daftar)|poin[- ]?poin\s+(aja|saja))\b/i,
 
   // 3. KOREKSI NADA & GAYA BICARA
@@ -41,7 +45,7 @@ const PATTERNS = {
   MISUNDERSTANDING: /\b(bukan\s+(gitu|begitu|itu\s+maksudku|maksud saya)|salah\s+paham|maksudku\s+bukan|kamu\s+salah\s+tangkap|bukan\s+itu\s+yang\s+kutanya)\b/i,
 
   // 5. INSTRUKSI EKSPLISIT MENYIMPAN / PERATURAN OPERASIONAL
-  EXPLICIT_REMEMBER: /\b(ingat\s+(ini\s+ya|aturan\s+ini|bahwa\s+aku|preferensiku|selalu|kebiasaanku)|catat\s+(aturan\s+ini|bahwa\s+aku|preferensiku|gaya\s+ini)|mulai\s+sekarang\s+(kamu\s+harus|jangan\s+pernah|jawab|format|bicara|pakai|selalu|panggil|atur)|patenkan\s+(ini|aturan\s+ini)|simpan\s+aturan\s+ini|jangan\s+lupa\s+kalau\s+aku\s+(suka|tidak\s+suka|alergi|lebih\s+suka|prefer))\b/i,
+  EXPLICIT_REMEMBER: /\b(ingat\s+(ini\s+ya|ini(?=\s*[:,!.]|\s*$)|aturan\s+ini|bahwa\s+aku|preferensiku|selalu|kebiasaanku)|catat\s+(aturan\s+ini|bahwa\s+aku|preferensiku|gaya\s+ini)|mulai\s+sekarang\s+(kamu\s+harus|jangan\s+pernah|jawab|format|bicara|pakai|selalu|panggil|atur)|patenkan\s+(ini|aturan\s+ini)|simpan\s+aturan\s+ini|jangan\s+lupa\s+kalau\s+aku\s+(suka|tidak\s+suka|alergi|lebih\s+suka|prefer))\b/i,
 
   // 6. ACCEPT / KEPUASAN (Positive Feedback)
   ACCEPT: /\b(oke\s+mantap|mantap\s+(bro|nexa|betul)?|siap\s+laksanakan|sudah\s+pas|bagus\s+(banget|ini)?|keren|pas\s+banget|nah\s+gitu\s+dong|makasih\s+(banyak|ya|nexa)?|terima\s+kasih)\b/i,
@@ -49,6 +53,15 @@ const PATTERNS = {
   // 7. OVERRIDE / BATALKAN AKSI
   OVERRIDE: /\b(batalkan\s+(rencana\s+tadi|yang\s+tadi|perintah\s+tadi|eksekusi|aksi\s+tadi)|batal\s+(aja\s+yang\s+tadi|deh\s+yang\s+tadi)|jangan\s+jadi\s+(yang\s+tadi|dieksekusi)|cancel\s+(yang\s+tadi|eksekusi)|jangan\s+dieksekusi|urungkan\s+(aksi|perintah|eksekusi))\b/i
 };
+
+// [v3.3.1] A bullets request that is negated just before the match ("jangan pernah pakai bullet")
+// must never be read as the opposite preference.
+const NEGATION = /\b(jangan|gak|nggak|ngga|ga|tidak|tak|stop|hentikan|tanpa)\b/i;
+function isNegatedBefore(text, pattern) {
+  const m = pattern.exec(text);
+  if (!m) return false;
+  return NEGATION.test(text.slice(Math.max(0, m.index - 30), m.index));
+}
 
 /**
  * Tokenize string ke set kata unik (lowercase, alphanumeric saja)
@@ -94,7 +107,7 @@ function detectUserSignals(userText, lastAssistantReply = '') {
       event_type: 'CORRECTION',
       signal: { dimension: 'format', rule: 'no_bullets' }
     });
-  } else if (PATTERNS.FORMAT_BULLETS.test(text)) {
+  } else if (PATTERNS.FORMAT_BULLETS.test(text) && !isNegatedBefore(text, PATTERNS.FORMAT_BULLETS)) {
     signals.push({
       event_type: 'CORRECTION',
       signal: { dimension: 'format', rule: 'bullets' }
@@ -140,6 +153,16 @@ function detectUserSignals(userText, lastAssistantReply = '') {
       event_type: 'OVERRIDE',
       signal: { action: 'cancel_proposed' }
     });
+  }
+
+  // [v3.3.1] One utterance = one unit of evidence. "mulai sekarang jangan pernah pakai bullet" is a
+  // correction AND an explicit command, but must not count twice toward the reviewer's evidence rule.
+  const rememberIdx = signals.findIndex(sg => sg.event_type === 'EXPLICIT_REMEMBER');
+  if (rememberIdx !== -1 && signals.some(sg => sg.event_type === 'CORRECTION')) {
+    signals.splice(rememberIdx, 1);
+    for (const sg of signals) {
+      if (sg.event_type === 'CORRECTION') sg.signal.explicit = true;
+    }
   }
 
   // 7. Cek Accept (hanya jika bukan koreksi)
@@ -241,6 +264,9 @@ async function evaluateTurn(params = {}) {
 
   if (!userText && !assistantReply) return [];
 
+  // [v3.3.1] Safety net: a 'test:' session must never be written to the production store.
+  if (String(sessionKey).startsWith('test:') && _store === supabaseMemories) return [];
+
   // 1. Deteksi sinyal user (evaluasi terhadap balasan turn sebelumnya jika ada)
   const previousAssistantReply = previousContext?.lastAssistantReply || assistantReply;
   const userSignals = detectUserSignals(userText, previousAssistantReply);
@@ -283,7 +309,7 @@ async function evaluateTurn(params = {}) {
     };
 
     try {
-      const res = await supabaseMemories.recordLearningEvent(eventPayload);
+      const res = await _store.recordLearningEvent(eventPayload);
       if (res && res.success) recorded.push(res.data);
     } catch (err) {
       console.warn('[SIGNAL_DETECTOR] Failed to write event:', err.message);
@@ -301,5 +327,6 @@ module.exports = {
   detectUserSignals,
   detectOverCitation,
   evaluateTurn,
+  setStore,
   PATTERNS
 };

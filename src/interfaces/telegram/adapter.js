@@ -866,6 +866,10 @@ async function handleTelegramWebhook(req, res) {
           askedAt: lastTurnMeta.at
         }
       : null;
+    // [v3.3.1] Consume the snapshot immediately. Branches that never reach the final reply site
+    // (finance confirmations, commands, callbacks, tool flows) must not leave a stale turn behind:
+    // a missing attribution is safer than a wrong one.
+    lastTurnMeta = null;
 
     try {
       const { getNotifier } = require("../../core/Notifier");

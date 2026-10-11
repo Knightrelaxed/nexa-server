@@ -37,6 +37,7 @@ const MAX_RENDERED_CHARS = 700;
 // ── STATE RUNTIME ─────────────────────────────────────────────
 let _reviewsTodayCount = 0;
 let _lastReviewDateKey = '';
+let _hydratedDateKey = ''; // [v3.3.1] day for which the persisted counter was loaded
 let _turnCounter = 0;
 let _idleTimer = null;
 let _isReviewing = false;
@@ -74,6 +75,24 @@ function checkDailyBudget() {
     _reviewsTodayCount = 0;
   }
   return _reviewsTodayCount < MAX_REVIEWS_PER_DAY;
+}
+
+/**
+ * [v3.3.1] Load the persisted daily counter once per day (and after every restart) so that a
+ * PM2 restart or deploy cannot reset the cap. Retried on the next cycle if the read fails.
+ */
+async function hydrateDailyBudget() {
+  const todayKey = getTodayDateKeyWib();
+  if (_hydratedDateKey === todayKey) return;
+  const persisted = await supabaseMemories.countMicroReviewRunsToday(todayKey);
+  if (typeof persisted === 'number') {
+    if (_lastReviewDateKey !== todayKey) {
+      _lastReviewDateKey = todayKey;
+      _reviewsTodayCount = 0;
+    }
+    _reviewsTodayCount = Math.max(_reviewsTodayCount, persisted);
+    _hydratedDateKey = todayKey;
+  }
 }
 
 /**
@@ -173,6 +192,7 @@ async function runMicroReview(triggerReason = 'MANUAL') {
   }
 
   // 1. Periksa batas harian (maks 3 per hari)
+  await hydrateDailyBudget();
   if (!checkDailyBudget()) {
     console.log(`[MICRO-REVIEWER] Batas harian (${MAX_REVIEWS_PER_DAY}/hari) tercapai. Melewati ${triggerReason}.`);
     return { reviewed: false, reason: 'DAILY_BUDGET_EXCEEDED' };
@@ -245,8 +265,10 @@ async function runMicroReview(triggerReason = 'MANUAL') {
       // Lacak kegagalan via attempt guard. Jika gagal berulang kali (>= 3x), drop event agar tidak macet (Poison Pill).
       if (!reviewResult || reviewResult.success === false) {
         console.warn(`[MICRO-REVIEWER] ⚠️ Review LLM gagal untuk ${intentClass}: ${reviewResult?.reason || 'Unknown error'}.`);
+        // [v3.3.1] Attempts are persisted on the event row; in-memory is only the fallback.
+        const dbAttempts = await supabaseMemories.incrementLearningEventAttempts(groupEventIds);
         for (const evId of groupEventIds) {
-          const attempts = (_failedEventAttempts.get(evId) || 0) + 1;
+          const attempts = (dbAttempts && dbAttempts[evId]) || ((_failedEventAttempts.get(evId) || 0) + 1);
           _failedEventAttempts.set(evId, attempts);
           if (attempts >= MAX_EVENT_ATTEMPTS) {
             console.warn(`[MICRO-REVIEWER] 🗑️ [POISON-PILL DROP] Event #${evId} gagal ${attempts}x berturut-turut. Ditandai selesai agar antrean tidak macet.`);
@@ -334,6 +356,7 @@ async function runMicroReview(triggerReason = 'MANUAL') {
 
     if (llmCallsAttempted) {
       _reviewsTodayCount++;
+      supabaseMemories.recordMicroReviewRun(getTodayDateKeyWib()).catch(() => {});
     }
     console.log(`[MICRO-REVIEWER] Siklus review selesai (${triggerReason}). ${updatedPlaybooks.length} playbook diupdate, kuota hari ini: ${_reviewsTodayCount}/${MAX_REVIEWS_PER_DAY}.`);
 
@@ -393,6 +416,7 @@ function handlePostTurn(params = {}) {
 function resetReviewerState() {
   _reviewsTodayCount = 0;
   _lastReviewDateKey = '';
+  _hydratedDateKey = '';
   _turnCounter = 0;
   if (_idleTimer) {
     clearTimeout(_idleTimer);

@@ -155,3 +155,32 @@ test('Micro_Reviewer: Daily Rate Guard blocks execution after 3 runs', async () 
 
   microReviewer.resetReviewerState();
 });
+
+test('Micro_Reviewer: daily budget is hydrated from the database (a restart cannot reset the cap)', async () => {
+  const original = supabaseMemories.countMicroReviewRunsToday;
+  microReviewer.resetReviewerState();
+  supabaseMemories.countMicroReviewRunsToday = async () => 3; // three runs already persisted today
+  try {
+    const res = await microReviewer.runMicroReview('TEST_AFTER_RESTART');
+    assert.equal(res.reviewed, false);
+    assert.equal(res.reason, 'DAILY_BUDGET_EXCEEDED');
+  } finally {
+    supabaseMemories.countMicroReviewRunsToday = original;
+    microReviewer.resetReviewerState();
+  }
+});
+
+test('Micro_Reviewer: a failed budget read is retried instead of silently trusted', async () => {
+  const original = supabaseMemories.countMicroReviewRunsToday;
+  microReviewer.resetReviewerState();
+  let calls = 0;
+  supabaseMemories.countMicroReviewRunsToday = async () => { calls += 1; return null; }; // DB unavailable
+  try {
+    await microReviewer.runMicroReview('TEST_DB_DOWN_1');
+    await microReviewer.runMicroReview('TEST_DB_DOWN_2');
+    assert.ok(calls >= 2, 'hydration must be retried while the database is unavailable');
+  } finally {
+    supabaseMemories.countMicroReviewRunsToday = original;
+    microReviewer.resetReviewerState();
+  }
+});

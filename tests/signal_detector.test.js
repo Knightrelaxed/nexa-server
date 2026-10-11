@@ -205,31 +205,86 @@ test('AI_Router: detectTopicContext accurate classification without collisions',
 });
 
 test('Signal_Detector: Turn Attribution routes feedback to previous turn context', async () => {
-  const previousContext = {
-    intent: 'FINANCE',
-    topic: 'FINANCE',
-    injectedPlaybook: { intent: 'FINANCE', version: 2 },
-    injectedTraits: [{ layer: 'WEAKNESSES', trait_key: 'impulsive_spend' }],
-    lastAssistantReply: 'Berikut rincian saldo dan pengeluaran Tuan:\n• Bensin: 50rb\n• Makan: 25rb'
-  };
-
-  // User sends correction in current turn (which router classifies as NORMAL_CHAT)
-  const events = await signalDetector.evaluateTurn({
-    userText: 'Jangan pakai bullet points lagi ya',
-    assistantReply: 'Baik Tuan, saya akan gunakan format prosa tanpa bullet points.',
-    intent: 'NORMAL_CHAT',
-    topic: 'DEFAULT',
-    injectedTraits: [],
-    injectedPlaybook: { intent: 'NORMAL_CHAT', version: 1 },
-    previousContext,
-    sessionKey: 'test:attribution'
+  // [v3.3.1] Hermetic: a fake store captures events; nothing is written to the production database.
+  const captured = [];
+  signalDetector.setStore({
+    recordLearningEvent: async (payload) => { captured.push(payload); return { success: true, data: payload }; }
   });
+  try {
+    const previousContext = {
+      intent: 'FINANCE',
+      topic: 'FINANCE',
+      injectedPlaybook: { intent: 'FINANCE', version: 2 },
+      injectedTraits: [{ layer: 'WEAKNESSES', trait_key: 'impulsive_spend' }],
+      lastAssistantReply: 'Berikut rincian saldo dan pengeluaran Tuan:\n• Bensin: 50rb\n• Makan: 25rb'
+    };
 
-  assert.ok(events.length > 0);
-  const correctionEvent = events.find(e => e.event_type === 'CORRECTION');
-  assert.ok(correctionEvent, 'Must detect a CORRECTION event');
-  // CRITICAL: Must be attributed to previous turn (FINANCE), NOT current turn (NORMAL_CHAT)!
-  assert.strictEqual(correctionEvent.intent, 'FINANCE');
-  assert.strictEqual(correctionEvent.topic, 'FINANCE');
-  assert.strictEqual(correctionEvent.injected_refs.playbook, 'FINANCE@2');
+    // User sends correction in current turn (which router classifies as NORMAL_CHAT)
+    const events = await signalDetector.evaluateTurn({
+      userText: 'Jangan pakai bullet points lagi ya',
+      assistantReply: 'Baik Tuan, saya akan gunakan format prosa tanpa bullet points.',
+      intent: 'NORMAL_CHAT',
+      topic: 'DEFAULT',
+      injectedTraits: [],
+      injectedPlaybook: { intent: 'NORMAL_CHAT', version: 1 },
+      previousContext,
+      sessionKey: 'test:attribution'
+    });
+
+    assert.ok(events.length > 0);
+    const correctionEvent = events.find(e => e.event_type === 'CORRECTION');
+    assert.ok(correctionEvent, 'Must detect a CORRECTION event');
+    // CRITICAL: Must be attributed to previous turn (FINANCE), NOT current turn (NORMAL_CHAT)!
+    assert.strictEqual(correctionEvent.intent, 'FINANCE');
+    assert.strictEqual(correctionEvent.topic, 'FINANCE');
+    assert.strictEqual(correctionEvent.injected_refs.playbook, 'FINANCE@2');
+    assert.strictEqual(captured.length, events.length, 'Only the fake store may receive events');
+  } finally {
+    signalDetector.setStore(null);
+  }
+});
+
+test('Signal_Detector: one utterance is one unit of evidence (no double counting)', () => {
+  const ev = signalDetector.detectUserSignals('mulai sekarang jangan pernah pakai bullet', 'balasan sebelumnya');
+  assert.equal(ev.length, 1, 'CORRECTION + EXPLICIT_REMEMBER must collapse into a single event');
+  assert.equal(ev[0].event_type, 'CORRECTION');
+  assert.equal(ev[0].signal.rule, 'no_bullets');
+  assert.equal(ev[0].signal.explicit, true);
+  // A pure explicit command (no correction pattern) stays an EXPLICIT_REMEMBER event.
+  const only = signalDetector.detectUserSignals('mulai sekarang kamu harus jawab singkat', '');
+  assert.deepEqual(only.map(e => e.event_type), ['EXPLICIT_REMEMBER']);
+});
+
+test('Signal_Detector: "ingat ini" is explicit, daily reminders are not', () => {
+  const types = t => signalDetector.detectUserSignals(t, '').map(e => e.event_type);
+  assert.deepEqual(types('ingat ini: aku alergi udang'), ['EXPLICIT_REMEMBER']);
+  assert.deepEqual(types('tolong ingat bahwa aku tidak suka kopi pahit'), ['EXPLICIT_REMEMBER']);
+  assert.deepEqual(types('mulai sekarang minum obat jam 8'), []);
+  assert.deepEqual(types('mulai sekarang aku kuliah jam 7'), []);
+  assert.deepEqual(types('besok ada kuis, ingat ya'), []);
+  assert.deepEqual(types('ingat ini: besok ada kuis jam 7'), []);
+});
+
+test('Signal_Detector: test sessions are never written to the production store', async () => {
+  const res = await signalDetector.evaluateTurn({
+    userText: 'Jangan pakai bullet points lagi ya',
+    assistantReply: 'Baik.',
+    sessionKey: 'test:must-not-persist'
+  });
+  assert.deepEqual(res, []);
+});
+
+test('Signal_Detector: negated bullet requests are never inverted into "wants bullets"', () => {
+  const rule = t => {
+    const ev = signalDetector.detectUserSignals(t, '').find(e => e.signal && e.signal.dimension === 'format');
+    return ev ? ev.signal.rule : null;
+  };
+  for (const t of ['jangan pernah pakai bullet', 'jangan lagi pakai poin-poin', 'nggak usah pakai list',
+                   'gak perlu pakai daftar', 'tidak usah pakai nomor', 'stop pakai bullet', 'tanpa bullet ya']) {
+    assert.equal(rule(t), 'no_bullets', t);
+  }
+  for (const t of ['pakai bullet ya', 'bikin list aja', 'buatkan daftar belanja']) {
+    assert.equal(rule(t), 'bullets', t);
+  }
+  assert.equal(rule('jangan terlalu banyak pakai bullet'), null, 'ambiguous negation must not produce a wrong event');
 });
