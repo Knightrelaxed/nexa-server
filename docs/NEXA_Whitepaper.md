@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Executive with Xenial Agent : v3.2 "Deterministic Resilience, Zero-LLM Finance & Cognitive Traffic Control")*
+*(Neural Executive with Xenial Agent : v3.3 "Adaptive Procedural Memory, Dialectic Stance & Closed-Loop Learning")*
 
 ---
 
@@ -158,6 +158,8 @@ Supabase adalah satu-satunya *persistent storage* N.E.X.A. Seluruh tabel publik 
 | `nexa_behavior_log` | Log pola perilaku harian (mood, jam bangun, transaksi) |
 | `nexa_notifications` | Gerbang notifikasi terpusat (P0/P1/P2, jam tenang, digest, closed-loop engagement) |
 | `nexa_recurring_rules` | Aturan langganan & tagihan rutin (status: CANDIDATE, ACTIVE, REJECTED, ENDED; tombol inline Telegram) |
+| `nexa_playbooks` | Prosedur operasional per intent (Procedural Memory / Hermes Playbooks, versioning, trigger count, status) |
+| `nexa_review_logs` | Log riwayat audit asinkron Micro-Reviewer (trigger reason, turns analyzed, playbook updates, diffs) |
 | `nexa_job_runs` | Idempotensi eksekusi cron job latar belakang & anti-duplikasi tugas |
 | `nexa_llm_calls` | Buku besar telemetri panggilan LLM (token in/out, latensi, dan error class) |
 
@@ -1688,6 +1690,10 @@ Otak N.E.X.A terpusat di dalam direktori `src/`, terbagi atas 6 wilayah domain e
    - `Finance_Intel.js` (Kecerdasan Keuangan Deterministik Zero-LLM: Deteksi Langganan, Tagihan Mendatang, Jatah Harian)
    - `Task_Manager.js` & `Agenda_Manager.js` (Produktivitas & Kalender)
    - `Behavior_Engine.js`, `Intelligence_Brief.js`, `Discipline_GodMode.js`
+   - `Signal_Detector.js` (Deteksi Sinyal Feedback Pengguna 0-Token, Koreksi Gaya, Anti-Stalker Over-Citation)
+   - `Playbook_Engine.js` (Procedural Memory Engine, Manajemen SOP Intent dengan Cache RAM 15m)
+   - `Dialectic_Engine.js` (Dialectic Stance Note Generator, Sadar Waktu Jakarta & Cadence Caching 3-Turn)
+   - `Micro_Reviewer.js` (Asynchronous Background Reviewer, Pembelajaran Siklus Tertutup Hermes, Rate Limit Guard)
 3. **`src/infrastructure/` (Eksternal *Driver*)**
    Penghubung teknis murni ke dunia luar. Menampung kode API Supabase (`Supabase_Finance.js`, `Supabase_Memories.js`), Google Ecosystem (`Google_Tasks.js`, `Google_Workspace.js`, `Google_Master_Client.js`), Notion, Web Search (Serper), hingga integrasi Gmail.
 4. **`src/interfaces/` (Gerbang I/O)**
@@ -1733,7 +1739,8 @@ N.E.X.A mengintegrasikan *test suite* otomatis komprehensif berbasis native Node
   - [`tests/day_simulation.test.js`](file:///c:/workspace/nexa-server/tests/day_simulation.test.js) (Simulasi siklus hidup 24 jam penuh)
   - [`tests/signal_detector.test.js`](file:///c:/workspace/nexa-server/tests/signal_detector.test.js) (6 pengujian deteksi sinyal & koreksi feedback pengguna)
   - [`tests/playbook_engine.test.js`](file:///c:/workspace/nexa-server/tests/playbook_engine.test.js) (4 pengujian injeksi kontekstual SOP & playbook)
-- **Cakupan 32 Pengujian Unit & Sistem (32/32 Passing)**:
+  - [`tests/micro_reviewer.test.js`](file:///c:/workspace/nexa-server/tests/micro_reviewer.test.js) (7 pengujian micro-reviewer, stance note, cadence caching, dan FTS memory recall)
+- **Cakupan 38 Pengujian Unit & Sistem (38/38 Passing)**:
   1. **Circuit Breaker & Multi-Tier AI**: Transisi status circuit breaker (open/half-open/close), penggandaan jeda saat probe gagal, isolasi error 429 ke kunci bersangkutan, kepatuhan header `Retry-After`, dan rotasi round-robin modulo kunci API.
   2. **Traffic Control Notifikasi**: Deteksi jam tenang malam WIB (23:00–05:00), perlakuan P0 menembus jam tenang, penundaan P1 ke status `QUEUED_DEFERRED` dan morning flush (05:30 WIB), pemangkasan kuota harian P1 ke digest, penggabungan multi-pesan P2 dalam digest, dan deduplikasi berbasis expiry window.
   3. **Pagar Anti-Korupsi Outbound**: Pengecekan regex deterministik case-sensitive context-anchored untuk membatalkan pengiriman teks cacat (`[object Object]`, `NaN`, `undefined`).
@@ -1741,6 +1748,7 @@ N.E.X.A mengintegrasikan *test suite* otomatis komprehensif berbasis native Node
   5. **Keamanan & Karantina Hardware/Memori**: Blokade aksi hardware asing via allowlist (`ALLOWED_BRIDGE_ACTIONS`), serta karantina konfirmasi verbal untuk aksi berdampak privasi (`TAKE_PHOTO`, `GET_LOCATION`, `LOCK_SCREEN`, dsb.) dan penulisan memori permanen (`savePersonalFact`).
   6. **Simulasi Siklus 24 Jam Penuh**: Menjalankan seluruh alur 24 jam secara realistis untuk membuktikan bahwa morning briefing, pulse berkala, digest siang & malam, quiet hours, dan pembatasan frekuensi berjalan harmonis tanpa kelelahan notifikasi.
   7. **Signal Detection & Procedural Memory**: Deteksi koreksi pengguna secara deterministik (< 1 ms, 0 token LLM), anti-stalker re-framing untuk mencegah *creepy over-citation*, dan resolusi playbook SOP prosedural.
+  8. **Dialectic Stance, Asynchronous Micro-Reviewer & FTS Recall**: Penyelarasan tone psikologis operasional sadar waktu ($\le 250$ karakter) dengan Cadence Caching 3-turn, background review asinkron (`setImmediate`) dengan pembatasan 3 review/24 jam, dan Full-Text Search percakapan lampau via Telegram `/search`.
 - **Pipeline Otomatisasi GitHub Actions (`.github/workflows/ci.yml`)**:
   - Pemeriksaan sintaks menyeluruh (`find src -name "*.js" -exec node -c {} +`).
   - Eksekusi test suite otomatis (`npm test`).
@@ -2297,19 +2305,171 @@ Untuk memaksimalkan sumber daya gratis (*Zero-Cost Deployment*), `Fallback_Engin
 
 ---
 
-### 14.5 Matriks Komparasi Kinerja Arsitektur v3.1 vs v3.2
+## BAB 15: ARSITEKTUR v3.3 : ADAPTIVE PROCEDURAL MEMORY, DIALECTIC STANCE & ASYNCHRONOUS LEARNING LOOP (HERMES AGENT ADAPTATION)
 
-| Parameter Arsitektur | N.E.X.A v3.1 | N.E.X.A v3.2 (Deterministic Resilience) |
-|--|--|--|
-| **Kecerdasan Prediksi Keuangan** | Probabilistik via LLM Prompt (2-4s) | **Matematika Murni CPU (< 1 ms, 0 Token, Rp 0)** |
-| **Distribusi Beban API Key** | Statis (Kunci #1 habis duluan) | **Round-Robin Modulo (Beban Terbagi Rata 4x Lipat)** |
-| **Penanganan Error 429 / Kuota** | Cooldown statis 60s seragam | **Smart `Retry-After` + 30m Quota Daily Isolation** |
-| **Pengelolaan Notifikasi Proaktif** | Tiap cron kirim chat langsung | **Centralized Gateway (P0/P1/P2 + Jam Tenang + Closed-Loop Digest Demotion + Anti-Corruption Guard)** |
-| **Konkurensi Pesan Pengguna** | Paralel tak terkontrol (*Race Condition*) | **In-Memory FIFO Serialization Queue per Chat** |
-| **Integritas Berkas Memori Disk** | Penulisan `writeFileSync` langsung | **Atomic File Write (`.tmp` + `renameSync`)** |
-| **Keamanan Hardware & Privasi** | Akses bebas tanpa batasan | **Strict Allowlist + Karantina Konfirmasi Verbal + Edge JWT Verify** |
-| **Otomasi Pengujian & Verifikasi** | Pengujian manual | **32 Unit Tests + Simulasi 24 Jam (`npm test`) + CI Audit** |
-| **Keamanan Database Publik** | Terbuka bagi kunci anon | **Row Level Security (RLS) + Service Role Only** |
+Bab ini membedah lompatan revolusioner N.E.X.A pada **versi 3.3**: sebuah transformasi kognitif mendalam yang mengadaptasi arsitektur **Hermes Agent** ke dalam ekosistem Node.js/Express. Melalui pembaruan ini, N.E.X.A bertransformasi dari sekadar asisten penyimpan fakta (*Fact Storage Agent*) menjadi sistem otonom yang mampu mempelajari cara kerja (*Procedural Memory*), menyesuaikan sikap psikologis secara sadar konteks (*Dialectic Stance Reasoning*), dan berevolusi mandiri melalui siklus audit asinkron di latar belakang (*Asynchronous Micro-Reviewer*).
+
+---
+
+### 15.1 Latar Belakang & Filosofi: Mengapa N.E.X.A Membutuhkan Memori Prosedural
+
+**Keterbatasan Arsitektur v3.2:**
+Hingga versi 3.2, N.E.X.A memiliki dua jenis memori utama:
+1. **Memori Episodik (`nexa_chat_memories`)**: Rekam jejak percakapan jangka pendek.
+2. **Memori Semantik (`nexa_user_profile`, `nexa_core_identity`)**: Kumpulan fakta permanen dan sifat kepribadian Tuan Faqih yang diindeks via vektor semantik.
+
+Meskipun sangat akurat, sistem ini menyisakan 3 kelemahan mendasar:
+1. **Dilema "Tahu Fakta tapi Tidak Tahu Prosedur"**: N.E.X.A mengingat bahwa Tuan menyukai respons padat dan tanpa basa-basi, namun saat mengeksekusi intent tertentu (misalnya transaksi keuangan atau input tugas), LLM tetap memprosesnya dengan gaya bebas (*unconstrained generation*) yang rentan bertele-tele.
+2. **Bahaya Verbalisasi Canggung (*Stalker Effect / Creepy Over-Citation*)**: Ketika fakta kelemahan dicurahkan mentah-mentah ke dalam prompt sistem (misal: *"Kelemahan: Pelupa dan sering menunda"*), model sering memverbalisasikannya secara canggung ke dalam chat (misal: *"Karena Tuan seorang yang pelupa, saya ingatkan..."*), yang merusak kenyamanan ergonomis pengguna.
+3. **Pemborosan Putaran Koreksi (*Turn-Correction Waste*)**: Jika format jawaban tidak sesuai, Tuan harus mengoreksi berulang kali (*"singkat saja"*, *"jangan pakai bullet"*). Model meminta maaf pada turn tersebut, tetapi tidak pernah memperbarui SOP internalnya secara permanen.
+
+**Solusi Arsitektur Hermes Agent:**
+N.E.X.A v3.3 mengadopsi 4 pilar arsitektur Hermes Agent:
+- **Zero-Token Signal Detector**: Evaluasi instan sinyal feedback lokal berbasis regex tanpa membuang token LLM.
+- **Procedural Playbook Engine**: Prosedur Standar Operasional (SOP) per domain tugas dengan batas keras (*Bounded Memory* $\le 700$ karakter).
+- **Dialectic Stance Reasoning**: Sikap psikologis operasional ringkas ($\le 250$ karakter) dengan *Cadence Caching* 3-turn.
+- **Asynchronous Micro-Reviewer**: Proses penilai latar belakang yang mengevaluasi percakapan lampau dan memutakhirkan playbook secara otomatis dengan perlindungan kuota harian ketat (maksimal 3 review/24 jam).
+
+---
+
+### 15.2 Fase 1: Zero-Token Signal Detector & Anti-Stalker Re-framing (`Signal_Detector.js`)
+
+`Signal_Detector.js` bertindak sebagai lapisan sensor deterministik pertama yang memeriksa setiap pesan masuk sebelum mencapai AI Router.
+
+```
+[Pesan Pengguna Masuk]
+         │
+         ▼
+ ┌────────────────────────────────────────────────────────┐
+ │ Signal_Detector.js (Regex Lokal, Latensi <0.1ms, 0 Token)│
+ ├────────────────────────────────────────────────────────┤
+ │ • CORRECTION_LENGTH           • CORRECTION_FORMAT       │
+ │ • CORRECTION_TONE             • CORRECTION_MISUNDERSTAND│
+ │ • EXPLICIT_REMEMBER           • ACCEPT / OVERRIDE      │
+ └────────────────────────────────────────────────────────┘
+         │
+         ▼ (Hasil Sinyal Ditempelkan ke Objek Konteks)
+ [AI Router + Dynamic Prompt Reframing]
+```
+
+#### 1. Klasifikasi 7 Sinyal Feedback Bahasa Indonesia
+Detektor memetakan pola bahasa alami lokal ke dalam 7 kelas sinyal deterministik:
+- `CORRECTION_LENGTH`: *"terlalu panjang"*, *"singkat aja"*, *"jangan panjang-panjang"*, *"lebih detail"*.
+- `CORRECTION_FORMAT`: *"jangan pakai bullet"*, *"pakai poin-poin"*, *"format tabel"*, *"tanpa markdown"*.
+- `CORRECTION_TONE`: *"terlalu kaku"*, *"lebih santai"*, *"jangan formal"*, *"bicara ramah"*.
+- `CORRECTION_MISUNDERSTANDING`: *"bukan itu maksudku"*, *"salah paham"*, *"maksud saya bukan begitu"*.
+- `EXPLICIT_REMEMBER`: *"ingat ini"*, *"catat bahwa"*, *"ingat-ingat"*, *"jangan sampai lupa"*.
+- `ACCEPT`: *"oke mantap"*, *"siap laksanakan"*, *"bagus"*, *"cocok"*.
+- `OVERRIDE`: *"batalkan"*, *"jangan jadi"*, *"ganti rencana"*.
+
+#### 2. Anti-Stalker Re-framing
+Untuk mengeliminasi verbalisasi fakta yang canggung:
+- **Detektor Over-Citation (`detectOverCitation`)**: Memeriksa teks balasan sebelum dikirim ke Telegram untuk memastikan tidak mengandung frasa terlarang seperti *"berdasarkan fakta Anda"*, *"saya ingat Anda pelupa"*, atau *"menurut catatan kepribadian Tuan"*.
+- **Latent Operational Directives**: Di `AI_Router.js`, daftar kelemahan tidak disuntikkan secara mentah, melainkan direfraksikan menjadi arahan operasional laten (contoh: kelemahan *"pelupa"* diterjemahkan menjadi *"Gunakan bullet ringkas dan ingatkan tanggal tenggat secara lugas tanpa menyebutkan bahwa pengguna adalah pelupa"*).
+
+---
+
+### 15.3 Fase 2: Procedural Memory Engine & Playbook Ecosystem (`Playbook_Engine.js`)
+
+`Playbook_Engine.js` mengelola memori prosedural sistem melalui tabel Supabase `nexa_playbooks`:
+
+| Kolom | Tipe Data | Keterangan |
+| :--- | :--- | :--- |
+| `intent_class` | `TEXT` (Primary Key) | Identitas intent kanonikal (misal: `FINANCE`, `SCHEDULE`, `NORMAL_CHAT`) |
+| `procedure_text` | `TEXT` | Teks panduan SOP ringkas ($\le 700$ karakter) |
+| `version` | `INTEGER` | Nomor versi SOP yang terus naik saat berevolusi |
+| `trigger_count` | `INTEGER` | Frekuensi eksekusi playbook |
+| `is_active` | `BOOLEAN` | Status aktif/non-aktif |
+
+#### 7 Playbook Kanonikal Default:
+1. **`FINANCE`**: Format ringkas konfirmasi pengeluaran/pemasukan, tampilkan sisa saldo dan peringatan batas harian.
+2. **`SCHEDULE`**: Konfirmasi jadwal kalender/tugas dengan format tanggal dan jam Indonesia yang presisi.
+3. **`DEVICE`**: SOP eksekusi hardware Android (kamera, senter, lokasi) dengan verifikasi keamanan ketat.
+4. **`INFORMATION`**: Sintesis jawaban padat berfakta tanpa basa-basi pembuka.
+5. **`TASK_COMPLETION`**: Verifikasi penyelesaian to-do list Google Tasks secara tuntas.
+6. **`CREATIVE_WRITING`**: Strukturisasi gagasan dan draf tulisan dengan diksi elegan dan kaya konteks.
+7. **`NORMAL_CHAT`**: Gaya bicara hangat, santai, empatik, dan berwibawa layaknya Chief of Staff sejati.
+
+#### Karakteristik Teknis Playbook Engine:
+- **In-Memory RAM Cache (15 Menit TTL)**: Seluruh playbook dimuat ke RAM sehingga injeksi prompt instan (0.001 ms) tanpa latensi query database.
+- **Injeksi Terfokus (1 Intent = 1 Playbook)**: AI Router hanya menginjeksi playbook yang cocok dengan intent pesan aktif, menghemat token dan menjaga fokus model.
+- **Batas Keras Bounded Memory**: Maksimal **700 karakter** per playbook. Teks yang melebihi batas dipotong otomatis (`.slice(0, 700)`).
+- **Antarmuka Telegram & Rollback**: Perintah `/playbook` (List, Detail, Set, Rollback) dengan proteksi sanitasi HTML entitas untuk Telegram parse mode.
+
+---
+
+### 15.4 Fase 3A: Dialectic Stance Reasoning (`Dialectic_Engine.js`)
+
+`Dialectic_Engine.js` menyuntikkan catatan sikap psikologis operasional (*Stance Note*) yang selaras dengan situasi emosional dan ritme waktu Tuan:
+
+- **Sadar Waktu Jakarta (WIB)**: Memetakan jam operasional ke dalam fase harian:
+  - `EARLY_MORNING` (04:00–07:00): Ringkas, segar, mempersiapkan hari.
+  - `WORK_HOURS` (07:00–18:00): Efisien, berorientasi solusi cepat, minim distraksi.
+  - `EVENING` (18:00–22:00): Relaks, apresiatif, reflektif.
+  - `NIGHT` (22:00–04:00): Tenang, mendorong istirahat, hindari topik pemicu stres.
+- **Batas Keras**: Maksimal **250 karakter** (~40–50 token).
+- **Cadence Caching (3-Turn)**: Menghitung ulang stance setiap 3 interaksi pengguna, menghemat komputasi dan menjaga stabilitas kepribadian dalam dialog pendek.
+
+---
+
+### 15.5 Fase 3B: Asynchronous Micro-Reviewer & Closed-Loop Learning (`Micro_Reviewer.js`)
+
+`Micro_Reviewer.js` mengadaptasi mekanisme `background_review.py` milik Hermes Agent untuk menciptakan putaran belajar mandiri (*Closed-Loop Learning*).
+
+```
+ ┌─────────────────────────────────────────────────────────────┐
+ │                     3 PEMICU OTONOM                        │
+ │  1. Timer Idle 15 Menit tanpa interaksi                     │
+ │  2. Counter 10 Turn percakapan aktif                        │
+ │  3. Cron Malam 23:30 WIB                                    │
+ └──────────────────────────────┬──────────────────────────────┘
+                                │
+                                ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │ Micro_Reviewer.js (Non-Blocking via setImmediate)           │
+ ├─────────────────────────────────────────────────────────────┤
+ │ • Guard Kuota Harian: Maksimal 3 Review / 24 Jam           │
+ │ • Audit Percakapan: Deteksi Koreksi & Ketidakpuasan         │
+ │ • Evaluasi Playbook: Jika ada SOP usang -> Generate Versi Baru│
+ └──────────────────────────────┬──────────────────────────────┘
+                                │
+                    [Playbook Dimutakhirkan]
+                                │
+                                ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │ Notifikasi Proaktif Telegram + Inline Button Rollback       │
+ │ "💡 N.E.X.A telah menyesuaikan SOP [FINANCE] ke versi 2"   │
+ │ [ ⏪ Batalkan Perubahan (Rollback) ]                       │
+ └─────────────────────────────────────────────────────────────┘
+```
+
+#### Fitur Utama Micro-Reviewer:
+1. **Eksekusi Asinkron Non-Blocking**: Berjalan via `setImmediate()` dan `.unref()`, tidak pernah menunda atau memperlambat respons chat ke Telegram.
+2. **Strict Daily Budget Guard**: Maksimal **3 kali panggilan LLM review per 24 jam** untuk mencegah lonjakan kuota API free-tier.
+3. **Pemberitahuan Proaktif & Kedaulatan Pengguna**: Setiap pembaruan playbook mengirimkan laporan singkat ke Telegram dengan tombol inline untuk membatalkan perubahan (*1-Click Rollback*).
+
+---
+
+### 15.6 Fase 3C: Full-Text Search (FTS) Memory Recall
+
+Untuk penarikan memori masa lalu tanpa membebani context window prompt:
+- **Supabase FTS (`searchPastChats`)**: Memanfaatkan PostgreSQL full-text search (`websearch_to_tsquery`) dan GIN index.
+- **On-Demand Recall**: Hanya dijalankan saat Tuan mengeksekusi perintah `/search <kata kunci>` di Telegram, menghasilkan penelusuran riwayat cepat dengan kutipan tanggal yang akurat.
+
+---
+
+### 15.7 Matriks Komparasi Kinerja Arsitektur v3.2 vs v3.3
+
+| Parameter Arsitektur | N.E.X.A v3.2 (Deterministic) | N.E.X.A v3.3 (Hermes Closed-Loop) |
+| :--- | :--- | :--- |
+| **Memori Prosedural (SOP)** | Tidak ada (LLM berimprovisasi) | **7 Dynamic Playbooks ($\le$ 700 ch, RAM Cache 15m)** |
+| **Penyesuaian Sikap Operasional** | Statis per persona | **Dialectic Stance Note ($\le$ 250 ch, Cadence 3-Turn)** |
+| **Deteksi Feedback Pengguna** | Parsing manual oleh LLM | **Zero-Token Signal Detector lokal (< 0.1 ms, 0 Token)** |
+| **Perlindungan Verbalisasi Fakta** | Raw Fact Injection | **Anti-Stalker Re-framing & Over-Citation Filter** |
+| **Evolusi Mandiri Sistem** | Intervensi manual programmer | **Asynchronous Micro-Reviewer (Max 3 Run/Hari + Rollback)** |
+| **Penarikan Memori Masa Lalu** | Scan linier terbatas | **PostgreSQL Full-Text Search (FTS) On-Demand** |
+| **Total Test Suite Otomatis** | 32 Unit Tests Passing | **38 Unit Tests Passing (`npm test`)** |
+| **Overhead Prompt Tambahan** | Baseline (v3.2) | **Terkendali Ketat (+$\approx$ 170-200 Token / +2.2%)** |
 
 ---
 **~ TAMAT ~**
