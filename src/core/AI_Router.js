@@ -1294,6 +1294,22 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     console.log(`[ROUTER] Identity injection: context=${_topicContext}, layers=${Object.keys(_identityModel).filter(l => _identityContextBlock.includes(l)).join(',')}`);
   }
 
+  // [v3.3] 3.6. Inject Procedural Playbook per Intent/Topic (Memori Prosedural)
+  let _activePlaybook = null;
+  try {
+    const playbookEngine = require('../domain/Playbook_Engine');
+    _activePlaybook = await playbookEngine.getPlaybookForIntent(_topicContext);
+    if (_activePlaybook && _activePlaybook.rendered) {
+      const _playbookBlock = await playbookEngine.formatPlaybookContextBlock(_topicContext);
+      if (_playbookBlock) {
+        factsContext += _playbookBlock;
+        console.log(`[ROUTER] Playbook injected: intent=${_activePlaybook.intent} (v${_activePlaybook.version})`);
+      }
+    }
+  } catch (_pbErr) {
+    // Non-blocking
+  }
+
   // 3.5. Inject Current Jakarta Time — 100% pure UTC+7 math (immune to OS/HuggingFace timezone bugs)
   const _now = new Date();
   const _jkt = new Date(_now.getTime() + 7 * 60 * 60 * 1000); // Shift to WIB
@@ -1567,6 +1583,7 @@ function _normalizeRoutingOutput(routingData, sentimentScore) {
     routingData.reply_message = _cleanEmDashes(routingData.reply_message);
   }
   routingData._injectedTraits = _injectedTraitsList || [];
+  routingData._injectedPlaybook = _activePlaybook || null;
   routingData._topicContext = _topicContext || 'DEFAULT';
   return routingData;
 }

@@ -1020,6 +1020,38 @@ async function handleTelegramWebhook(req, res) {
 
 
     // ============================================================
+    // [v3.3] PLAYBOOK PROCEDURAL MEMORY COMMAND INTERCEPTOR
+    // Menangani perintah /playbook, /playbook <INTENT>, /playbook undo <INTENT>
+    // ============================================================
+    if (textInput && /^\/playbook\b/i.test(textInput.trim())) {
+      console.log('[TELEGRAM-CMD] Menerima perintah /playbook:', textInput.trim());
+      const playbookEngine = require('../../domain/Playbook_Engine');
+      const parts = textInput.trim().split(/\s+/);
+
+      let replyText = '';
+      if (parts.length === 1) {
+        // Hanya /playbook -> Tampilkan ringkasan semua playbook
+        replyText = await playbookEngine.formatPlaybooksSummary();
+      } else if (parts[1].toLowerCase() === 'undo') {
+        const targetIntent = parts[2] || '';
+        if (!targetIntent) {
+          replyText = '⚠️ Format salah. Gunakan: <code>/playbook undo &lt;INTENT&gt;</code> (contoh: <code>/playbook undo EMAIL</code>)';
+        } else {
+          const undoRes = await playbookEngine.undoPlaybook(targetIntent);
+          replyText = undoRes.message;
+        }
+      } else {
+        // /playbook <INTENT> -> Tampilkan detail satu playbook
+        const targetIntent = parts[1];
+        replyText = await playbookEngine.formatPlaybookDetail(targetIntent);
+      }
+
+      await respondToTelegram(replyText, false);
+      deliverWebhookReply();
+      return;
+    }
+
+    // ============================================================
     // [PHASE 6] AWAITING IDENTITY REJECTION REASON
     // Jika user membalas setelah klik REJECT pada proposal identitas
     // ============================================================
@@ -3637,6 +3669,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             intent: routingData.intent,
             topic: routingData._topicContext || 'DEFAULT',
             injectedTraits: routingData._injectedTraits || [],
+            injectedPlaybook: routingData._injectedPlaybook || null,
             sessionKey: `tg:${chatId || 'default'}`
           }).catch(err => {
             console.warn('[TELEGRAM] Signal Detector background evaluation error:', err.message);
