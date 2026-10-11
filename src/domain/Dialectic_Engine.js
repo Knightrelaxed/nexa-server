@@ -24,6 +24,7 @@ const DEFAULT_CADENCE_TURNS = 3;
 // In-Memory RAM Cache untuk Dialectic Cadence
 let _cachedStance = null;
 let _cachedTopic = null;
+let _cachedTimeWindow = null;
 let _turnsRemaining = 0;
 
 /**
@@ -140,20 +141,21 @@ function getStanceNote(options = {}) {
   } = options;
 
   const topic = String(topicContext || 'DEFAULT').toUpperCase().trim();
+  const timeWindow = resolveTimeWindow(jktHour);
 
-  // Cek cache jika valid dan topik sama
-  if (!forceRefresh && _cachedStance && _cachedTopic === topic && _turnsRemaining > 0) {
+  // Cek cache: valid hanya jika topik sama, timeWindow sama, dan turnsRemaining > 0
+  if (!forceRefresh && _cachedStance && _cachedTopic === topic && _cachedTimeWindow === timeWindow && _turnsRemaining > 0) {
     _turnsRemaining--;
     return _cachedStance;
   }
 
   // Generate stance baru
-  const timeWindow = resolveTimeWindow(jktHour);
   const stance = buildStanceNote({ topicContext: topic, timeWindow, directives });
 
   // Simpan ke cache
   _cachedStance = stance;
   _cachedTopic = topic;
+  _cachedTimeWindow = timeWindow;
   _turnsRemaining = DEFAULT_CADENCE_TURNS - 1;
 
   return stance;
@@ -184,6 +186,7 @@ function getStanceNoteBlock(options = {}) {
 function resetStanceCache() {
   _cachedStance = null;
   _cachedTopic = null;
+  _cachedTimeWindow = null;
   _turnsRemaining = 0;
 }
 
@@ -194,6 +197,7 @@ function getCacheStatus() {
   return {
     cachedStance: _cachedStance,
     cachedTopic: _cachedTopic,
+    cachedTimeWindow: _cachedTimeWindow,
     turnsRemaining: _turnsRemaining
   };
 }

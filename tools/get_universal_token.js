@@ -24,10 +24,17 @@ const { google } = require('googleapis');
 const http = require('http');
 const url = require('url');
 
-// Ganti dengan OAuth Client ID & Secret dari Google Cloud Console
-const CLIENT_ID = '811415183702-idiqmp253o2n4u8t27as1eaai3rt0mmc.apps.googleusercontent.com';
-const CLIENT_SECRET = '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';
-const REDIRECT_URI = 'http://localhost:3000/oauth2callback';
+require('dotenv').config();
+
+// Ambil OAuth Client ID & Secret dari environment variables
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || process.env.GMAIL_CLIENT_ID;
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || process.env.GMAIL_CLIENT_SECRET;
+const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth2callback';
+
+if (!CLIENT_ID || !CLIENT_SECRET) {
+  console.error('❌ Error: GOOGLE_CLIENT_ID dan GOOGLE_CLIENT_SECRET wajib didefinisikan di .env');
+  process.exit(1);
+}
 
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 

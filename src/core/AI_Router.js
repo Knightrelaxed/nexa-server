@@ -226,23 +226,43 @@ function _detectTopicContext(text) {
   if (!text) return 'DEFAULT';
   const t = String(text).toLowerCase();
 
-  // SCHEDULING: Topik waktu, jadwal, tugas
-  if (/\b(jadwal|kalender|deadline|tugas|besok|hari ini|meeting|kelas|matkul|reminder|alarm|bangun)\b/.test(t)) {
-    return 'SCHEDULING';
-  }
-  // FINANCE: Topik keuangan
-  if (/\b(beli|bayar|transfer|saldo|dompet|keuangan|uang|pengeluaran|tabungan|budget|qris|tagihan)\b/.test(t)) {
+  // 1. FINANCE: Transaksi, pembayaran, beli, saldo (Prioritas tinggi agar "beli kopi hari ini 20rb" tidak tertelan scheduling)
+  if (/\b(beli|bayar|transfer|saldo|dompet|keuangan|uang|pengeluaran|tabungan|budget|qris|tagihan|ongkir|makan\s+(siang|malam|pagi))\b/.test(t) ||
+      /\b\d+\s*(rb|k|ribu|rupiah|jt|juta)\b/.test(t)) {
     return 'FINANCE';
   }
-  // RESEARCH: Pencarian, riset, baca
-  if (/\b(cari|cek|googling|research|artikel|baca|informasi|berita|email|inbox)\b/.test(t)) {
+
+  // 2. EMAIL_DRAFT: Penulisan, draf, email
+  if (/\b(email|surel|draf\s+email|balas\s+email|kirim\s+email|tulis\s+email|inbox)\b/.test(t)) {
+    return 'EMAIL_DRAFT';
+  }
+
+  // 3. BRIEFING_MORNING: Ringkasan atau briefing pagi
+  if (/\b(briefing|morning\s+briefing|ringkasan\s+pagi|update\s+pagi|selamat\s+pagi)\b/.test(t)) {
+    return 'BRIEFING_MORNING';
+  }
+
+  // 4. DISCIPLINE_NUDGE: Fokus, anti-prokrastinasi, god mode
+  if (/\b(fokus|jangan\s+menunda|prokrastinasi|disiplin|god\s+mode|blokir\s+sosmed|terdistraksi)\b/.test(t)) {
+    return 'DISCIPLINE_NUDGE';
+  }
+
+  // 5. SCHEDULING: Topik waktu, jadwal, tugas, agenda
+  if (/\b(jadwal|kalender|deadline|tugas|agenda|besok|hari\s+ini|lusa|meeting|kelas|matkul|reminder|alarm|bangun)\b/.test(t)) {
+    return 'SCHEDULING';
+  }
+
+  // 6. RESEARCH: Pencarian, riset, artikel, berita
+  if (/\b(cari|cek|googling|research|artikel|baca|informasi|berita)\b/.test(t)) {
     return 'RESEARCH';
   }
-  // STRATEGIC: Keputusan, rencana besar, pilihan penting
+
+  // 7. STRATEGIC: Keputusan, rencana besar, pilihan penting
   if (/\b(rencana|strategi|pilihan|memilih|keputusan|planning|prioritas|tujuan|target|goals|skripsi|karir)\b/.test(t)) {
     return 'STRATEGIC';
   }
-  // CASUAL: Obrolan santai
+
+  // 8. CASUAL: Obrolan santai
   if (/\b(halo|hai|apa kabar|gimana|bagaimana|cerita|curhat|lagi ngapain)\b/.test(t)) {
     return 'CASUAL';
   }
@@ -265,6 +285,9 @@ function _buildIdentityContextBlock(identityModel, topicContext, outInjectedList
     SCHEDULING: ['HABITS', 'WEAKNESSES', 'PREFERENCES'],
     FINANCE: ['WEAKNESSES', 'VALUES', 'HABITS'],
     RESEARCH: ['DECISION_STYLE', 'PREFERENCES'],
+    EMAIL_DRAFT: ['PREFERENCES', 'DECISION_STYLE'],
+    BRIEFING_MORNING: ['HABITS', 'MOTIVATIONS'],
+    DISCIPLINE_NUDGE: ['WEAKNESSES', 'MOTIVATIONS'],
     STRATEGIC: ['VALUES', 'DECISION_STYLE', 'MOTIVATIONS'],
     CASUAL: ['PREFERENCES', 'MOTIVATIONS'],
     DEFAULT: ['PREFERENCES'],
@@ -1296,13 +1319,13 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
 
   // [v3.3] 3.6. Inject Procedural Playbook per Intent/Topic (Memori Prosedural)
   let _activePlaybook = null;
+  let _playbookBlock = '';
   try {
     const playbookEngine = require('../domain/Playbook_Engine');
     _activePlaybook = await playbookEngine.getPlaybookForIntent(_topicContext);
     if (_activePlaybook && _activePlaybook.rendered) {
-      const _playbookBlock = await playbookEngine.formatPlaybookContextBlock(_topicContext);
+      _playbookBlock = await playbookEngine.formatPlaybookContextBlock(_topicContext);
       if (_playbookBlock) {
-        factsContext += _playbookBlock;
         console.log(`[ROUTER] Playbook injected: intent=${_activePlaybook.intent} (v${_activePlaybook.version})`);
       }
     }
@@ -1330,17 +1353,15 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   const currentJakartaISO = `${_jktYear}-${String(_jktMonth + 1).padStart(2, '0')}-${String(_jktDate).padStart(2, '0')}`;
 
   // [v3.3] 3.7. Inject Dialectic Stance Note (Honcho Dialectic adaptation, <= 60 tokens)
+  let _stanceBlock = '';
   try {
     const dialecticEngine = require('../domain/Dialectic_Engine');
     const _activeDirectives = (_injectedTraitsList || []).map(t => t.directive).filter(Boolean);
-    const _stanceBlock = dialecticEngine.getStanceNoteBlock({
+    _stanceBlock = dialecticEngine.getStanceNoteBlock({
       topicContext: _topicContext,
       jktHour: _jktHour,
       directives: _activeDirectives
     });
-    if (_stanceBlock) {
-      factsContext += _stanceBlock;
-    }
   } catch (_stanceErr) {
     // Non-blocking
   }
@@ -1471,6 +1492,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // ── Compile Selective System Prompt based on Candidate Domains ──────────
   const routerSystemPrompt = buildRouterSystemPrompt(_candidateDomains);
   const presenceContext = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
+  const _dynamicOperationalBlock = `${_playbookBlock || ''}${_stanceBlock || ''}`.trim();
 
   const prompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
@@ -1488,7 +1510,7 @@ ${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
 
 [RIWAYAT OBROLAN]
 ${_applyTokenBudgetGuard(factsContext + activeAccountsBlock + activeCategoriesBlock + sentimentBlock + crossDomainBlock + runtimeContextBlock, contextStr, routerSystemPrompt)}
-
+${_dynamicOperationalBlock ? `\n[PANDUAN OPERASIONAL & SIKAP SAAT INI (PLAYBOOK & STANCE)]\n${_dynamicOperationalBlock}\n` : ''}
 [PESAN TERBARU TUAN FAQIH]
 ${textInput}
 

@@ -169,3 +169,47 @@ test('AI_Router: _buildIdentityContextBlock enforces Anti-Stalker Re-framing', (
   assert.equal(injectedList[0].trait_key, 'late_sleep');
   assert.equal(injectedList[1].trait_key, 'response_style');
 });
+
+test('Signal_Detector: false-positive resistance for natural everyday sentences', () => {
+  // Financial statement with 'terlalu banyak' should NOT be a length correction
+  const resFinance = signalDetector.detectUserSignals('Pengeluaranku terlalu banyak bulan ini, harus hemat');
+  assert.equal(resFinance.length, 0);
+
+  // Financial logging with 'catat' should NOT be EXPLICIT_REMEMBER
+  const resCatat = signalDetector.detectUserSignals('Catat ini ya beli bensin 50rb di pertamina');
+  assert.equal(resCatat.length, 0);
+
+  // Calendar cancellation with 'batalkan' should NOT be general OVERRIDE
+  const resBatal = signalDetector.detectUserSignals('Batalkan rapat besok jam 10 pagi');
+  assert.equal(resBatal.length, 0);
+});
+
+test('Signal_Detector: Turn Attribution routes feedback to previous turn context', async () => {
+  const previousContext = {
+    intent: 'FINANCE',
+    topic: 'FINANCE',
+    injectedPlaybook: { intent: 'FINANCE', version: 2 },
+    injectedTraits: [{ layer: 'WEAKNESSES', trait_key: 'impulsive_spend' }],
+    lastAssistantReply: 'Berikut rincian saldo dan pengeluaran Tuan:\n• Bensin: 50rb\n• Makan: 25rb'
+  };
+
+  // User sends correction in current turn (which router classifies as NORMAL_CHAT)
+  const events = await signalDetector.evaluateTurn({
+    userText: 'Jangan pakai bullet points lagi ya',
+    assistantReply: 'Baik Tuan, saya akan gunakan format prosa tanpa bullet points.',
+    intent: 'NORMAL_CHAT',
+    topic: 'DEFAULT',
+    injectedTraits: [],
+    injectedPlaybook: { intent: 'NORMAL_CHAT', version: 1 },
+    previousContext,
+    sessionKey: 'test:attribution'
+  });
+
+  assert.ok(events.length > 0);
+  const correctionEvent = events.find(e => e.event_type === 'CORRECTION');
+  assert.ok(correctionEvent, 'Must detect a CORRECTION event');
+  // CRITICAL: Must be attributed to previous turn (FINANCE), NOT current turn (NORMAL_CHAT)!
+  assert.strictEqual(correctionEvent.intent, 'FINANCE');
+  assert.strictEqual(correctionEvent.topic, 'FINANCE');
+  assert.strictEqual(correctionEvent.injected_refs.playbook, 'FINANCE@2');
+});

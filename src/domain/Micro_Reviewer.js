@@ -149,13 +149,13 @@ async function callReviewLLM(playbook, events) {
     }
 
     if (!parsed || typeof parsed.should_update !== 'boolean') {
-      return { should_update: false, reason: 'Output LLM tidak memenuhi skema valid.' };
+      return { success: false, should_update: false, reason: 'Output LLM tidak memenuhi skema valid.' };
     }
 
-    return parsed;
+    return { success: true, ...parsed };
   } catch (err) {
     console.warn(`[MICRO-REVIEWER] LLM review call failed for ${playbook.intent}:`, err.message);
-    return { should_update: false, reason: `Gagal memanggil model evaluasi: ${err.message}` };
+    return { success: false, should_update: false, reason: `Gagal memanggil model evaluasi: ${err.message}` };
   }
 }
 
@@ -226,6 +226,13 @@ async function runMicroReview(triggerReason = 'MANUAL') {
 
       const groupEventIds = groupEvents.map(e => e.id);
 
+      // JIKA PANGGILAN LLM GAGAL (karena error jaringan, 429, atau format invalid):
+      // JANGAN tandai event sebagai processed! Biarkan tetap pending agar dicoba lagi nanti.
+      if (!reviewResult || reviewResult.success === false) {
+        console.warn(`[MICRO-REVIEWER] ⚠️ Review LLM gagal untuk ${intentClass}: ${reviewResult?.reason || 'Unknown error'}. Event disimpan untuk dicoba kembali.`);
+        continue;
+      }
+
       if (reviewResult.should_update && reviewResult.patch) {
         const patch = reviewResult.patch;
         let renderedText = String(patch.rendered || currentPlaybook.rendered).trim();
@@ -243,7 +250,8 @@ async function runMicroReview(triggerReason = 'MANUAL') {
           rendered: renderedText,
           evidence_event_ids: groupEventIds,
           parent_id: currentPlaybook.id || null,
-          pinned: currentPlaybook.pinned || false
+          pinned: currentPlaybook.pinned || false,
+          isReviewer: true
         };
 
         const upsertRes = await supabaseMemories.upsertPlaybook(newVersionPayload, true);
@@ -282,9 +290,11 @@ async function runMicroReview(triggerReason = 'MANUAL') {
           } catch (notifErr) {
             console.warn('[MICRO-REVIEWER] Gagal mengirim notifikasi Telegram:', notifErr.message);
           }
+        } else {
+          console.warn(`[MICRO-REVIEWER] Upsert playbook ditolak atau gagal untuk ${intentClass}:`, upsertRes?.error);
         }
       } else {
-        // Tidak ada perubahan yang diperlukan, tandai event sudah di-review
+        // LLM sukses dievaluasi dan memutuskan tidak ada perubahan yang diperlukan
         await supabaseMemories.markLearningEventsProcessed(groupEventIds);
         processedEventIds.push(...groupEventIds);
         console.log(`[MICRO-REVIEWER] Playbook ${intentClass} tidak memerlukan update. Alasan: ${reviewResult.reason}`);

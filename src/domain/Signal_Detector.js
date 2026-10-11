@@ -26,7 +26,7 @@ const supabaseMemories = require('../infrastructure/Supabase_Memories');
 
 const PATTERNS = {
   // 1. KOREKSI PANJANG & KEPADATAN
-  LENGTH_SHORTER: /\b(terlalu\s+(panjang|banyak|lebar|detail)|kepanjangan|singkat\s+(aja|saja|dong)|ringkas\s+(aja|saja|dong)|pendek\s+(aja|saja)|to\s+the\s+point|langsung\s+(ke\s+inti|poin|jawab)|jangan\s+(bertele[- ]?tele|muter[- ]?muter|panjang[- ]?panjang))\b/i,
+  LENGTH_SHORTER: /\b(terlalu\s+(panjang|lebar|detail|banyak\s+(omong|kata|teks|penjelasan|kalimat))|kepanjangan|singkat\s+(aja|saja|dong)|ringkas\s+(aja|saja|dong)|pendek\s+(aja|saja)|to\s+the\s+point|langsung\s+(ke\s+inti|poin|jawab)|jangan\s+(bertele[- ]?tele|muter[- ]?muter|panjang[- ]?panjang))\b/i,
   LENGTH_LONGER: /\b(terlalu\s+(singkat|pendek)|kependekan|kurang\s+(jelas|lengkap|detail)|jelaskan\s+(lebih\s+detail|panjang)|tambah\s+penjelasan)\b/i,
 
   // 2. KOREKSI FORMAT
@@ -40,14 +40,14 @@ const PATTERNS = {
   // 4. WORKFLOW / MISUNDERSTANDING REJECTION
   MISUNDERSTANDING: /\b(bukan\s+(gitu|begitu|itu\s+maksudku|maksud saya)|salah\s+paham|maksudku\s+bukan|kamu\s+salah\s+tangkap|bukan\s+itu\s+yang\s+kutanya)\b/i,
 
-  // 5. INSTRUKSI EKSPLISIT MENYIMPAN / PERATURAN
-  EXPLICIT_REMEMBER: /\b(ingat\s+(ini|ya|dong)|catat\s+(ini|ya|dong)|mulai\s+sekarang|patenkan\s+ini|simpan\s+aturan\s+ini|jangan\s+lupa\s+kalau\s+aku)\b/i,
+  // 5. INSTRUKSI EKSPLISIT MENYIMPAN / PERATURAN OPERASIONAL
+  EXPLICIT_REMEMBER: /\b(ingat\s+(ini\s+ya|aturan\s+ini|bahwa\s+aku|preferensiku|selalu|kebiasaanku)|catat\s+(aturan\s+ini|bahwa\s+aku|preferensiku|gaya\s+ini)|mulai\s+sekarang|patenkan\s+(ini|aturan\s+ini)|simpan\s+aturan\s+ini|jangan\s+lupa\s+kalau\s+aku)\b/i,
 
   // 6. ACCEPT / KEPUASAN (Positive Feedback)
   ACCEPT: /\b(oke\s+mantap|mantap\s+(bro|nexa|betul)?|siap\s+laksanakan|sudah\s+pas|bagus\s+(banget|ini)?|keren|pas\s+banget|nah\s+gitu\s+dong|makasih\s+(banyak|ya|nexa)?|terima\s+kasih)\b/i,
 
   // 7. OVERRIDE / BATALKAN AKSI
-  OVERRIDE: /\b(batalkan|batal\s+(aja|saja)|jangan\s+jadi|cancel\s+(itu|aja|saja)|jangan\s+dieksekusi|urungkan)\b/i
+  OVERRIDE: /\b(batalkan\s+(rencana\s+tadi|yang\s+tadi|perintah\s+tadi|eksekusi|aksi\s+tadi)|batal\s+(aja\s+yang\s+tadi|deh\s+yang\s+tadi)|jangan\s+jadi\s+(yang\s+tadi|dieksekusi)|cancel\s+(yang\s+tadi|eksekusi)|jangan\s+dieksekusi|urungkan\s+(aksi|perintah|eksekusi))\b/i
 };
 
 /**
@@ -219,6 +219,7 @@ function detectOverCitation(assistantReply, injectedTraits = [], userText = '') 
  * @param {string} params.topic - Topik pesan
  * @param {Array<object>} params.injectedTraits - Trait yang diinjeksi ke prompt
  * @param {object} params.injectedPlaybook - Playbook yang diinjeksi
+ * @param {object} [params.previousContext] - Konteks giliran sebelumnya (lastAssistantReply, intent, topic, injectedPlaybook, injectedTraits)
  * @param {string} params.sessionKey - Kunci sesi (e.g. '2026-10-11:tg:1')
  * @returns {Promise<Array<object>>} Daftar event yang disimpan
  */
@@ -230,39 +231,48 @@ async function evaluateTurn(params = {}) {
     topic = 'DEFAULT',
     injectedTraits = [],
     injectedPlaybook = null,
+    previousContext = null,
     sessionKey = `session:${new Date().toISOString().slice(0, 10)}`
   } = params;
 
   if (!userText && !assistantReply) return [];
 
-  // 1. Deteksi sinyal user
-  const userSignals = detectUserSignals(userText, assistantReply);
+  // 1. Deteksi sinyal user (evaluasi terhadap balasan turn sebelumnya jika ada)
+  const previousAssistantReply = previousContext?.lastAssistantReply || assistantReply;
+  const userSignals = detectUserSignals(userText, previousAssistantReply);
 
-  // 2. Deteksi over-citation
+  // 2. Deteksi over-citation pada balasan saat ini
   const citationViolations = detectOverCitation(assistantReply, injectedTraits, userText);
 
   const allEvents = [...userSignals, ...citationViolations];
   if (allEvents.length === 0) return [];
 
-  // 3. Susun referensi injeksi
-  const injectedRefs = {};
-  if (injectedPlaybook) {
-    injectedRefs.playbook = `${injectedPlaybook.intent}@${injectedPlaybook.version || 1}`;
-  }
-  if (injectedTraits && injectedTraits.length > 0) {
-    injectedRefs.traits = injectedTraits.map(t => `${t.layer}/${t.trait_key}`);
-  }
-
   const excerpt = String(userText || '').slice(0, 300);
 
-  // 4. Simpan ke database via Supabase_Memories
+  // 3. Simpan ke database via Supabase_Memories dengan Turn Attribution
   const recorded = [];
   for (const ev of allEvents) {
+    // [TURN ATTRIBUTION] Koreksi pengguna selalu merujuk pada respons turn sebelumnya (N-1)!
+    const isCorrection = ev.event_type === 'CORRECTION';
+    const targetIntent = (isCorrection && previousContext?.intent) ? previousContext.intent : (intent || 'NORMAL_CHAT');
+    const targetTopic = (isCorrection && previousContext?.topic) ? previousContext.topic : (topic || 'DEFAULT');
+    const targetPlaybook = (isCorrection && previousContext?.injectedPlaybook) ? previousContext.injectedPlaybook : injectedPlaybook;
+    const targetTraits = (isCorrection && previousContext?.injectedTraits) ? previousContext.injectedTraits : injectedTraits;
+
+    // Susun referensi injeksi yang diatribusikan
+    const injectedRefs = {};
+    if (targetPlaybook) {
+      injectedRefs.playbook = `${targetPlaybook.intent}@${targetPlaybook.version || 1}`;
+    }
+    if (targetTraits && targetTraits.length > 0) {
+      injectedRefs.traits = targetTraits.map(t => `${t.layer}/${t.trait_key}`);
+    }
+
     const eventPayload = {
       session_key: sessionKey,
       event_type: ev.event_type,
-      intent: intent || 'NORMAL_CHAT',
-      topic: topic || 'DEFAULT',
+      intent: targetIntent,
+      topic: targetTopic,
       signal: ev.signal || {},
       injected_refs: injectedRefs,
       user_turn_excerpt: excerpt
@@ -277,7 +287,7 @@ async function evaluateTurn(params = {}) {
   }
 
   if (recorded.length > 0) {
-    console.log(`[SIGNAL_DETECTOR] 🎯 Recorded ${recorded.length} learning event(s): ${recorded.map(r => r.event_type).join(', ')}`);
+    console.log(`[SIGNAL_DETECTOR] 🎯 Recorded ${recorded.length} learning event(s): ${recorded.map(r => `${r.event_type}->${r.intent}`).join(', ')}`);
   }
 
   return recorded;

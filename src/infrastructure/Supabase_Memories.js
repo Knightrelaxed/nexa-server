@@ -1422,17 +1422,32 @@ async function upsertPlaybook(playbook, createNewVersion = false) {
     if (playbook.evidence_event_ids) payload.evidence_event_ids = playbook.evidence_event_ids;
 
     if (existing) {
+      if (existing.pinned && playbook.isReviewer) {
+        return { success: false, error: 'Playbook is pinned by user and cannot be altered by automated reviewer.' };
+      }
+
       if (createNewVersion) {
-        // Archive existing version and insert new version
-        await supabase
+        payload.version = (existing.version || 1) + 1;
+        payload.parent_id = existing.id;
+
+        // Archive existing version first to satisfy partial unique index
+        const { error: archErr } = await supabase
           .from('nexa_playbooks')
           .update({ status: 'ARCHIVED', updated_at: new Date().toISOString() })
           .eq('id', existing.id);
+        if (archErr) return { success: false, error: archErr.message };
 
-        payload.version = (existing.version || 1) + 1;
-        payload.parent_id = existing.id;
+        // Insert new active version
         const { data, error } = await supabase.from('nexa_playbooks').insert([payload]).select();
-        if (error) return { success: false, error: error.message };
+        if (error) {
+          // If insert fails, immediately rollback previous version to ACTIVE so no intent is left unserved
+          await supabase
+            .from('nexa_playbooks')
+            .update({ status: 'ACTIVE', updated_at: new Date().toISOString() })
+            .eq('id', existing.id);
+          return { success: false, error: error.message };
+        }
+
         return { success: true, data: data?.[0] };
       } else {
         // Update active version in-place

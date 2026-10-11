@@ -3681,8 +3681,13 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
     if (finalReply) {
       // Save ONLY the actual final message that the user receives
       console.log('[TELEGRAM] Replying with intent:', routingData.intent);
+      const previousContext = conversationContext ? { ...conversationContext } : null;
       conversationContext = {
         ...(conversationContext || {}),
+        intent: routingData.intent,
+        topic: routingData._topicContext || 'DEFAULT',
+        injectedTraits: routingData._injectedTraits || [],
+        injectedPlaybook: routingData._injectedPlaybook || null,
         lastAssistantReply: finalReply,
         askedAt: Date.now()
       };
@@ -3701,6 +3706,7 @@ Tugas: Jawablah Tuan Faqih secara natural, cerdas, dan luwes berdasarkan hasil p
             topic: routingData._topicContext || 'DEFAULT',
             injectedTraits: routingData._injectedTraits || [],
             injectedPlaybook: routingData._injectedPlaybook || null,
+            previousContext,
             sessionKey: `tg:${chatId || 'default'}`
           }).catch(err => {
             console.warn('[TELEGRAM] Signal Detector background evaluation error:', err.message);
