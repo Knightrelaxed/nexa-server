@@ -86,6 +86,7 @@ module.exports = {
   GMAIL_CLIENT_ID: process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID,
   GMAIL_CLIENT_SECRET: process.env.GMAIL_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET,
   GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN || process.env.GOOGLE_MASTER_REFRESH_TOKEN,
+  GMAIL_TOPIC_NAME: process.env.GMAIL_TOPIC_NAME || process.env.GMAIL_PUBSUB_TOPIC,
   TASKS_REFRESH_TOKEN: process.env.TASKS_REFRESH_TOKEN || process.env.GOOGLE_MASTER_REFRESH_TOKEN,
   GOOGLE_DRIVE_REFRESH_TOKEN: process.env.GOOGLE_DRIVE_REFRESH_TOKEN || process.env.GOOGLE_MASTER_REFRESH_TOKEN,
 
@@ -104,7 +105,8 @@ module.exports = {
   // ============================================================
   // 7. SECURITY, GOD MODE & WHATSAPP BRIDGE
   // ============================================================
-  NEXA_DEVICE_SECRET: process.env.NEXA_DEVICE_SECRET || process.env.NEXA_GODMODE_SECRET,
+  NEXA_DEVICE_SECRET: process.env.NEXA_DEVICE_SECRET,
+  NEXA_BRIDGE_SECRET: process.env.NEXA_BRIDGE_SECRET,
   NEXA_GODMODE_SECRET: process.env.NEXA_GODMODE_SECRET,
   GMAIL_WEBHOOK_SECRET: process.env.GMAIL_WEBHOOK_SECRET || process.env.NEXA_GODMODE_SECRET,
   NEXA_CLI_SECRET: process.env.NEXA_CLI_SECRET, // Strict CLI isolation (No Fallback)

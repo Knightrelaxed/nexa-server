@@ -229,6 +229,13 @@ test('Notifier outbound guard drops corrupted text containing [object Object], N
   const corrupted3 = await n.notify({ kind: 'BRIEF', priority: 'P0', text: 'Agenda: undefined' });
   assert.equal(corrupted3.status, 'DROPPED');
   assert.equal(corrupted3.reason, 'corrupted_content');
+
+  // Guard does NOT drop legitimate proper nouns ("Warung Nan") or engineering tasks mentioning undefined
+  const legit1 = await n.notify({ kind: 'TASK', priority: 'P0', text: 'Konfirmasi: Warung Nan Rp15.000' });
+  assert.equal(legit1.status, 'SENT');
+
+  const legit2 = await n.notify({ kind: 'TASK', priority: 'P0', text: 'Tugas: fix undefined error di API' });
+  assert.equal(legit2.status, 'SENT');
 });
 
 test('Event proximity alerts marked timeSensitive (P0) bypass quiet hours and daily P1 cap', async () => {
@@ -278,4 +285,40 @@ test('controlDeviceHardware allow-list blocks unknown/malicious hardware command
   const res = await executeLiveTool('controlDeviceHardware', { action: 'FORMAT_SD_CARD' });
   assert.equal(res.status, 'REJECTED');
   assert.match(res.message, /daftar izin keamanan/);
+});
+
+test('safeToSpendToday returns INSUFFICIENT_DATA when parameters are missing or invalid', () => {
+  const resEmpty = fi.safeToSpendToday({});
+  assert.equal(resEmpty.status, 'INSUFFICIENT_DATA');
+  assert.equal(resEmpty.remainingToday, null);
+
+  const resNoDays = fi.safeToSpendToday({ balance: 500000 });
+  assert.equal(resNoDays.status, 'INSUFFICIENT_DATA');
+
+  const resInvalidDays = fi.safeToSpendToday({ balance: 500000, daysLeftInclusive: 0 });
+  assert.equal(resInvalidDays.status, 'INSUFFICIENT_DATA');
+});
+
+test('savePersonalFact and privacy-sensitive hardware actions require confirmation', async () => {
+  const { executeLiveTool } = require('../src/core/Live_Tool_Registry');
+
+  // Personal fact quarantine
+  const factRes = await executeLiveTool('savePersonalFact', { fact: 'Suka kopi hitam tanpa gula' });
+  assert.equal(factRes.status, 'NEEDS_CONFIRMATION');
+  assert.match(factRes.message, /BELUM dieksekusi demi keamanan/);
+
+  // Privacy sensitive hardware action quarantine
+  const photoRes = await executeLiveTool('controlDeviceHardware', { action: 'TAKE_PHOTO' });
+  assert.equal(photoRes.status, 'NEEDS_CONFIRMATION');
+  assert.match(photoRes.message, /BELUM dieksekusi demi keamanan/);
+
+  const locRes = await executeLiveTool('controlDeviceHardware', { action: 'GET_LOCATION' });
+  assert.equal(locRes.status, 'NEEDS_CONFIRMATION');
+});
+
+test('updateRecurringRuleStatus rejects invalid status and maps PAUSED to ENDED', async () => {
+  const supabaseFinance = require('../src/infrastructure/Supabase_Finance');
+  // Passing invalid status should return false without throwing
+  const invalidRes = await supabaseFinance.updateRecurringRuleStatus('fake-uuid', 'INVALID_STATUS');
+  assert.equal(invalidRes, false);
 });

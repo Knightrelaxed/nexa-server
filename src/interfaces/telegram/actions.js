@@ -23,6 +23,9 @@ const stripSurroundingQuotes = (str) => {
   return cleaned;
 };
 
+// Case-sensitive guard: avoids false positives like "Warung Nan" or legitimate words in user tasks
+const CORRUPTED_CONTENT_REGEX = /\[object Object\]|\bNaN\b|(?:\b(?:[Rr]p|[Ss]aldo|[Nn]ominal|[Bb]iaya|[Tt]otal|[Hh]arga|[Ss]tatus|[Aa]genda|[Ww]aktu|[Pp]ukul|[Ii]d)\s*[:=]?\s*undefined\b)/;
+
 // ============================================================
 // sendTelegramOutbound
 // Mengirim pesan outbound ke Telegram.
@@ -32,7 +35,7 @@ const stripSurroundingQuotes = (str) => {
 async function sendTelegramOutbound(text, skipMemory = false, platform = 'telegram') {
   try {
     const rawStr = String(text || '');
-    if (/\[object Object\]|\bNaN\b|\bundefined\b/i.test(rawStr)) {
+    if (CORRUPTED_CONTENT_REGEX.test(rawStr)) {
       console.error(`[TELEGRAM-OUTBOUND] ⚠️ Corrupted text blocked from outbound delivery: "${rawStr.slice(0, 100)}"`);
       return;
     }

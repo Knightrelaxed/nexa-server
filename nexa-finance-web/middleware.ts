@@ -7,6 +7,25 @@ import type { NextRequest } from 'next/server'
 // Public routes that don't require auth
 const PUBLIC_ROUTES = ['/login']
 
+// Real JWT validation in Edge runtime: validates 3-part structure, exp expiration, sub, and auth role
+function isValidJwt(token: string): boolean {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return false
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const payloadStr = atob(base64)
+    const payload = JSON.parse(payloadStr)
+    if (!payload.exp || typeof payload.exp !== 'number') return false
+    const nowSec = Math.floor(Date.now() / 1000)
+    if (payload.exp <= nowSec) return false
+    if (!payload.sub) return false
+    if (payload.aud !== 'authenticated' && payload.role !== 'authenticated') return false
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -22,8 +41,7 @@ export function middleware(request: NextRequest) {
 
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname)
   const tokenVal = request.cookies.get('nexa-auth-token')?.value || ''
-  // Reject static strings like "active" or empty tokens; require actual JWT token format
-  const hasAuthToken = Boolean(tokenVal && tokenVal !== 'active' && tokenVal.length > 20)
+  const hasAuthToken = isValidJwt(tokenVal)
 
   // Unauthenticated user attempting to access private route
   if (!hasAuthToken && !isPublicRoute) {

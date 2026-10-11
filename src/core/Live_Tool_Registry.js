@@ -1080,6 +1080,17 @@ async function executeLiveTool(toolName, args = {}) {
         const fact = String(args.fact || '').trim();
         if (!fact) return { status: 'ERROR', message: 'Fakta tidak boleh kosong.' };
 
+        // Security Quarantine: Personal facts require confirmation to prevent hallucinated memory corruption
+        const crypto = require('crypto');
+        const factHash = crypto.createHash('sha256').update(fact.toLowerCase()).digest('hex').slice(0, 16);
+        const confirmCheck = _validateActionConfirmation(
+          'savePersonalFact',
+          `save_fact_${factHash}`,
+          `Simpan fakta personal ke memori jangka panjang: "${fact}"`,
+          args.confirmed
+        );
+        if (confirmCheck) return confirmCheck;
+
         // 1. Direct Instant DB Save (< 100ms)
         await _withToolTimeout(
           supabaseMemories.saveMemoryWithMeta(fact, 'PREFERENCE', 'USER_PROFILE'),
@@ -1138,6 +1149,20 @@ async function executeLiveTool(toolName, args = {}) {
       // ─────────────────────────────────────────────────────────────
       case 'controlDeviceHardware': {
         const action = String(args.action || '').toUpperCase();
+
+        // Privacy and Safety Quarantine: Sensitive hardware actions require explicit confirmation
+        const SENSITIVE_PRIVACY_HARDWARE_ACTIONS = new Set([
+          'TAKE_PHOTO', 'TAKE_SCREENSHOT', 'GET_LOCATION', 'LOCK_SCREEN', 'END_CALL', 'HANGUP'
+        ]);
+        if (SENSITIVE_PRIVACY_HARDWARE_ACTIONS.has(action)) {
+          const confirmCheck = _validateActionConfirmation(
+            'controlDeviceHardware',
+            `hardware_${action.toLowerCase()}`,
+            `Eksekusi kontrol hardware sensitif privasi: ${action}`,
+            args.confirmed
+          );
+          if (confirmCheck) return confirmCheck;
+        }
 
         if (action === 'TOGGLE_FLASHLIGHT' || action === 'FLASHLIGHT') {
           const enabled = args.enabled !== undefined ? args.enabled : true;

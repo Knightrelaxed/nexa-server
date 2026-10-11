@@ -1304,7 +1304,7 @@ async function pollFinanceEmails() {
       }
 
       const cleanMerchant = destination.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const compositeKey = `${nominal}_${cleanMerchant}`;
+      const compositeKey = e.id ? `gmail_${e.id}` : `${nominal}_${cleanMerchant}`;
 
       // Check if already pending or duplicated
       if (pendingConfirmations.has(compositeKey)) continue;

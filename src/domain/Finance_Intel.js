@@ -133,9 +133,22 @@ const floorTo = (x, step = 1000) => Math.floor(x / step) * step;
  * daysLeftInclusive          = days from today to the budget period end, inclusive
  */
 function safeToSpendToday(args = {}) {
-  const budget = Number(args.budgetRemainingBeforeToday ?? args.balance ?? 0);
+  const rawBudget = args.budgetRemainingBeforeToday ?? args.balance;
+  const rawDays = args.daysLeftInclusive ?? args.daysLeftInMonth;
+
+  if (rawBudget === undefined || rawBudget === null || isNaN(Number(rawBudget)) ||
+      rawDays === undefined || rawDays === null || isNaN(Number(rawDays)) || Number(rawDays) <= 0) {
+    return {
+      discretionary: null,
+      perDay: null,
+      remainingToday: null,
+      status: 'INSUFFICIENT_DATA'
+    };
+  }
+
+  const budget = Number(rawBudget);
   const bills = Number(args.upcomingBillsTotal ?? args.billsDueBeforeMonthEnd ?? 0);
-  const days = Math.max(1, Number(args.daysLeftInclusive ?? args.daysLeftInMonth ?? 1));
+  const days = Math.max(1, Number(rawDays));
   const bufferRatio = Math.max(0, Math.min(0.5, Number(args.safetyBufferRatio ?? 0)));
   const buffer = budget * bufferRatio;
 

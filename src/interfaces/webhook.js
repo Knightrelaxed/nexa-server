@@ -61,10 +61,32 @@ router.post('/wa-logout', security.webhookAuth, async (req, res) => {
   }
 });
 
-// 6. Mobile Bridge Remote Command Dispatcher (Guarded by dedicated bridgeAuth)
+// 6. Mobile Bridge Remote Command Dispatcher (Guarded by dedicated bridgeAuth and action allowlist)
+const ALLOWED_BRIDGE_ACTIONS = new Set([
+  'TOGGLE_FLASHLIGHT', 'FLASHLIGHT',
+  'SET_VOLUME',
+  'FORCE_DND',
+  'LOCK_SCREEN',
+  'GET_BATTERY_STATUS',
+  'GET_LOCATION',
+  'LAUNCH_APP',
+  'END_CALL', 'HANGUP',
+  'PLAY_RINGTONE',
+  'TAKE_PHOTO',
+  'TAKE_SCREENSHOT',
+  'GO_HOME_SCREEN',
+  'VIBRATE',
+  'MUTE'
+]);
+
 router.post('/bridge/command', security.bridgeAuth, async (req, res) => {
   try {
     const { action, params } = req.body;
+    const actionUpper = String(action || '').toUpperCase();
+    if (!ALLOWED_BRIDGE_ACTIONS.has(actionUpper)) {
+      console.warn(`[SECURITY] ⚠️ REST /bridge/command blocked unpermitted action: "${action}"`);
+      return res.status(403).json({ error: `Action '${action}' is not permitted by bridge security policy.` });
+    }
     const adapter = require('./mobile_bridge/adapter');
     const result = await adapter.execute(action, params || {});
     res.status(200).json(result);

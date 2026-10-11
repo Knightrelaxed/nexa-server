@@ -140,7 +140,14 @@ async function generateMorningBriefing() {
     const financeIntel = require('./Finance_Intel');
     const supabaseFinance = require('../infrastructure/Supabase_Finance');
     const balances = await supabaseFinance.getAccountBalances();
-    const totalBalance = (balances || []).reduce((acc, b) => acc + (Number(b.balance) || 0), 0);
+    // Exclude explicit savings, deposits, and investment accounts from liquid discretionary balance
+    const operationalBalances = (balances || []).filter(b => {
+      const name = (b.name || '').toLowerCase();
+      const type = (b.type || '').toLowerCase();
+      return !type.includes('savings') && !type.includes('invest') && !name.includes('tabungan') && !name.includes('deposito') && !name.includes('investasi');
+    });
+    const targetBalances = operationalBalances.length > 0 ? operationalBalances : balances;
+    const totalBalance = (targetBalances || []).reduce((acc, b) => acc + (Number(b.balance) || 0), 0);
     const recurringRules = await supabaseFinance.getRecurringRules('ACTIVE');
 
     const nowWib = new Date(Date.now() + 7 * 3600 * 1000);
@@ -162,12 +169,10 @@ async function generateMorningBriefing() {
       safetyBufferRatio: 0.1
     });
 
-    const safeAmount = (safeToday && typeof safeToday.remainingToday === 'number' && !isNaN(safeToday.remainingToday))
-      ? safeToday.remainingToday
-      : 0;
-
-    const safeSpendNotice = `Alokasi Belanja Aman Hari Ini: Rp ${safeAmount.toLocaleString('id-ID')} (Sisa ${daysLeft} hari bulan ini, Tagihan Tertunda: Rp ${billsDue.toLocaleString('id-ID')})`;
-    financeContextStr = financeContextStr ? `${financeContextStr}\n• ${safeSpendNotice}` : safeSpendNotice;
+    if (safeToday && safeToday.status !== 'INSUFFICIENT_DATA' && typeof safeToday.remainingToday === 'number' && !isNaN(safeToday.remainingToday)) {
+      const safeSpendNotice = `Alokasi Belanja Aman Hari Ini: Rp ${safeToday.remainingToday.toLocaleString('id-ID')} (Sisa ${daysLeft} hari bulan ini, Tagihan Tertunda: Rp ${billsDue.toLocaleString('id-ID')})`;
+      financeContextStr = financeContextStr ? `${financeContextStr}\n• ${safeSpendNotice}` : safeSpendNotice;
+    }
   } catch (finErr) {
     console.warn('[INTELLIGENCE] Warning computing safeToSpendToday:', finErr.message);
   }

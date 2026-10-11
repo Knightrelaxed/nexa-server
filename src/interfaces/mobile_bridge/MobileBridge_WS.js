@@ -23,7 +23,7 @@ let telemetryListener = null;
  * @param {import('http').Server} server 
  */
 function initWebSocket(server) {
-  const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || env.NEXA_GODMODE_SECRET || '').trim();
+  const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || '').trim();
 
   wss = new WebSocket.Server({
     server,

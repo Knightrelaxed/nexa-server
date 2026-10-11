@@ -74,10 +74,32 @@ function initCronJobs() {
         const financeIntel = require('../domain/Finance_Intel');
         const txs = await supabaseFinance.getAllTransactionsForAnalysis(180);
         if (txs && txs.length > 0) {
-          const detected = financeIntel.detectRecurring(txs, { minOccurrences: 2 });
+          const detected = financeIntel.detectRecurring(txs, { minOccurrences: 3 });
           if (detected && detected.length > 0) {
-            const { upserted } = await supabaseFinance.upsertRecurringRules(detected);
+            const { upserted, candidates } = await supabaseFinance.upsertRecurringRules(detected);
             console.log(`[CRON] ✅ Recurring Bills Detection done: ${upserted} rules updated.`);
+            if (candidates && candidates.length > 0) {
+              const { sendTelegramWithKeyboard } = require('./telegram/actions');
+              for (const c of candidates) {
+                const formattedNominal = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(c.amount_median);
+                const msgText = `🔄 <b>Deteksi Pengeluaran Rutin Baru</b>\n\n` +
+                  `N.E.X.A mendeteksi transaksi berkala:\n` +
+                  `• Merchant: <b>${c.display_name || c.merchant_key}</b>\n` +
+                  `• Frekuensi: <b>${c.cadence}</b>\n` +
+                  `• Estimasi: <b>${formattedNominal}</b>\n\n` +
+                  `Apakah transaksi ini ingin dimasukkan sebagai tagihan rutin aktif?`;
+
+                const replyMarkup = {
+                  inline_keyboard: [[
+                    { text: '✅ Setujui', callback_data: `REC_OK:${c.id}` },
+                    { text: '❌ Tolak', callback_data: `REC_NO:${c.id}` }
+                  ]]
+                };
+                await sendTelegramWithKeyboard(msgText, replyMarkup).catch(kErr => {
+                  console.warn('[CRON] Failed sending recurring keyboard prompt:', kErr.message);
+                });
+              }
+            }
           }
         }
       } catch (err) {
@@ -98,12 +120,54 @@ function initCronJobs() {
 
   // 0.6. Notifier Weekly Engagement Report (Minggu 21:30 WIB)
   cron.schedule('30 21 * * 0', async () => {
-    try {
-      const rep = await getNotifier().engagementReport();
-      console.log('[CRON] Weekly Engagement Report:', JSON.stringify(rep));
-    } catch (err) {
-      console.warn('[CRON] Weekly engagement report error:', err.message);
-    }
+    const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    await trackJobRun('notifier_engagement_report', todayKey, async () => {
+      try {
+        const rep = await getNotifier().engagementReport(14);
+        console.log('[CRON] Weekly Engagement Report:', JSON.stringify(rep));
+        if (rep && rep.length > 0) {
+          const lines = [
+            '📊 <b>LAPORAN EFEKTIVITAS NOTIFIKASI (14 Hari)</b>',
+            'Evaluasi keterlibatan & respons Tuan Faqih terhadap notifikasi proaktif:\n'
+          ];
+          for (const item of rep) {
+            const pct = Math.round(item.rate * 100);
+            const icon = item.suggestion === 'REDUCE' ? '🔻' : '✅';
+            const actionText = item.suggestion === 'REDUCE' ? 'Dialihkan ke Digest Ringkasan (P2)' : 'Frekuensi dipertahankan';
+            lines.push(`${icon} <b>${item.kind}</b>: ${item.engaged}/${item.sent} respons (${pct}%)\n   └ <i>${actionText}</i>`);
+          }
+          await notifyProactive({
+            kind: 'SCHEDULED_ENGAGEMENT_REPORT',
+            priority: 'P1',
+            dedupeKey: `engagement:${todayKey}`,
+            text: lines.join('\n'),
+            isScheduled: true
+          });
+        }
+      } catch (err) {
+        console.warn('[CRON] Weekly engagement report error:', err.message);
+      }
+    });
+  }, { scheduled: true, timezone: 'Asia/Jakarta' });
+
+  // 0.7. Gmail Push Watch Renewal (Minggu 02:00 WIB - Gmail watch expires every 7 days)
+  cron.schedule('0 2 * * 0', async () => {
+    const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    await trackJobRun('gmail_watch_renewal', todayKey, async () => {
+      try {
+        const topic = env.GMAIL_TOPIC_NAME;
+        if (topic) {
+          console.log('[CRON] Renewing Gmail mailbox push watch...');
+          const gmailClient = require('../infrastructure/Gmail_Client');
+          const res = await gmailClient.watchMailbox(topic);
+          console.log('[CRON] Gmail mailbox watch renewed:', res ? 'SUCCESS' : 'FAILED');
+        } else {
+          console.log('[CRON] GMAIL_TOPIC_NAME not configured; push watch renewal skipped.');
+        }
+      } catch (err) {
+        console.warn('[CRON] Gmail watch renewal error:', err.message);
+      }
+    });
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 
   // 1. The Diplomat's Morning Briefing (05:30 WIB)

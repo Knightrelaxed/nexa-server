@@ -132,10 +132,10 @@ function cliAuth(req, res, next) {
  */
 function bridgeAuth(req, res, next) {
   const authHeader = req.headers.authorization;
-  const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || env.NEXA_GODMODE_SECRET || '').trim();
+  const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || '').trim();
 
   if (!configuredSecret) {
-    console.error('[SECURITY] NEXA_DEVICE_SECRET is missing. Rejecting Bridge webhook request.');
+    console.error('[SECURITY] NEXA_DEVICE_SECRET / NEXA_BRIDGE_SECRET is missing. Rejecting Bridge webhook request.');
     return res.status(500).json({ error: 'Server Bridge auth not configured' });
   }
 

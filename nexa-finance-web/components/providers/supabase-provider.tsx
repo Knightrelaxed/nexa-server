@@ -29,10 +29,11 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
-function setAuthCookie(active: boolean) {
+function setAuthCookie(token?: string | null, expiresIn?: number) {
   if (typeof document !== 'undefined') {
-    if (active) {
-      document.cookie = "nexa-auth-token=active; path=/; max-age=2592000; SameSite=Lax"
+    if (token) {
+      const maxAge = expiresIn ? Math.max(expiresIn, 60) : 3600
+      document.cookie = `nexa-auth-token=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; SameSite=Lax`
     } else {
       document.cookie = "nexa-auth-token=; path=/; max-age=0; SameSite=Lax"
     }
@@ -56,7 +57,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data: { session: initSession } }) => {
       setSession(initSession)
       setUser(initSession?.user ?? null)
-      setAuthCookie(!!initSession)
+      setAuthCookie(initSession?.access_token, initSession?.expires_in)
       setIsLoading(false)
     })
 
@@ -64,7 +65,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       setSession(currentSession)
       setUser(currentSession?.user ?? null)
-      setAuthCookie(!!currentSession)
+      setAuthCookie(currentSession?.access_token, currentSession?.expires_in)
       setIsLoading(false)
     })
 
@@ -89,7 +90,7 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     setIsLoading(true)
     await supabase.auth.signOut()
-    setAuthCookie(false)
+    setAuthCookie(null)
     setSession(null)
     setUser(null)
     setIsLoading(false)

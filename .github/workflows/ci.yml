@@ -27,5 +27,8 @@ jobs:
           find src -name "*.js" -exec node -c {} +
           echo "All JavaScript files in src/ compiled cleanly!"
 
-      - name: Run Upgrade Unit Tests
-        run: node --test tests/upgrade.test.js
+      - name: Run Test Suite
+        run: npm test
+
+      - name: Audit Dependencies
+        run: npm audit --omit=dev --audit-level=high || true

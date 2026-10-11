@@ -32,7 +32,8 @@ function startOfDayIso(date, P) {
   return new Date(`${ymd}T00:00:00${P.utcOffset}`).toISOString();
 }
 
-const CORRUPTED_CONTENT_REGEX = /\[object Object\]|\bNaN\b|\bundefined\b/i;
+// Case-sensitive guard: avoids false positives like "Warung Nan" or legitimate words in user tasks
+const CORRUPTED_CONTENT_REGEX = /\[object Object\]|\bNaN\b|(?:\b(?:[Rr]p|[Ss]aldo|[Nn]ominal|[Bb]iaya|[Tt]otal|[Hh]arga|[Ss]tatus|[Aa]genda|[Ww]aktu|[Pp]ukul|[Ii]d)\s*[:=]?\s*undefined\b)/;
 
 function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
   const P = {
@@ -79,12 +80,31 @@ function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
       const last = await store.lastSentAt(note.dedupeKey);
       if (last && t - new Date(last) < P.cooldownMs[note.priority]) return _drop(note, 'dedupe');
     }
+
+    // Scheduled pulses (morning/evening briefings) do NOT consume discretionary nudge cap
+    const isScheduledReport = Boolean(note.isScheduled || String(note.kind || '').toUpperCase().startsWith('SCHEDULED_'));
+
+    // Closed-loop engagement feedback: demote low-engagement discretionary kinds to P2 digest
+    if (note.priority === 'P1' && !isScheduledReport && !note.timeSensitive) {
+      try {
+        const since30d = new Date(t.getTime() - 30 * 86400e3).toISOString();
+        const stats = await store.statsSince(since30d);
+        const thisStats = stats.filter(s => s.kind === note.kind);
+        if (thisStats.length >= P.minSamples) {
+          const engagedCount = thisStats.filter(s => s.engaged_at).length;
+          const rate = engagedCount / thisStats.length;
+          if (rate < P.lowEngagementRate) {
+            console.log(`[NOTIFIER] 📉 Kind '${note.kind}' has low engagement rate (${(rate * 100).toFixed(0)}%). Demoting to P2 digest.`);
+            note.priority = 'P2';
+          }
+        }
+      } catch (_) {}
+    }
+
     if (note.priority === 'P0') return _deliver(note);
     if (note.priority === 'P2') return _queue(note, 'QUEUED_DIGEST');
     if (isQuietHour(t, P)) return _queue(note, 'QUEUED_DEFERRED', 'quiet-hours');
 
-    // Scheduled pulses (morning/evening briefings) do NOT consume discretionary nudge cap
-    const isScheduledReport = Boolean(note.isScheduled || String(note.kind || '').toUpperCase().startsWith('SCHEDULED_'));
     if (!isScheduledReport) {
       const sent = await store.countSentSince('P1', startOfDayIso(t, P));
       if (sent >= P.p1DailyCap) return _queue({ ...note, priority: 'P2' }, 'QUEUED_DIGEST', 'p1-cap');

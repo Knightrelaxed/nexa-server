@@ -28,7 +28,8 @@ export default function LoginPage() {
       setLoading(false)
     } else {
       const sessionToken = authData?.session?.access_token || ""
-      document.cookie = `nexa-auth-token=${encodeURIComponent(sessionToken)}; path=/; max-age=2592000; SameSite=Lax`
+      const expiresIn = authData?.session?.expires_in || 3600
+      document.cookie = `nexa-auth-token=${encodeURIComponent(sessionToken)}; path=/; max-age=${expiresIn}; SameSite=Lax`
       toast.success("Berhasil masuk!")
       window.location.href = "/dashboard"
     }
