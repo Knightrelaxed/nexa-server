@@ -9,6 +9,9 @@
 'use strict';
 
 const WebSocket          = require('ws');
+const fs                 = require('fs');
+const path               = require('path');
+const os                 = require('os');
 const env                = require('../config/env');
 const { LIVE_TOOL_DECLARATIONS, executeLiveTool, noteUserTurn } = require('./Live_Tool_Registry');
 const geminiVectorCache  = require('../utils/gemini_vector_cache');
@@ -193,6 +196,15 @@ class LiveVoiceSession {
     this.currentTurnAssistantText = '';
     this._userTranscriptBuf       = '';
     this._lastTactileInjectionTime = 0;
+
+    // Diagnostic raw PCM audio dump file
+    this.debugPcmPath = path.join(os.tmpdir(), `nexa_live_${this.sessionId}.pcm`);
+    this.debugPcmBytesWritten = 0;
+    try {
+      this.debugPcmStream = fs.createWriteStream(this.debugPcmPath, { flags: 'a' });
+    } catch (_) {
+      this.debugPcmStream = null;
+    }
   }
 
   _flushUserTurn() {
@@ -539,7 +551,15 @@ class LiveVoiceSession {
           { functionDeclarations: LIVE_TOOL_DECLARATIONS }
         ],
         inputAudioTranscription: {},
-        outputAudioTranscription: {}
+        outputAudioTranscription: {},
+        realtimeInputConfig: {
+          automaticActivityDetection: {
+            startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+            endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+            prefixPaddingMs: 300,
+            silenceDurationMs: 700
+          }
+        }
       }
     };
 
@@ -900,16 +920,17 @@ class LiveVoiceSession {
       this.isGreetingPending = false;
     }
 
-    // Barge-in & Echo Suppression:
-    // While the assistant is actively speaking, if speech energy is below BARGE_IN_RMS_THRESHOLD
-    // (default 600, optimized for TWS earbuds & mobile mic), do not drop audio chunks.
-    // Instead, stream an equal-length silence buffer to keep Google's neural audio clock unbroken
-    // while preventing acoustic feedback from assistant playback.
-    let audioDataToSend = pcmBase64;
-    if (this.isAssistantSpeaking && rms < BARGE_IN_RMS_THRESHOLD) {
-      const bufLen = pcmBuf && pcmBuf.length > 0 ? pcmBuf.length : 3200;
-      audioDataToSend = Buffer.alloc(bufLen, 0).toString('base64');
+    // Diagnostic audio dumper for acoustic and fidelity analysis
+    if (this.debugPcmStream && pcmBuf) {
+      try {
+        this.debugPcmStream.write(pcmBuf);
+        this.debugPcmBytesWritten += pcmBuf.length;
+      } catch (_) {}
     }
+
+    // Pure 1:1 unclipped 16kHz audio transmission to Google Gemini Multimodal Live API.
+    // Destructive zero-gating has been eliminated to preserve consonants, unvoiced syllables, and natural speech.
+    const audioDataToSend = pcmBase64;
 
     // Forward PCM directly to Google Gemini Multimodal Live API
     const realtimeMsg = {
@@ -1223,6 +1244,18 @@ class LiveVoiceSession {
       try { this.googleWs.close(1000, 'Session Closed'); } catch (_) {}
       this.googleWs = null;
     }
+
+    // Close and flush diagnostic PCM recording stream
+    if (this.debugPcmStream) {
+      try {
+        this.debugPcmStream.end();
+        console.log(`[LIVE-VOICE] Diagnostic PCM captured: ${this.debugPcmPath} (${this.debugPcmBytesWritten || 0} bytes)`);
+      } catch (_) {}
+      this.debugPcmStream = null;
+    }
+
+    // Unregister from active sessions Map to prevent memory leaks
+    activeSessions.delete(this.sessionId);
 
     // Flush any pending user speech transcript
     this._flushUserTurn();
