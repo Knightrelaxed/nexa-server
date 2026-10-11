@@ -111,7 +111,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ALIVE',
     service: 'N.E.X.A Cloud Core',
-    version: '3.2.0',
+    version: require('../package.json').version,
     uptime_seconds: uptimeSeconds,
     uptime_human: `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m`,
     timestamp_jakarta: timestampJakarta,
@@ -127,7 +127,7 @@ const webhookRouter = require('./interfaces/webhook');
 app.use('/webhook', webhookRouter);
 
 // ============================================================
-// SERVER BOOT & WEBSOCKET MOBILE BRIDGE (NEXA 3.2)
+// SERVER BOOT & WEBSOCKET MOBILE BRIDGE (NEXA 3.3)
 // ============================================================
 const cronInterface = require('./interfaces/cron');
 const http = require('http');
@@ -140,11 +140,11 @@ if (require.main === module) {
   mobileBridgeWs.initWebSocket(server);
 
   server.listen(port, '127.0.0.1', () => {
-    console.log(`[N.E.X.A 3.2] ✅ Server running on port ${port} (${process.env.NODE_ENV || 'development'} mode)`);
-    console.log(`[N.E.X.A 3.2] 🔒 Bound to 127.0.0.1 (Loopback only - Protected by Caddy Reverse Proxy)`);
-    console.log(`[N.E.X.A 3.2] 📱 Mobile Bridge WebSocket Endpoint: /ws`);
-    console.log(`[N.E.X.A 3.2] 🏥 Health endpoint: http://127.0.0.1:${port}/health`);
-    console.log(`[N.E.X.A 3.2] 💻 CLI Local URL  : http://127.0.0.1:${port}`);
+    console.log(`[N.E.X.A 3.3] ✅ Server running on port ${port} (${process.env.NODE_ENV || 'development'} mode)`);
+    console.log(`[N.E.X.A 3.3] 🔒 Bound to 127.0.0.1 (Loopback only - Protected by Caddy Reverse Proxy)`);
+    console.log(`[N.E.X.A 3.3] 📱 Mobile Bridge WebSocket Endpoint: /ws`);
+    console.log(`[N.E.X.A 3.3] 🏥 Health endpoint: http://127.0.0.1:${port}/health`);
+    console.log(`[N.E.X.A 3.3] 💻 CLI Local URL  : http://127.0.0.1:${port}`);
     // Load Gemini Semantic Vector Snapshot (0.001s in-memory load)
     const geminiVectorCache = require('./utils/gemini_vector_cache');
     const isLoaded = geminiVectorCache.loadVectorSnapshot();
