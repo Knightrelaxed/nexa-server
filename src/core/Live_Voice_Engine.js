@@ -242,6 +242,10 @@ class LiveVoiceSession {
       clearTimeout(this._toolSafetyTimer);
       this._toolSafetyTimer = null;
     }
+    if (this._assistantSpeechDecayTimer) {
+      clearTimeout(this._assistantSpeechDecayTimer);
+      this._assistantSpeechDecayTimer = null;
+    }
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
     this.lastClientInputTime = Date.now();
@@ -824,27 +828,40 @@ class LiveVoiceSession {
         };
 
         if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
-          this.googleWs.send(JSON.stringify(toolResponsePayload));
-          console.log(`[LIVE-VOICE] Sent ${responses.length} Tool Response(s) back to Google.`);
-          this.isWaitingToolReply = true;
-          if (this._toolSafetyTimer) clearTimeout(this._toolSafetyTimer);
-          // Tool gating safety release: after 10 seconds max, unblock mic and return to LISTENING if Google stays silent
-          this._toolSafetyTimer = setTimeout(() => {
-            if (this.isExecutingTool) {
-              console.log('[LIVE-VOICE] Tool response timeout safety triggered (10s). Resetting to LISTENING.');
-              this.isExecutingTool = false;
-              this.isWaitingToolReply = false;
-              this._sendToClient({
-                type: 'CALL_STATUS_UPDATE',
-                status: 'LISTENING'
-              });
-            }
-          }, 10000);
+          try {
+            this.googleWs.send(JSON.stringify(toolResponsePayload));
+            console.log(`[LIVE-VOICE] Sent ${responses.length} Tool Response(s) back to Google.`);
+            this.isWaitingToolReply = true;
+          } catch (sendErr) {
+            console.error('[LIVE-VOICE] Failed to send tool response to Google:', sendErr.message);
+            this.isExecutingTool = false;
+            this.isWaitingToolReply = false;
+            this._sendToClient({ type: 'CALL_STATUS_UPDATE', status: 'LISTENING' });
+          }
+        } else {
+          console.warn('[LIVE-VOICE] Google WebSocket not open when sending tool response. Resetting executing tool state.');
+          this.isExecutingTool = false;
+          this.isWaitingToolReply = false;
+          this._sendToClient({ type: 'CALL_STATUS_UPDATE', status: 'LISTENING' });
         }
+
+        if (this._toolSafetyTimer) clearTimeout(this._toolSafetyTimer);
+        // Tool gating safety release: after 10 seconds max, unblock mic and return to LISTENING if Google stays silent
+        this._toolSafetyTimer = setTimeout(() => {
+          if (this.isExecutingTool || this.isWaitingToolReply) {
+            console.log('[LIVE-VOICE] Tool response timeout safety triggered (10s). Resetting to LISTENING.');
+            this.isExecutingTool = false;
+            this.isWaitingToolReply = false;
+            this._sendToClient({
+              type: 'CALL_STATUS_UPDATE',
+              status: 'LISTENING'
+            });
+          }
+        }, 10000);
       }
 
     } catch (err) {
-      console.error(`[LIVE-VOICE] ❌ Error processing Google message:`, err.message);
+      console.error(`[LIVE-VOICE] Error processing Google message:`, err.message);
     }
   }
 
@@ -875,8 +892,8 @@ class LiveVoiceSession {
       console.log(`[LIVE-VOICE] Audio stream active: ${this.incomingAudioChunkCount} chunks (RMS: ${rms.toFixed(0)})`);
     }
 
-    // Release greeting pending on voice activity
-    if (this.isGreetingPending && rms > 500) {
+    // Release greeting pending on voice activity (normal speech RMS > 80)
+    if (this.isGreetingPending && rms > 80) {
       this.isGreetingPending = false;
     }
 
