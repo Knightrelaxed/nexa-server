@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Executive with Xenial Agent : v3.3 "Adaptive Procedural Memory, Dialectic Stance & Closed-Loop Learning")*
+*(Neural Executive with Xenial Agent : v3.4 "True Multimodal Duplex, Adaptive Procedural Memory & Closed-Loop Learning")*
 
 ---
 
@@ -2470,6 +2470,192 @@ Untuk penarikan memori masa lalu tanpa membebani context window prompt:
 | **Penarikan Memori Masa Lalu** | Scan linier terbatas | **PostgreSQL Full-Text Search (FTS) On-Demand** |
 | **Total Test Suite Otomatis** | 32 Unit Tests Passing | **38 Unit Tests Passing (`npm test`)** |
 | **Overhead Prompt Tambahan** | Baseline (v3.2) | **Terkendali Ketat (+$\approx$ 170-200 Token / +2.2%)** |
+
+---
+
+## BAB 16: BEDAH FORENSIK PANGGILAN SUARA LIVE : DARI ILLUSIVE ASR KE TRUE MULTIMODAL DUPLEX & PENYELAMATAN MEMORI
+
+Bab ini mendokumentasikan investigasi arsitektural mendalam dan resolusi komprehensif atas krisis ketidakstabilan panggilan suara real-time N.E.X.A pada Oktober 2026. Penemuan masalah ini mengubah secara fundamental cara sistem memandang pemrosesan audio multimodal, interaksi duplex, dan integritas memori jangka panjang.
+
+---
+
+### 16.1 Kronologi & Gejala Disfungsi Sistemik
+
+Pada pengujian panggilan suara langsung antara Tuan Faqih dan N.E.X.A, tercatat empat anomali perilaku yang melumpuhkan pengalaman pengguna:
+
+1. **Halusinasi Fonetik & Bahasa Asing:**
+   Di sela percakapan Bahasa Indonesia santai, log sistem tiba-tiba mencatat transkripsi kata asing yang tidak diucapkan oleh pengguna:
+   - Ucapan kata *"haus"* terbaca menjadi kata bahasa Inggris *"house"*.
+   - Kalimat santai terbaca menjadi rangkaian fonem janggal: *"Okanheros"*.
+   - Munculnya frasa bahasa Spanyol secara acak pada log panggilan: *"¿Qué es lo que la"* dan *"¿Qué? ¿Chupó chupó?"*.
+2. **Pemutusan Panggilan Sepihak & Ambigu:**
+   Panggilan telepon terputus mendadak saat pengguna mengucapkan kalimat biasa seperti *"Pakai matematika aja enggak apa-apa"* atau *"Tolong matikan senter"*. N.E.X.A langsung memanggil tool `endCall` dengan asumsi keliru bahwa pengguna meminta mengakhiri panggilan telepon.
+3. **Loop Permohonan Maaf Robotik:**
+   N.E.X.A terjebak dalam siklus mengulang kalimat klise customer service: *"Mohon maaf, suara Tuan kurang jelas. Bisa diulang kembali?"*, alih-alih melakukan penalaran kontekstual yang luwes layaknya Chief of Staff.
+4. **Keracunan Memori Permanen (Memory Poisoning):**
+   Pipeline pembelajaran pasif di akhir panggilan menyerap teks salah dengar tersebut ke dalam database Supabase `nexa_core_identity`, menciptakan aturan palsu:
+   - ID 280: *"Tuan Faqih memperbolehkan penggunaan pendekatan matematika dalam memberikan solusi..."* (akibat transkripsi sidecar ASR atas kata *matikan*).
+   - ID 279: *"N.E.X.A harus lebih teliti dan tidak salah mendengarkan instruksi..."* (akibat reaksi pengguna atas audio rusak).
+   - ID 264: *"N.E.X.A diharapkan berbicara dan berkomunikasi dalam bahasa Inggris..."* (akibat halusinasi lama).
+   - ID 100 di `nexa_self_model`: trait evaluasi diri palsu yang menurunkan rasa percaya diri model.
+
+---
+
+### 16.2 Analisis Akar Masalah (Root Cause Analysis - RCA)
+
+Melalui audit telemetri empiris pada aliran PCM dan konfigurasi Gemini Multimodal Live API, ditemukan 5 akar masalah utama:
+
+```
+[Mutilasi Audio di Klien & Server] ──> [Audio Bolong-Bolong Masuk ke Google]
+              │                                      │
+              ▼                                      ▼
+[Sidecar ASR Menebak Asing (Spanyol)]  [Otak Gemini Bingung & Gagap]
+              │                                      │
+              ▼                                      ▼
+[Pink Elephant Prompt Memperburuk]     [Passive Learning Menyerap ASR Palsu]
+              │                                      │
+              └───────────────────┬──────────────────┘
+                                  ▼
+                   [KERACUNAN MEMORI & PANGGILAN MATI]
+```
+
+#### RCA 1: Ilusi Sidecar ASR vs Realitas Multimodal End-to-End
+Sistem lama terjebak dalam asumsi bahwa model AI membaca teks transkripsi log. 
+
+Pada kenyataannya:
+- **Otak Gemini 3.8 Multimodal Live** beroperasi secara end-to-end: ia menerima gelombang PCM mentah 16-bit 16kHz langsung ke dalam representasi laten audio tokens. Ia tidak membaca teks alfabetis untuk berpikir.
+- Teks `inputAudioTranscription: {}` yang tercatat di log konsol hanyalah **modul sidecar sampingan** yang disediakan Google untuk visualisasi pengembang.
+- Ketika sidecar ASR salah mencatat teks Spanyol atau bahasa Inggris, model multimodal sebenarnya memahami maksud pengguna. Namun, sistem memperlakukan teks cacat dari sidecar tersebut sebagai representasi mutlak ucapan pengguna.
+
+#### RCA 2: Paradoks Gajah Merah Muda (*The Pink Elephant Paradox*)
+Untuk mencegah respon bahasa asing, System Prompt diinjeksi dengan larangan keras:
+> *"DILARANG KERAS merespons dalam bahasa Spanyol, Hindi, Portugis, Jerman, Korea, Arab, Inggris..."*
+
+Dalam dinamika attention space model bahasa besar, menyebut nama bahasa-bahasa asing secara berulang justru meningkatkan probabilitas kemunculan token (*attention weight salience*) bahasa-bahasa tersebut di context window. Model yang semula fokus pada Bahasa Indonesia terdistraksi oleh token bahasa asing yang disebutkan dalam prompt larangan.
+
+#### RCA 3: Destructive Audio Gating & Hardware DSP Clipping
+Pemeriksaan log menunjukkan fakta mengejutkan: **32 dari 45 sampel RMS bernilai tepat 0 (digital silence mutlak)**. Keheningan digital sempurna di ruangan nyata menandakan adanya pemotongan buatan:
+1. **Server-Side RMS Gating:** Kode `Live_Voice_Engine.js` lama memeriksa chunk per 100ms. Jika asisten berbicara dan RMS di bawah 450, audio mikrofon diganti paksa menjadi `Buffer.alloc(len, 0)`.
+2. **Android Loudspeaker Gating:** Di ponsel, `chunk.fill(0)` dijalankan saat rute SPEAKER aktif dan audio track sedang rendering.
+3. **Hardware DSP Mismatch:** Di Android `VoiceStreamHandler.kt`, inisialisasi manual `NoiseSuppressor` (NS) dan `AutomaticGainControl` (AGC) diaktifkan bersamaan dengan `VOICE_COMMUNICATION`. Modul NS ponsel memotong konsonan desis dan letup pada awal kata (*'s'*, *'k'*, *'t'*, *'p'*, *'h'*), sementara AGC memompa noise lantai saat jeda bicara.
+
+Akibat kumulatif: Audio yang sampai ke Google menjadi bolong-bolong (*perforated audio*). Kata *"haus"* kehilangan konsonan awal dan hembusan nafas sehingga ditebak menjadi *"house"*, dan suku kata yang terpotong ditebak sebagai frasa bahasa Spanyol.
+
+#### RCA 4: Unverified Tool Execution (The `endCall` Race Condition)
+Tool `endCall` tidak memiliki pengaman sisi server (*Server-Side Guard*). Setiap kali model mengembalikan `toolCall: endCall`, server langsung mematikan panggilan tanpa memverifikasi apakah teks ucapan pengguna memang mengandung kata pamit sah. Perintah mematikan senter (*"matikan senter"*) atau kata santai (*"sudah ya"*) memicu penutupan telepon sepihak.
+
+#### RCA 5: Keracunan Pipeline Pembelajaran Pasif
+Modul `_runPassiveLearningPipeline()` mengekstrak aturan `CORE_IDENTITY` dari transkrip percakapan tanpa filter validasi kata perintah. Apapun yang dicatat oleh sidecar ASR (termasuk artefak salah dengar) langsung diparsing dan disimpan permanen ke Supabase, merusak integritas kognitif jangka panjang N.E.X.A.
+
+---
+
+### 16.3 Matriks Solusi Arsitektural 5-Fase
+
+Untuk menuntaskan masalah hingga ke akarnya, dirancang dan dieksekusi rencana perbaikan 5-fase yang komprehensif:
+
+```
+[FASE 1: SANITASI MEMORI]
+Hapus ID 280, 279, 264 di Supabase -> Invalidate RAM Cache & Snapshot Vektor
+         │
+         ▼
+[FASE 2: PEMULIHAN AUDIO SERVER]
+Hapus zero-gating RMS server -> Pasang dumper PCM otomatis -> Inject realtimeInputConfig
+         │
+         ▼
+[FASE 3: PENGUATAN TOOL & MEMORI ENGINE]
+Server-Side Guard pada endCall -> Proteksi passive learning dari artefak ASR
+         │
+         ▼
+[FASE 4: PENYEDERHANAAN PROMPT AFIRMATIF]
+Hapus daftar negatif bahasa asing -> Anchor Bahasa Indonesia di salam pembuka
+         │
+         ▼
+[FASE 5: OPTIMASI HARDWARE ANDROID & DUPLEX MIKROFON]
+Matikan NS & AGC (sisakan AEC) -> Hapus chunk.fill(0) -> Build & Deploy APK
+```
+
+#### Rincian Teknis Implementasi per Fase:
+
+#### 1. Fase 1: Sanitasi Basis Data & RAM Cache Invalidation
+- Menghapus entri beracun ID 280, 279, 264 dari tabel Supabase `nexa_core_identity`.
+- Menghapus entri trait ID 100 dari tabel Supabase `nexa_self_model`.
+- Mengosongkan cache RAM di server dan meregenerasi snapshot vektor atomik `data/facts_vectors.json`.
+
+#### 2. Fase 2: Pemulihan Audio Utuh Server & Diagnostik PCM
+- Di [Live_Voice_Engine.js](file:///C:/workspace/nexa-server/src/core/Live_Voice_Engine.js):
+  - Menghapus pemotongan `Buffer.alloc(len, 0)` berdasarkan ambang RMS. Aliran audio mikrofon diteruskan 100% utuh tanpa pemotongan buatan.
+  - Memasang konfigurasi real-time `automaticActivityDetection`:
+    ```javascript
+    realtimeInputConfig: {
+      automaticActivityDetection: {
+        startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+        prefixPaddingMs: 300,
+        silenceDurationMs: 700
+      }
+    }
+    ```
+    Konfigurasi `prefixPaddingMs: 300` memastikan awal suku kata (consonant onset) tidak terpotong oleh VAD Google.
+  - Memasang perekam aliran PCM diagnostik otomatis yang menulis seluruh data audio sesi ke `/tmp/nexa_live_<sessionId>.pcm`.
+  - Memperbaiki kebocoran memori Map `activeSessions.delete(this.sessionId)` pada method `session.close()`.
+
+#### 3. Fase 3: Penguatan Tool `endCall` & Filter Pembelajaran Pasif
+- Di [Live_Tool_Registry.js](file:///C:/workspace/nexa-server/src/core/Live_Tool_Registry.js):
+  - Memasang Server-Side Guard pada `endCall`:
+    ```javascript
+    const HANGUP_EXPLICIT_RE = /\b(tutup|matikan|akhiri|selesai|sampai jumpa|bye|sudahi|putus|dadah|udahan)\b/i;
+    ```
+    Jika ucapan terakhir pengguna tidak cocok dengan pola kata pamit eksplisit, eksekusi pemutusan panggilan diblokir dan sistem mengembalikan respon: `status: 'NEEDS_CONFIRMATION'`, meminta konfirmasi singkat kepada pengguna.
+- Di [Live_Voice_Engine.js](file:///C:/workspace/nexa-server/src/core/Live_Voice_Engine.js):
+  - Memasang filter artefak: Membatalkan seluruh proses passive learning jika transkrip mengandung karakter artefak asing (`¿`, `¡`, `ñ`).
+  - Menaikkan ambang giliran bicara substantif pengguna dari 2 menjadi minimal 3 giliran.
+  - Mengunci ekstraksi `CORE_IDENTITY`: Hanya diizinkan jika ucapan pengguna mengandung kata direktif eksplisit (`harus`, `wajib`, `dilarang`, `jangan`, `aturan`, `mulai sekarang`), ditambah validasi kata kunci per-fakta.
+
+#### 4. Fase 4: Rekonstruksi Prompt Afirmatif Bahasa Indonesia
+- Di `NEXA_LIVE_SYSTEM_PROMPT` dan `languageLockPrefix`:
+  - Menghapus seluruh daftar larangan bahasa asing (eliminasi efek gajah merah muda).
+  - Menggantinya dengan instruksi positif afirmatif:
+    > *"Tuan Faqih berkomunikasi dalam Bahasa Indonesia santai sehari-hari. Pahami kata-kata kasual secara kontekstual dan responlah dengan ramah, wajar, dan mengalir alami. Pahami ekspresi pendek dan idiom lisan: 'haus' = butuh minum, 'capek' = lelah, 'lapar' = butuh makan, 'bentar' = tunggu sebentar, 'oke/iya' = setuju, 'gapapa' = tidak apa-apa."*
+  - Menyelaraskan salam pembuka vokal dinamis (`_generateDynamicVocalGreetingInstruction`) untuk mengunci ruang bahasa pertama model ke Bahasa Indonesia.
+
+#### 5. Fase 5: Optimasi Hardware DSP Android & Full-Duplex Stream
+- Di [VoiceStreamHandler.kt](file:///C:/workspace/nexa-mobile-bridge/app/src/main/java/com/nexa/mobilebridge/dispatcher/handler/VoiceStreamHandler.kt):
+  - Menghapus inisialisasi manual `NoiseSuppressor` dan `AutomaticGainControl`, mencegah pemotongan konsonan dan noise pumping di chip audio ponsel.
+  - Mempertahankan `AcousticEchoCanceler` (AEC) perangkat keras yang dipasangkan pada `hardwareSessionId` bersama `AudioTrack` untuk meredam gema speaker secara native.
+  - Menghapus pemotongan `chunk.fill(0)` saat loudspeaker aktif, memulihkan transmisi audio 16kHz PCM 1:1 kontinu yang memungkinkan barge-in alami.
+  - Mengompilasi dan merakit berkas biner aplikasi baru ([app-debug.apk](file:///C:/workspace/nexa-mobile-bridge/app/build/outputs/apk/debug/app-debug.apk)) dan memasangnya langsung ke perangkat Android via ADB.
+
+---
+
+### 16.4 Verifikasi Empiris Lapangan: Panggilan Produksi 213 Detik
+
+Pada 11 Oktober 2026 pukul 11:55 WIB, dilakukan pengujian panggilan suara langsung di lingkungan produksi Azure VPS pasca-deployment penuh:
+
+| Metrik Evaluasi | Sebelum Perbaikan (Baseline) | Pasca-Perbaikan (Fase 1-5) |
+| :--- | :--- | :--- |
+| **Durasi Sesi Maksimal** | 40-70 detik (putus mendadak) | **213 detik (3 menit 33 detik)** stabil |
+| **Total Giliran Bicara (Turns)** | 8-14 turns | **46 turns tanpa interupsi** |
+| **Deteksi Kata "Haus"** | Diartikan bahasa Inggris ("house") | **Dipahami langsung ("Wah, kalau haus minum air putih...")** |
+| **Ketahanan Perintah "Matikan"** | Panggilan tertutup sepihak | **Mematikan senter HP tanpa menutup telepon** |
+| **Multimodal Vision** | Sering gagal memadukan konteks | **Sinkron ("Saya melihat Tuan sedang berbaring, terlihat lelah...")** |
+| **Integrasi Alat Spasial** | Terganggu crash | **Eksekusi GPS live (-7.7623, 110.3777) & pencarian tempat makan** |
+| **Terminasi Panggilan** | Putus liar di tengah kalimat | **Anggun via kata pamit "bye" (Code 1000)** |
+| **Integritas Memori Jangka Panjang** | Tercemar aturan palsu (ID 280) | **Zero dirty entries (CORE_IDENTITY skipped bersih)** |
+| **Ukuran Diagnostic PCM Dump** | Terpotong / Bolong | **6.726.400 bytes continuous linear stream** |
+
+---
+
+### 16.5 Kaidah Rekayasa Sistem Suara Multimodal AI
+
+Dari studi forensik ini, dirumuskan empat prinsip fundamental bagi arsitektur asisten suara modern:
+
+1. **Prinsip Primasi Audio (Audio Primacy Principle):**
+   Pada model native multimodal audio (seperti Gemini Live), representasi audio PCM adalah kebenaran tunggal yang didengar oleh model. Transkripsi teks sampingan (Sidecar ASR) hanyalah telemetri sekunder untuk observasi manusia dan tidak boleh diperlakukan sebagai pengendali logika kognitif model.
+2. **Prinsip Penjangkaran Afirmatif (Affirmative Anchoring vs Negative Prompting):**
+   Hindari mendikte larangan bahasa asing pada prompt LLM. Sebutkan secara eksplisit bahasa yang diinginkan dan berikan contoh penalaran semantik kontekstual atas kata-kata pendek atau kasual penutur asli.
+3. **Prinsip Integritas Gelombang Suara (Waveform Non-Mutilation):**
+   Jangan pernah menyuntikkan keheningan digital buatan (`zero-gating` atau `chunk.fill(0)`) ke dalam aliran mikrofon. Model multimodal masa kini membutuhkan kontinuitas derau latar (*ambient continuity*) dan hembusan nafas mikro untuk memisahkan ucapan dari keheningan secara akurat.
+4. **Prinsip Pemisahan Lapisan Memori (Memory Layer Decoupling):**
+   Log percakapan sesaat (`chat_memories`) harus dipisahkan secara tegas dari pembentukan aturan identitas sistem (`core_identity`). Aturan identitas hanya boleh lahir dari verifikasi direktif eksplisit, bukan dari kesimpulan otomatis atas transkrip suara yang rentan salah dengar.
 
 ---
 **~ TAMAT ~**
