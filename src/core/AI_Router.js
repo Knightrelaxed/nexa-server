@@ -1511,7 +1511,11 @@ Tentukan intent dan ekstrak data!
 
   try {
     const rawData = JSON.parse(cleanStr);
-    return _normalizeRoutingOutput(rawData, _sentimentScore);
+    return _normalizeRoutingOutput(rawData, _sentimentScore, {
+      injectedTraits: _injectedTraitsList,
+      injectedPlaybook: _activePlaybook,
+      topicContext: _topicContext
+    });
   } catch (err) {
     // Smart repair: try extracting the first complete balanced JSON object ignoring trailing junk
     try {
@@ -1533,7 +1537,11 @@ Tentukan intent dan ekstrak data!
         const repaired = cleanStr.substring(firstBrace, endIdx + 1);
         const rawData = JSON.parse(repaired);
         console.log('[ROUTER] Smart JSON Repair SUCCESS after trailing garbage');
-        return _normalizeRoutingOutput(rawData, _sentimentScore);
+        return _normalizeRoutingOutput(rawData, _sentimentScore, {
+          injectedTraits: _injectedTraitsList,
+          injectedPlaybook: _activePlaybook,
+          topicContext: _topicContext
+        });
       }
     } catch (_) { }
 
@@ -1542,7 +1550,10 @@ Tentukan intent dan ekstrak data!
       intent: 'ERROR',
       actions: [{ intent: 'ERROR', extracted_data: {} }],
       reply_message: 'Maaf Tuan, saya mengalami disonansi kognitif saat memproses instruksi tersebut.',
-      mood: _sentimentScore
+      mood: _sentimentScore,
+      _injectedTraits: _injectedTraitsList || [],
+      _injectedPlaybook: _activePlaybook || null,
+      _topicContext: _topicContext || 'DEFAULT'
     };
   }
 }
@@ -1550,7 +1561,7 @@ Tentukan intent dan ekstrak data!
 /**
  * Normalizes router output to guarantee multi-action array and backwards compatibility.
  */
-function _normalizeRoutingOutput(routingData, sentimentScore) {
+function _normalizeRoutingOutput(routingData, sentimentScore, meta = {}) {
   if (!routingData || typeof routingData !== 'object') {
     return {
       intent: 'NORMAL_CHAT',
@@ -1558,7 +1569,10 @@ function _normalizeRoutingOutput(routingData, sentimentScore) {
       extracted_data: {},
       reply_message: '',
       mood: sentimentScore || 'NEUTRAL',
-      god_mode_trigger: false
+      god_mode_trigger: false,
+      _injectedTraits: meta.injectedTraits || [],
+      _injectedPlaybook: meta.injectedPlaybook || null,
+      _topicContext: meta.topicContext || 'DEFAULT'
     };
   }
 
@@ -1598,9 +1612,9 @@ function _normalizeRoutingOutput(routingData, sentimentScore) {
   if (typeof routingData.reply_message === 'string') {
     routingData.reply_message = _cleanEmDashes(routingData.reply_message);
   }
-  routingData._injectedTraits = _injectedTraitsList || [];
-  routingData._injectedPlaybook = _activePlaybook || null;
-  routingData._topicContext = _topicContext || 'DEFAULT';
+  routingData._injectedTraits = meta.injectedTraits || [];
+  routingData._injectedPlaybook = meta.injectedPlaybook || null;
+  routingData._topicContext = meta.topicContext || 'DEFAULT';
   return routingData;
 }
 
