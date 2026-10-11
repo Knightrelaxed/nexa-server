@@ -211,7 +211,7 @@ class LiveVoiceSession {
     this._userTranscriptBuf = '';
     if (!text) return;
     noteUserTurn(text);
-    console.log(`[LIVE-VOICE] Didengar dari Tuan Faqih: "${text}"`);
+    console.log(`[LIVE-VOICE] User call (ASR): "${text}"`);
     this.turnHistory.push({ role: 'user', text });
     supabaseMemories.saveChatMemory('user', text.slice(0, 800), 'live_call').catch(() => {});
   }
@@ -749,7 +749,7 @@ class LiveVoiceSession {
           this.isAssistantSpeaking = false;
           const completeAssistantText = (this.currentTurnAssistantText || '').trim();
           if (completeAssistantText.length > 0) {
-            console.log(`[LIVE-VOICE] N.E.X.A berbicara: "${completeAssistantText}"`);
+            console.log(`[LIVE-VOICE] N.E.X.A: "${completeAssistantText}"`);
             this.turnHistory.push({ role: 'assistant', text: completeAssistantText });
             supabaseMemories.saveChatMemory('nexa', completeAssistantText.slice(0, 800), 'live_call').catch(() => {});
           } else if (this.isAssistantSpeaking) {
