@@ -1884,7 +1884,7 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
 
     } else if (decision.startsWith('REINFORCE')) {
       // Naikkan evidence_count + perbarui last_reinforced_at, tidak INSERT baru
-      const match = decision.match(/REINFORCE\s+(\d+)/i);
+      const match = decision.match(/REINFORCE\s*[\[\(:#]?\s*(\d+)/i);
       if (match) {
         const id = parseInt(match[1], 10);
         const reinforced = await supabaseMemories.reinforceMemoryById(id, type);
@@ -1902,7 +1902,7 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
 
     } else if (decision.startsWith('SUPERSEDE')) {
       // [PHASE 9] Soft-archive fakta lama, INSERT fakta baru
-      const match = decision.match(/SUPERSEDE\s+(\d+)/i);
+      const match = decision.match(/SUPERSEDE\s*[\[\(:#]?\s*(\d+)/i);
       if (match) {
         const id = parseInt(match[1], 10);
         const oldFact = existingFacts.find(f => f.id === id);
@@ -2012,7 +2012,7 @@ async function deduplicateAndSaveSelfFact(newFact, layer, source = 'PASSIVE_LEAR
       return 'duplicate';
     } else if (decisionUp.startsWith('UPDATE')) {
       // Extract trait_key dari response (bisa uppercase atau lowercase)
-      const keyMatch = decision.match(/UPDATE\s+([a-zA-Z0-9_]+)/i);
+      const keyMatch = decision.match(/UPDATE\s*[\[\(:#]?\s*([a-zA-Z0-9_]+)/i);
       if (keyMatch) {
         const oldKey = keyMatch[1].toLowerCase();
         const updated = await supabaseMem.updateSelfModelTraitByKey(oldKey, newFact, source);

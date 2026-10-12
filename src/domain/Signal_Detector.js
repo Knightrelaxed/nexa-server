@@ -38,11 +38,12 @@ const PATTERNS = {
   FORMAT_BULLETS: /\b(pakai\s+(bullet|poin|list|angka|nomor|daftar)|bikin\s+(list|daftar|poin)|buatkan\s+(list|daftar)|poin[- ]?poin\s+(aja|saja))\b/i,
 
   // 3. KOREKSI NADA & GAYA BICARA
+  TONE_ANTI_FLATTERY: /\b((?:jangan|gak|nggak|ngga|tidak|tak|stop|hentikan)\s+(?:terlalu\s+)?(?:menjilat|lebay|berlebihan\s+(?:memuji|puji)|menganggap\s+aku\s+(?:udah\s+)?terlalu\s+hebat|memuji[- ]?muji)|kurangi\s+pujian|gak\s+usah\s+(?:menjilat|lebay|memuji)|biasa\s+aja\s+jangan\s+lebay)\b/i,
   TONE_CASUAL: /\b(terlalu\s+(formal|kaku)|jangan\s+(kaku|formal|serius)|santai\s+(aja|saja)|bahasa\s+santai|biasa\s+aja\s+ngomongnya)\b/i,
   TONE_FORMAL: /\b(lebih\s+(formal|sopan|profesional)|kurang\s+(sopan|formal)|bahasa\s+formal)\b/i,
 
   // 4. WORKFLOW / MISUNDERSTANDING REJECTION
-  MISUNDERSTANDING: /\b(bukan\s+(gitu|begitu|itu\s+maksudku|maksud saya)|salah\s+paham|maksudku\s+bukan|kamu\s+salah\s+tangkap|bukan\s+itu\s+yang\s+kutanya)\b/i,
+  MISUNDERSTANDING: /\b(bukan\s+(gitu|begitu|itu\s+maksudku|maksud saya|[^\n,]+?\s+tapi\s+[^\n,]+)|salah\s+paham|maksudku\s+bukan|kamu\s+salah\s+tangkap|bukan\s+itu\s+yang\s+kutanya|perbaiki!|perbaiki\s+(?:itu|jawabanmu|responmu|datanya|catatannya|transaksinya?)|ralat!?|koreksi!?)\b/i,
 
   // 5. INSTRUKSI EKSPLISIT MENYIMPAN / PERATURAN OPERASIONAL
   EXPLICIT_REMEMBER: /\b(ingat\s+(ini\s+ya|ini(?=\s*[:,!.]|\s*$)|aturan\s+ini|bahwa\s+aku|preferensiku|selalu|kebiasaanku)|catat\s+(aturan\s+ini|bahwa\s+aku|preferensiku|gaya\s+ini)|mulai\s+sekarang\s+(kamu\s+harus|jangan\s+pernah|jawab|format|bicara|pakai|selalu|panggil|atur)|patenkan\s+(ini|aturan\s+ini)|simpan\s+aturan\s+ini|jangan\s+lupa\s+kalau\s+aku\s+(suka|tidak\s+suka|alergi|lebih\s+suka|prefer))\b/i,
@@ -115,7 +116,12 @@ function detectUserSignals(userText, lastAssistantReply = '') {
   }
 
   // 3. Cek Koreksi Nada
-  if (PATTERNS.TONE_CASUAL.test(text)) {
+  if (PATTERNS.TONE_ANTI_FLATTERY.test(text)) {
+    signals.push({
+      event_type: 'CORRECTION',
+      signal: { dimension: 'tone', preference: 'anti_flattery' }
+    });
+  } else if (PATTERNS.TONE_CASUAL.test(text)) {
     signals.push({
       event_type: 'CORRECTION',
       signal: { dimension: 'tone', preference: 'casual' }

@@ -51,10 +51,20 @@ test('Signal_Detector: detect tone and misunderstandings', () => {
   assert.equal(resTone[0].signal.dimension, 'tone');
   assert.equal(resTone[0].signal.preference, 'casual');
 
+  const resAntiFlattery = signalDetector.detectUserSignals('jangan terlalu menjilat dong, jangan anggap aku udah terlalu hebat');
+  assert.ok(resAntiFlattery.length > 0);
+  assert.equal(resAntiFlattery[0].signal.dimension, 'tone');
+  assert.equal(resAntiFlattery[0].signal.preference, 'anti_flattery');
+
   const resMis = signalDetector.detectUserSignals('Bukan begitu maksudku bro, salah paham kamu');
   assert.ok(resMis.length > 0);
   assert.equal(resMis[0].signal.dimension, 'workflow');
   assert.equal(resMis[0].signal.issue, 'misunderstanding');
+
+  const resEditMis = signalDetector.detectUserSignals('Perbaiki! Bukan st2 tapi es teh dua cup');
+  assert.ok(resEditMis.length > 0);
+  assert.equal(resEditMis[0].signal.dimension, 'workflow');
+  assert.equal(resEditMis[0].signal.issue, 'misunderstanding');
 });
 
 test('Signal_Detector: detect explicit remember, accept, and override', () => {
