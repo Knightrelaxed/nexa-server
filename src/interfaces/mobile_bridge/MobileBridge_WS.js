@@ -247,7 +247,24 @@ function initWebSocket(server) {
           return;
         }
 
+        // G. Alarm & Notification Events from Tasker (silently acknowledged, no server action needed)
+        // These are informational events sent by the Android Tasker profile. The server receives
+        // them to stay aware of the device state but does not need to take any action.
+        const SILENT_ACK_TYPES = new Set([
+          'ALARM_DISMISSED', 'ALARM_FIRED', 'NOTIFICATION_RECEIVED',
+          'SCREEN_ON', 'SCREEN_OFF', 'BATTERY_LOW', 'BATTERY_OK',
+          'CHARGING', 'UNPLUGGED', 'HEADSET_PLUGGED', 'HEADSET_UNPLUGGED'
+        ]);
+        if (SILENT_ACK_TYPES.has(pType)) {
+          // Silently update telemetry state if available, no log spam
+          if (latestTelemetry) {
+            latestTelemetry[`last_${pType.toLowerCase()}`] = new Date().toISOString();
+          }
+          return;
+        }
+
         console.log('[NEXA-BRIDGE-WS] Unhandled payload type:', payload.type);
+
       } catch (err) {
         console.error('[NEXA-BRIDGE-WS] Failed to parse incoming JSON:', err.message);
       }
