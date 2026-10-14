@@ -259,8 +259,27 @@ function initWebSocket(server) {
           return;
         }
 
+        if (pType === 'SCREEN_ON' || pType === 'SCREEN_OFF') {
+          const isOn = (pType === 'SCREEN_ON');
+          if (latestTelemetry) {
+            latestTelemetry.screen_on = isOn;
+            latestTelemetry.is_screen_on = isOn;
+            latestTelemetry.screen_state = isOn ? 'ON' : 'OFF';
+            latestTelemetry.updated_at = new Date().toISOString();
+          }
+          try {
+            const presenceModel = require('../../domain/Presence_Model');
+            presenceModel.isScreenOn = isOn;
+            const adapter = require('./adapter');
+            adapter.handleIncomingContextUpdate({ event: pType, screen_on: isOn, ...payload });
+          } catch (e) {
+            console.error('[NEXA-BRIDGE-WS] Screen event routing error:', e.message);
+          }
+          return;
+        }
+
         const SILENT_ACK_TYPES = new Set([
-          'NOTIFICATION_RECEIVED', 'SCREEN_ON', 'SCREEN_OFF',
+          'NOTIFICATION_RECEIVED', 'NOTIFICATION_EVENT',
           'BATTERY_LOW', 'BATTERY_OK', 'CHARGING', 'UNPLUGGED',
           'HEADSET_PLUGGED', 'HEADSET_UNPLUGGED'
         ]);

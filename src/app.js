@@ -108,6 +108,17 @@ app.get('/health', (req, res) => {
   const memoryMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
   const timestampJakarta = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
 
+  let bridgeSnapshot = null;
+  let presenceSnapshot = null;
+  try {
+    const bridgeAdapter = require('./interfaces/mobile_bridge/adapter');
+    bridgeSnapshot = bridgeAdapter.getSnapshot();
+  } catch (_) {}
+  try {
+    const presenceModel = require('./domain/Presence_Model');
+    presenceSnapshot = presenceModel.snapshot();
+  } catch (_) {}
+
   res.status(200).json({
     status: 'ALIVE',
     service: 'N.E.X.A Cloud Core',
@@ -116,7 +127,9 @@ app.get('/health', (req, res) => {
     uptime_human: `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m`,
     timestamp_jakarta: timestampJakarta,
     memory_mb: memoryMb,
-    node_env: process.env.NODE_ENV || 'development'
+    node_env: process.env.NODE_ENV || 'development',
+    device: bridgeSnapshot,
+    presence: presenceSnapshot
   });
 });
 
