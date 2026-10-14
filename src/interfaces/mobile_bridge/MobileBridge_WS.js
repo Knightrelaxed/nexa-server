@@ -247,13 +247,22 @@ function initWebSocket(server) {
           return;
         }
 
-        // G. Alarm & Notification Events from Tasker (silently acknowledged, no server action needed)
-        // These are informational events sent by the Android Tasker profile. The server receives
-        // them to stay aware of the device state but does not need to take any action.
+        // G. Device Events from Nexa Bridge Android App (Alarm, Screen, Battery, Headset)
+        // Sent directly by the native Nexa Bridge APK running on Tuan Faqih's Android phone.
+        if (pType === 'ALARM_DISMISSED' || pType === 'ALARM_FIRED') {
+          try {
+            const adapter = require('./adapter');
+            adapter.handleIncomingContextUpdate({ event: pType, ...payload });
+          } catch (e) {
+            console.error('[NEXA-BRIDGE-WS] Alarm context routing error:', e.message);
+          }
+          return;
+        }
+
         const SILENT_ACK_TYPES = new Set([
-          'ALARM_DISMISSED', 'ALARM_FIRED', 'NOTIFICATION_RECEIVED',
-          'SCREEN_ON', 'SCREEN_OFF', 'BATTERY_LOW', 'BATTERY_OK',
-          'CHARGING', 'UNPLUGGED', 'HEADSET_PLUGGED', 'HEADSET_UNPLUGGED'
+          'NOTIFICATION_RECEIVED', 'SCREEN_ON', 'SCREEN_OFF',
+          'BATTERY_LOW', 'BATTERY_OK', 'CHARGING', 'UNPLUGGED',
+          'HEADSET_PLUGGED', 'HEADSET_UNPLUGGED'
         ]);
         if (SILENT_ACK_TYPES.has(pType)) {
           // Silently update telemetry state if available, no log spam
