@@ -248,11 +248,27 @@ class NexaBridgeAdapter {
   }
 
   async getScreenStatus() {
-    return this.execute('GET_SCREEN_STATUS');
+    const res = await this.execute('GET_SCREEN_STATUS');
+    if (res && res.success && res.data && typeof res.data.screen_on === 'boolean') {
+      if (!this.latestTelemetry) this.latestTelemetry = {};
+      this.latestTelemetry.screen_on = res.data.screen_on;
+      this.latestTelemetry.is_screen_on = res.data.screen_on;
+      this.latestTelemetry.screen_state = res.data.screen_state || (res.data.screen_on ? 'ON' : 'OFF');
+      this.latestTelemetry.updated_at = new Date().toISOString();
+      presenceModel.isScreenOn = res.data.screen_on;
+    }
+    return res;
   }
 
   async getLightStatus() {
-    return this.execute('GET_LIGHT_STATUS');
+    const res = await this.execute('GET_LIGHT_STATUS');
+    if (res && res.success && res.data && (typeof res.data.lux === 'number' || res.data.state)) {
+      presenceModel.updateFromContextEvent('LIGHT_CHANGED', {
+        lux: typeof res.data.lux === 'number' ? res.data.lux : null,
+        state: res.data.state || 'NORMAL'
+      });
+    }
+    return res;
   }
 
   async goHomeScreen() {

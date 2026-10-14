@@ -207,14 +207,34 @@ function initCronJobs() {
       console.log('[CRON] Executing Midnight Check-in evaluation (01:00 WIB)...');
       try {
         const bridgeAdapter = require('./mobile_bridge/adapter');
-        const isScreenActive = bridgeAdapter.isScreenActive();
 
-        if (!isScreenActive) {
-          console.log('[CRON] 🌙 Midnight Check-in dilewati: Layar HP mati atau Nexa Bridge offline.');
+        // 1. Jika bridge offline atau tidak terhubung, jangan berasumsi bangun. Lewati.
+        if (!bridgeAdapter.isConnected()) {
+          console.log('[CRON] 🌙 Midnight Check-in dilewati: Nexa Bridge offline / HP tidak terhubung.');
           return;
         }
 
-        console.log('[CRON] 📱 Midnight Check-in AKTIF: Layar HP menyala pada 01:00 WIB.');
+        // 2. Query real-time status layar langsung ke hardware Android (on-demand)
+        let isScreenActive = false;
+        try {
+          const screenResult = await bridgeAdapter.getScreenStatus();
+          if (screenResult && screenResult.success && screenResult.data && typeof screenResult.data.screen_on === 'boolean') {
+            isScreenActive = screenResult.data.screen_on;
+          } else {
+            isScreenActive = bridgeAdapter.isScreenActive(120000);
+          }
+        } catch (queryErr) {
+          console.warn('[CRON] Gagal query real-time getScreenStatus pada 01:00 WIB:', queryErr.message);
+          // Default aman: Jika query gagal atau timeout, asumsikan Tuan Faqih sedang tidur!
+          isScreenActive = false;
+        }
+
+        if (!isScreenActive) {
+          console.log('[CRON] 🌙 Midnight Check-in dilewati: Layar HP terkonfirmasi mati/tidur (Tuan Faqih sedang istirahat).');
+          return;
+        }
+
+        console.log('[CRON] 📱 Midnight Check-in AKTIF: Layar HP terkonfirmasi aktif/menyala pada 01:00 WIB.');
         const checkinText = await intelligenceBrief.generateMidnightCheckin({ screenActive: true });
 
         // 1. Peringatan via Notifier
