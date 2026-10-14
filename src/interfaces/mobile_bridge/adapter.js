@@ -203,7 +203,26 @@ class NexaBridgeAdapter {
    */
   async execute(action, params = {}, options = {}) {
     const timeoutMs = options.timeoutMs || 5000;
-    return await mobileBridgeWs.sendCommand(action, params, { timeoutMs });
+    const res = await mobileBridgeWs.sendCommand(action, params, { timeoutMs });
+    if (res && res.success && res.data) {
+      const act = String(action).toUpperCase();
+      if (act === 'GET_SCREEN_STATUS' && typeof res.data.screen_on === 'boolean') {
+        if (!this.latestTelemetry) this.latestTelemetry = {};
+        this.latestTelemetry.screen_on = res.data.screen_on;
+        this.latestTelemetry.is_screen_on = res.data.screen_on;
+        this.latestTelemetry.screen_state = res.data.screen_state || (res.data.screen_on ? 'ON' : 'OFF');
+        this.latestTelemetry.updated_at = new Date().toISOString();
+        presenceModel.isScreenOn = res.data.screen_on;
+      } else if (act === 'GET_LIGHT_STATUS' && (typeof res.data.lux === 'number' || res.data.state)) {
+        presenceModel.updateFromContextEvent('LIGHT_CHANGED', {
+          lux: typeof res.data.lux === 'number' ? res.data.lux : null,
+          state: res.data.state || 'NORMAL'
+        });
+      } else if (act === 'GET_BATTERY_STATUS' && typeof res.data.battery_level === 'number') {
+        presenceModel.batteryLevel = res.data.battery_level;
+      }
+    }
+    return res;
   }
 
   // ── Hardware Controls ─────────────────────────────────────────
