@@ -1579,7 +1579,10 @@ Siklus sapaan N.E.X.A berpusat pada empat titik waktu kritis yang dieksekusi mel
 3. **17:00 WIB (Evening Debrief)**: Sapaan reflektif sore hari. AI menanyakan pencapaian hari ini dan memancing Tuan Faqih untuk menitipkan catatan/ide untuk besok.
 4. **21:00 WIB (Tomorrow Prep)**: Persiapan H+1. N.E.X.A menarik acara kalender esok hari (`getTomorrowEvents()`) dan tugas dalam 2 hari ke depan (`getUpcomingTasks(2)`) sebagai alarm dini strategis.
 
-Selain itu, terdapat **Midnight Check-in (01:00 WIB)**, di mana N.E.X.A akan menegur dengan hangat jika mendeteksi Tuan Faqih belum tidur (atau memancing percakapan jika ada pikiran yang mengganggu di larut malam).
+Selain itu, terdapat **Midnight Check-in (01:00 WIB)** yang dilengkapi protokol **Active On-Demand Screen Query & Safe-Sleep Default Guard**:
+- Tepat pada pukul 01:00 WIB, sistem tidak lagi menebak dari cache telemetri pasif yang rentan keliru, melainkan secara aktif menembakkan perintah `GET_SCREEN_STATUS` melalui WebSocket ke HP Samsung Galaxy A33 5G milik Tuan Faqih.
+- **Safe-Sleep Default (Anti-Ganggu Istirahat)**: Jika layar HP terkonfirmasi mati/tidur (`screen_on: false` / `is_interactive: false`), atau jika koneksi Bridge offline, atau jika query mengalami timeout, cron **langsung menghentikan proses (skip)** seketika tanpa mengirim pesan Telegram dan tanpa membunyikan TTS di speaker HP.
+- **Trigger Presisi**: Pengingat peduli jam tidur dan percakapan larut malam HANYA dikirimkan jika layar fisik HP terkonfirmasi **benar-benar sedang aktif/menyala** (`screen_on: true` dan `is_interactive: true`) pada jam 1 pagi.
 
 ### 7.2 Orkestrasi Waktu & Disiplin Otomatis
 
@@ -2044,6 +2047,31 @@ Seluruh kendali perangkat didefinisikan dalam konstanta `NexaActions` dan diekse
 | `SHOW_OVERLAY_MSG` | `title: string`, `message: string` | Memunculkan dialog pop-up di atas semua aplikasi. |
 | `SIMULATE_INCOMING_CALL` | `caller_name`, `message` | Menjalankan panggilan masuk fullscreen interaktif. |
 | `PLAY_RINGTONE` | *(none)* | Membunyikan nada dering alarm darurat pada volume maksimal. |
+| `GET_SCREEN_STATUS` | *(none)* | Membaca status interaktif layar HP secara on-demand via `PowerManager.isInteractive` (`screen_on: boolean`, `screen_state: 'ON'\|'OFF'`). |
+| `GET_LIGHT_STATUS` | *(none)* | Mengukur lux intensitas cahaya ruangan on-demand via `Sensor.TYPE_LIGHT` dengan auto-unregister sekejap (<1 detik). |
+| `GET_BATTERY_STATUS` | *(none)* | Membaca persentase baterai real-time dan status pengisian daya (*charging*). |
+
+---
+
+### 11.9 Arsitektur Efisiensi Baterai & Protokol Sensor On-Demand (Battery Preservation Architecture)
+
+Untuk menjaga daya baterai HP Samsung Galaxy A33 5G tetap awet 24/7 dan mengeliminasi pemborosan data serta lalu lintas WebSocket yang sia-sia, N.E.X.A mengadopsi prinsip **Strict On-Demand Sensing**:
+
+1. **Deaktivasi Proactive Continuous Sensor Streaming:**
+   - **Sensor Angkat HP (`PHONE_PICKUP` / Sensor ID 25):** Registrasi background listener terus-menerus di `SensorObserverManager.kt` dinonaktifkan sepenuhnya. Sensor gerak akselerometer/giroskop tidak lagi menguras daya prosesor di latar belakang saat HP tergeletak di meja.
+   - **Sensor Cahaya Ruangan (`Sensor.TYPE_LIGHT`):** Tidak lagi melakukan streaming data lux secara berkala ke WebSocket.
+   - **Broadcast Transisi Layar:** Receiver `Intent.ACTION_SCREEN_ON` dan `ACTION_SCREEN_OFF` tidak lagi mengirim spam payload ke WebSocket setiap kali layar hidup atau mati.
+
+2. **Protokol Sensor Presisi Sesuai Kebutuhan (*On-Demand Hardware Inquiries*):**
+   - **`GET_SCREEN_STATUS` (Handler: `ScreenHandler`):** Menggunakan `PowerManager.isInteractive` native Android. Membedakan secara presisi antara kondisi *Dozing / Always-On Display (AOD) / Layar Terkunci Padam* (`false`) dan kondisi *Awake / Layar Aktif Digunakan* (`true`).
+   - **`GET_LIGHT_STATUS` (Handler: `LightSensorHandler`):** Mendaftarkan listener sensor cahaya sekejap saat diminta oleh server, mengambil sampel lux akurat pertama (klasifikasi: `DARK < 15 lux`, `NORMAL 15-100 lux`, `BRIGHT > 100 lux`), lalu **langsung melakukan `unregisterListener()`** dalam waktu <1 detik (timeout maksimal 1.5 detik). Hardware sensor kembali tidur seketika.
+   - **`GET_BATTERY_STATUS` (Handler: `BatteryHandler`):** Membaca persentase baterai dan status charging secara on-demand via sticky intent `ACTION_BATTERY_CHANGED`.
+
+3. **Pelaporan Telemetri Adaptif (*Delta-Based Reporting & Keepalive Heartbeat*):**
+   - Reporter telemetri periodik di `NexaBridgeService.kt` dioptimasi dari pengiriman statis per 30 detik menjadi pelaporan adaptif berbasis delta baterai (hanya melapor jika level baterai berubah) atau interval keep-alive 3 menit.
+
+4. **Sinkronisasi Status Otomatis (*State Auto-Sync Gateway*):**
+   - Di sisi server (`src/interfaces/mobile_bridge/adapter.js`), fungsi `adapter.execute()` secara otomatis menyelaraskan hasil query `GET_SCREEN_STATUS`, `GET_LIGHT_STATUS`, dan `GET_BATTERY_STATUS` ke dalam `Presence_Model` dan snapshot `/health` tanpa latensi.
 
 ---
 

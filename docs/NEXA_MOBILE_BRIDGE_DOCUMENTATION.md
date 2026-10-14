@@ -188,6 +188,8 @@ Menggantikan aplikasi pihak ketiga seperti Tasker dengan menangkap event sistem 
 | 26 | `STOP_MEDIA` | `AudioPlayerHandler` | Menghentikan pemutaran audio/ringtone darurat. | Status `SUCCESS` |
 | 27 | `SIMULATE_INCOMING_CALL` | `FakeCallHandler` / `FakeCallActivity` | Memunculkan layar panggilan interaktif 6-state (Ringing, Speaking, 10s Voice Recording, Waiting, Reply). | Event `CALL_ACCEPTED` / `REJECTED` / `AUDIO_REPLY` |
 | 28 | `PLAY_AUDIO_STREAM` | `AudioPlayerHandler` | Memutar stream balasan audio PCM dari server atau sinyal penutupan panggilan interaktif. | Status `SUCCESS` / Event `CALL_REPLY_COMPLETE` |
+| 29 | `GET_SCREEN_STATUS` | `ScreenHandler` | Membaca status interaktif layar HP via `PowerManager.isInteractive` secara on-demand tanpa spam sinyal. | `screen_on: Boolean`, `screen_state: "ON"\|"OFF"`, `is_interactive: Boolean` |
+| 30 | `GET_LIGHT_STATUS` | `LightSensorHandler` | Mengukur lux intensitas cahaya ruangan on-demand via `Sensor.TYPE_LIGHT` dengan auto-unregister sekejap (<1 detik). | `lux: Float`, `state: "DARK"\|"NORMAL"\|"BRIGHT"` |
 
 ---
 
@@ -595,6 +597,45 @@ Sistem panggilan `FakeCallActivity` dirancang untuk meniru pengalaman panggilan 
 3. **UI Minimalis Ikonik (*Icon-Only Floating Buttons*):**
    - **Tombol Kiri (Speaker Toggle):** Ikon Speaker Minimalis Tergaris Miring Merah (Earpiece / Speaker Atas) $\leftrightarrow$ Ikon Speaker Berpendar Cyan dengan Gelombang Suara (Loudspeaker / Speaker Utama).
    - **Tombol Kanan (End Call):** Lingkaran merah elegan untuk menutup panggilan seketika.
+
+---
+
+## 8. Battery Preservation & On-Demand Sensor Protocol (Arsitektur Hemat Daya Baterai)
+
+Untuk memastikan aplikasi Nexa Bridge dapat bertahan hidup 24/7 di latar belakang tanpa menguras baterai Samsung Galaxy A33 5G dan tanpa menimbulkan beban jaringan yang sia-sia, diterapkan arsitektur **Strict On-Demand Sensing**:
+
+### 8.1. Deaktivasi Sensor Background Proaktif
+* **Sensor Angkat HP (`PHONE_PICKUP` / Sensor ID 25):**
+  Pendaftaran listener background secara terus-menerus di `SensorObserverManager.kt` dinonaktifkan (`// Continuous registration disabled`). Sensor fisik tidak lagi memicu *wake event* saat ponsel diangkat atau bergetar di atas meja.
+* **Sensor Cahaya Ambient (`Sensor.TYPE_LIGHT`):**
+  Sensor cahaya tidak lagi melakukan streaming nilai lux secara proaktif ke WebSocket saat terjadi perubahan intensitas ruangan.
+* **Receiver Perubahan Layar (`screenStateReceiver`):**
+  Broadcast intent `ACTION_SCREEN_ON` dan `ACTION_SCREEN_OFF` tidak lagi memancarkan payload ke WebSocket secara otomatis setiap kali layar padam atau menyala.
+
+### 8.2. Protokol Sensor On-Demand (Hanya Aktif Saat Diminta)
+* **`GET_SCREEN_STATUS` (On-Demand Layar):**
+  - Mengakses `PowerManager.isInteractive` secara langsung di Android.
+  - Membedakan secara presisi antara kondisi *Dozing / Always-On Display (AOD) / Layar Terkunci Padam* (`screen_on: false`) dan kondisi *Awake / Layar Aktif* (`screen_on: true`).
+  - Menghilangkan bug historis di mana nilai `screen_on` sempat ter-hardcode bernilai `true` pada telemetri awal.
+* **`GET_LIGHT_STATUS` (On-Demand Cahaya):**
+  - Ditangani oleh `LightSensorHandler.kt`.
+  - Mendaftarkan `Sensor.TYPE_LIGHT` sekejap pada saat perintah diterima.
+  - Mengambil pembacaan lux akurat pertama, mengklasifikasikan status (`DARK < 15 lux`, `NORMAL 15-100 lux`, `BRIGHT > 100 lux`), lalu **langsung mengeksekusi `sensorManager.unregisterListener(this)`**.
+  - Dilengkapi *failsafe timeout* 1.5 detik jika sensor hardware lambat merespons.
+  - Hardware sensor langsung kembali dalam kondisi tidur/daya rendah.
+
+### 8.3. Pelaporan Telemetri Adaptif (Delta-Based Heartbeat)
+* `launchTelemetryReporter()` di `NexaBridgeService.kt` tidak lagi melakukan spam broadcast setiap 30 detik tanpa henti.
+* Telemetri kini hanya dikirimkan jika:
+  1. Terjadi perubahan signifikan pada persentase baterai (`battery_level` berubah $\ge 1\%$), ATAU
+  2. Batas waktu keep-alive 3 menit tercapai (sebagai detak jantung minimum untuk memverifikasi soket tetap segar).
+
+### 8.4. Integrasi Protokol Safe-Sleep pada Cron 01:00 WIB (Midnight Check-in)
+* Pada pukul 01:00 WIB, server Nexa mengeksekusi `adapter.getScreenStatus()` secara on-demand ke perangkat.
+* **Protokol Safe-Sleep Default:**
+  - Jika layar terdeteksi mati (`screen_on: false`), cron langsung dilewati (*zero noise, zero interruption*).
+  - Jika perangkat offline atau query mengalami timeout, sistem secara default mengasumsikan pengguna sedang tidur dan membatalkan sapaan.
+  - Sapaan jam 1 malam HANYA dikirimkan jika layar HP terbukti secara fisik sedang menyala (`screen_on: true`).
 
 ---
 *Dokumentasi Resmi Ekosistem N.E.X.A Assistant & Nexa Mobile Bridge (Update Terakhir: 2026).*
