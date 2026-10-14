@@ -112,17 +112,6 @@ router.post('/bridge/simulate-call', security.bridgeAuth, async (req, res) => {
   }
 });
 
-// 7. Midnight Check-in Cron Test / Simulation
-router.post('/cron/test-midnight', security.bridgeAuth, async (req, res) => {
-  try {
-    const { executeMidnightCheckin } = require('./cron');
-    const result = await executeMidnightCheckin();
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ============================================================
 // EXPORTS
 // ============================================================
