@@ -1268,6 +1268,37 @@ async function executeLiveTool(toolName, args = {}) {
           };
         }
 
+        if (action === 'GET_SCREEN_STATUS') {
+          const bridgeRes = await _withToolTimeout(
+            mobileBridgeWs.sendCommand('GET_SCREEN_STATUS', {}, { timeoutMs: 3000 }),
+            4000
+          );
+          const isScreenOn = bridgeRes?.data?.screen_on ?? false;
+          return {
+            status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+            action,
+            screen_on: isScreenOn,
+            screen_state: isScreenOn ? 'ON' : 'OFF',
+            message: bridgeRes.success ? `Layar HP saat ini sedang ${isScreenOn ? 'MENYALA / BANGUN' : 'MATI / TIDUR'}.` : 'Gagal memeriksa status layar HP.'
+          };
+        }
+
+        if (action === 'GET_LIGHT_STATUS') {
+          const bridgeRes = await _withToolTimeout(
+            mobileBridgeWs.sendCommand('GET_LIGHT_STATUS', {}, { timeoutMs: 3000 }),
+            4000
+          );
+          const lux = bridgeRes?.data?.lux ?? 0;
+          const state = bridgeRes?.data?.state ?? 'NORMAL';
+          return {
+            status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+            action,
+            lux,
+            state,
+            message: bridgeRes.success ? `Sensor cahaya HP membaca ${lux} lux (kondisi: ${state}).` : 'Gagal membaca sensor cahaya HP.'
+          };
+        }
+
         if (action === 'GET_LOCATION') {
           const bridgeRes = await _withToolTimeout(bridge.getLocation(), 8000);
           const locData = bridgeRes?.data || {};
@@ -1332,6 +1363,8 @@ async function executeLiveTool(toolName, args = {}) {
           'FORCE_DND',
           'LOCK_SCREEN',
           'GET_BATTERY_STATUS',
+          'GET_SCREEN_STATUS',
+          'GET_LIGHT_STATUS',
           'GET_LOCATION',
           'LAUNCH_APP',
           'END_CALL', 'HANGUP',

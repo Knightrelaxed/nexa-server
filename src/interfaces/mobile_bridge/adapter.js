@@ -247,6 +247,14 @@ class NexaBridgeAdapter {
     return this.execute('LOCK_SCREEN');
   }
 
+  async getScreenStatus() {
+    return this.execute('GET_SCREEN_STATUS');
+  }
+
+  async getLightStatus() {
+    return this.execute('GET_LIGHT_STATUS');
+  }
+
   async goHomeScreen() {
     return this.execute('GO_HOME_SCREEN');
   }
