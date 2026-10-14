@@ -59,6 +59,70 @@ async function trackJobRun(jobName, runKey, jobFn) {
   }
 }
 
+/**
+ * Core business logic for Midnight Check-in (01:00 WIB).
+ * Returns { executed: boolean, reason: string, screenActive: boolean, text?: string }
+ */
+async function executeMidnightCheckin(options = {}) {
+  const bridgeAdapter = require('./mobile_bridge/adapter');
+
+  // 1. Jika bridge offline atau tidak terhubung, jangan berasumsi bangun. Lewati.
+  if (!bridgeAdapter.isConnected()) {
+    console.log('[CRON] 🌙 Midnight Check-in dilewati: Nexa Bridge offline / HP tidak terhubung.');
+    return { executed: false, reason: 'BRIDGE_OFFLINE', screenActive: false };
+  }
+
+  // 2. Query real-time status layar langsung ke hardware Android (on-demand)
+  let isScreenActive = false;
+  try {
+    const screenResult = await bridgeAdapter.getScreenStatus();
+    if (screenResult && screenResult.success && screenResult.data && typeof screenResult.data.screen_on === 'boolean') {
+      isScreenActive = screenResult.data.screen_on;
+    } else {
+      isScreenActive = bridgeAdapter.isScreenActive(120000);
+    }
+  } catch (queryErr) {
+    console.warn('[CRON] Gagal query real-time getScreenStatus pada 01:00 WIB:', queryErr.message);
+    // Default aman: Jika query gagal atau timeout, asumsikan Tuan Faqih sedang tidur!
+    isScreenActive = false;
+  }
+
+  if (!isScreenActive) {
+    console.log('[CRON] 🌙 Midnight Check-in dilewati: Layar HP terkonfirmasi mati/tidur (Tuan Faqih sedang istirahat).');
+    return { executed: false, reason: 'SCREEN_OFF', screenActive: false };
+  }
+
+  console.log('[CRON] 📱 Midnight Check-in AKTIF: Layar HP terkonfirmasi aktif/menyala pada 01:00 WIB.');
+  const checkinText = await intelligenceBrief.generateMidnightCheckin({ screenActive: true });
+  const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+
+  // 1. Peringatan via Notifier
+  await notifyProactive({
+    kind: 'midnight_checkin',
+    priority: 'P1',
+    dedupeKey: `midnight_checkin:${todayKey}`,
+    text: checkinText
+  });
+
+  // 2. Peringatan Suara Lisan (TTS) via Speaker HP Samsung
+  try {
+    const ttsSpeech = checkinText
+      .replace(/<[^>]*>/g, '')
+      .replace(/[*_`#~]/g, '')
+      .replace(/\n+/g, ' ')
+      .trim();
+
+    if (ttsSpeech) {
+      console.log('[CRON] 🎙️ Menyuarakannya via TTS HP Samsung A33 5G...');
+      await bridgeAdapter.speakText(ttsSpeech);
+    }
+  } catch (ttsErr) {
+    console.warn('[CRON] Gagal memicu TTS HP pada Midnight Check-in:', ttsErr.message);
+  }
+
+  return { executed: true, reason: 'SCREEN_ON', screenActive: true, text: checkinText };
+}
+
 function initCronJobs() {
   console.log('[CRON] Initializing N.E.X.A background jobs...');
 
@@ -206,60 +270,7 @@ function initCronJobs() {
     await trackJobRun('midnight_checkin', todayKey, async () => {
       console.log('[CRON] Executing Midnight Check-in evaluation (01:00 WIB)...');
       try {
-        const bridgeAdapter = require('./mobile_bridge/adapter');
-
-        // 1. Jika bridge offline atau tidak terhubung, jangan berasumsi bangun. Lewati.
-        if (!bridgeAdapter.isConnected()) {
-          console.log('[CRON] 🌙 Midnight Check-in dilewati: Nexa Bridge offline / HP tidak terhubung.');
-          return;
-        }
-
-        // 2. Query real-time status layar langsung ke hardware Android (on-demand)
-        let isScreenActive = false;
-        try {
-          const screenResult = await bridgeAdapter.getScreenStatus();
-          if (screenResult && screenResult.success && screenResult.data && typeof screenResult.data.screen_on === 'boolean') {
-            isScreenActive = screenResult.data.screen_on;
-          } else {
-            isScreenActive = bridgeAdapter.isScreenActive(120000);
-          }
-        } catch (queryErr) {
-          console.warn('[CRON] Gagal query real-time getScreenStatus pada 01:00 WIB:', queryErr.message);
-          // Default aman: Jika query gagal atau timeout, asumsikan Tuan Faqih sedang tidur!
-          isScreenActive = false;
-        }
-
-        if (!isScreenActive) {
-          console.log('[CRON] 🌙 Midnight Check-in dilewati: Layar HP terkonfirmasi mati/tidur (Tuan Faqih sedang istirahat).');
-          return;
-        }
-
-        console.log('[CRON] 📱 Midnight Check-in AKTIF: Layar HP terkonfirmasi aktif/menyala pada 01:00 WIB.');
-        const checkinText = await intelligenceBrief.generateMidnightCheckin({ screenActive: true });
-
-        // 1. Peringatan via Notifier
-        await notifyProactive({
-          kind: 'midnight_checkin',
-          priority: 'P1',
-          dedupeKey: `midnight_checkin:${todayKey}`,
-          text: checkinText
-        });
-
-        // 2. Peringatan Suara Lisan (TTS) via Speaker HP Samsung
-        try {
-          const ttsSpeech = checkinText
-            .replace(/<[^>]*>/g, '')
-            .replace(/[*_`#~]/g, '')
-            .replace(/\n+/g, ' ')
-            .trim();
-
-          if (ttsSpeech) {
-            console.log('[CRON] 🎙️ Menyuarakannya via TTS HP Samsung A33 5G...');
-            await bridgeAdapter.speakText(ttsSpeech);
-          }
-        } catch (ttsErr) {
-          console.warn('[CRON] Gagal memicu TTS HP pada Midnight Check-in:', ttsErr.message);
-        }
+        await executeMidnightCheckin();
       } catch (e) {
         console.error('[CRON] Midnight check-in failed:', e.message);
       }
@@ -1119,4 +1130,4 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
   console.log('[CRON-CHRONO] 📜 Chrono-Consolidation active (03:30 WIB).');
 }
 
-module.exports = { initCronJobs };
+module.exports = { initCronJobs, executeMidnightCheckin };
