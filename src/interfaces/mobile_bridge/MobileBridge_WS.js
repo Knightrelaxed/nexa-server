@@ -233,7 +233,6 @@ function initWebSocket(server) {
         // F. App Usage Telemetry & Duration Limiting Engine
         if (payload.type === 'APP_USAGE_TELEMETRY' || payload.type === 'app_usage') {
           if (latestTelemetry) {
-            latestTelemetry.screen_on = true;
             latestTelemetry.updated_at = new Date().toISOString();
           }
           try {
