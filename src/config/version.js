@@ -14,10 +14,10 @@
 const path = require('path');
 const pkg = require(path.resolve(__dirname, '../../package.json'));
 
-const VERSION = String(pkg.version || '3.3.3').trim();
+const VERSION = String(pkg.version || '3.4.0').trim();
 const SEMVER_PARTS = VERSION.split('.');
 const MAJOR = SEMVER_PARTS[0] || '3';
-const MINOR = SEMVER_PARTS[1] || '3';
+const MINOR = SEMVER_PARTS[1] || '4';
 const PATCH = SEMVER_PARTS[2] || '0';
 const MAJOR_MINOR = `${MAJOR}.${MINOR}`;
 
