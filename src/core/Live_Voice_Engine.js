@@ -392,7 +392,7 @@ class LiveVoiceSession {
           ? geminiVectorCache.getAllSnapshotFacts().slice(0, 15)
           : [];
         if (topFacts.length > 0) {
-          profileFactsBlock = '\n\n[FAKTA PERMANEN TENTANG TUAN FAQIH (SACR v3.3 RAM MEMORY)]:\n• ' +
+          profileFactsBlock = '\n\n[FAKTA PERMANEN TENTANG TUAN FAQIH (SACR RAM MEMORY)]:\n• ' +
             topFacts.map(f => f.content || f).join('\n• ');
         }
       } catch (_) {}
