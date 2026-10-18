@@ -46,7 +46,7 @@ const PATTERNS = {
   MISUNDERSTANDING: /\b(bukan\s+(gitu|begitu|itu\s+maksudku|maksud saya|[^\n,]+?\s+tapi\s+[^\n,]+)|salah\s+paham|maksudku\s+bukan|kamu\s+salah\s+tangkap|bukan\s+itu\s+yang\s+kutanya|perbaiki!|perbaiki\s+(?:itu|jawabanmu|responmu|datanya|catatannya|transaksinya?)|ralat!?|koreksi!?)\b/i,
 
   // 5. INSTRUKSI EKSPLISIT MENYIMPAN / PERATURAN OPERASIONAL
-  EXPLICIT_REMEMBER: /\b(ingat\s+(ini\s+ya|ini(?=\s*[:,!.]|\s*$)|aturan\s+ini|bahwa\s+aku|preferensiku|selalu|kebiasaanku)|catat\s+(aturan\s+ini|bahwa\s+aku|preferensiku|gaya\s+ini)|mulai\s+sekarang\s+(kamu\s+harus|jangan\s+pernah|jawab|format|bicara|pakai|selalu|panggil|atur)|patenkan\s+(ini|aturan\s+ini)|simpan\s+aturan\s+ini|jangan\s+lupa\s+kalau\s+aku\s+(suka|tidak\s+suka|alergi|lebih\s+suka|prefer))\b/i,
+  EXPLICIT_REMEMBER: /\b(ingat\s+(ini\s+ya|ini(?=\s*[:,!.]|\s*$)|aturan\s+ini|bahwa\s+aku|preferensiku|selalu|kebiasaanku)|catat\s+(aturan\s+ini|bahwa\s+aku|preferensiku|gaya\s+ini)|mulai\s+sekarang\s+(kamu\s+harus|jangan\s+pernah|jawab|format|bicara|pakai\s+(?:bahasa|format|nada|gaya|bullet|tabel|poin)|selalu\s+(?:jawab|pakai|panggil|gunakan|bahasa|format)|panggil|atur\s+(?:gaya|nada|format|bahasa))|patenkan\s+(ini|aturan\s+ini)|simpan\s+aturan\s+ini|jangan\s+lupa\s+kalau\s+aku\s+(suka|tidak\s+suka|alergi|lebih\s+suka|prefer))\b/i,
 
   // 6. ACCEPT / KEPUASAN (Positive Feedback)
   ACCEPT: /\b(oke\s+mantap|mantap\s+(bro|nexa|betul)?|siap\s+laksanakan|sudah\s+pas|bagus\s+(banget|ini)?|keren|pas\s+banget|nah\s+gitu\s+dong|makasih\s+(banyak|ya|nexa)?|terima\s+kasih)\b/i,
@@ -142,15 +142,22 @@ function detectUserSignals(userText, lastAssistantReply = '') {
   }
 
   // 5. Cek Explicit Remember
-  if (PATTERNS.EXPLICIT_REMEMBER.test(text)) {
-    // Abaikan jika ini sebenarnya perintah pengingat agenda harian
-    const isDailyReminder = /\b(ingatkan\s+aku|set\s+alarm|besok\s+ada|hari\s+ini\s+ada|lusa\s+ada|jam\s+\d+|kuis|tugas|rapat|meeting|minum\s+obat)\b/i.test(text);
-    if (!isDailyReminder) {
-      signals.push({
-        event_type: 'EXPLICIT_REMEMBER',
-        signal: { trigger: 'explicit_command' }
-      });
-    }
+  // [v3.3.3] Filter pengingat-agenda HANYA berlaku untuk kecocokan longgar "ingat ini ..." (yang bisa
+  // berarti "ingat: besok ada kuis"). Pola aturan yang spesifik ("mulai sekarang format ...",
+  // "catat gaya ini ...", "jangan lupa kalau aku suka ...") tidak boleh dibuang hanya karena kalimatnya
+  // kebetulan menyebut "tugas/rapat/jam 3".
+  const agendaLike = /\b(ingatkan\s+aku|set\s+alarm|besok\s+ada|hari\s+ini\s+ada|lusa\s+ada|jam\s+\d+|kuis|tugas|rapat|meeting|minum\s+obat)\b/i.test(text);
+  const rememberScan = new RegExp(PATTERNS.EXPLICIT_REMEMBER.source, 'gi');
+  let isExplicitRemember = false;
+  for (const match of text.matchAll(rememberScan)) {
+    const isLooseIngatIni = /^ingat\s+ini\b/i.test(match[0]);
+    if (!(isLooseIngatIni && agendaLike)) { isExplicitRemember = true; break; }
+  }
+  if (isExplicitRemember) {
+    signals.push({
+      event_type: 'EXPLICIT_REMEMBER',
+      signal: { trigger: 'explicit_command' }
+    });
   }
 
   // 6. Cek Override

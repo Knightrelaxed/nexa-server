@@ -220,62 +220,11 @@ function invalidateSelfModelCache() {
 
 /**
  * Deteksi konteks topik dari teks pesan (heuristic, zero-token).
- * Return: kategori konteks ('SCHEDULING', 'FINANCE', 'CASUAL', 'RESEARCH', 'STRATEGIC', 'DEFAULT')
+ * Implementasi dipindah ke Topic_Classifier.js (modul murni, dites terisolasi).
+ * Return: 'SCHEDULING' | 'EMAIL_DRAFT' | 'RESEARCH' | 'BRIEFING_MORNING' |
+ *         'DISCIPLINE_NUDGE' | 'FINANCE' | 'STRATEGIC' | 'CASUAL' | 'DEFAULT'
  */
-function _detectTopicContext(text) {
-  if (!text) return 'DEFAULT';
-  const t = String(text).toLowerCase().trim();
-
-  // 1. SCHEDULING ACTION VERBS (Prioritas tertinggi: aksi penjadwalan & pengingat)
-  // Menghindari false-positive seperti "jadwalkan makan siang" atau "ingatkan beli galon" masuk ke FINANCE
-  if (/\b(jadwalkan|agendakan|ingatkan|remind|set\s+alarm|buat\s+jadwal|atur\s+jadwal)\b/.test(t) &&
-      !/\b(pengeluaran|tabungan|saldo|mutasi|qris|transfer)\b/.test(t)) {
-    return 'SCHEDULING';
-  }
-
-  // 2. EMAIL_DRAFT: Penulisan, draf, balas, kirim email (TIDAK termasuk membaca/meringkas inbox)
-  if (/\b(draf\s+email|balas\s+email|kirim\s+email|tulis\s+email|buat\s+email)\b/.test(t)) {
-    return 'EMAIL_DRAFT';
-  }
-
-  // 3. RESEARCH & EMAIL READING: Membaca inbox/email, pencarian, riset, artikel, berita
-  if (/\b(cek\s+inbox|baca\s+email|ringkas\s+email|inbox|cek\s+email|cari|cek|googling|research|artikel|baca|informasi|berita)\b/.test(t)) {
-    return 'RESEARCH';
-  }
-
-  // 4. BRIEFING_MORNING: Hanya untuk permintaan briefing/ringkasan pagi terstruktur
-  if (/\b(briefing|morning\s+briefing|ringkasan\s+pagi|update\s+pagi|agenda\s+pagi)\b/.test(t)) {
-    return 'BRIEFING_MORNING';
-  }
-
-  // 5. DISCIPLINE_NUDGE: Eksplisit anti-prokrastinasi, god mode, distraksi sosmed
-  if (/\b(jangan\s+menunda|prokrastinasi|disiplin|god\s+mode|blokir\s+sosmed|terdistraksi|susah\s+fokus|malas\s+gerak)\b/.test(t)) {
-    return 'DISCIPLINE_NUDGE';
-  }
-
-  // 6. STRATEGIC: Keputusan, rencana besar, prioritas, skripsi, karir
-  if (/\b(rencana|strategi|pilihan|memilih|keputusan|planning|prioritas|tujuan|target|goals|skripsi|karir)\b/.test(t)) {
-    return 'STRATEGIC';
-  }
-
-  // 7. FINANCE: Transaksi keuangan, pembayaran, saldo, atau belanja dengan nominal uang
-  if (/\b(bayar|transfer|saldo|dompet|keuangan|uang|pengeluaran|tabungan|budget|qris|tagihan|ongkir|mutasi)\b/.test(t) ||
-      (/\b(beli|belanja|makan\s+(siang|malam|pagi)|jajan)\b/.test(t) && /\b\d+\s*(rb|k|ribu|rupiah|jt|juta)\b/.test(t)) ||
-      (/\b\d+\s*(rb|k|ribu|rupiah|jt|juta)\b/.test(t) && !/\b(jam|pukul|menit|detik)\b/.test(t))) {
-    return 'FINANCE';
-  }
-
-  // 8. GENERAL SCHEDULING: Waktu, jadwal, tugas, agenda umum
-  if (/\b(jadwal|kalender|deadline|tugas|agenda|besok|hari\s+ini|lusa|meeting|kelas|matkul|reminder|alarm|bangun)\b/.test(t)) {
-    return 'SCHEDULING';
-  }
-
-  // 9. CASUAL: Obrolan santai, sapaan pagi/malam, curhat
-  if (/\b(halo|hai|selamat\s+(pagi|siang|sore|malam)|morning|pagi|apa kabar|gimana|bagaimana|cerita|curhat|lagi ngapain)\b/.test(t)) {
-    return 'CASUAL';
-  }
-  return 'DEFAULT';
-}
+const { detectTopicContext: _detectTopicContext } = require('./Topic_Classifier');
 
 /**
  * Pilih layer identitas yang relevan dan format menjadi string prompt operasional laten.

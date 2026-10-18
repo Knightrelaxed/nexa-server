@@ -298,3 +298,17 @@ test('Signal_Detector: negated bullet requests are never inverted into "wants bu
   }
   assert.equal(rule('jangan terlalu banyak pakai bullet'), null, 'ambiguous negation must not produce a wrong event');
 });
+
+test('Signal_Detector [v3.3.3]: aturan permanen yang menyebut kata domain tidak lagi tertolak', () => {
+  const types = (t) => signalDetector.detectUserSignals(t).map(e => e.event_type);
+  assert.deepEqual(types('mulai sekarang format laporan tugas pakai tabel'), ['EXPLICIT_REMEMBER']);
+  assert.deepEqual(types('mulai sekarang jawab singkat kalau aku lagi rapat'), ['EXPLICIT_REMEMBER']);
+  assert.deepEqual(types('catat gaya ini untuk email rapat'), ['EXPLICIT_REMEMBER']);
+  assert.deepEqual(types('jangan lupa kalau aku suka kopi tanpa gula jam 3'), ['EXPLICIT_REMEMBER']);
+  // tetap bukan aturan gaya:
+  assert.deepEqual(types('mulai sekarang pakai dompet baru'), []);
+  assert.deepEqual(types('mulai sekarang atur alarm jam 5'), []);
+  assert.deepEqual(types('mulai sekarang ingatkan aku minum obat jam 8'), []);
+  // pola longgar "ingat ini" + aturan spesifik di kalimat yang sama: aturan spesifik tetap menang
+  assert.deepEqual(types('ingat ini ya: mulai sekarang format laporan tugas pakai tabel'), ['EXPLICIT_REMEMBER']);
+});

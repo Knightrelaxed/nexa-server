@@ -33,6 +33,26 @@ const MAX_REVIEWS_PER_DAY = 3;
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 menit
 const NUDGE_TURN_THRESHOLD = 10;        // Tiap 10 turn
 const MAX_RENDERED_CHARS = 700;
+const { scanForInjection } = require('../utils/directive_utils');
+
+// ── [v3.3.3] KLASIFIKASI ERROR ────────────────────────────────
+// Kegagalan INFRASTRUKTUR (429, timeout, jaringan, 5xx) bukan salah event: jangan hitung ke
+// poison-pill, cukup jeda. Hanya kegagalan DATA (output LLM bukan JSON/skema salah/patch tidak aman)
+// yang menghitung menuju dead-letter. Default = TRANSIENT, karena kehilangan koreksi pengguna
+// lebih mahal daripada satu percobaan ulang (percobaan dibatasi kuota harian + cooldown).
+const TRANSIENT_COOLDOWN_MS = 30 * 60 * 1000;
+let _cooldownUntil = 0;
+const DATA_ERROR_RE = /(no valid json|empty response|unexpected (token|end)|is not valid json|json\s*(parse|at position)|tidak memenuhi skema)/i;
+const TRANSIENT_DB_RE = /(fetch failed|timeout|timed out|econn|enotfound|eai_again|socket|network|\b5\d\d\b|temporarily|overloaded|rate limit)/i;
+
+/** @returns {'DATA'|'TRANSIENT'} */
+function classifyReviewError(err) {
+  const msg = String((err && err.message) || err || '');
+  return DATA_ERROR_RE.test(msg) ? 'DATA' : 'TRANSIENT';
+}
+function isTransientDbError(msg) {
+  return TRANSIENT_DB_RE.test(String(msg || ''));
+}
 
 // ── STATE RUNTIME ─────────────────────────────────────────────
 let _reviewsTodayCount = 0;
@@ -177,7 +197,12 @@ async function callReviewLLM(playbook, events) {
     return { success: true, ...parsed };
   } catch (err) {
     console.warn(`[MICRO-REVIEWER] LLM review call failed for ${playbook.intent}:`, err.message);
-    return { success: false, should_update: false, reason: `Gagal memanggil model evaluasi: ${err.message}` };
+    return {
+      success: false,
+      should_update: false,
+      transient: classifyReviewError(err) === 'TRANSIENT',
+      reason: `Gagal memanggil model evaluasi: ${err.message}`
+    };
   }
 }
 
@@ -192,6 +217,10 @@ async function runMicroReview(triggerReason = 'MANUAL') {
   }
 
   // 1. Periksa batas harian (maks 3 per hari)
+  if (Date.now() < _cooldownUntil) {
+    console.log(`[MICRO-REVIEWER] Cooldown error sementara aktif (${Math.ceil((_cooldownUntil - Date.now()) / 60000)} menit lagi). Melewati ${triggerReason}.`);
+    return { reviewed: false, reason: 'TRANSIENT_COOLDOWN' };
+  }
   await hydrateDailyBudget();
   if (!checkDailyBudget()) {
     console.log(`[MICRO-REVIEWER] Batas harian (${MAX_REVIEWS_PER_DAY}/hari) tercapai. Melewati ${triggerReason}.`);
@@ -239,6 +268,22 @@ async function runMicroReview(triggerReason = 'MANUAL') {
     const updatedPlaybooks = [];
     const processedEventIds = [];
     let llmCallsAttempted = false;
+    let llmCallsCompleted = 0; // panggilan yang benar-benar dijawab model (bukan 429/timeout)
+
+    // Kegagalan DATA: hitung attempt (persisten), dead-letter setelah MAX_EVENT_ATTEMPTS.
+    const registerDataFailure = async (groupEventIds) => {
+      const dbAttempts = await supabaseMemories.incrementLearningEventAttempts(groupEventIds);
+      for (const evId of groupEventIds) {
+        const attempts = (dbAttempts && dbAttempts[evId]) || ((_failedEventAttempts.get(evId) || 0) + 1);
+        _failedEventAttempts.set(evId, attempts);
+        if (attempts >= MAX_EVENT_ATTEMPTS) {
+          console.warn(`[MICRO-REVIEWER] 🗑️ [POISON-PILL DROP] Event #${evId} gagal ${attempts}x (data). Ditandai selesai agar antrean tidak macet.`);
+          await supabaseMemories.markLearningEventsProcessed([evId]);
+          processedEventIds.push(evId);
+          _failedEventAttempts.delete(evId);
+        }
+      }
+    };
 
     // 5. Evaluasi tiap kelompok intent
     for (const [intentClass, groupEvents] of eventsByIntent.entries()) {
@@ -265,24 +310,31 @@ async function runMicroReview(triggerReason = 'MANUAL') {
       // Lacak kegagalan via attempt guard. Jika gagal berulang kali (>= 3x), drop event agar tidak macet (Poison Pill).
       if (!reviewResult || reviewResult.success === false) {
         console.warn(`[MICRO-REVIEWER] ⚠️ Review LLM gagal untuk ${intentClass}: ${reviewResult?.reason || 'Unknown error'}.`);
-        // [v3.3.1] Attempts are persisted on the event row; in-memory is only the fallback.
-        const dbAttempts = await supabaseMemories.incrementLearningEventAttempts(groupEventIds);
-        for (const evId of groupEventIds) {
-          const attempts = (dbAttempts && dbAttempts[evId]) || ((_failedEventAttempts.get(evId) || 0) + 1);
-          _failedEventAttempts.set(evId, attempts);
-          if (attempts >= MAX_EVENT_ATTEMPTS) {
-            console.warn(`[MICRO-REVIEWER] 🗑️ [POISON-PILL DROP] Event #${evId} gagal ${attempts}x berturut-turut. Ditandai selesai agar antrean tidak macet.`);
-            await supabaseMemories.markLearningEventsProcessed([evId]);
-            processedEventIds.push(evId);
-            _failedEventAttempts.delete(evId);
-          }
+        if (reviewResult && reviewResult.transient === true) {
+          // [v3.3.3] Error infrastruktur: event TETAP pending, tidak dihitung attempt, hentikan siklus
+          // (grup lain akan gagal sama persis dan hanya membakar kuota) lalu jeda.
+          _cooldownUntil = Date.now() + TRANSIENT_COOLDOWN_MS;
+          console.warn(`[MICRO-REVIEWER] ⏸️ Error sementara (429/timeout/jaringan). Event tetap pending; cooldown ${TRANSIENT_COOLDOWN_MS / 60000} menit.`);
+          break;
         }
+        llmCallsCompleted++; // model menjawab tapi jawabannya tidak valid: kuota terpakai
+        await registerDataFailure(groupEventIds);
         continue;
       }
+      llmCallsCompleted++;
 
       if (reviewResult.should_update && reviewResult.patch) {
         const patch = reviewResult.patch;
         let renderedText = String(patch.rendered || currentPlaybook.rendered).trim();
+
+        // [v3.3.3] Teks playbook masuk ke system prompt berikutnya: pakai guard yang sama dengan
+        // jalur identity (URL, tag, code fence, karakter tak terlihat, "abaikan instruksi").
+        const injectionScan = scanForInjection(renderedText);
+        if (!injectionScan.safe) {
+          console.warn(`[MICRO-REVIEWER] 🛡️ Patch playbook ${intentClass} ditolak (${injectionScan.reason}). Dihitung sebagai kegagalan data.`);
+          await registerDataFailure(groupEventIds);
+          continue;
+        }
 
         // Enforce batas keras <= 700 karakter
         if (renderedText.length > MAX_RENDERED_CHARS) {
@@ -340,10 +392,15 @@ async function runMicroReview(triggerReason = 'MANUAL') {
           }
         } else {
           console.warn(`[MICRO-REVIEWER] Upsert playbook ditolak atau gagal untuk ${intentClass}:`, upsertRes?.error);
-          // Tandai event selesai agar tidak terjadi pengulangan tak berujung
-          await supabaseMemories.markLearningEventsProcessed(groupEventIds);
-          processedEventIds.push(...groupEventIds);
-          for (const evId of groupEventIds) _failedEventAttempts.delete(evId);
+          if (isTransientDbError(upsertRes && upsertRes.error)) {
+            // [v3.3.3] Gangguan DB sementara: koreksi pengguna jangan dibuang, coba lagi di siklus berikutnya.
+            console.warn(`[MICRO-REVIEWER] Gangguan DB sementara. ${groupEventIds.length} event tetap pending.`);
+          } else {
+            // Ditolak permanen (pinned/constraint): tandai selesai agar tidak terjadi pengulangan tak berujung
+            await supabaseMemories.markLearningEventsProcessed(groupEventIds);
+            processedEventIds.push(...groupEventIds);
+            for (const evId of groupEventIds) _failedEventAttempts.delete(evId);
+          }
         }
       } else {
         // LLM sukses dievaluasi dan memutuskan tidak ada perubahan yang diperlukan
@@ -354,7 +411,7 @@ async function runMicroReview(triggerReason = 'MANUAL') {
       }
     }
 
-    if (llmCallsAttempted) {
+    if (llmCallsCompleted > 0) {
       _reviewsTodayCount++;
       supabaseMemories.recordMicroReviewRun(getTodayDateKeyWib()).catch(() => {});
     }
@@ -417,6 +474,7 @@ function resetReviewerState() {
   _reviewsTodayCount = 0;
   _lastReviewDateKey = '';
   _hydratedDateKey = '';
+  _cooldownUntil = 0;
   _turnCounter = 0;
   if (_idleTimer) {
     clearTimeout(_idleTimer);
@@ -436,6 +494,7 @@ function getReviewerStatus() {
     turnCounter: _turnCounter,
     hasActiveIdleTimer: _idleTimer !== null,
     isReviewing: _isReviewing,
+    cooldownUntil: _cooldownUntil,
     maxReviewsPerDay: MAX_REVIEWS_PER_DAY
   };
 }
@@ -447,6 +506,8 @@ module.exports = {
   callReviewLLM,
   resetReviewerState,
   getReviewerStatus,
+  classifyReviewError,
+  isTransientDbError,
   MAX_REVIEWS_PER_DAY,
   IDLE_TIMEOUT_MS,
   NUDGE_TURN_THRESHOLD,

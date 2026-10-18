@@ -1,11 +1,11 @@
 {
   "name": "nexa-server",
-  "version": "3.3.2",
+  "version": "3.3.3",
   "description": "",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
-    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js tests/signal_detector.test.js tests/playbook_engine.test.js tests/micro_reviewer.test.js tests/directive_utils.test.js tests/identity_directive_flow.test.js tests/playbook_counters.test.js"
+    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js tests/signal_detector.test.js tests/playbook_engine.test.js tests/micro_reviewer.test.js tests/directive_utils.test.js tests/identity_directive_flow.test.js tests/playbook_counters.test.js tests/topic_classifier.test.js tests/reviewer_resilience.test.js"
   },
   "keywords": [],
   "author": "",
