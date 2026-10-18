@@ -12,7 +12,11 @@ const anticipatoryEngine    = require('../../domain/Anticipatory_Engine');
 
 const {
   stripHtml,
-  runPendingInterceptors
+  runPendingInterceptors,
+  cliPendingCalendar,
+  cliPendingConflict,
+  cliPendingEmail,
+  cliPendingDatabase
 } = require('./interceptors');
 
 const {
@@ -305,6 +309,11 @@ module.exports = {
   handleCliStream,
   pushToCli,
   cliSessions,
+  cliPendingCalendar,
+  cliPendingConflict,
+  cliPendingEmail,
+  cliPendingDatabase,
+  _stripHtml: stripHtml,
   _trackAdviceSession,
   _getAdviceSessionCount
 };

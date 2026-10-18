@@ -151,5 +151,8 @@ module.exports = {
   isAmbiguousFollowUp,
   hasStrongNewIntentCue,
   resolveAmbiguousFollowUp,
-  getClarificationMessage
+  getClarificationMessage,
+  _isAmbiguousFollowUp: isAmbiguousFollowUp,
+  _hasStrongNewIntentCue: hasStrongNewIntentCue,
+  _getClarificationMessage: getClarificationMessage
 };

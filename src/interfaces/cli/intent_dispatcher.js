@@ -777,5 +777,10 @@ module.exports = {
   isFactAboutNexa,
   classifySelfModelLayer,
   extractFinanceTxFromEmails,
-  dispatchCliIntent
+  dispatchCliIntent,
+  _isFactAboutNexa: isFactAboutNexa,
+  _classifySelfModelLayer: classifySelfModelLayer,
+  _extractFinanceTxFromEmails: extractFinanceTxFromEmails,
+  _dispatchIntent: dispatchCliIntent,
+  _stripHtml: stripHtml
 };
