@@ -16,36 +16,37 @@ const assert = require('node:assert');
 const { handleTelegramWebhook } = require('../src/interfaces/telegram/adapter');
 const commandHandler = require('../src/interfaces/telegram/command_handler');
 const callbackHandler = require('../src/interfaces/telegram/callback_handler');
-const emailHelpers = require('../src/interfaces/telegram/email_helpers');
+const followUpResolver = require('../src/interfaces/common/follow_up_resolver');
 const vaultHandler = require('../src/interfaces/telegram/vault_handler');
 const intentDispatcher = require('../src/interfaces/telegram/intent_dispatcher');
 
-test('Telegram Module: email_helpers parsing and filtering', () => {
-  // 1. Nominal extraction
+test('Telegram Module: follow_up_resolver detection and routing', () => {
+  // 1. Nominal extraction (canonical source: common/helpers)
+  const commonHelpers = require('../src/interfaces/common/helpers');
   const emailObj = {
     subject: 'Notifikasi Livin Mandiri',
     snippet: 'Transaksi QRIS berhasil sebesar Rp 75.000 di Kopi Kenangan'
   };
-  const nominal = emailHelpers.extractNominalFromEmail(emailObj);
+  const nominal = commonHelpers.extractNominalFromEmail(emailObj);
   assert.strictEqual(nominal, 75000, 'Nominal must be extracted correctly as 75000');
 
-  // 2. Temporal filter parsing
-  assert.deepStrictEqual(emailHelpers.getEmailTemporalFilterFromText('email hari ini'), { type: 'today' });
-  assert.deepStrictEqual(emailHelpers.getEmailTemporalFilterFromText('cek mutasi kemarin'), { type: 'yesterday' });
-  assert.deepStrictEqual(emailHelpers.getEmailTemporalFilterFromText('transaksi minggu lalu'), { type: 'last_week' });
-  assert.strictEqual(emailHelpers.getEmailTemporalFilterFromText('halo nexa'), null);
+  // 2. Temporal filter parsing (canonical source: common/helpers)
+  assert.deepStrictEqual(commonHelpers.getEmailTemporalFilterFromText('email hari ini'), { type: 'today' });
+  assert.deepStrictEqual(commonHelpers.getEmailTemporalFilterFromText('cek mutasi kemarin'), { type: 'yesterday' });
+  assert.deepStrictEqual(commonHelpers.getEmailTemporalFilterFromText('transaksi minggu lalu'), { type: 'last_week' });
+  assert.strictEqual(commonHelpers.getEmailTemporalFilterFromText('halo nexa'), null);
 
-  // 3. Day of month hint
-  assert.strictEqual(emailHelpers.parseDayOfMonthHint('transaksi tanggal 15'), 15);
-  assert.strictEqual(emailHelpers.parseDayOfMonthHint('tgl 3'), 3);
-  assert.strictEqual(emailHelpers.parseDayOfMonthHint('halo'), null);
+  // 3. Day of month hint (canonical source: common/helpers)
+  assert.strictEqual(commonHelpers.parseDayOfMonthHint('transaksi tanggal 15'), 15);
+  assert.strictEqual(commonHelpers.parseDayOfMonthHint('tgl 3'), 3);
+  assert.strictEqual(commonHelpers.parseDayOfMonthHint('halo'), null);
 
-  // 4. Follow-up intent detection
-  assert.strictEqual(emailHelpers.isAmbiguousFollowUp('hapus itu'), true);
-  assert.strictEqual(emailHelpers.isAmbiguousFollowUp('selesai'), true);
-  assert.strictEqual(emailHelpers.isAmbiguousFollowUp('buat jadwal baru'), false);
+  // 4. Follow-up intent detection (canonical source: follow_up_resolver)
+  assert.strictEqual(followUpResolver.isAmbiguousFollowUp('hapus itu'), true);
+  assert.strictEqual(followUpResolver.isAmbiguousFollowUp('selesai'), true);
+  assert.strictEqual(followUpResolver.isAmbiguousFollowUp('buat jadwal baru'), false);
 
-  const followUpRouting = emailHelpers.buildGlobalFollowUpRouting('hapus itu', {
+  const followUpRouting = followUpResolver.buildGlobalFollowUpRouting('hapus itu', {
     intent: 'FINANCE',
     askedAt: Date.now()
   });

@@ -6,7 +6,7 @@
 
 const { executeDomainIntent }            = require('../common/domain_dispatcher');
 const helpers                            = require('../common/helpers');
-const emailHelpers                       = require('./email_helpers');
+const followUpResolver                   = require('../common/follow_up_resolver');
 const { triggerConversationalSynthesis } = require('./interceptors');
 
 /**
@@ -18,7 +18,7 @@ const { triggerConversationalSynthesis } = require('./interceptors');
 async function dispatchSingleIntent(routingData, context) {
   const { textInput } = context;
 
-  const clarificationMessage = emailHelpers.getClarificationMessage(routingData, textInput);
+  const clarificationMessage = followUpResolver.getClarificationMessage(routingData, textInput);
   if (clarificationMessage) {
     return clarificationMessage;
   }

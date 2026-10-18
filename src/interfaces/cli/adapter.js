@@ -24,7 +24,7 @@ const {
   hasStrongNewIntentCue,
   resolveAmbiguousFollowUp,
   getClarificationMessage
-} = require('./follow_up_helpers');
+} = require('../common/follow_up_resolver');
 
 const {
   isFactAboutNexa,

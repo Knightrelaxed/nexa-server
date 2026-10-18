@@ -11,7 +11,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const followUpHelpers = require('../src/interfaces/cli/follow_up_helpers');
+const followUpHelpers = require('../src/interfaces/common/follow_up_resolver');
 const interceptors = require('../src/interfaces/cli/interceptors');
 const intentDispatcher = require('../src/interfaces/cli/intent_dispatcher');
 const {

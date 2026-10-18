@@ -201,6 +201,7 @@ nexa-server/
     │   │
     │   ├── common/                       # Shared Cross-Channel Ingress Subsystem
     │   │   ├── domain_dispatcher.js      # Unified intent dispatcher orchestrating domain handlers
+    │   │   ├── follow_up_resolver.js     # Unified multi-turn follow-up resolver & clarification validator
     │   │   ├── helpers.js                # Multi-format currency parser, HTML escaping & formatters
     │   │   └── handlers/                 # Extracted Common Domain Intent Handlers
     │   │       ├── calendar_handler.js   # Agenda/Calendar intent orchestration & state retention
@@ -213,7 +214,6 @@ nexa-server/
     │   │
     │   ├── cli/                          # Command Line Interface (Debug & Terminal Channel)
     │   │   ├── adapter.js                # CLI WebSocket/terminal communication adapter
-    │   │   ├── follow_up_helpers.js      # CLI interactive multi-turn prompt resolver
     │   │   ├── intent_dispatcher.js      # CLI-specific intent routing & context binding
     │   │   └── interceptors.js           # CLI interceptors (Database confirmation & multi-turn flows)
     │   │
@@ -229,7 +229,6 @@ nexa-server/
     │   │   ├── adapter.js                # Core Telegram ingress/egress adapter & formatting
     │   │   ├── callback_handler.js       # Inline keyboard button click router
     │   │   ├── command_handler.js        # Telegram slash commands handler (/start, /status, /help)
-    │   │   ├── email_helpers.js          # Telegram-specific email display & action keyboard helpers
     │   │   ├── intent_dispatcher.js      # Telegram intent delegator to common domain dispatcher
     │   │   ├── interceptors.js           # Contextual interceptors (Check-ins, confirmations, database)
     │   │   ├── media_handler.js          # Inbound voice, photo, audio & document processor

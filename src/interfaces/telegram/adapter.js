@@ -27,7 +27,7 @@ const vaultHandler = require('./vault_handler');
 const mediaHandler = require('./media_handler');
 const interceptors = require('./interceptors');
 const intentDispatcher = require('./intent_dispatcher');
-const emailHelpers = require('./email_helpers');
+const emailHelpers = require('../common/follow_up_resolver');
 
 // ── State Contexts ───────────────────────────────────────────
 let pendingCalendarContext = null;
