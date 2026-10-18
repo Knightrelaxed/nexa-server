@@ -490,11 +490,15 @@ nexa-server/
 │   │   ├── Supabase_Memories.js        # Supabase PostgreSQL long-term memory & profile bridge
 │   │   └── Web_Search.js               # Real-time web search (Tavily AI & Serper.dev)
 │   ├── interfaces/                     # Inbound & Outbound Ingress Adapters
-│   │   ├── cli/                        # Remote CLI adapter & SSE push streaming channel
+│   │   ├── common/                     # Unified Domain Intent Handlers & Cross-Interface Helpers
+│   │   │   ├── domain_dispatcher.js    # Master domain intent router delegating to dedicated handlers
+│   │   │   ├── helpers.js              # Formatting, escaping, currency & temporal query helpers
+│   │   │   └── handlers/               # Decoupled domain handlers (Calendar, DB, Email, Finance, Memory, System, Task)
+│   │   ├── cli/                        # Modular Remote CLI adapter (adapter, interceptors, intent_dispatcher)
 │   │   ├── cron.js                     # Cron pulse scheduler (01:00, 05:30, 08:15, 20:00, 21:00, 23:59 WIB)
 │   │   ├── gmail/                      # Google Cloud Pub/Sub push webhook handler
 │   │   ├── mobile_bridge/              # WebSocket /ws server & Android command dispatcher
-│   │   ├── telegram/                   # Telegram webhook handler, inline keyboards & outbound actions
+│   │   ├── telegram/                   # Modular Telegram adapter (adapter, command, email, interceptors, intent, vault, actions)
 │   │   ├── webhook.js                  # Master /webhook facade router
 │   │   └── whatsapp/                   # WhatsApp Baileys socket adapter (local deployment mode)
 │   └── utils/                          # Low-Level Utilities & Hardening
@@ -2684,6 +2688,161 @@ Dari studi forensik ini, dirumuskan empat prinsip fundamental bagi arsitektur as
    Jangan pernah menyuntikkan keheningan digital buatan (`zero-gating` atau `chunk.fill(0)`) ke dalam aliran mikrofon. Model multimodal masa kini membutuhkan kontinuitas derau latar (*ambient continuity*) dan hembusan nafas mikro untuk memisahkan ucapan dari keheningan secara akurat.
 4. **Prinsip Pemisahan Lapisan Memori (Memory Layer Decoupling):**
    Log percakapan sesaat (`chat_memories`) harus dipisahkan secara tegas dari pembentukan aturan identitas sistem (`core_identity`). Aturan identitas hanya boleh lahir dari verifikasi direktif eksplisit, bukan dari kesimpulan otomatis atas transkrip suara yang rentan salah dengar.
+
+---
+
+## BAB 17: ARSITEKTUR MODULAR UNIFIED INGRESS, DECOUPLING INTERFACES & PLATFORM-AWARE HARDENING
+
+### 17.1 Latar Belakang: Dilema Skalabilitas Controller Monolitik
+
+Pada evolusi awal N.E.X.A, adapter kanal interaksi—terutama `telegram/adapter.js` dan `cli/adapter.js`—berkembang menjadi controller monolitik (*God Objects*) yang sangat masif:
+- `telegram/adapter.js` membengkak hingga **3.765 baris kode**.
+- `cli/adapter.js` mencapai **1.283 baris kode**.
+
+Masalah mendasar dari arsitektur monolitik ini:
+1. **Redundansi Kode Masif**: Logika bisnis domain (penanganan eksekusi intent Kalender, Tugas, Email, Database Supabase, Finansial, dan Memori) terduplikasi hampir persis di kedua adapter. Perubahan aturan bisnis di satu kanal sering kali tertinggal di kanal lainnya.
+2. **Kerapuhan Refactoring & Review**: File dengan ribuan baris kode sangat sulit diaudit dan memiliki beban mental kognitif tinggi bagi pengembang.
+3. **Penyimpangan Perilaku Antar-Kanal (*Behavioral Drift*)**: Ketiadaan lapisan *shared domain dispatching* menyebabkan perbedaan penanganan default (misalnya query pencarian email dan batas temporal yang tidak seragam).
+
+### 17.2 Pola Dekomposisi Hexagonal & Shared Domain Handlers (`src/interfaces/common/`)
+
+Untuk menyelesaikan masalah ini secara permanen, arsitektur ingress direstrukturisasi mengadopsi pola **Hexagonal Decoupling**:
+
+```mermaid
+flowchart TD
+    subgraph Channels["Ingress Channel Adapters"]
+        TG["Telegram Adapter (src/interfaces/telegram/)<br>• command_handler.js<br>• vault_handler.js<br>• email_helpers.js<br>• interceptors.js<br>• actions.js<br>• adapter.js (683 baris)"]
+        CLI["CLI Adapter (src/interfaces/cli/)<br>• interceptors.js<br>• adapter.js (320 baris)"]
+        MB["Mobile Bridge (WebSocket /ws)"]
+        WS["WhatsApp / Baileys Adapter"]
+    end
+
+    subgraph Dispatcher["Unified Ingress Layer (src/interfaces/common/)"]
+        DD["domain_dispatcher.js"]
+        HELP["helpers.js (Parsing, Sanitasi & Formatting)"]
+    end
+
+    subgraph Handlers["Domain Intent Handlers (src/interfaces/common/handlers/)"]
+        H1["calendar_handler.js"]
+        H2["database_handler.js"]
+        H3["email_handler.js"]
+        H4["finance_handler.js"]
+        H5["memory_handler.js"]
+        H6["system_handler.js"]
+        H7["task_handler.js"]
+    end
+
+    subgraph Domains["Autonomous Core Domains (src/domain/ & infrastructure/)"]
+        Agenda["Agenda_Manager"]
+        Tasks["Task_Manager"]
+        Finance["Finance_Engine"]
+        Supabase["Supabase_Memories / Finance"]
+        Gmail["Gmail_Client"]
+        Location["Location_Orchestrator"]
+    end
+
+    TG --> DD
+    CLI --> DD
+    MB --> DD
+    WS --> DD
+
+    DD --> H1 & H2 & H3 & H4 & H5 & H6 & H7
+    HELP -.-> Handlers
+
+    H1 --> Agenda
+    H2 --> Supabase
+    H3 --> Gmail
+    H4 --> Finance
+    H5 --> Supabase
+    H6 --> Location
+    H7 --> Tasks
+```
+
+#### Hasil Dekomposisi Ukuran File:
+- `telegram/adapter.js`: Dari **3.765 baris** terpangkas menjadi **683 baris** (~82% penurunan).
+- `cli/adapter.js`: Dari **1.283 baris** terpangkas menjadi **320 baris** (~75% penurunan).
+- Shared Domain Handlers: Mengekstrak **1.432 baris kode duplikat** ke dalam 7 handler independen yang berfokus pada satu tanggung jawab (*Single Responsibility Principle*).
+- **Tingkat duplikasi antar-kanal tersisa**: **0,50%** (3 klon, 41 baris).
+
+---
+
+### 17.3 Keamanan Batas Kanal (*Platform-Aware Sanitization & HTML Escaping*)
+
+Salah satu temuan paling krusial dalam audit diferensial adalah **vektor injeksi tidak langsung melalui konten email pihak ketiga**:
+- Telegram merender balasan dengan `parse_mode: 'HTML'`.
+- Jika subjek email pihak ketiga memuat tag seperti `<a href="http://evil.example">klik di sini</a>` atau `<script>`, ketiadaan escaping membuat tautan tersebut menjadi tautan aktif tersamar di dalam pesan bot.
+- Sementara itu, kanal terminal CLI memerlukan teks polos tanpa tag HTML yang mengotori visual terminal.
+
+**Solusi Arsitektural:**
+Mengimplementasikan fungsi sanitasi peka-platform (*platform-aware escaping*) di seluruh handler bersama:
+```javascript
+const isTelegram = context.platform === 'telegram' || context.isTelegram;
+const esc = isTelegram ? helpers.escapeHtml : (s) => String(s ?? '');
+```
+Setiap nilai dinamis yang berasal dari input eksternal—seperti `date`, `from`, `subject`, `snippet`, dan `to` pada email, serta kolom data Supabase dan field identitas N.E.X.A (`reasoning`, `trait_key`, `proposed_value`)—wajib melewati sanitizer `escapeHtml` sebelum dirender ke Telegram, sementara CLI menerima representasi string murni yang bersih.
+
+---
+
+### 17.4 Preservasi Status Konversasional Multi-Turn (*Stateful Pending Session Store*)
+
+Interaksi asisten eksekutif sering melibatkan percakapan multi-turn bercabang:
+1. Tuan: *"Buat rapat dengan dosen besok jam 10"*
+2. N.E.X.A: *"Konflik jadwal terdeteksi dengan Rapat BEM! Lanjut atau batalkan?"*
+3. Tuan: *"Cek agenda besok dulu"* *(Operasi `READ`)*
+4. Tuan: *"Oke, tetap buat rapatnya"* *(Operasi konfirmasi `CREATE`)*
+
+Pada versi transisi awal unifikasi, eksekusi `READ` yang berhasil secara keliru mengosongkan state `pendingCalendar` dan `pendingConflict`, sehingga konteks pembuatan rapat hilang.
+
+**Solusi Arsitektural:**
+Mengunci pembersihan pending context hanya pada operasi mutasi destruktif atau final (`CREATE`, `UPDATE`, `DELETE`) yang berstatus `SUCCESS`:
+```javascript
+if (calResult?.status === 'SUCCESS') {
+  // Hanya bersihkan pending state pada mutasi sukses, jangan pernah pada READ
+  if (['CREATE', 'UPDATE', 'DELETE'].includes(action)) {
+    _setPendingCalendar(context, null);
+    _setPendingConflict(context, null);
+  }
+}
+```
+Dengan demikian, pengguna dapat dengan leluasa membaca agenda, menanyakan saldo, atau mengecek daftar tugas di tengah-tengah alur konfirmasi tanpa membatalkan transaksi yang sedang menggantung.
+
+---
+
+### 17.5 Intelijen Finansial & Spasial: Parser Nominal Universal & Eliminasi Ghost Exports
+
+#### 1. Parser Nominal Bank Universal (`parseFlexibleNominal`)
+Dalam membaca notifikasi perbankan Indonesia dan internasional, format nominal memiliki perbedaan signifikan:
+- Format Indonesia: `Rp 1.250.000,50` (titik sebagai ribuan, koma sebagai desimal)
+- Notifikasi bank dengan kode mata uang: `IDR 75.000`
+- Format Anglo-Saxon: `Rp50,000.00` (koma sebagai ribuan, titik sebagai desimal)
+
+Fungsi `parseFlexibleNominal` di `src/interfaces/common/helpers.js` ditingkatkan dengan algoritma *heuristic boundary inspection* yang mengenali posisi separator pertama dan jumlah digit desimal secara deterministik, menjamin nominal seperti `IDR 75.000` tidak lagi menghasilkan nilai 0.
+
+#### 2. Resolusi Ghost Exports & Domain Hardening
+Audit menyeluruh atas 261 pemanggilan lintas-modul berhasil membersihkan ekspor hantu (*ghost exports*) dan bug warisan di luar folder `interfaces/`:
+- **`Location_Orchestrator.js`**: Mengekspor antarmuka resmi `handleLocationQuery`, `handleLocationIntent`, `searchLocation`, dan `getCurrentLocation` yang terhubung langsung dengan GPS HP via Mobile Bridge.
+- **`Task_Manager.js`**: Menyediakan wrapper asinkron `_resolveTargetTask` untuk mengeliminasi `ReferenceError` pada aksi `MOVE`, `EDIT`, dan `SET_PRIORITY`.
+- **`Intelligence_Brief.js`**: Memperbaiki variabel `habitContext` tak terdefinisi saat menulis event `MORNING_BRIEFING_SENT` ke `nexa_behavior_log`.
+- **`App_Discipline_Engine.js`**: Mengembalikan Map `DEFAULT_LIMITS` sebagai cadangan in-memory tangguh saat Supabase offline.
+- **`Finance_Engine.js`**: Menghapus kunci duplikat pada kamus parsing tanggal bahasa Indonesia (`MONTHS`).
+
+---
+
+### 17.6 Metrik Efisiensi & Hasil Pengujian Diferensial
+
+| Metrik Evaluasi | Pra-Unifikasi (`03e3829`) | Pasca-Unifikasi & Audit Hardening (`5829c7f`) |
+| :--- | :--- | :--- |
+| **Baris Kode Telegram Adapter** | 3.765 baris monolitik | **683 baris** (modular) |
+| **Baris Kode CLI Adapter** | 1.283 baris monolitik | **320 baris** (modular) |
+| **Duplikasi Antar-Kanal** | ~35% duplikasi logika | **0,50%** (hanya 41 baris tersisa) |
+| **Jumlah Kasus Uji Unit (`npm test`)** | 117 tests | **122 tests (100% Pass, 0 Fail)** |
+| **Uji Integrasi Sistem (`system_test.js`)** | 9 tests | **9 tests (100% Pass, 0 Fail)** |
+| **Keamanan HTML Injection** | Rentan pada unifikasi parsial | **100% Sanitized via `escapeHtml`** |
+| **Preservasi Pending Context Kalender** | Hilang saat `READ` | **100% Preserved across non-mutating turns** |
+| **Parsing Nominal Bank `IDR`** | Gagal (menghasilkan 0) | **100% Akurat pada seluruh format perbankan** |
+| **Status PM2 di Azure VM** | Online | **Online (`5829c7f`, 0% CPU, 189MB RAM)** |
+
+---
 
 ---
 **~ TAMAT ~**

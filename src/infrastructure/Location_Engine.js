@@ -8,9 +8,10 @@
 
 const axios = require('axios');
 const env = require('../config/env');
+const { USER_AGENT } = require('../config/version');
 
 const USER_AGENT_HEADER = {
-  'User-Agent': 'NEXA-Assistant-Personal/1.0 (Personal AI Assistant)'
+  'User-Agent': `${USER_AGENT} (Personal AI Assistant; admin@nexa-assistant.local)`
 };
 
 /**
@@ -71,7 +72,7 @@ async function searchNearbyPlaces(query, lat, lon, opts = {}) {
           limit: limit + 3,
           addressdetails: 1
         },
-        headers: { 'User-Agent': 'NexaAssistant/3.3 (admin@nexa-assistant.local)' },
+        headers: USER_AGENT_HEADER,
         timeout: 5000
       });
 

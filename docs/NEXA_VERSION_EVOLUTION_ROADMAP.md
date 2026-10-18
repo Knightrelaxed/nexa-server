@@ -6,9 +6,9 @@
 
 ## Executive Summary
 
-Dokumen ilmiah ini merangkum kronologi evolusi arsitektur **N.E.X.A (Neural Executive with Xenial Agent)** dari prototipe eksperimental berbasis lingkungan lokal (*Termux Genesis*), evolusi kognisi organik dan *Self-Learning*, migrasi infrastruktur server mandiri **v3.0 — Sovereign Azure Cloud Production (Jakarta Region)**, konsolidasi ekosistem terpadu **v3.1 — Unified Master OAuth 2.0 & Chrono-Episodic Cognitive Architecture**, hingga arsitektur ketahanan deterministik **v3.2 — Deterministic Resilience, Zero-LLM Finance & Cognitive Traffic Control**. 
+Dokumen ilmiah ini merangkum kronologi evolusi arsitektur **N.E.X.A (Neural Executive with Xenial Agent)** dari prototipe eksperimental berbasis lingkungan lokal (*Termux Genesis*), evolusi kognisi organik dan *Self-Learning*, migrasi infrastruktur server mandiri **v3.0 — Sovereign Azure Cloud Production (Jakarta Region)**, konsolidasi ekosistem terpadu **v3.1 — Unified Master OAuth 2.0 & Chrono-Episodic Cognitive Architecture**, ketahanan deterministik **v3.2 — Deterministic Resilience, Zero-LLM Finance & Cognitive Traffic Control**, pembelajaran prosedural tertutup **v3.3 — Hermes Adaptive Playbooks & Stance Alignment**, hingga arsitektur antarmuka bersih terpisah **v3.4 — Modular Unified Ingress, Hexagonal Decoupling & Platform-Aware Hardening**. 
 
-Setiap lompatan versi mewakili terobosan dalam rekayasa sistem terdistribusi, manajemen memori autobiografis (*Chrono-Episodic Memory*), ketahanan sistem anti-gagal (*Fault-Tolerant Multi-Tier Fallback*), integritas matematika murni tanpa halusinasi LLM, gerbang notifikasi pintar dengan *Quiet Hours*, integrasi multi-antarmuka (Telegram, CLI, Mobile Bridge), serta otomatisasi kognisi proaktif yang dirancang khusus untuk mendukung aspirasi akademik, kedisiplinan, dan karier diplomatik Tuan Faqih Hidayatulloh.
+Setiap lompatan versi mewakili terobosan dalam rekayasa sistem terdistribusi, manajemen memori autobiografis (*Chrono-Episodic Memory*), ketahanan sistem anti-gagal (*Fault-Tolerant Multi-Tier Fallback*), integritas matematika murni tanpa halusinasi LLM, gerbang notifikasi pintar dengan *Quiet Hours*, integrasi multi-antarmuka (Telegram, CLI, Mobile Bridge), isolasi keamanan kanal, serta otomatisasi kognisi proaktif yang dirancang khusus untuk mendukung aspirasi akademik, kedisiplinan, dan karier diplomatik Tuan Faqih Hidayatulloh.
 
 ```mermaid
 flowchart TD
@@ -47,7 +47,15 @@ flowchart TD
         V32["<b>v3.2 (Deterministic Resilience)</b><br>• Zero-LLM Finance Intel Engine<br>• Central Cognitive Traffic Gate & Quiet Hours<br>• Key Ring Circuit Breaker & Retry-After<br>• Non-Blocking FIFO Telegram Queue"]
     end
 
-    V1 --> V20 --> V21 --> V22 --> V23 --> V24 --> V25 --> V26 --> V27 --> V28 --> V29 --> V30 --> V31 --> V32
+    subgraph S8 ["8. Adaptive Procedural Memory & Hermes Loop (v3.3)"]
+        V33["<b>v3.3 (Hermes Playbook Loop)</b><br>• Adaptive Procedural Playbooks<br>• Zero-Token Signal Detector<br>• Turn N-1 Credit Assignment<br>• Static Cache-Friendly System Prefix"]
+    end
+
+    subgraph S9 ["9. Modular Unified Ingress & Clean Architecture (v3.4)"]
+        V34["<b>v3.4 (Modular Unified Ingress)</b><br>• Hexagonal Adapter Decoupling<br>• 7 Shared Domain Intent Handlers<br>• Platform-Aware HTML Sanitizer<br>• Universal Bank Currency Parser (IDR)<br>• 0.50% Code Duplication (122 Tests)"]
+    end
+
+    V1 --> V20 --> V21 --> V22 --> V23 --> V24 --> V25 --> V26 --> V27 --> V28 --> V29 --> V30 --> V31 --> V32 --> V33 --> V34
 ```
 
 ---
@@ -317,27 +325,61 @@ graph TD
 
 ---
 
-## Kesimpulan & Metrik Spesifikasi v3.3.0
+## Bab 9: Era Arsitektur Bersih, Modular Ingress & Platform-Aware Hardening (v3.4)
 
-| Parameter Arsitektur | Spesifikasi N.E.X.A v3.3.0 (Production Release) |
+### v3.4 — Modular Unified Ingress, Hexagonal Decoupling & Multi-Channel Hardening
+Seiring bertambahnya kapabilitas kognitif N.E.X.A, adapter kanal interaksi (`telegram/adapter.js` dan `cli/adapter.js`) sebelumnya membengkak menjadi monolit rapuh yang sulit dirawat (masing-masing 3.765 baris dan 1.283 baris kode) dengan duplikasi logika domain yang masif (~35%). 
+
+Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah bersih (*Hexagonal Architecture*) dengan eliminasi duplikasi, penguatan batas keamanan, dan preservasi konteks transaksional deterministik:
+
+1. **Dekomposisi Hexagonal Adapter:**
+   - Monolit `telegram/adapter.js` didekomposisi menjadi modul-modul spesifik: `command_handler.js`, `vault_handler.js`, `email_helpers.js`, `interceptors.js`, `intent_dispatcher.js`, dan `actions.js`. Controller utama terpangkas dari **3.765 baris ke 683 baris** (~82% reduction).
+   - Monolit `cli/adapter.js` didekomposisi menjadi `interceptors.js` dan `intent_dispatcher.js`. Controller utama terpangkas dari **1.283 baris ke 320 baris** (~75% reduction).
+   - Seluruh logika bisnis penanganan intent diekstrak ke dalam 7 *Shared Domain Handlers* di `src/interfaces/common/handlers/` (`calendar_handler`, `database_handler`, `email_handler`, `finance_handler`, `memory_handler`, `system_handler`, `task_handler`), memangkas 1.432 baris kode duplikat dan menekan tingkat duplikasi antar-kanal hingga **0,50%** (hanya 41 baris tersisa).
+
+2. **Platform-Aware Sanitization & Anti-Injection Guard:**
+   - Menghilangkan celah injeksi tidak langsung dari email pihak ketiga. Telegram yang merender balasan dengan `parse_mode: 'HTML'` kini otomatis menyaring seluruh input dinamis (`from`, `subject`, `snippet`, `reasoning`, nilai database) melalui `helpers.escapeHtml`. Tautan jahat atau script dalam email tidak akan lagi menjadi tautan aktif.
+   - Kanal CLI terminal menerima teks polos yang bersih tanpa tag markup yang mengotori tampilan konsol.
+
+3. **Preservasi Status Konversasional Multi-Turn (*Pending State Retention*):**
+   - Mengunci aturan pembersihan sesi pending: Operasi baca (*non-mutating* seperti `READ` jadwal kalender atau pembacaan memo) **tidak akan lagi membatalkan transaksi yang sedang tertunda**.
+   - Alur konfirmasi multi-langkah (misal: "buat rapat" → deteksi bentrok → "cek jadwal hari ini dulu" → "tetap buat") dapat diselesaikan tanpa kehilangan memori konteks.
+
+4. **Universal Locale-Aware Currency Parser (`parseFlexibleNominal`):**
+   - Algoritma parsing nominal uang yang tangguh terhadap format Indonesia (`Rp 1.250.000,50`), kode internasional (`IDR 75.000`), maupun format Anglo-Saxon (`Rp50,000.00`) tanpa kehilangan presisi angka desimal.
+
+5. **Pembersihan Ghost Exports & Eliminasi Bug Domain Warisan:**
+   - Melengkapi ekspor resmi pada `Location_Orchestrator.js` (`handleLocationQuery`, `handleLocationIntent`, `searchLocation`, `getCurrentLocation`) yang terhubung ke live GPS bridge.
+   - Menyediakan wrapper asinkron `_resolveTargetTask` pada `Task_Manager.js` untuk mencegah `ReferenceError` pada perintah pemindahan tugas.
+   - Menghilangkan bug `habitContext` tak terdefinisi pada logging morning briefing di `Intelligence_Brief.js`.
+   - Mengembalikan Map fallback `DEFAULT_LIMITS` pada `App_Discipline_Engine.js`.
+   - Menghapus kunci duplikat pada kamus bulan di `Finance_Engine.js`.
+
+---
+
+## Kesimpulan & Metrik Spesifikasi v3.4.0
+
+| Parameter Arsitektur | Spesifikasi N.E.X.A v3.4.0 (Production Release) |
 | :--- | :--- |
 | **Official Name & Title** | **N.E.X.A (Neural Executive with Xenial Agent)** |
-| **Architectural Edition** | **Adaptive Procedural Memory & Closed-Loop Learning (Hermes Adaptation v3.3)** |
+| **Architectural Edition** | **Modular Unified Ingress & Platform-Aware Hardening (v3.4.0)** |
 | **Core Compute Infrastructure** | Azure Virtual Machine `Standard_B2ats_v2` (Ubuntu 24.04 ARM, Jakarta `indonesiacentral`) |
 | **Process Management & Auto-Healing** | PM2 Process Manager v5.4 + Systemd Auto-Revive + PM2 Plus Cloud Dashboard |
 | **Edge Web Server & Security** | Caddy v2 Reverse Proxy + Automated Let's Encrypt TLS/SSL |
 | **Production Domain** | `https://nexa-server.indonesiacentral.cloudapp.azure.com` |
-| **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~20-28 MB) |
+| **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~18-28 MB, CPU Idle 0%) |
+| **Ingress Architecture** | Hexagonal Decoupling (Common Domain Handlers + Modular Telegram & CLI Adapters) |
+| **Code Duplication Rate** | **0.50%** (3 klon, 41 baris tersisa di seluruh antarmuka) |
+| **Security Sanitization** | Platform-Aware HTML Escaping for Telegram + Clean Plain-Text for Terminal CLI |
+| **Currency & Spatial Engine** | Universal Bank Parser (`parseFlexibleNominal`) + OpenStreetMap / GPS Mobile Bridge |
 | **Google Cloud Integration** | Unified Master OAuth 2.0 Client (16 Master Scopes, Zero Hardcoded Secrets) |
 | **Procedural Learning Engine** | Hermes-Inspired Closed-Loop Playbook Reviewer + Turn N-1 Signal Attribution |
-| **Prompt Cache Strategy** | Static System Prefix + Dynamic Tail Injection (Gemini/Groq Cache Optimized) |
 | **Financial Engine** | Zero-LLM Deterministic Intelligence + Dynamic Recurring Rules (`nexa_recurring_rules`) |
 | **Notification Traffic Control** | Centralized Notifier + Quiet Hours Protection + Dedup Cooldown (`nexa_notifications`) |
 | **AI Resilience Matrix** | Round-Robin Key Ring Circuit Breaker + 429 Retry-After Parser + 11-Tier Fallback |
-| **Messaging Pipeline** | Non-Blocking In-Memory FIFO Queue (1 msg/sec rate-limit compliant) |
-| **Observability & Telemetry** | Persistent Cron Job Runs (`nexa_job_runs`) + LLM Token & Latency Metrics (`nexa_llm_calls`) |
+| **Test Suite Coverage** | **122/122 Tests Passing** (`npm test`) + **9/9 System Integration Tests** |
 | **Primary Beneficiary** | **Tuan Faqih Hidayatulloh** |
 
 ---
-*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v3.3.0. Diverifikasi dan disinkronkan dengan Azure Cloud Core.*
+*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v3.4.0. Diverifikasi dan disinkronkan dengan Azure Cloud Core.*
 

@@ -24,6 +24,7 @@ axios.defaults.httpsAgent = new https.Agent({ family: 4 });
 
 
 const env = require('./config/env');
+const { VERSION, SYSTEM_TAG } = require('./config/version');
 
 const app = express();
 app.disable('x-powered-by');
@@ -95,7 +96,7 @@ app.use(express.json({ limit: '1mb' }));
 // ROOT ENDPOINT — Basic identity check
 // ============================================================
 app.get('/', (req, res) => {
-  res.status(200).json({ status: 'N.E.X.A Cloud Core Online', version: require('../package.json').version });
+  res.status(200).json({ status: 'N.E.X.A Cloud Core Online', version: VERSION });
 });
 
 // ============================================================
@@ -122,7 +123,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ALIVE',
     service: 'N.E.X.A Cloud Core',
-    version: require('../package.json').version,
+    version: VERSION,
     uptime_seconds: uptimeSeconds,
     uptime_human: `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m`,
     timestamp_jakarta: timestampJakarta,
@@ -153,11 +154,11 @@ if (require.main === module) {
   mobileBridgeWs.initWebSocket(server);
 
   server.listen(port, '127.0.0.1', () => {
-    console.log(`[N.E.X.A 3.3] ✅ Server running on port ${port} (${process.env.NODE_ENV || 'development'} mode)`);
-    console.log(`[N.E.X.A 3.3] 🔒 Bound to 127.0.0.1 (Loopback only - Protected by Caddy Reverse Proxy)`);
-    console.log(`[N.E.X.A 3.3] 📱 Mobile Bridge WebSocket Endpoint: /ws`);
-    console.log(`[N.E.X.A 3.3] 🏥 Health endpoint: http://127.0.0.1:${port}/health`);
-    console.log(`[N.E.X.A 3.3] 💻 CLI Local URL  : http://127.0.0.1:${port}`);
+    console.log(`${SYSTEM_TAG} ✅ Server running on port ${port} (${process.env.NODE_ENV || 'development'} mode)`);
+    console.log(`${SYSTEM_TAG} 🔒 Bound to 127.0.0.1 (Loopback only - Protected by Caddy Reverse Proxy)`);
+    console.log(`${SYSTEM_TAG} 📱 Mobile Bridge WebSocket Endpoint: /ws`);
+    console.log(`${SYSTEM_TAG} 🏥 Health endpoint: http://127.0.0.1:${port}/health`);
+    console.log(`${SYSTEM_TAG} 💻 CLI Local URL  : http://127.0.0.1:${port}`);
     // Load Gemini Semantic Vector Snapshot (0.001s in-memory load)
     const geminiVectorCache = require('./utils/gemini_vector_cache');
     const isLoaded = geminiVectorCache.loadVectorSnapshot();

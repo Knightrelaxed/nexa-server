@@ -1,6 +1,10 @@
 require('dotenv').config();
+const { VERSION, MAJOR_MINOR, SYSTEM_TAG } = require('./version');
 
 module.exports = {
+  VERSION,
+  MAJOR_MINOR,
+  SYSTEM_TAG,
   // ============================================================
   // 1. SERVER & SYSTEM PORT
   // ============================================================
