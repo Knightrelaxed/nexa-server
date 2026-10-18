@@ -31,7 +31,7 @@ Untuk setiap trait identitas pengguna, tulis directive: cara N.E.X.A harus bersi
 ${DIRECTIVE_PROMPT_RULES}
 
 FORMAT OUTPUT (JSON MURNI, tanpa markdown): [{"id": 12, "directive": "..."}]
-Satu objek per trait yang diberikan, dengan id yang sama persis.`;
+Kembalikan satu JSON array berisi SATU objek untuk SETIAP id trait yang diberikan (id: ${items.map(it => it.id).join(', ')}).`;
   const lines = items.map(it =>
     `- id=${it.id} | layer=${it.layer} | sensitivitas=${(it.sensitivity === 'private' || defaultSensitivityForLayer(it.layer) === 'private') ? 'private' : 'normal'} | ${it.trait_key}: "${it.trait_value}"`
   ).join('\n');
@@ -42,8 +42,16 @@ function parseBackfillResponse(raw, items) {
   const byId = new Map(items.map(it => [Number(it.id), it]));
   const result = { accepted: [], skipped: [], rejected: [] };
   let clean = String(raw || '').replace(/```json/gi, '').replace(/```/g, '').trim();
-  const a = clean.indexOf('[');
-  const b = clean.lastIndexOf(']');
+  let a = clean.indexOf('[');
+  let b = clean.lastIndexOf(']');
+  if (a === -1 || b <= a) {
+    const matches = clean.match(/\{[^{}]*\}/g);
+    if (matches && matches.length) {
+      clean = '[' + matches.join(',') + ']';
+      a = clean.indexOf('[');
+      b = clean.lastIndexOf(']');
+    }
+  }
   if (a === -1 || b <= a) return { ...result, rejected: [{ id: null, reason: 'no_json_array' }] };
   let parsed;
   try { parsed = JSON.parse(clean.slice(a, b + 1)); } catch (_) { return { ...result, rejected: [{ id: null, reason: 'invalid_json' }] }; }
