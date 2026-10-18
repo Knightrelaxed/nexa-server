@@ -1,16 +1,16 @@
 # N.E.X.A Ecosystem — Complete Architecture & File Tree
 
 > **Document:** `docs/NEXA_FOLDER_ARCHITECTURE.md`  
-> **Ecosystem:** N.E.X.A 3.4 (Sovereign Cloud Core + Mobile Hardware Bridge)  
-> **Last Updated:** 2026-10-18  
+> **Ecosystem:** N.E.X.A 3.4 (Sovereign Cloud Core, Finance Web Portal, Mobile Hardware Bridge, US Gemini Proxy & Universal CLI)  
+> **Last Updated:** 2026-10-19  
 > **Format:** Comprehensive Plain-Text ASCII Tree with Deep Functional Annotations  
 
 ---
 
-## 1. N.E.X.A SERVER ARCHITECTURE (Node.js & Next.js Ecosystem)
+## 1. N.E.X.A SERVER ARCHITECTURE (Node.js Sovereign Core)
 * **Local Path:** `C:\workspace\nexa-server`
 * **Production Host:** Azure Central Indonesia VPS (`/home/nexa/nexa-server`)
-* **Role:** Sovereign Cognitive Core, Multi-Model Router, Database Ledger, Realtime Relays & Web Portal
+* **Role:** Sovereign Cognitive Core, Multi-Model Router, Database Ledger, Realtime Relays & Background Services
 * **Current Version:** v3.4.0 (`src/config/version.js`)
 
 ```text
@@ -70,14 +70,7 @@ nexa-server/
 │
 ├── logs/                                 # Runtime application logs (PM2 / Express)
 │
-├── nexa-finance-web/                     # Next.js 14 Sovereign Financial Web Portal
-│   ├── package.json                      # Next.js frontend dependencies (Tailwind, Lucide, Supabase)
-│   ├── app/                              # Next.js App Router (Dashboard, Ledger, Analytics, Login)
-│   ├── components/                       # Reusable UI widgets, charts & dark-mode navigation
-│   ├── hooks/                            # Custom React hooks (real-time Supabase subscriptions)
-│   ├── lib/                              # Supabase browser/server client & auth helpers
-│   ├── public/                           # Static assets, branding logos & PWA icons
-│   └── styles/                           # Global Tailwind CSS configurations & themes
+├── nexa-finance-web/                     # Next.js Sovereign Financial Web Portal (Arsitektur Terpisah di Bagian 2)
 │
 ├── Plan/                                 # Architectural Blueprint & Engineering Challenges
 │   ├── MODEL_BACKUP_GUIDE.md             # Multi-tier AI model failover guidelines
@@ -86,42 +79,29 @@ nexa-server/
 ├── scripts/                              # Maintenance, Migrations & Diagnostic Utilities
 │   ├── audit_codebase.js                 # AST codebase scanner & dependency auditor
 │   ├── audit_prompt_memory_efficiency.js # Memory token consumption & prompt bloat profiler
-│   ├── backfill_directives.js            # Backfill script for dynamic behavioral directives
+│   ├── backfill_directives.js            # Behavioral directives backfill utility (tested by directive_utils)
 │   ├── clean_bad_memories.js             # Supabase memory hygiene & corrupted fact cleaner
-│   ├── clean_obsolete_version_memories.js # Purge obsolete version facts from Supabase
 │   ├── generate_google_master_token.js   # OAuth2 refresh token generator for Google APIs
 │   ├── generate_vector_snapshot.js       # Disk-to-Supabase vector embedding synchronizer
 │   └── trigger_weekly.js                 # Manual runner for weekly cognitive synthesis
 │
-├── tests/                                # Automated Unit Test Suites & Benchmark Runners
+├── tests/                                # Automated Unit Test Suites & Active Diagnostics
 │   ├── cli_adapter.test.js               # Unit tests: CLI ingress adapter & multi-turn prompts
 │   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers (15 bank cases, escaping)
 │   ├── day_simulation.test.js            # Unit tests: Full 24-hour simulation (Briefing to Midnight)
 │   ├── directive_utils.test.js           # Unit tests: Behavioral directive parsing & counter increments
-│   ├── dismiss_call.js                   # Benchmark: Simulated incoming call dismissal test
-│   ├── duel_gemma_31b_vs_26b.js          # Benchmark: Latency & reasoning benchmark across model versions
 │   ├── identity_directive_flow.test.js   # Unit tests: Dynamic persona directives & alignment flow
 │   ├── micro_reviewer.test.js            # Unit tests: Micro-reviewer cognitive reflection & feedback loops
 │   ├── playbook_counters.test.js         # Unit tests: Behavioral playbook counters & limits
 │   ├── playbook_engine.test.js           # Unit tests: Playbook engine rules & conditional SOPs
 │   ├── reviewer_resilience.test.js       # Unit tests: Reviewer engine fallback & fault tolerance
 │   ├── signal_detector.test.js           # Unit tests: Real-time behavioral signal detector
-│   ├── system_test.js                    # Integration: End-to-end full system runner
 │   ├── telegram_adapter.test.js          # Unit tests: Telegram adapter, action builders & callbacks
 │   ├── test_all_crons.js                 # Diagnostic: Autonomous runner for all scheduled crons
-│   ├── test_both_tiers.js                # Validation: Dual-mode (Light vs Heavy) tier validation
-│   ├── test_cf_relay_live.js             # Connectivity: Cloudflare Edge relay tester
-│   ├── test_chrono_consolidation.js      # Unit tests: Chronological memory consolidation test
-│   ├── test_generalized_recall.js        # Accuracy: Semantic memory retrieval & RAG test
+│   ├── test_cf_relay_live.js             # Diagnostic: Cloudflare Edge relay live connectivity tester
 │   ├── test_google_master_client.js      # Diagnostic: Google OAuth2 master client validator
-│   ├── test_intention_engine.js          # Validation: Intention tracking & commitment evaluator test
-│   ├── test_live_episodic_recall_chat.js # Realtime: Live chat episodic memory RAG test
-│   ├── test_live_voice_engine.js         # Streaming: Gemini Live WebSocket audio relay test
 │   ├── test_midnight_screen_trigger.js   # Evaluation: Midnight screen time trigger test
-│   ├── test_natural_calendar_tasks.js    # Parsing: Natural language calendar & task scheduling test
-│   ├── test_recurrence_and_semester.js   # Scheduling: Recurring schedule & semester cycle tests
 │   ├── topic_classifier.test.js          # Classification: Topic classification & fast prompt router
-│   ├── trigger_call.js                   # Simulation: Hardware incoming phone call trigger
 │   ├── upgrade.test.js                   # Migration: Schema upgrade & database integrity validator
 │   └── version.test.js                   # Verification: Centralized version resolver & git SHA tests
 │
@@ -251,7 +231,171 @@ nexa-server/
 
 ---
 
-## 2. N.E.X.A MOBILE BRIDGE ARCHITECTURE (Android 16 / One UI 8 / Kotlin)
+## 2. N.E.X.A FINANCE WEB ARCHITECTURE (Next.js 16 / React 19 / Tailwind / Supabase)
+* **Local Path:** `C:\workspace\nexa-server\nexa-finance-web`
+* **Target Runtime:** Node.js >= 18.0.0 (Next.js App Router)
+* **Tech Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, Lucide React, Radix UI Primitives, Recharts, Supabase JS v2
+* **Role:** Sovereign Financial Web Portal, Realtime Cashflow Dashboard, PWA Mobile Ledger & Analytics
+
+```text
+nexa-finance-web/
+├── package.json                          # Next.js project manifest & dependencies (React 19, Supabase, Lucide)
+├── package-lock.json                     # Deterministic lockfile
+├── next.config.mjs                       # Next.js configuration (Webpack, optimization & security headers)
+├── tsconfig.json                         # TypeScript compiler options & module resolution paths (@/*)
+├── postcss.config.mjs                    # PostCSS plugin pipeline (@tailwindcss/postcss)
+├── components.json                       # shadcn/ui design system configuration & tailwind prefix
+├── middleware.ts                         # Edge routing middleware & authentication session guards
+├── .npmrc                                # NPM package management flags
+│
+├── app/                                  # Next.js App Router (Routes & Server Components)
+│   ├── layout.tsx                        # Root layout (Theme provider, Supabase provider, global toast)
+│   ├── page.tsx                          # Root landing page & entry redirection logic
+│   ├── globals.css                       # Global CSS variables, dark theme palette & base utilities
+│   ├── icon.png                          # App favicon & browser tab branding icon
+│   │
+│   ├── accounts/                         # Financial Accounts Management Route
+│   │   └── page.tsx                      # Bank accounts, e-wallets, cash balances & account detail drawer
+│   │
+│   ├── analytics/                        # Spending Analytics & Financial Intelligence Route
+│   │   └── page.tsx                      # Cash flow charts, spending trends, category breakdown & monthly comparison
+│   │
+│   ├── budget/                           # Budget Planning & Limit Enforcement Route
+│   │   └── page.tsx                      # Monthly budget allocations, group budgets & threshold progress bars
+│   │
+│   ├── dashboard/                        # Sovereign Executive Dashboard Route
+│   │   └── page.tsx                      # Net worth overview, monthly velocity, quick transaction entry & summary cards
+│   │
+│   ├── login/                            # Authentication & Sovereign Access Route
+│   │   └── page.tsx                      # Secure login portal & Supabase Auth session initialization
+│   │
+│   ├── records/                          # Complete Transaction Ledger Route
+│   │   └── page.tsx                      # Full transaction history table, multi-parameter filtering & search
+│   │
+│   └── settings/                         # Configuration & Master Data Management Route
+│       └── page.tsx                      # Account profiles, category hierarchies, wallet preferences & display settings
+│
+├── components/                           # Modular UI Component Library
+│   ├── theme-provider.tsx                # NextThemes dark/light mode context provider
+│   │
+│   ├── providers/                        # Global Application State Providers
+│   │   └── supabase-provider.tsx         # Supabase client context & real-time auth state listener
+│   │
+│   ├── settings/                         # Settings & Configuration Subcomponents
+│   │   ├── settings-account-profile.tsx  # User profile & credentials management panel
+│   │   ├── settings-accounts.tsx         # Master account catalog editor & account balance overrides
+│   │   └── settings-categories.tsx       # Expense & income category hierarchy editor
+│   │
+│   ├── ui/                               # Atomic shadcn/ui Design Primitives (42 Components)
+│   │   ├── accordion.tsx                 # Expandable collapsible panel
+│   │   ├── alert-dialog.tsx              # Confirmation & destructive action modal
+│   │   ├── alert.tsx                     # Inline contextual notification alert
+│   │   ├── aspect-ratio.tsx              # Responsive media container
+│   │   ├── avatar.tsx                    # User & account thumbnail avatar
+│   │   ├── badge.tsx                     # Category status pill & intent label
+│   │   ├── breadcrumb.tsx                # Hierarchical navigation breadcrumbs
+│   │   ├── button-group.tsx              # Segmented action buttons container
+│   │   ├── button.tsx                    # Primary, secondary, outline & ghost buttons
+│   │   ├── calendar.tsx                  # Date picker & interactive monthly calendar
+│   │   ├── card.tsx                      # Metric card & bordered panel container
+│   │   ├── carousel.tsx                  # Swipeable horizontal card carousel
+│   │   ├── chart.tsx                     # Recharts chart container & tooltip styling
+│   │   ├── checkbox.tsx                  # Form checkbox toggle
+│   │   ├── collapsible.tsx               # Minimalist accordion collapse
+│   │   ├── command.tsx                   # Fast command palette & quick search dialog
+│   │   ├── context-menu.tsx              # Right-click contextual action popup
+│   │   ├── dialog.tsx                    # Centered modal dialog wrapper
+│   │   ├── drawer.tsx                    # Mobile-friendly slide-over drawer (Vaul)
+│   │   ├── dropdown-menu.tsx             # Action trigger dropdown menu
+│   │   ├── empty.tsx                     # Zero-state placeholder illustration
+│   │   ├── field.tsx                     # Form field container & label wrapper
+│   │   ├── form.tsx                      # React Hook Form integration & validation
+│   │   ├── hover-card.tsx                # Hover popover card for previews
+│   │   ├── input-group.tsx               # Input with attached icon/button prefix
+│   │   ├── input-otp.tsx                 # One-time pin & 2FA input boxes
+│   │   ├── input.tsx                     # Text, number & currency input field
+│   │   ├── item.tsx                      # Generic list item layout
+│   │   ├── kbd.tsx                       # Keyboard shortcut indicator badge
+│   │   ├── label.tsx                     # Accessible form field label
+│   │   ├── menubar.tsx                   # Desktop menu bar component
+│   │   ├── navigation-menu.tsx           # Primary top-level navigation bar
+│   │   ├── pagination.tsx                # Ledger pagination controls
+│   │   ├── popover.tsx                   # Floating popover panel
+│   │   ├── progress.tsx                  # Horizontal budget limit progress bar
+│   │   ├── radio-group.tsx               # Mutually exclusive selection group
+│   │   ├── resizable.tsx                 # Resizable split-pane layout
+│   │   ├── scroll-area.tsx               # Custom minimalist scrollbar viewport
+│   │   ├── select.tsx                    # Accessible dropdown select input
+│   │   ├── separator.tsx                 # Horizontal/vertical divider line
+│   │   ├── sheet.tsx                     # Slide-in side drawer panel
+│   │   ├── sidebar.tsx                   # Responsive collapsible sidebar framework
+│   │   ├── skeleton.tsx                  # Data loading shimmer placeholders
+│   │   ├── slider.tsx                    # Range slider for budget adjustments
+│   │   ├── sonner.tsx                    # Modern toast notifications wrapper
+│   │   ├── spinner.tsx                   # Loading state animated spinner
+│   │   ├── switch.tsx                    # Boolean toggle switch
+│   │   ├── table.tsx                     # Structured ledger data table
+│   │   ├── tabs.tsx                      # Tabbed view switcher (e.g. Income vs Expense)
+│   │   ├── textarea.tsx                  # Multi-line text note input
+│   │   ├── toast.tsx                     # Legacy toast notification primitive
+│   │   ├── toaster.tsx                   # Toast notification mount target
+│   │   ├── toggle-group.tsx              # Multi-option toggle group
+│   │   ├── toggle.tsx                    # Single binary toggle button
+│   │   ├── tooltip.tsx                   # Hover tooltip explanation box
+│   │   ├── use-mobile.tsx                # Mobile breakpoint detection hook
+│   │   └── use-toast.ts                  # Toast notification trigger hook
+│   │
+│   └── wallet/                           # Specialized Financial Domain Widgets (17 Modules)
+│       ├── account-detail-view.tsx       # Single account transaction history & balance inspector
+│       ├── accounts-view.tsx             # Visual account balance grid (Bank, E-Wallet, Cash)
+│       ├── add-account-modal.tsx         # Modal for connecting new financial accounts
+│       ├── add-transaction-modal.tsx     # Fast multi-item expense/income recording modal
+│       ├── analytics-view.tsx            # Expense breakdown charts & cashflow velocity
+│       ├── app-shell.tsx                 # Universal responsive shell (Topbar, Sidebar & Mobile Nav)
+│       ├── bottom-nav.tsx                # Mobile PWA bottom navigation tab bar
+│       ├── budget-group-modal.tsx        # Budget group creation & category grouping modal
+│       ├── budget-view.tsx               # Visual budget trackers, alerts & percentage gauges
+│       ├── dashboard-view.tsx            # Executive KPI summary cards & financial highlights
+│       ├── filter-sidebar.tsx            # Advanced transaction filter panel (Date, Account, Category)
+│       ├── month-selector.tsx            # Interactive month/year period switcher
+│       ├── period-selector.tsx           # Daily, weekly, monthly & annual filter switcher
+│       ├── records-view.tsx              # Paginated transaction record stream & row actions
+│       ├── sidebar.tsx                   # Desktop navigation sidebar with collapse support
+│       ├── topbar.tsx                    # Header bar with user profile, sync indicator & quick actions
+│       └── transaction-detail-modal.tsx  # Transaction inspector, category edit & delete confirmation
+│
+├── hooks/                                # Custom React Hooks
+│   ├── use-finance-data.ts               # Core reactive hook: Supabase data fetching, cache & real-time sync
+│   ├── use-mobile.ts                     # Responsive layout detector for mobile viewports
+│   └── use-toast.ts                      # UI notification toaster helper
+│
+├── lib/                                  # Utility Libraries & Database Adaptations
+│   ├── icon-map.ts                       # Dynamic category icon mapping (Lucide icons to category names)
+│   ├── utils.ts                          # Tailwind class merger (clsx + twMerge) & formatting helpers
+│   ├── wallet-data.ts                    # Mock fallback data & financial calculation algorithms
+│   │
+│   └── supabase/                         # Supabase Data Access Layer
+│       ├── client.ts                     # Typed Supabase browser/server client initializer
+│       ├── mutations.ts                  # Database write operations (Insert, update & soft-delete transactions)
+│       ├── queries.ts                    # High-performance data queries (Balances, categories, monthly summaries)
+│       ├── schema.sql                    # SQL schema definitions for finance tables
+│       └── types.ts                      # Strict TypeScript types for Supabase database tables
+│
+├── public/                               # Static Assets & PWA Configuration
+│   ├── manifest.json                     # Progressive Web App (PWA) manifest specification
+│   ├── sw.js                             # Service Worker for offline asset caching & PWA lifecycle
+│   └── icons/                            # High-resolution PWA launcher icons
+│       ├── icon-192x192.png              # Standard mobile home screen icon
+│       ├── icon-512x512.png              # Splash screen & high-density display icon
+│       └── icon-maskable.png             # Android adaptive maskable launcher icon
+│
+└── styles/                               # Global Style Definitions
+    └── globals.css                       # Tailwind v4 theme directives & CSS custom properties
+```
+
+---
+
+## 3. N.E.X.A MOBILE BRIDGE ARCHITECTURE (Android 16 / One UI 8 / Kotlin)
 * **Local Path:** `C:\workspace\nexa-mobile-bridge`
 * **Target Hardware:** Samsung Galaxy A33 5G
 * **Package:** `com.nexa.mobilebridge`
@@ -383,7 +527,56 @@ nexa-mobile-bridge/
 
 ---
 
-## 3. DATA BINDING & INTERACTION MATRIX
+---
+
+## 4. N.E.X.A GEMINI PROXY ARCHITECTURE (Vercel Serverless US Edge Gateway)
+* **Local Path:** `C:\workspace\nexa-gemini-proxy`
+* **Production Host:** Vercel Serverless Edge Functions (`iad1` — Washington D.C., USA)
+* **Target Endpoint:** `https://generativelanguage.googleapis.com`
+* **Role:** High-speed US Edge Gateway for Google AI Studio & Gemini API (Sub-second Edge Relay & Regional Bypass)
+* **Current Version:** v1.0.0 (`package.json`)
+
+```text
+nexa-gemini-proxy/
+├── package.json                          # Proxy package manifest (Vercel deployment target)
+├── vercel.json                           # Vercel Edge configuration (iad1 region specification & route rewrite)
+├── README.md                             # Gateway documentation, endpoint routing & cURL test examples
+│
+└── api/                                  # Serverless Edge Functions
+    └── index.js                          # Edge Gateway Handler:
+                                          #  - CORS Headers (* origin, preflight OPTIONS handling)
+                                          #  - Health Check endpoint (/ or /health -> 200 OK)
+                                          #  - Target URL forwarding (https://generativelanguage.googleapis.com)
+                                          #  - Header normalization (x-goog-api-key / Bearer extraction)
+                                          #  - Streaming body forwarding & HTTP status propagation
+```
+
+---
+
+## 5. N.E.X.A UNIVERSAL CLI ARCHITECTURE (Node.js Standalone Console)
+* **Local Path:** `C:\workspace\nexa-cli`
+* **NPM Package:** `nexa-assistant-console` (alias: `nexa-cli`)
+* **Distribution:** NPM Registry (`npx nexa-assistant-console`) & GitHub (`npx github:Knightrelaxed/nexa-cli`)
+* **Role:** Zero-dependency Interactive Cyberpunk HUD Terminal Client for Tuan Faqih (cross-device terminal access)
+* **Current Version:** v2.8.4 (`package.json`)
+
+```text
+nexa-cli/
+├── package.json                          # CLI package manifest (bin: nexa-assistant-console, nexa-cli)
+├── README.md                             # Terminal usage guide, npx installation & first-time setup instructions
+│
+└── index.js                              # Master Standalone Executable:
+                                          #  - Zero external dependencies (100% native Node.js core modules)
+                                          #  - Cyberpunk HUD Banner & Dynamic ASCII Box Drawer (single-sequence ANSI)
+                                          #  - Interactive multi-turn Readline interface with customized prompt (❖ TUAN FAQIH ──❯)
+                                          #  - Encrypted configuration store (~/.nexa-config.json for server URL & secret)
+                                          #  - Ingress client: HTTPS POST /webhook/cli with Bearer/AES-CLI-SEC authentication
+                                          #  - Real-time response streaming, follow-up state handling & clean exit traps
+```
+
+---
+
+## 6. DATA BINDING & INTERACTION MATRIX
 
 | Jalur Aliran Data | Protokol / Saluran | Komponen Asal | Komponen Tujuan | Deskripsi / Fungsi |
 |---|---|---|---|---|
@@ -395,4 +588,7 @@ nexa-mobile-bridge/
 | **Audio Output** | WebSocket (`CALL_REPLY_PCM`) | Server (`Live_Voice_Engine.js`) | Android (`AudioPlayerHandler.kt`) | Pemutaran respon suara instan (*sub-second TTFA*) ke speaker HP. |
 | **Financial Ledger** | REST / Realtime Database | Server (`Finance_Engine.js`) | Supabase PostgreSQL (`Supabase_Finance.js`) | Buku besar kas, sinkronisasi Bank Mandiri & pelacakan pengeluaran. |
 | **User Memory RAG** | Vector Similarity (pgvector) | Server (`Episodic_Recall.js`) | Supabase PostgreSQL (`Supabase_Memories.js`) | Penarikan memori percakapan jangka panjang & fakta kepribadian Tuan. |
-| **Financial Portal** | HTTPS / Server-Side Rendering | Web Browser (`nexa-finance-web`) | Server API & Supabase | Dashboard visual analitik keuangan, grafik pengeluaran & anggaran. |
+| **Financial Web Portal** | HTTPS / Server-Side Rendering | Web Browser (`nexa-finance-web`) | Supabase PostgreSQL & Server API | Dashboard visual analitik keuangan, grafik pengeluaran & anggaran realtime PWA. |
+| **Gemini AI Studio US Relay** | HTTPS Proxy (`iad1` Edge) | Server (`Fallback_Engine.js`) | Vercel Edge (`nexa-gemini-proxy`) -> Google | Akses API Gemini via US Washington D.C. gateway untuk latensi optimal dan bypass batasan regional. |
+| **Terminal Console CLI** | HTTPS / JSON Webhook | Standalone Terminal (`nexa-cli`) | Server (`interfaces/cli/adapter.js`) | Akses kontrol konsol eksekutif N.E.X.A bergaya HUD Cyberpunk dari laptop manapun di dunia. |
+
