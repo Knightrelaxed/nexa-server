@@ -333,7 +333,7 @@ Seiring bertambahnya kapabilitas kognitif N.E.X.A, adapter kanal interaksi (`tel
 Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah bersih (*Hexagonal Architecture*) dengan eliminasi duplikasi, penguatan batas keamanan, dan preservasi konteks transaksional deterministik:
 
 1. **Dekomposisi Hexagonal Adapter:**
-   - Monolit `telegram/adapter.js` didekomposisi menjadi modul-modul spesifik: `command_handler.js`, `vault_handler.js`, `email_helpers.js`, `interceptors.js`, `intent_dispatcher.js`, dan `actions.js`. Controller utama terpangkas dari **3.765 baris ke 683 baris** (~82% reduction).
+   - Monolit `telegram/adapter.js` didekomposisi menjadi modul-modul spesifik: `command_handler.js`, `vault_handler.js`, `callback_handler.js`, `media_handler.js`, `interceptors.js`, `intent_dispatcher.js`, dan `actions.js`. Controller utama terpangkas dari **3.765 baris ke 683 baris** (~82% reduction). Logika resolusi follow-up dan klarifikasi dipadukan ke dalam `src/interfaces/common/follow_up_resolver.js`.
    - Monolit `cli/adapter.js` didekomposisi menjadi `interceptors.js` dan `intent_dispatcher.js`. Controller utama terpangkas dari **1.283 baris ke 320 baris** (~75% reduction).
    - Seluruh logika bisnis penanganan intent diekstrak ke dalam 7 *Shared Domain Handlers* di `src/interfaces/common/handlers/` (`calendar_handler`, `database_handler`, `email_handler`, `finance_handler`, `memory_handler`, `system_handler`, `task_handler`), memangkas 1.432 baris kode duplikat dan menekan tingkat duplikasi antar-kanal hingga **0,50%** (hanya 41 baris tersisa).
 

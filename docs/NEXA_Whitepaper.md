@@ -2711,14 +2711,15 @@ Untuk menyelesaikan masalah ini secara permanen, arsitektur ingress direstruktur
 ```mermaid
 flowchart TD
     subgraph Channels["Ingress Channel Adapters"]
-        TG["Telegram Adapter (src/interfaces/telegram/)<br>• command_handler.js<br>• vault_handler.js<br>• email_helpers.js<br>• interceptors.js<br>• actions.js<br>• adapter.js (683 baris)"]
-        CLI["CLI Adapter (src/interfaces/cli/)<br>• interceptors.js<br>• adapter.js (320 baris)"]
+        TG["Telegram Adapter (src/interfaces/telegram/)<br>• command_handler.js<br>• vault_handler.js<br>• media_handler.js<br>• callback_handler.js<br>• interceptors.js<br>• actions.js<br>• adapter.js (683 baris)"]
+        CLI["CLI Adapter (src/interfaces/cli/)<br>• interceptors.js<br>• intent_dispatcher.js<br>• adapter.js (320 baris)"]
         MB["Mobile Bridge (WebSocket /ws)"]
         WS["WhatsApp / Baileys Adapter"]
     end
 
     subgraph Dispatcher["Unified Ingress Layer (src/interfaces/common/)"]
         DD["domain_dispatcher.js"]
+        FR["follow_up_resolver.js (Multi-turn Follow-up & Clarification)"]
         HELP["helpers.js (Parsing, Sanitasi & Formatting)"]
     end
 

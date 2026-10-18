@@ -17,6 +17,7 @@
 nexa-server/
 ├── Dockerfile                            # Production container build specification
 ├── .dockerignore                         # Docker build artifact exclusion rules
+├── .gitignore                            # Git repository ignore rules
 ├── ecosystem.config.js                   # PM2 process manager configuration (VPS deployment)
 ├── package.json                          # Main project manifest & production dependencies (v3.4.0)
 ├── package-lock.json                     # Deterministic dependency lockfile
@@ -24,7 +25,8 @@ nexa-server/
 ├── .env.example                          # Blueprint environment variable template
 │
 ├── cloudflare-worker/                    # Cloudflare Edge Relay Subsystem
-│   └── nexa-relay.js                     # Edge proxy worker for Telegram Bot API & media processing
+│   ├── nexa-relay.js                     # Edge proxy worker for Telegram Bot API & media processing
+│   └── wrangler.toml                     # Cloudflare Worker deployment configuration
 │
 ├── data/                                 # Local Storage & Snapshot Datastore
 │   ├── facts_vectors.json                # In-memory snapshot of pgvector memory embeddings
@@ -524,8 +526,6 @@ nexa-mobile-bridge/
                     ├── SettingsScreen.kt     # Configuration screen (Server URL, Token, HMAC Secret)
                     └── SettingsViewModel.kt  # Settings DataStore state manager
 ```
-
----
 
 ---
 
