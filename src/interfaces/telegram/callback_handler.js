@@ -1,14 +1,20 @@
+'use strict';
 // ============================================================
 // N.E.X.A — TELEGRAM CALLBACK QUERY HANDLER
-// Menangani respons dari tombol interaktif Telegram Inline Keyboard
-// khususnya untuk Level 2 Discipline Feedback Loop (d:ok, d:no, d:ext)
+// Menangani seluruh respons tombol interaktif Telegram Inline Keyboard:
+// 1. Level 2 Discipline Feedback Loop (d:ok, d:no, d:ext)
+// 2. Identity Model Proposal (IDENTITY_APPROVE, IDENTITY_REJECT)
+// 3. Memory Hygiene Actions (HYGIENE_ARCHIVE_ALL, HYGIENE_HOLD_ALL, HYGIENE_SELECT_MANUAL)
+// 4. Recurring Subscription Rules (REC_OK, REC_NO)
 // ============================================================
-'use strict';
 
 const { createClient } = require('@supabase/supabase-js');
 const env = require('../../config/env');
 const godMode = require('../../domain/Discipline_GodMode');
-const { editTelegramMessage, answerCallbackQuery } = require('./actions');
+const aiRouter = require('../../core/AI_Router');
+const supabaseMemories = require('../../infrastructure/Supabase_Memories');
+const { editTelegramMessage: actionEditMessage, answerCallbackQuery, sendTelegramOutbound } = require('./actions');
+const { sendTelegramMessage } = require('../../utils/telegram_network');
 
 let _supabase = null;
 function getSupabase() {
@@ -20,9 +26,6 @@ function getSupabase() {
 
 /**
  * Menangani callback query khusus event disiplin (prefix "d:")
- * 
- * @param {object} callbackQuery - Objek callback_query dari webhook Telegram
- * @returns {Promise<boolean>} true jika berhasil ditangani oleh handler ini, false jika bukan event disiplin
  */
 async function handleDisciplineCallback(callbackQuery) {
   const data  = callbackQuery?.data || '';
@@ -35,7 +38,7 @@ async function handleDisciplineCallback(callbackQuery) {
   }
 
   const action     = parts[1]; // 'ok' | 'no' | 'ext'
-  const sessionKey = parts.slice(2).join(':'); // Rebuild session_key karena bisa mengandung ':'
+  const sessionKey = parts.slice(2).join(':'); // Rebuild session_key
 
   const supabase = getSupabase();
   if (!supabase) {
@@ -55,19 +58,17 @@ async function handleDisciplineCallback(callbackQuery) {
   }
 
   if (action === 'ok') {
-    // User konfirmasi riset penting — reset level ke 0 dan tutup pending
     await supabase.from('nexa_discipline_state').update({
       pending_callback: false,
       current_level:    0
     }).eq('session_key', sessionKey);
 
     await answerCallbackQuery(cbId, '✅ Diterima. Semangat risetnya, Tuan Faqih!');
-    await editTelegramMessage(msgId,
+    await actionEditMessage(msgId,
       '✅ <b>N.E.X.A mencatat ini sebagai sesi riset yang valid.</b>\nLanjutkan — dan pastikan hasilnya dicatat dengan baik.'
     );
 
   } else if (action === 'no') {
-    // User mengakui penundaan — eskalasi ke Level 3 segera
     await supabase.from('nexa_discipline_state').update({
       pending_callback: false,
       current_level:    3
@@ -79,7 +80,7 @@ async function handleDisciplineCallback(callbackQuery) {
       session_key:   sessionKey
     });
     await answerCallbackQuery(cbId, '💪 Level 3 diaktifkan. Kembali ke meja kerja!');
-    await editTelegramMessage(msgId,
+    await actionEditMessage(msgId,
       '🚫 <b>Surgical Force diaktifkan.</b>\nTuan Faqih memilih akuntabilitas. Respect.'
     );
 
@@ -87,10 +88,8 @@ async function handleDisciplineCallback(callbackQuery) {
     const usedCount = session.ten_min_used_count || 0;
 
     if (usedCount >= 2) {
-      // Opsi +10 menit dikunci setelah 2x penggunaan per hari
       await answerCallbackQuery(cbId, '⛔ Opsi perpanjangan 10 menit sudah habis hari ini (maks 2x).', true);
       
-      // Langsung eskalasi ke Level 3 karena sudah mencoba memanfaatkan toleransi
       await supabase.from('nexa_discipline_state').update({
         pending_callback: false,
         current_level:    3
@@ -101,20 +100,25 @@ async function handleDisciplineCallback(callbackQuery) {
         message_tone:  session.message_tone,
         session_key:   sessionKey
       });
-      await editTelegramMessage(msgId,
-        '🚫 <b>+10 Menit sudah digunakan 2x hari ini.</b>\nLevel 3 diaktifkan otomatis demi kedisiplinan Anda.'
+      await actionEditMessage(msgId,
+        '⛔ <b>Batas perpanjangan tercapai.</b>\nLevel 3 diaktifkan secara tegas. Waktunya fokus.'
       );
+
     } else {
-      // Berikan perpanjangan 10 menit + reset timer callback (13 menit total dari sekarang)
-      const newExpiry = new Date(Date.now() + 13 * 60 * 1000).toISOString();
+      const newUsedCount = usedCount + 1;
+      const extensionUntil = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
       await supabase.from('nexa_discipline_state').update({
-        callback_expires_at: newExpiry,
-        ten_min_used_count:  usedCount + 1
+        pending_callback:    false,
+        current_level:       1,
+        extension_until:     extensionUntil,
+        ten_min_used_count:  newUsedCount
       }).eq('session_key', sessionKey);
 
-      await answerCallbackQuery(cbId, `⏰ +10 menit diberikan (${usedCount + 1}/2 penggunaan hari ini).`);
-      await editTelegramMessage(msgId,
-        `⏰ <b>+10 menit dikabulkan (${usedCount + 1}/2).</b>\nN.E.X.A menunggu. Buktikan waktu ini benar-benar diperlukan.`
+      const sisaOpsi = 2 - newUsedCount;
+      await answerCallbackQuery(cbId, `⏳ +10 menit diberikan. Sisa perpanjangan: ${sisaOpsi}x hari ini.`);
+      await actionEditMessage(msgId,
+        `⏳ <b>Perpanjangan 10 menit aktif.</b>\nSelesaikan yang sedang dibuka, lalu segera kembali.\n<i>(Sisa toleransi hari ini: ${sisaOpsi}x)</i>`
       );
     }
   }
@@ -122,4 +126,187 @@ async function handleDisciplineCallback(callbackQuery) {
   return true;
 }
 
-module.exports = { handleDisciplineCallback };
+/**
+ * Master dispatcher untuk seluruh Telegram callback query (tombol keyboard).
+ * @param {object} callbackQuery 
+ * @param {object} contextOps - { setConversationContext }
+ * @returns {Promise<boolean>}
+ */
+async function handleCallbackQuery(callbackQuery, { setConversationContext } = {}) {
+  if (!callbackQuery) return false;
+
+  try {
+    const { getNotifier } = require('../../core/Notifier');
+    getNotifier().markEngaged('BUTTON_TAP').catch(() => {});
+  } catch (_) {}
+
+  const cbData = callbackQuery.data || '';
+  const cbChatId = callbackQuery.message?.chat?.id || env.TELEGRAM_CHAT_ID;
+  const cbMessageId = callbackQuery.message?.message_id;
+  const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
+
+  const editTelegramMessage = async (newText) => {
+    try {
+      await sendTelegramMessage(newText, cbChatId, botToken, {
+        method: 'editMessageText',
+        message_id: cbMessageId,
+        parse_mode: 'HTML',
+      });
+    } catch (_) {
+      await sendTelegramOutbound(newText, true);
+    }
+  };
+
+  // 1. IDENTITY PROPOSAL: APPROVE
+  if (cbData.startsWith('IDENTITY_APPROVE:')) {
+    const proposalId = parseInt(cbData.split(':')[1], 10);
+    console.log(`[IDENTITY] User clicked APPROVE for proposal #${proposalId}`);
+
+    const result = await supabaseMemories.approveIdentityProposal(proposalId).catch(e => ({
+      success: false, error: e.message
+    }));
+
+    if (result.success) {
+      const row = result.identityRow;
+      const traitDisplay = row ? `<b>${row.layer}</b> → ${row.trait_value}` : `Proposal #${proposalId}`;
+      await editTelegramMessage(
+        `✅ <b>Committed to Identity Model.</b>\n\nTerima kasih, Tuan. Saya telah menyimpan:\n${traitDisplay}\n\nPemahaman saya tentang Anda telah diperbarui dan akan langsung berlaku pada percakapan berikutnya.`
+      );
+      if (typeof aiRouter.invalidatePersonalFactsCache === 'function') {
+        aiRouter.invalidatePersonalFactsCache();
+      }
+      if (typeof aiRouter.invalidateIdentityModelCache === 'function') {
+        aiRouter.invalidateIdentityModelCache();
+      }
+    } else {
+      await editTelegramMessage(
+        `❌ <b>Gagal menyimpan perubahan.</b>\n\nMaaf Tuan, terjadi kesalahan teknis: <code>${result.error}</code>`
+      );
+    }
+    return true;
+  }
+
+  // 2. IDENTITY PROPOSAL: REJECT
+  if (cbData.startsWith('IDENTITY_REJECT:')) {
+    const proposalId = parseInt(cbData.split(':')[1], 10);
+    console.log(`[IDENTITY] User clicked REJECT for proposal #${proposalId}`);
+
+    await supabaseMemories.rejectIdentityProposal(proposalId, null).catch(() => {});
+
+    await editTelegramMessage(
+      `❌ <b>Proposal Dibatalkan.</b>\n\nBaik Tuan, saya tidak akan menambahkan profil tersebut ke Identity Model.\n\n🤔 Boleh saya tahu di bagian mana kesimpulan saya kurang tepat?\n(Misalnya: "karena minggu lalu hanya kebetulan ada tugas mendadak")\n\nAtau balas <b>"Tidak apa-apa"</b> jika tidak ingin menjelaskan — saya akan lebih berhati-hati di observasi berikutnya.`
+    );
+    if (typeof setConversationContext === 'function') {
+      setConversationContext({
+        intent: 'AWAITING_IDENTITY_REJECTION_REASON',
+        extractedData: { proposalId },
+        askedAt: Date.now()
+      });
+    }
+    return true;
+  }
+
+  // 3. DISCIPLINE FEEDBACK LOOP (Level 2: d:ok, d:no, d:ext)
+  if (await handleDisciplineCallback(callbackQuery)) {
+    return true;
+  }
+
+  // 4. MEMORY HYGIENE: ARSIPKAN SEMUA
+  if (cbData === 'HYGIENE_ARCHIVE_ALL') {
+    console.log('[HYGIENE-CB] Tuan menekan: Arsipkan Semua staged facts.');
+    try {
+      const staged = await supabaseMemories.getStagedForPruning();
+      const upIds = (staged.userProfile || []).map(r => r.id);
+      const ciIds = (staged.coreIdentity || []).map(r => r.id);
+      let totalArchived = 0;
+
+      if (upIds.length > 0) {
+        const res = await supabaseMemories.bulkArchiveMemories(upIds, 'USER_PROFILE');
+        totalArchived += res.archived;
+      }
+      if (ciIds.length > 0) {
+        const res = await supabaseMemories.bulkArchiveMemories(ciIds, 'CORE_IDENTITY');
+        totalArchived += res.archived;
+      }
+
+      if (typeof aiRouter.invalidatePersonalFactsCache === 'function') {
+        aiRouter.invalidatePersonalFactsCache();
+      }
+
+      await editTelegramMessage(
+        `✅ <b>Selesai. ${totalArchived} fakta berhasil diarsipkan.</b>\n\n` +
+        `Memori N.E.X.A kini lebih bersih dan relevan.\n` +
+        `<i>(Fakta yang diarsipkan tidak dihapus permanen — masih tersimpan aman di database.)</i>`
+      );
+    } catch (e) {
+      console.error('[HYGIENE-CB] ARCHIVE_ALL error:', e.message);
+      await editTelegramMessage(`❌ <b>Gagal mengarsipkan.</b>\n<code>${e.message}</code>`);
+    }
+    return true;
+  }
+
+  // 5. MEMORY HYGIENE: TAHAN SEMUA
+  if (cbData === 'HYGIENE_HOLD_ALL') {
+    console.log('[HYGIENE-CB] Tuan menekan: Tahan Semua — reset staged ke ACTIVE.');
+    try {
+      const sb = supabaseMemories.supabase;
+      if (sb) {
+        await sb.from('nexa_user_profile').update({ status: 'ACTIVE' }).eq('status', 'STAGED_FOR_PRUNING');
+        await sb.from('nexa_core_identity').update({ status: 'ACTIVE' }).eq('status', 'STAGED_FOR_PRUNING');
+      }
+
+      await editTelegramMessage(
+        `❌ <b>Ditahan.</b> Semua fakta dikembalikan ke status Aktif.\n\n` +
+        `Saya tidak akan mengarsipkan apapun minggu ini.\n` +
+        `<i>Fakta-fakta tersebut akan dievaluasi kembali minggu depan.</i>`
+      );
+    } catch (e) {
+      console.error('[HYGIENE-CB] HOLD_ALL error:', e.message);
+      await editTelegramMessage(`❌ <b>Gagal mempertahankan fakta.</b>\n<code>${e.message}</code>`);
+    }
+    return true;
+  }
+
+  // 6. MEMORY HYGIENE: PILIH MANUAL
+  if (cbData === 'HYGIENE_SELECT_MANUAL') {
+    console.log('[HYGIENE-CB] Tuan menekan: Pilih Manual.');
+    await editTelegramMessage(
+      `🔍 <b>Pilih Manual (Tersedia Penuh di Phase 10)</b>\n\n` +
+      `Sistem UI pemilihan memori per baris sedang dalam tahap pengembangan akhir.\n\n` +
+      `💡 <i>Sementara itu, Anda dapat membalas pesan ini langsung dengan perintah seperti:\n"Hapus memori user profile ID 5"\natau gunakan tombol <b>Arsipkan Semua / Tahan Semua</b> untuk eksekusi kilat.</i>`
+    );
+    return true;
+  }
+
+  // 7. RECURRING RULES: APPROVE / REJECT
+  if (cbData.startsWith('REC_OK:') || cbData.startsWith('REC_NO:')) {
+    const isApprove = cbData.startsWith('REC_OK:');
+    const ruleId = cbData.split(':')[1];
+    try {
+      const supabaseFinance = require('../../infrastructure/Supabase_Finance');
+      const newStatus = isApprove ? 'ACTIVE' : 'REJECTED';
+      const ok = await supabaseFinance.updateRecurringRuleStatus(ruleId, newStatus);
+      if (ok) {
+        await editTelegramMessage(
+          isApprove
+            ? `✅ <b>Langganan Rutin Disetujui (ACTIVE)!</b>\nAturan ini kini aktif dan akan dihitung dalam proyeksi tagihan.`
+            : `❌ <b>Langganan Rutin Ditolak (REJECTED).</b>\nAturan ini telah dinonaktifkan dan tidak akan ditagihkan lagi.`
+        );
+      } else {
+        await editTelegramMessage(`⚠️ Gagal memperbarui status aturan langganan.`);
+      }
+    } catch (e) {
+      console.error('[REC-CB] Error updating rule:', e.message);
+      await editTelegramMessage(`❌ Error: ${e.message}`);
+    }
+    return true;
+  }
+
+  console.log(`[WEBHOOK] Unknown callback_query data: ${cbData}`);
+  return false;
+}
+
+module.exports = {
+  handleDisciplineCallback,
+  handleCallbackQuery
+};
