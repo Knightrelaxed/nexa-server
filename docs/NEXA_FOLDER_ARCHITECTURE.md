@@ -1,8 +1,8 @@
 # N.E.X.A Ecosystem — Complete Architecture & File Tree
 
 > **Document:** `docs/NEXA_FOLDER_ARCHITECTURE.md`  
-> **Ecosystem:** N.E.X.A 3.0 (Sovereign Cloud Core + Mobile Hardware Bridge)  
-> **Last Updated:** 2026-10-10  
+> **Ecosystem:** N.E.X.A 3.4 (Sovereign Cloud Core + Mobile Hardware Bridge)  
+> **Last Updated:** 2026-10-18  
 > **Format:** Comprehensive Plain-Text ASCII Tree with Deep Functional Annotations  
 
 ---
@@ -11,13 +11,14 @@
 * **Local Path:** `C:\workspace\nexa-server`
 * **Production Host:** Azure Central Indonesia VPS (`/home/nexa/nexa-server`)
 * **Role:** Sovereign Cognitive Core, Multi-Model Router, Database Ledger, Realtime Relays & Web Portal
+* **Current Version:** v3.4.0 (`src/config/version.js`)
 
 ```text
 nexa-server/
 ├── Dockerfile                            # Production container build specification
 ├── .dockerignore                         # Docker build artifact exclusion rules
 ├── ecosystem.config.js                   # PM2 process manager configuration (VPS deployment)
-├── package.json                          # Main project manifest & production dependencies
+├── package.json                          # Main project manifest & production dependencies (v3.4.0)
 ├── package-lock.json                     # Deterministic dependency lockfile
 ├── README.md                             # Repository overview & quick start guide
 ├── .env.example                          # Blueprint environment variable template
@@ -33,13 +34,21 @@ nexa-server/
 │   ├── app_limits_migration.sql          # Screen time & application usage discipline rules
 │   ├── budget_schema.sql                 # Expense categories, balances & budget tracking tables
 │   ├── migration_daily_narratives.sql    # Daily cognitive narrative & identity evolution logs
+│   ├── migration_directives_counters_v3_3_2.sql # Behavioral directives & runtime execution counters
 │   ├── migration_enable_all_nexa_rls.sql # Comprehensive Row Level Security (RLS) hardening
 │   ├── migration_enable_rls.sql          # Base RLS security policies
+│   ├── migration_learning_loop_v3_3.sql  # Micro-reviewer cognitive reflection & feedback schema
+│   ├── migration_learning_loop_v3_3_1.sql # Learning loop counter & schema refinements
 │   ├── migration_notifier_recurring.sql  # Scheduled notifications & recurring task triggers
 │   ├── migration_settings.sql            # Core assistant settings & user configuration store
 │   ├── migration_split_transaction.sql   # Shared expense & transaction splitting ledger
 │   ├── phase6_migration.sql              # Cognitive Identity, Mood Time-Series & Dual Memory tables
-│   └── phase7_migration.sql              # Causal Knowledge Graph & dynamic self-inference schema
+│   ├── phase7_migration.sql              # Causal Knowledge Graph & dynamic self-inference schema
+│   ├── phase8_discipline_state_migration.sql # Screen lock, god-mode & discipline enforcement states
+│   ├── schema.sql                        # Base consolidated PostgreSQL schema
+│   ├── seed_phase9_core_identity.sql     # Seed data for core persona traits & executive identity
+│   ├── seed_phase10_cron_architecture.sql # Seed configuration for scheduled cron tasks
+│   └── whatsapp_and_platform_migration.sql # Multi-platform ingress & WhatsApp session tables
 │
 ├── docs/                                 # Architecture Whitepapers & Documentation
 │   ├── CORE_IDENTITY_AUDIT_REPORT.md     # Persona integrity & identity verification report
@@ -47,12 +56,13 @@ nexa-server/
 │   ├── JSON_PROTOCOL_SPECIFICATION.md    # Bidirectional WebSocket schema (Nexa Protocol 3.0)
 │   ├── MOBILE_BRIDGE_TESTING_REPORT.md   # Sensor latency & hardware test logs
 │   ├── NEXA_AZURE_VPS_PRODUCTION_ARCHITECTURE.md # Sovereign VPS Jakarta deployment whitepaper
+│   ├── nexa_core_identity_dump_231.json  # Comprehensive persona trait snapshot & embeddings dump
 │   ├── NEXA_FOLDER_ARCHITECTURE.md       # This complete ecosystem folder directory tree
 │   ├── NEXA_MOBILE_BRIDGE_DOCUMENTATION.md # Complete Android bridge technical documentation
 │   ├── NEXA_ORACLE_CLOUD_MIGRATION_PLAN.md # Secondary cloud disaster recovery plan
 │   ├── NEXA_SECURITY_ARCHITECTURE_AND_HARDENING.md # Comprehensive security hardening guide
-│   ├── NEXA_VERSION_EVOLUTION_ROADMAP.md # Version evolution & release milestone roadmap
-│   ├── NEXA_Whitepaper.md                # General N.E.X.A architecture whitepaper
+│   ├── NEXA_VERSION_EVOLUTION_ROADMAP.md # Version evolution & release milestone roadmap (v1.0 - v3.4.0)
+│   ├── NEXA_Whitepaper.md                # General N.E.X.A architecture whitepaper (v3.4.0)
 │   ├── PHASE6_DUAL_MEMORY_SYSTEM.md      # Dual-memory (Episodic + Semantic) architectural design
 │   ├── PHASE_4_ADVANCED_WORKFLOW.md      # Autonomous background workflows & task chains
 │   ├── PHASE_5_NEXA_V3_WEB_UI.md         # Web portal frontend specifications
@@ -74,23 +84,46 @@ nexa-server/
 │   └── VPS_DEPLOYMENT_CHALLENGES.md      # Documented solutions for VPS networking & proxy quirks
 │
 ├── scripts/                              # Maintenance, Migrations & Diagnostic Utilities
+│   ├── audit_codebase.js                 # AST codebase scanner & dependency auditor
 │   ├── audit_prompt_memory_efficiency.js # Memory token consumption & prompt bloat profiler
+│   ├── backfill_directives.js            # Backfill script for dynamic behavioral directives
 │   ├── clean_bad_memories.js             # Supabase memory hygiene & corrupted fact cleaner
+│   ├── clean_obsolete_version_memories.js # Purge obsolete version facts from Supabase
 │   ├── generate_google_master_token.js   # OAuth2 refresh token generator for Google APIs
 │   ├── generate_vector_snapshot.js       # Disk-to-Supabase vector embedding synchronizer
 │   └── trigger_weekly.js                 # Manual runner for weekly cognitive synthesis
 │
-├── tests/                                # Automated Test Suites & Benchmark Runners
-│   ├── day_simulation.test.js            # Full 24-hour simulation test (Briefing to Midnight)
-│   ├── dismiss_call.js                   # Simulated incoming call dismissal test
-│   ├── duel_gemma_31b_vs_26b.js          # Latency & reasoning benchmark across model versions
-│   ├── system_test.js                    # End-to-end integration test runner
-│   ├── test_both_tiers.js                # Dual-mode (Light vs Heavy) tier validation
-│   ├── test_cf_relay_live.js             # Cloudflare Edge relay connectivity tester
-│   ├── test_chrono_consolidation.js      # Chronological memory consolidation test
-│   ├── test_generalized_recall.js        # Semantic memory retrieval accuracy test
-│   ├── test_google_master_client.js      # Google OAuth2 client diagnostic test
-│   └── test_intention_engine.js          # Intention tracking & commitment evaluator test
+├── tests/                                # Automated Unit Test Suites & Benchmark Runners
+│   ├── cli_adapter.test.js               # Unit tests: CLI ingress adapter & multi-turn prompts
+│   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers (15 bank cases, escaping)
+│   ├── day_simulation.test.js            # Unit tests: Full 24-hour simulation (Briefing to Midnight)
+│   ├── directive_utils.test.js           # Unit tests: Behavioral directive parsing & counter increments
+│   ├── dismiss_call.js                   # Benchmark: Simulated incoming call dismissal test
+│   ├── duel_gemma_31b_vs_26b.js          # Benchmark: Latency & reasoning benchmark across model versions
+│   ├── identity_directive_flow.test.js   # Unit tests: Dynamic persona directives & alignment flow
+│   ├── micro_reviewer.test.js            # Unit tests: Micro-reviewer cognitive reflection & feedback loops
+│   ├── playbook_counters.test.js         # Unit tests: Behavioral playbook counters & limits
+│   ├── playbook_engine.test.js           # Unit tests: Playbook engine rules & conditional SOPs
+│   ├── reviewer_resilience.test.js       # Unit tests: Reviewer engine fallback & fault tolerance
+│   ├── signal_detector.test.js           # Unit tests: Real-time behavioral signal detector
+│   ├── system_test.js                    # Integration: End-to-end full system runner
+│   ├── telegram_adapter.test.js          # Unit tests: Telegram adapter, action builders & callbacks
+│   ├── test_all_crons.js                 # Diagnostic: Autonomous runner for all scheduled crons
+│   ├── test_both_tiers.js                # Validation: Dual-mode (Light vs Heavy) tier validation
+│   ├── test_cf_relay_live.js             # Connectivity: Cloudflare Edge relay tester
+│   ├── test_chrono_consolidation.js      # Unit tests: Chronological memory consolidation test
+│   ├── test_generalized_recall.js        # Accuracy: Semantic memory retrieval & RAG test
+│   ├── test_google_master_client.js      # Diagnostic: Google OAuth2 master client validator
+│   ├── test_intention_engine.js          # Validation: Intention tracking & commitment evaluator test
+│   ├── test_live_episodic_recall_chat.js # Realtime: Live chat episodic memory RAG test
+│   ├── test_live_voice_engine.js         # Streaming: Gemini Live WebSocket audio relay test
+│   ├── test_midnight_screen_trigger.js   # Evaluation: Midnight screen time trigger test
+│   ├── test_natural_calendar_tasks.js    # Parsing: Natural language calendar & task scheduling test
+│   ├── test_recurrence_and_semester.js   # Scheduling: Recurring schedule & semester cycle tests
+│   ├── topic_classifier.test.js          # Classification: Topic classification & fast prompt router
+│   ├── trigger_call.js                   # Simulation: Hardware incoming phone call trigger
+│   ├── upgrade.test.js                   # Migration: Schema upgrade & database integrity validator
+│   └── version.test.js                   # Verification: Centralized version resolver & git SHA tests
 │
 ├── tools/                                # Command Line & Developer Tools
 │   ├── chat_cli.js                       # Interactive CLI terminal for talking to N.E.X.A
@@ -101,41 +134,55 @@ nexa-server/
 ├── vercel-relay/                         # Vercel Serverless Failover Relay
 │   ├── vercel.json                       # Vercel serverless routing & function timeout config
 │   └── api/                              # Edge functions proxying Telegram & external webhooks
+│       ├── relay.js                      # Inbound webhook relay function
+│       ├── sendAction.js                 # Outbound Telegram action proxy
+│       ├── transcribe.js                 # Audio transcription proxy
+│       └── vision.js                     # Multimodal vision proxy
 │
 └── src/                                  # Main Backend Application Source Code
     ├── app.js                            # Express app setup, strict security headers, CORS & loopback
     │
-    ├── config/                           # Environment & Persona Configuration
+    ├── config/                           # Environment, Persona & Version Configuration
     │   ├── env.js                        # Validated environment variable loader
+    │   ├── model_backup_plan.json        # Dynamic fallback parameters & retry quotas
     │   ├── personality.js                # Master executive identity prompt & behavior boundaries
-    │   └── model_backup_plan.json        # Dynamic fallback parameters & retry quotas
+    │   └── version.js                    # Centralized version definition (v3.4.0) & Git SHA resolver
     │
-    ├── core/                             # Core Cognitive & Inference Engines
+    ├── core/                             # Core Cognitive & Inference Engines (9 Subsystems)
     │   ├── AI_Router.js                  # Master Cognitive Brain, Intent Classifier & Prompt Fusion
     │   ├── Fallback_Engine.js            # SACR v2.4 (15-Tier Dual-Mode Dynamic Fallback Router)
     │   ├── Live_Tool_Registry.js         # Function calling & Agent Tool execution catalog
     │   ├── Live_Voice_Engine.js          # Bidirectional real-time Gemini Live WebSocket relay
-    │   ├── Vision_Engine.js              # Multimodal visual analysis engine
+    │   ├── Notifier.js                   # Cross-channel proactive notification dispatcher & queue manager
+    │   ├── Provider_Health.js            # Dynamic API health check, circuit breaker & failover tracker
+    │   ├── Topic_Classifier.js           # Fast intent/topic classification & prompt template selector
+    │   ├── Vision_Engine.js              # Multimodal visual analysis & OCR engine
     │   └── Voice_Engine.js               # Groq Whisper audio transcription engine
     │
-    ├── domain/                           # Business Domain & Behavioral Engines
-    │   ├── Agenda_Manager.js             # Google Calendar schedule synchronizer
+    ├── domain/                           # Business Domain & Behavioral Engines (23 Engines)
+    │   ├── Agenda_Manager.js             # Google Calendar schedule synchronizer & conflict detection
     │   ├── Anticipatory_Engine.js        # Proactive agency & anticipatory nudging engine
-    │   ├── App_Discipline_Engine.js      # App usage evaluator & screen time limiter
+    │   ├── App_Discipline_Engine.js      # App usage evaluator, screen time limiter & app locks
     │   ├── Behavior_Engine.js            # Mood time-series & habit tracking engine
     │   ├── Budget_Engine.js              # Expense limit & financial balance tracker
-    │   ├── Chrono_Consolidator.js        # Chronological context synthesizer
-    │   ├── Device_Control_Engine.js      # Remote hardware orchestration logic
-    │   ├── Discipline_GodMode.js         # Strict focus & god-mode disciplinary rules
+    │   ├── Chrono_Consolidator.js        # Chronological context synthesizer & temporal timeline builder
+    │   ├── Device_Control_Engine.js      # Remote hardware orchestration & Android bridge command emitter
+    │   ├── Dialectic_Engine.js           # Dialectic reasoning, cognitive debate & counter-argument synthesis
+    │   ├── Discipline_GodMode.js         # Strict focus & god-mode disciplinary rules enforcement
     │   ├── Episodic_Recall.js            # Long-term episodic memory RAG & semantic retrieval
     │   ├── Finance_Engine.js             # Financial transaction processor & double-entry logic
+    │   ├── Finance_Intel.js              # Financial intelligence, spending pattern heuristics & anomaly detection
     │   ├── Inference_Engine.js           # Psychological trait & user pattern inferrer
     │   ├── Intelligence_Brief.js         # Morning Briefing, Midnight & Evening brief synthesizer
     │   ├── Intention_Engine.js           # Short & long-term commitments tracker
-    │   ├── Location_Orchestrator.js      # Presence context & spatial reasoning
-    │   ├── Memory_Hygiene_Engine.js      # Memory deduplication & decay manager
-    │   ├── Split_Engine.js               # Shared expense calculation engine
-    │   └── Task_Manager.js               # Google Tasks integration & overdue detector
+    │   ├── Location_Orchestrator.js      # Presence context, spatial reasoning & location queries
+    │   ├── Memory_Hygiene_Engine.js      # Memory deduplication, decay manager & knowledge prune
+    │   ├── Micro_Reviewer.js             # Micro-reviewer cognitive reflection, output quality critic & guardrails
+    │   ├── Playbook_Engine.js            # Behavioral playbooks, conditional execution & contextual SOPs
+    │   ├── Presence_Model.js             # User physical presence, device state & focus mode estimator
+    │   ├── Signal_Detector.js            # Real-time behavioral signal detector & emotional state cue parser
+    │   ├── Split_Engine.js               # Shared expense calculation & debt settlement ledger
+    │   └── Task_Manager.js               # Google Tasks integration, task prioritization & overdue detector
     │
     ├── infrastructure/                   # External Services & Database Adaptations
     │   ├── Gmail_Client.js               # Gmail auto-sync (Mandiri transaction detection)
@@ -148,26 +195,54 @@ nexa-server/
     │   ├── Supabase_Memories.js          # Supabase pgvector memory store & episodic facts
     │   └── Web_Search.js                 # Real-time web search crawler
     │
-    ├── interfaces/                       # Communication Ingress & Egress Channels
-    │   ├── cron.js                       # Cron background jobs (Morning Briefing, Night Checkin)
+    ├── interfaces/                       # Ingress & Egress Channels (Modular Ingress Architecture v3.4.0)
+    │   ├── cron.js                       # Autonomous cron scheduler (Briefings, Night check-ins, Habits)
     │   ├── webhook.js                    # Inbound webhook router & Telegram dispatcher
-    │   ├── cli/
-    │   │   └── adapter.js                # Command Line Interface debug adapter
-    │   ├── gmail/
-    │   │   └── adapter.js                # Email webhook / polling adapter
-    │   ├── mobile_bridge/                # Android Smartphone Interface Gateway
-    │   │   ├── adapter.js                # Master Neural-Peripheral Adapter
-    │   │   └── MobileBridge_WS.js        # WebSocket server (/ws), auth & keepalive watchdog
-    │   ├── telegram/                     # Telegram Bot User Interface
-    │   │   ├── actions.js                # Telegram interactive keyboard actions
-    │   │   ├── adapter.js                # Inbound message receiver & formatting engine
-    │   │   └── callback_handler.js       # Inline keyboard button click router
-    │   └── whatsapp/                     # WhatsApp Baileys integration (backup channel)
-    │       ├── adapter.js
-    │       ├── auth_storage.js
-    │       └── formatter.js
+    │   │
+    │   ├── common/                       # Shared Cross-Channel Ingress Subsystem
+    │   │   ├── domain_dispatcher.js      # Unified intent dispatcher orchestrating domain handlers
+    │   │   ├── helpers.js                # Multi-format currency parser, HTML escaping & formatters
+    │   │   └── handlers/                 # Extracted Common Domain Intent Handlers
+    │   │       ├── calendar_handler.js   # Agenda/Calendar intent orchestration & state retention
+    │   │       ├── database_handler.js   # Dynamic database query, write & safe delete handlers
+    │   │       ├── email_handler.js      # Gmail search, send, trash & platform-safe HTML escaping
+    │   │       ├── finance_handler.js    # Financial tracking, splitting & account balances
+    │   │       ├── memory_handler.js     # Episodic memory, 2nd brain vault & semantic recall
+    │   │       ├── system_handler.js     # Core system diagnostics, presence, discipline & location
+    │   │       └── task_handler.js       # Google Tasks CRUD & status synchronization
+    │   │
+    │   ├── cli/                          # Command Line Interface (Debug & Terminal Channel)
+    │   │   ├── adapter.js                # CLI WebSocket/terminal communication adapter
+    │   │   ├── follow_up_helpers.js      # CLI interactive multi-turn prompt resolver
+    │   │   ├── intent_dispatcher.js      # CLI-specific intent routing & context binding
+    │   │   └── interceptors.js           # CLI interceptors (Database confirmation & multi-turn flows)
+    │   │
+    │   ├── gmail/                        # Email Webhook & Polling Channel
+    │   │   └── adapter.js                # Automated Gmail synchronization & transaction trigger
+    │   │
+    │   ├── mobile_bridge/                # Android Smartphone Hardware Gateway
+    │   │   ├── adapter.js                # Master Neural-Peripheral Adapter & event handler
+    │   │   └── MobileBridge_WS.js        # High-resilience WebSocket server (/ws), auth & ping watchdog
+    │   │
+    │   ├── telegram/                     # Telegram Bot User Interface Channel
+    │   │   ├── actions.js                # Interactive keyboard callback actions & safe HTML builders
+    │   │   ├── adapter.js                # Core Telegram ingress/egress adapter & formatting
+    │   │   ├── callback_handler.js       # Inline keyboard button click router
+    │   │   ├── command_handler.js        # Telegram slash commands handler (/start, /status, /help)
+    │   │   ├── email_helpers.js          # Telegram-specific email display & action keyboard helpers
+    │   │   ├── intent_dispatcher.js      # Telegram intent delegator to common domain dispatcher
+    │   │   ├── interceptors.js           # Contextual interceptors (Check-ins, confirmations, database)
+    │   │   ├── media_handler.js          # Inbound voice, photo, audio & document processor
+    │   │   └── vault_handler.js          # Obsidian / 2nd Brain vault ingestion handler
+    │   │
+    │   └── whatsapp/                     # WhatsApp Integration Gateway (Backup Channel)
+    │       ├── adapter.js                # Baileys WhatsApp client adapter
+    │       ├── auth_storage.js           # Multi-device session authentication storage
+    │       ├── formatter.js              # Markdown-to-WhatsApp text formatter
+    │       └── README.md                 # Setup & pairing documentation
     │
     └── utils/                            # Shared Utilities & Network Security
+        ├── directive_utils.js            # Directive parsing, counter increment & dynamic prompt injector
         ├── gemini_vector_cache.js        # In-memory vector embedding cache
         ├── logger.js                     # Structured colored asynchronous logger
         ├── security.js                   # Identity lock (Single Chat ID: 6798861902) & rate-limiting
@@ -255,7 +330,7 @@ nexa-mobile-bridge/
             │
             ├── dispatcher/               # Remote Command Execution Layer
             │   ├── DeviceCommandDispatcher.kt # Master router for incoming server commands (28 Actions)
-            │   └── handler/              # 18 Specialized Hardware & System Handlers
+            │   └── handler/              # 20 Specialized Hardware & System Handlers
             │       ├── AppLauncherHandler.kt   # App launcher by package name
             │       ├── AudioPlayerHandler.kt   # Ringtone, media playback & PCM audio stream player
             │       ├── BatteryHandler.kt       # Battery level & charging state monitor
@@ -266,6 +341,7 @@ nexa-mobile-bridge/
             │       ├── FlashlightHandler.kt    # Torch light toggle via CameraManager
             │       ├── GeofenceHandler.kt      # Dynamic geofence area registrar
             │       ├── IntentHandler.kt        # Browser URL, Maps & sharing intents
+            │       ├── LightSensorHandler.kt   # Ambient light sensor monitor (lux levels)
             │       ├── LocationHandler.kt      # GPS / Network location & Geocoder address lookup
             │       ├── NetworkHandler.kt       # Wi-Fi state & signal strength (RSSI dBm)
             │       ├── OverlayHandler.kt       # System Alert Window (Compose overlay dialog)
@@ -312,6 +388,7 @@ nexa-mobile-bridge/
 
 | Jalur Aliran Data | Protokol / Saluran | Komponen Asal | Komponen Tujuan | Deskripsi / Fungsi |
 |---|---|---|---|---|
+| **Modular Intent Ingress** | Inter-process / Pipeline | Adapter Kanal (`telegram/`, `cli/`) | Common Dispatcher (`common/`) | Normalisasi payload intent lintas-kanal ke 7 handler domain bersama dengan platform-aware escaping & state retention. |
 | **Hardware Commands** | WebSocket (`EXECUTE_COMMAND`) | Server (`MobileBridge_WS.js`) | Android (`DeviceCommandDispatcher.kt`) | Eksekusi 28 aksi fisik (kamera, screenshot, klik layar, volume, senter, dll.). |
 | **Command Results** | WebSocket (`COMMAND_RESULT`) | Android (`DeviceCommandDispatcher.kt`) | Server (`MobileBridge_WS.js`) | Pengembalian data eksekusi (Base64 foto, hierarki UI, status). |
 | **Situational Context** | WebSocket (`CONTEXT_UPDATE`) | Android (`ContextEngine.kt`) | Server (`adapter.js`) | Laporan sensor real-time (`ROOM_DARK_NIGHT`, `PHONE_PICKUP_MORNING`, dll.). |
