@@ -27,7 +27,11 @@ async function dispatchSingleIntent(routingData, context) {
     ...context,
     platform: 'telegram',
     sessionKey: context.chatId,
-    triggerSynthesis: triggerConversationalSynthesis
+    triggerSynthesis: triggerConversationalSynthesis,
+    emailDefaults: {
+      defaultQuery: '',
+      defaultFetch: 30
+    }
   };
 
   return await executeDomainIntent(routingData.intent, routingData, unifiedContext);

@@ -59,6 +59,8 @@ async function handleCalendarIntent(routingData, context = {}) {
 
   const calResult = await agendaManager.handleCalendarIntent(calData, textInput);
 
+  const action = calData.action || 'READ';
+
   if (calResult?.status === 'PENDING_END' || calResult?.status === 'NEED_INFO') {
     _setPendingCalendar(context, {
       summary: calData.summary,
@@ -71,21 +73,24 @@ async function handleCalendarIntent(routingData, context = {}) {
       askedAt: Date.now()
     });
   } else if (calResult?.status === 'SUCCESS') {
-    _setPendingCalendar(context, null);
-    _setPendingConflict(context, null);
-    if (typeof context.setPendingProactiveTasks === 'function' && Array.isArray(calResult.proactiveTasks) && calResult.proactiveTasks.length > 0) {
-      context.setPendingProactiveTasks({
-        summary: calData.summary,
-        start: calData.start,
-        tasks: calResult.proactiveTasks,
-        askedAt: Date.now()
-      });
+    // Only clear pending creation/conflict context on mutating operations (CREATE, UPDATE, DELETE)
+    // Never clear on READ/READ_TODAY so user can inspect agenda without losing pending state!
+    if (['CREATE', 'UPDATE', 'DELETE'].includes(action)) {
+      _setPendingCalendar(context, null);
+      _setPendingConflict(context, null);
+      if (typeof context.setPendingProactiveTasks === 'function' && Array.isArray(calResult.proactiveTasks) && calResult.proactiveTasks.length > 0) {
+        context.setPendingProactiveTasks({
+          summary: calData.summary,
+          start: calData.start,
+          tasks: calResult.proactiveTasks,
+          askedAt: Date.now()
+        });
+      }
     }
   }
 
   if (calResult?.message || calResult) {
     const replyMsg = calResult?.message || calResult;
-    const action = calData.action;
     let isPast = false;
     if (calData.start) {
       const reqDate = new Date(calData.start);
@@ -94,7 +99,10 @@ async function handleCalendarIntent(routingData, context = {}) {
       if (reqDate < todayJakartaStart) isPast = true;
     }
 
-    if (!isPast && ['CREATE', 'UPDATE', 'READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(action)) {
+    const isSuccessfulMutation = ['CREATE', 'UPDATE'].includes(action) && calResult?.status === 'SUCCESS';
+    const isReadAction = ['READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(action);
+
+    if (!isPast && (isSuccessfulMutation || isReadAction)) {
       if (typeof context.triggerSynthesis === 'function') {
         context.triggerSynthesis(textInput, replyMsg, action, context.sessionKey);
       }

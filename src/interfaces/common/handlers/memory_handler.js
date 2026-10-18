@@ -58,7 +58,24 @@ async function handleMemoryIntent(intent, routingData, context = {}) {
     // APPEND
     const content = ed.content || ed.fact || textInput;
     if (content) {
-      await supabaseMemories.saveIdeaToVault(content).catch(e => console.error('[COMMON-2ND_BRAIN] Supabase vault save error:', e));
+      let saved = true;
+      let saveError = null;
+      try {
+        const res = await supabaseMemories.saveIdeaToVault(content);
+        if (res && res.success === false) {
+          saved = false;
+          saveError = res.error || 'Gagal menyimpan ke database';
+        }
+      } catch (e) {
+        console.error('[COMMON-2ND_BRAIN] Supabase vault save error:', e);
+        saved = false;
+        saveError = e.message || String(e);
+      }
+
+      if (!saved) {
+        return `❌ Gagal menyimpan ide: ${saveError || 'Terjadi kesalahan sistem'}`;
+      }
+
       const docUrl = await googleWorkspace.appendToIdeaDoc(ed.title || 'Ideation N.E.X.A', content, 'IDEA').catch(e => { console.error('[COMMON-2ND_BRAIN] Google Doc error:', e); return null; });
       if (docUrl) {
         return `✅ Ide berhasil disimpan ke arsip dan Google Docs:\n${docUrl}`;

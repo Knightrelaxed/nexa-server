@@ -86,20 +86,63 @@ function classifySelfModelLayer(fact) {
 }
 
 /**
+ * Robust locale-aware currency parser supporting dot-thousands, comma-decimals, IDR, and standard notations
+ */
+function parseFlexibleNominal(rawStr) {
+  if (!rawStr) return 0;
+  let str = String(rawStr).trim();
+
+  const firstDot = str.indexOf('.');
+  const firstComma = str.indexOf(',');
+
+  if (firstDot !== -1 && firstComma !== -1) {
+    if (firstDot < firstComma) {
+      // Indonesian: 1.250.000,50
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      // English: 50,000.00
+      str = str.replace(/,/g, '');
+    }
+  } else if (firstDot !== -1) {
+    const parts = str.split('.');
+    if (parts.length > 2) {
+      str = str.replace(/\./g, '');
+    } else if (parts.length === 2) {
+      if (parts[1].length === 3) {
+        str = parts[0] + parts[1];
+      } else if (parts[1].length <= 2 && parseInt(parts[0], 10) < 1000) {
+        str = parts[0];
+      } else {
+        str = str.replace(/\./g, '');
+      }
+    }
+  } else if (firstComma !== -1) {
+    const parts = str.split(',');
+    if (parts.length > 2) {
+      str = str.replace(/,/g, '');
+    } else if (parts.length === 2) {
+      if (parts[1].length === 3) {
+        str = parts[0] + parts[1];
+      } else {
+        str = parts[0] + '.' + parts[1];
+      }
+    }
+  }
+
+  const num = parseFloat(str.replace(/[^0-9.]/g, ''));
+  return isNaN(num) ? 0 : num;
+}
+
+/**
  * Extracts nominal from an email object or text snippet
  */
 function extractNominalFromEmail(emailObj) {
-  const text = `${emailObj.subject || ''} ${emailObj.body || ''} ${emailObj.snippet || ''}`;
-  const match = text.match(/(?:nominal transaksi|jumlah transfer|nominal|rp)\s*(?:transaksi|transfer)?\s*rp?\s*([0-9][0-9\.\,]+)/i)
-    || text.match(/Rp\.?\s*([\d.,]+)/i);
+  const text = `${emailObj?.subject || ''} ${emailObj?.body || ''} ${emailObj?.snippet || ''}`;
+  const match = text.match(/(?:nominal(?:\s+transaksi)?|jumlah(?:\s+transfer)?|total|sebesar|rp|idr)\s*(?:transaksi|transfer)?\s*(?:rp|idr)?\.?\s*([0-9][0-9.,\s]*[0-9])/i)
+    || text.match(/(?:Rp|IDR)\.?\s*([0-9][0-9.,\s]*[0-9])/i);
   if (!match) return 0;
 
-  try {
-    const { _parseFlexibleCurrency } = require('../../domain/Finance_Engine');
-    return _parseFlexibleCurrency(match[1]);
-  } catch (_) {
-    return parseInt(match[1].replace(/[^0-9]/g, ''), 10) || 0;
-  }
+  return parseFlexibleNominal(match[1].replace(/\s+/g, ''));
 }
 
 /**
@@ -213,12 +256,56 @@ function filterEmailsByDayOfMonth(emails, day) {
   });
 }
 
+/**
+ * Formats a Date object to YYYY/MM/DD for Gmail search queries
+ */
+function toGmailDateLiteral(dateObj) {
+  return `${dateObj.getFullYear()}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${String(dateObj.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Gets current time in Asia/Jakarta timezone
+ */
+function getJakartaNow() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+}
+
+/**
+ * Builds Gmail temporal query suffix (e.g. after:YYYY/MM/DD before:YYYY/MM/DD)
+ */
+function getTemporalGmailQuerySuffix(temporalHint, dayHint) {
+  const nowJakarta = getJakartaNow();
+
+  if (temporalHint?.type === 'today') {
+    const start = new Date(nowJakarta); start.setHours(0, 0, 0, 0);
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    return ` after:${toGmailDateLiteral(start)} before:${toGmailDateLiteral(end)}`;
+  }
+  if (temporalHint?.type === 'yesterday') {
+    const end = new Date(nowJakarta); end.setHours(0, 0, 0, 0);
+    const start = new Date(end); start.setDate(start.getDate() - 1);
+    return ` after:${toGmailDateLiteral(start)} before:${toGmailDateLiteral(end)}`;
+  }
+  if (temporalHint?.type === 'last_week') {
+    const end = new Date(nowJakarta); end.setHours(23, 59, 59, 999);
+    const start = new Date(nowJakarta); start.setDate(start.getDate() - 7); start.setHours(0, 0, 0, 0);
+    return ` after:${toGmailDateLiteral(start)} before:${toGmailDateLiteral(end)}`;
+  }
+  if (dayHint) {
+    const start = new Date(nowJakarta.getFullYear(), nowJakarta.getMonth(), dayHint, 0, 0, 0, 0);
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    return ` after:${toGmailDateLiteral(start)} before:${toGmailDateLiteral(end)}`;
+  }
+  return '';
+}
+
 module.exports = {
   stripHtml,
   escapeHtml,
   formatMemoryReply,
   isFactAboutNexa,
   classifySelfModelLayer,
+  parseFlexibleNominal,
   extractNominalFromEmail,
   parseEmailDateSafe,
   extractFinanceTransactionsFromEmails,
@@ -227,9 +314,13 @@ module.exports = {
   parseDayOfMonthHint,
   filterEmailsByTemporalHint,
   filterEmailsByDayOfMonth,
+  toGmailDateLiteral,
+  getJakartaNow,
+  getTemporalGmailQuerySuffix,
   // Underscore aliases for backward compatibility
   _stripHtml: stripHtml,
   _isFactAboutNexa: isFactAboutNexa,
   _classifySelfModelLayer: classifySelfModelLayer,
   _extractFinanceTxFromEmails: extractFinanceTransactionsFromEmails
 };
+

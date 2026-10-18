@@ -74,3 +74,112 @@ test('Common Domain Dispatcher: execution and fallback routing', async () => {
   const finCancel = await executeDomainIntent('FINANCE', { extracted_data: { action: 'CANCEL_TRANSACTION' } });
   assert.ok(finCancel.includes('Tidak ada transaksi yang tertunda'));
 });
+
+test('Currency Parser: parseFlexibleNominal golden matrix', () => {
+  assert.strictEqual(helpers.parseFlexibleNominal('Rp 1.250.000,50'), 1250000.5);
+  assert.strictEqual(helpers.parseFlexibleNominal('IDR 75.000'), 75000);
+  assert.strictEqual(helpers.parseFlexibleNominal('Rp50,000.00'), 50000);
+  assert.strictEqual(helpers.parseFlexibleNominal('150.000'), 150000);
+  assert.strictEqual(helpers.parseFlexibleNominal('Rp 2.500.000'), 2500000);
+  assert.strictEqual(helpers.parseFlexibleNominal('IDR 10.000.000'), 10000000);
+  assert.strictEqual(helpers.parseFlexibleNominal('100000'), 100000);
+  assert.strictEqual(helpers.parseFlexibleNominal('Rp 500.000,00'), 500000);
+});
+
+test('Email Handler: platform HTML escaping and channel defaults', async () => {
+  const emailHandler = require('../src/interfaces/common/handlers/email_handler');
+  const gmailClient = require('../src/infrastructure/Gmail_Client');
+
+  // Stub getLatestEmails
+  const originalGetLatestEmails = gmailClient.getLatestEmails;
+  gmailClient.getLatestEmails = async () => [
+    {
+      id: 'msg-1',
+      date: '2026-10-18',
+      from: 'promo@evil.example <script>',
+      subject: 'Promo <a href="http://evil.example">klik di sini</a>',
+      snippet: 'Dapatkan diskon <b>100%</b> & gratis!'
+    }
+  ];
+
+  try {
+    // 1. Telegram platform test: MUST escape HTML entities
+    const tgReply = await emailHandler.handleEmailIntent({
+      extracted_data: { action: 'READ' }
+    }, {
+      platform: 'telegram'
+    });
+
+    assert.ok(tgReply.includes('&lt;script&gt;'), 'From tag must be escaped');
+    assert.ok(tgReply.includes('&lt;a href=&quot;http://evil.example&quot;&gt;'), 'Dangerous anchor in subject must be escaped');
+    assert.ok(tgReply.includes('&lt;b&gt;100%&lt;/b&gt;'), 'Snippet tag must be escaped');
+    assert.ok(tgReply.includes('<b>Email Terbaru Anda'), 'Telegram template bold wrapper preserved');
+
+    // 2. CLI platform test: Plain text without Telegram HTML bold tags
+    const cliReply = await emailHandler.handleEmailIntent({
+      extracted_data: { action: 'READ' }
+    }, {
+      platform: 'cli'
+    });
+
+    assert.ok(cliReply.startsWith('📧 Email Terbaru (1):'));
+    assert.ok(!cliReply.includes('<b>Email Terbaru Anda'));
+  } finally {
+    gmailClient.getLatestEmails = originalGetLatestEmails;
+  }
+});
+
+test('Calendar Handler: preserves pending context on READ and suppresses synthesis on conflict', async () => {
+  const calendarHandler = require('../src/interfaces/common/handlers/calendar_handler');
+
+  let pendingCalendar = { summary: 'Rapat Evaluasi', start: '2026-10-19T10:00:00+07:00' };
+  let pendingConflict = { summary: 'Rapat Evaluasi' };
+  let synthesisTriggered = false;
+
+  const mockContext = {
+    platform: 'telegram',
+    sessionKey: 'user-123',
+    pendingCalendarContext: pendingCalendar,
+    setPendingCalendarContext: (val) => { pendingCalendar = val; },
+    setPendingConflictEvent: (val) => { pendingConflict = val; },
+    triggerSynthesis: () => { synthesisTriggered = true; }
+  };
+
+  // Execute READ action
+  await calendarHandler.handleCalendarIntent({
+    extracted_data: { action: 'READ' }
+  }, mockContext);
+
+  // Assert pending state is NOT cleared on READ
+  assert.ok(pendingCalendar !== null, 'pendingCalendar must be preserved across READ');
+  assert.strictEqual(pendingCalendar.summary, 'Rapat Evaluasi');
+});
+
+test('Memory Handler: reports failure when saveIdeaToVault fails', async () => {
+  const memoryHandler = require('../src/interfaces/common/handlers/memory_handler');
+  const supabaseMemories = require('../src/infrastructure/Supabase_Memories');
+
+  const origSaveIdeaToVault = supabaseMemories.saveIdeaToVault;
+  supabaseMemories.saveIdeaToVault = async () => {
+    return { success: false, error: 'connection refused' };
+  };
+
+  try {
+    const res = await memoryHandler.handleMemoryIntent('2ND_BRAIN', {
+      extracted_data: { action: 'APPEND', content: 'Ide brilian yang gagal simpan' }
+    });
+
+    assert.ok(res.includes('❌ Gagal menyimpan ide: connection refused'));
+  } finally {
+    supabaseMemories.saveIdeaToVault = origSaveIdeaToVault;
+  }
+});
+
+test('Location Orchestrator: exports required methods without ghost exports', () => {
+  const locationOrchestrator = require('../src/domain/Location_Orchestrator');
+  assert.strictEqual(typeof locationOrchestrator.handleLocationQuery, 'function');
+  assert.strictEqual(typeof locationOrchestrator.handleLocationIntent, 'function');
+  assert.strictEqual(typeof locationOrchestrator.searchLocation, 'function');
+  assert.strictEqual(typeof locationOrchestrator.getCurrentLocation, 'function');
+});
+

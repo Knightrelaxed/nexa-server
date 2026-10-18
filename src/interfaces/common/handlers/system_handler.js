@@ -107,13 +107,14 @@ async function handleSystemIntent(intent, routingData, context = {}) {
   // ────────────────────────────────────────────────────────────
   if (intent === 'LOCATION') {
     const action = ed.action || 'GET';
+    const query = ed.query || [ed.origin, ed.destination].filter(Boolean).join(' ke ') || textInput;
     if (typeof locationOrchestrator.handleLocationIntent === 'function') {
-      return await locationOrchestrator.handleLocationIntent(ed);
+      return await locationOrchestrator.handleLocationIntent(ed, context);
     }
-    if (action === 'SEARCH' || ed.query) {
-      return await locationOrchestrator.searchLocation(ed.query || textInput);
+    if (action === 'SEARCH' || query) {
+      return await locationOrchestrator.searchLocation(query, context);
     }
-    return await locationOrchestrator.getCurrentLocation();
+    return await locationOrchestrator.getCurrentLocation(context);
   }
 
   return null;

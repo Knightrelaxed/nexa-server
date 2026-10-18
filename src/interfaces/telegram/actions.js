@@ -6,6 +6,7 @@
 const { sendTelegramMessage, sendTelegramPhoto, formatTelegramHtml } = require('../../utils/telegram_network');
 const env = require('../../config/env');
 const supabaseMemories = require('../../infrastructure/Supabase_Memories');
+const { escapeHtml } = require('../common/helpers');
 
 // ============================================================
 // Helper: Strip accidental wrapping quotes from AI responses
@@ -90,11 +91,11 @@ async function sendIdentityProposalToTelegram(proposal) {
     const messageText = [
       `💡 <b>PROPOSAL ${isUpdate ? 'REVISI' : 'BARU'} IDENTITAS N.E.X.A</b>`,
       `Observasi Minggu Ini (Confidence: <b>${confidencePct}%</b>):`,
-      `<i>"${proposal.reasoning}"</i>`,
+      `<i>"${escapeHtml(proposal.reasoning)}"</i>`,
       '',
-      `${emoji} <b>${proposal.layer}</b>: <code>${proposal.trait_key}</code>`,
-      isUpdate ? `└ Nilai lama: <s>${proposal.old_value}</s>` : '',
-      `└ Nilai baru: <b>${proposal.proposed_value}</b>`,
+      `${emoji} <b>${escapeHtml(proposal.layer)}</b>: <code>${escapeHtml(proposal.trait_key)}</code>`,
+      isUpdate ? `└ Nilai lama: <s>${escapeHtml(proposal.old_value)}</s>` : '',
+      `└ Nilai baru: <b>${escapeHtml(proposal.proposed_value)}</b>`,
       '',
       'Apakah Anda menyetujui pembaruan model pemahaman ini?'
     ].filter(Boolean).join('\n');

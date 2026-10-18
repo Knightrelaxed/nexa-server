@@ -228,20 +228,23 @@ PEDOMAN FORMAT:
     const { supabase } = supabaseMemories;
     if (supabase) {
       const nowWib = new Date(new Date().getTime() + 7 * 60 * 60 * 1000);
+      const habitContext = null;
       await supabase.from('nexa_behavior_log').insert([{
         event_type: 'MORNING_BRIEFING_SENT',
         event_data: {
           has_agenda: agendaLines.length > 0,
           agenda_count: agendaLines.length,
           has_task_warning: !!taskWarning,
-          habit_context: habitContext || null
+          habit_context: habitContext
         },
         day_of_week: nowWib.getUTCDay(),
         hour_of_day: nowWib.getUTCHours(),
         created_at: new Date().toISOString()
       }]);
     }
-  } catch (_) { /* Fire-and-forget: jangan crash briefing utama */ }
+  } catch (logErr) {
+    console.warn('[INTELLIGENCE] Warning saving MORNING_BRIEFING_SENT to behavior log:', logErr.message);
+  }
 
   return finalMessage.substring(0, 4000);
 }

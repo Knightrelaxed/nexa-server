@@ -42,7 +42,11 @@ async function dispatchCliIntent(intent, routingData, textInput, sessionId) {
     pendingEmail: cliPendingEmail,
     pendingDatabase: cliPendingDatabase,
     notifyClient: pushToCli,
-    triggerSynthesis: triggerConversationalSynthesis
+    triggerSynthesis: triggerConversationalSynthesis,
+    emailDefaults: {
+      defaultQuery: 'livin OR from:noreply.livin@bankmandiri.co.id',
+      defaultFetch: 20
+    }
   };
 
   return await executeDomainIntent(intent, routingData, context);

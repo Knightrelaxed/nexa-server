@@ -185,6 +185,14 @@ async function _resolveTargetTasks(input) {
 }
 
 /**
+ * Resolve a single target task object from input
+ */
+async function _resolveTargetTask(input) {
+  const tasks = await _resolveTargetTasks(input);
+  return tasks[0] || { title: (typeof input === 'string') ? input : (input?.title || input?.search_keyword || '') };
+}
+
+/**
  * Format a task for Telegram display
  */
 function formatTask(task, index, indent = 0) {
@@ -585,7 +593,7 @@ async function handleTaskIntent(extractedData, chatId = null) {
       if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin dipindahkan.' };
       if (!list_name) return { status: 'FAILED', message: '❌ Sebutkan nama list tujuan.' };
 
-      const resolved = _resolveTargetTask(keyword);
+      const resolved = await _resolveTargetTask(keyword);
       let matches = [];
       if (resolved.id) {
         matches = [{ id: resolved.id, title: resolved.title, listId: resolved.listId || '@default' }];
@@ -604,7 +612,7 @@ async function handleTaskIntent(extractedData, chatId = null) {
       const keyword = search_keyword || title;
       if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama atau nomor tugas yang ingin diubah.' };
 
-      const resolved = _resolveTargetTask(keyword);
+      const resolved = await _resolveTargetTask(keyword);
       let matches = [];
 
       if (resolved.id) {
@@ -633,7 +641,7 @@ async function handleTaskIntent(extractedData, chatId = null) {
     if (action === 'SET_PRIORITY') {
       const keyword = search_keyword || title;
       if (!keyword) return { status: 'FAILED', message: '❌ Sebutkan nama tugas yang ingin diprioritaskan, Tuan.' };
-      const resolved = _resolveTargetTask(keyword);
+      const resolved = await _resolveTargetTask(keyword);
       let matches = [];
       if (resolved.id) {
         matches = [{ id: resolved.id, title: resolved.title, listId: resolved.listId || '@default' }];

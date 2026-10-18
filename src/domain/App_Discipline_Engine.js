@@ -17,6 +17,16 @@ function getSupabase() {
   return _supabase;
 }
 
+// Fallback in-memory default limits if Supabase table is not yet migrated or unreachable
+const DEFAULT_LIMITS = new Map([
+  ['com.google.android.youtube',   { app_label: 'YouTube',     max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
+  ['com.instagram.android',        { app_label: 'Instagram',   max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
+  ['com.zhiliaoapp.musically',     { app_label: 'TikTok',      max_session: 30, max_daily: 120, warning_pct: 80, level: 3 }],
+  ['com.twitter.android',          { app_label: 'X (Twitter)', max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
+  ['com.facebook.katana',          { app_label: 'Facebook',    max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }],
+  ['com.netflix.mediaclient',      { app_label: 'Netflix',     max_session: 30, max_daily: 120, warning_pct: 80, level: 2 }]
+]);
+
 // Anti-spam cooldown cache: Map<`${pkg}_${type}`, lastTriggerTimestamp>
 const _alertCooldowns = new Map();
 const ALERT_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes cooldown per app alert
@@ -360,6 +370,7 @@ async function deleteAppLimit(packageName) {
     if (error) throw new Error(`Supabase delete error: ${error.message}`);
   }
 
+  DEFAULT_LIMITS.delete(cleanPkg);
   invalidateLimitsCache();
   return { success: true, package_name: cleanPkg };
 }

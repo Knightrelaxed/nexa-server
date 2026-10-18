@@ -293,6 +293,53 @@ async function _handlePlaceSearchRequest(query, context) {
     `🗺️ <a href="${fallbackGmapsUrl}"><b>Klik di sini untuk mencari langsung di Google Maps</b></a>`;
 }
 
+/**
+ * Resolves current live GPS address or informs user that GPS is offline
+ */
+async function getCurrentLocation(context = {}) {
+  const userCoords = await _resolveUserCoordinates(context);
+  if (!userCoords) {
+    return `📡 <b>GPS Tidak Tersedia</b>\n\n` +
+      `Maaf Tuan, N.E.X.A tidak berhasil membaca koordinat lokasi HP saat ini.\n\n` +
+      `<b>Cara mengatasinya:</b>\n` +
+      `• Pastikan GPS / Lokasi di HP <b>aktif</b>\n` +
+      `• Buka aplikasi Nexa Bridge di HP\n` +
+      `• Coba lagi setelah beberapa detik`;
+  }
+
+  const rev = await locationEngine.reverseGeocodeOsm(userCoords.lat, userCoords.lon);
+  const addr = rev?.displayName || `${userCoords.lat}, ${userCoords.lon}`;
+  const gmapsUrl = `https://www.google.com/maps?q=${userCoords.lat},${userCoords.lon}`;
+  return `📍 <b>Lokasi Tuan Saat Ini:</b>\n\n${addr}\n\n🧭 <a href="${gmapsUrl}"><b>Buka di Google Maps</b></a>`;
+}
+
+/**
+ * Searches location by place name or address query
+ */
+async function searchLocation(query, context = {}) {
+  return await handleLocationQuery(query, context);
+}
+
+/**
+ * Handles extracted location intent payload
+ */
+async function handleLocationIntent(extractedData = {}, context = {}) {
+  const query = extractedData.query || [extractedData.origin, extractedData.destination].filter(Boolean).join(' ke ') || '';
+  if (extractedData.action === 'GET' && !query) {
+    return await getCurrentLocation(context);
+  }
+  return await handleLocationQuery(query, {
+    origin: extractedData.origin,
+    destination: extractedData.destination,
+    profile: extractedData.profile,
+    ...context
+  });
+}
+
 module.exports = {
-  handleLocationQuery
+  handleLocationQuery,
+  handleLocationIntent,
+  searchLocation,
+  getCurrentLocation,
+  _resolveUserCoordinates
 };

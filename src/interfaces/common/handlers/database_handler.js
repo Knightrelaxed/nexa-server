@@ -31,7 +31,8 @@ async function handleDatabaseIntent(routingData, context = {}) {
   const dbAction = ed.action || 'LIST_TABLES';
   const tableName = ed.table_name;
   const pendingDb = _getPendingDatabase(context);
-  const isTelegram = context.platform === 'telegram';
+  const isTelegram = context.platform === 'telegram' || context.isTelegram;
+  const esc = isTelegram ? helpers.escapeHtml : (s) => String(s ?? '');
 
   if (!tableName && dbAction !== 'LIST_TABLES' && dbAction !== 'CANCEL_ACTION') {
     _setPendingDatabase(context, { tableName: '', lastAction: dbAction, askedAt: Date.now() });
@@ -41,15 +42,21 @@ async function handleDatabaseIntent(routingData, context = {}) {
   if (dbAction === 'LIST_TABLES') {
     const overview = await supabaseMemories.getDatabaseOverview();
     if (!overview.success) {
-      return `❌ Gagal membaca overview database: ${overview.error}`;
+      return isTelegram
+        ? `❌ Gagal membaca overview database: ${esc(overview.error)}`
+        : `❌ Gagal membaca overview database: ${overview.error}`;
     }
     const lines = overview.tables.map(t => {
       const info = overview.counts[t];
-      if (info?.error) return `- ${t}: error (${info.error})`;
-      return `- ${t}: ${info?.count || 0} baris`;
+      if (info?.error) {
+        return isTelegram ? `- <b>${esc(t)}</b>: error (${esc(info.error)})` : `- ${t}: error (${info.error})`;
+      }
+      return isTelegram ? `- <b>${esc(t)}</b>: ${info?.count || 0} baris` : `- ${t}: ${info?.count || 0} baris`;
     });
     _setPendingDatabase(context, { tableName: '', lastAction: dbAction, askedAt: Date.now() });
-    return `🗄️ Overview Supabase (tabel N.E.X.A):\n${lines.join('\n')}\n\nBalas dengan aksi jelas, misalnya:\n- "baca nexa_core_identity 5 data"\n- "tambah nexa_user_profile: aku suka teh"\n- "hapus nexa_2nd_brain id 12"`;
+    return isTelegram
+      ? `🗄️ <b>Overview Supabase (5 tabel N.E.X.A):</b>\n${lines.join('\n')}\n\nBalas dengan aksi jelas, misalnya:\n- "baca nexa_core_identity 5 data"\n- "tambah nexa_user_profile: aku suka teh"\n- "hapus nexa_2nd_brain id 12"`
+      : `🗄️ Overview Supabase (tabel N.E.X.A):\n${lines.join('\n')}\n\nBalas dengan aksi jelas, misalnya:\n- "baca nexa_core_identity 5 data"\n- "tambah nexa_user_profile: aku suka teh"\n- "hapus nexa_2nd_brain id 12"`;
   }
 
   if (dbAction === 'READ_TABLE') {
@@ -58,10 +65,14 @@ async function handleDatabaseIntent(routingData, context = {}) {
       searchKeyword: ed.search_keyword || ''
     });
     if (!result.success) {
-      return `❌ Gagal membaca tabel ${tableName}: ${result.error}`;
+      return isTelegram
+        ? `❌ Gagal membaca tabel <b>${esc(tableName)}</b>: ${esc(result.error)}`
+        : `❌ Gagal membaca tabel ${tableName}: ${result.error}`;
     }
     if (!result.rows?.length) {
-      return `📭 Tabel ${result.table} tidak memiliki data yang cocok.`;
+      return isTelegram
+        ? `📭 Tabel <b>${esc(result.table)}</b> tidak memiliki data yang cocok.`
+        : `📭 Tabel ${result.table} tidak memiliki data yang cocok.`;
     }
 
     if (tableName && (tableName.toLowerCase() === 'nexa_vault_items' || result.table === 'nexa_vault_items')) {
@@ -69,24 +80,37 @@ async function handleDatabaseIntent(routingData, context = {}) {
         const category = r.category || r.metadata_json?.kategori_gambar || 'Dokumen';
         const title = r.metadata_json?.judul || r.metadata_json?.title || r.metadata_json?.nama_dokumen || (r.file_name || '').replace(/_\d+\.[a-zA-Z0-9]+$/, '').replace(/_/g, ' ');
         const link = r.drive_web_view_link;
+        if (isTelegram) {
+          const linkStr = link ? `\n   🔗 <a href="${esc(link)}">Buka di Google Drive</a>` : '';
+          return `${idx + 1}. <b>[${esc(category)}]</b> ${esc(title)}\n   📁 <code>${esc(r.file_name)}</code>${linkStr}`;
+        }
         const linkStr = link ? `\n   🔗 Link: ${link}` : '';
         return `${idx + 1}. [${category}] ${title}\n   📁 ${r.file_name}${linkStr}`;
       }).join('\n\n');
       _setPendingDatabase(context, { tableName: result.table, lastAction: dbAction, askedAt: Date.now() });
-      return `🗄️ Daftar Dokumen Vault (${result.rows.length} dokumen tersimpan):\n\n${rowsPreview}`;
+      return isTelegram
+        ? `🗄️ <b>Daftar Dokumen Vault (${result.rows.length} dokumen tersimpan):</b>\n\n${rowsPreview}`
+        : `🗄️ Daftar Dokumen Vault (${result.rows.length} dokumen tersimpan):\n\n${rowsPreview}`;
     }
 
     const rowsPreview = result.rows.map(r => {
       const summary = Object.entries(r).slice(0, 4).map(([k, v]) => `${k}: ${String(v).substring(0, 80)}`).join(' | ');
-      return `• ${summary}`;
+      return isTelegram ? `• ${esc(summary)}` : `• ${summary}`;
     }).join('\n');
     _setPendingDatabase(context, { tableName: result.table, lastAction: dbAction, askedAt: Date.now() });
-    return `📚 Data ${result.table} (${result.rows.length} baris):\n${rowsPreview}`;
+    return isTelegram
+      ? `📚 <b>Data ${esc(result.table)} (${result.rows.length} baris):</b>\n${rowsPreview}`
+      : `📚 Data ${result.table} (${result.rows.length} baris):\n${rowsPreview}`;
   }
 
   if (dbAction === 'INSERT_ROW') {
     const result = await supabaseMemories.insertDatabaseRow(tableName, ed.row_data || {});
     _setPendingDatabase(context, { tableName: result.table || tableName, lastAction: dbAction, askedAt: Date.now() });
+    if (isTelegram) {
+      return result.success
+        ? `✅ Insert berhasil ke <b>${esc(result.table)}</b> (id: ${esc(result.row?.id || '-')})`
+        : `❌ Insert gagal ke <b>${esc(tableName)}</b>: ${esc(result.error)}`;
+    }
     return result.success ? `✅ Insert berhasil ke ${result.table} (id: ${result.row?.id || '-'})` : `❌ Insert gagal ke ${tableName}: ${result.error}`;
   }
 
@@ -96,6 +120,11 @@ async function handleDatabaseIntent(routingData, context = {}) {
       searchKeyword: ed.search_keyword
     });
     _setPendingDatabase(context, { tableName: result.table || tableName, lastAction: dbAction, askedAt: Date.now() });
+    if (isTelegram) {
+      return result.success
+        ? `✅ Update berhasil di <b>${esc(result.table)}</b>. Baris terubah: ${result.updatedRows.length}`
+        : `❌ Update gagal di <b>${esc(tableName)}</b>: ${esc(result.error)}`;
+    }
     return result.success ? `✅ Update berhasil di ${result.table}. Baris terubah: ${result.updatedRows.length}` : `❌ Update gagal di ${tableName}: ${result.error}`;
   }
 
@@ -105,11 +134,19 @@ async function handleDatabaseIntent(routingData, context = {}) {
       searchKeyword: ed.search_keyword
     });
     _setPendingDatabase(context, { tableName: result.table || tableName, lastAction: dbAction, askedAt: Date.now() });
+    if (isTelegram) {
+      return result.success
+        ? `🗑️ Delete berhasil di <b>${esc(result.table)}</b>. Baris terhapus: ${result.deletedRows.length}`
+        : `❌ Delete gagal di <b>${esc(tableName)}</b>: ${esc(result.error)}`;
+    }
     return result.success ? `🗑️ Delete berhasil di ${result.table}. Baris terhapus: ${result.deletedRows.length}` : `❌ Delete gagal di ${tableName}: ${result.error}`;
   }
 
   if (dbAction === 'DELETE_ALL_ROWS') {
     _setPendingDatabase(context, { tableName, lastAction: dbAction, awaitingConfirmation: true, askedAt: Date.now() });
+    if (isTelegram) {
+      return routingData.reply_message || `⚠️ <b>PERINGATAN!</b> Anda meminta untuk menghapus SELURUH isi dari tabel <b>${esc(tableName)}</b>.\n\nApakah Anda benar-benar yakin ingin memusnahkan semua datanya? Balas <b>"YA"</b> untuk mengeksekusi, atau <b>"BATAL"</b>.`;
+    }
     return routingData.reply_message || `⚠️ PERINGATAN! Anda meminta untuk menghapus SELURUH isi dari tabel ${tableName}.\n\nApakah Anda benar-benar yakin? Balas "YA" untuk mengeksekusi, atau "BATAL".`;
   }
 
@@ -130,6 +167,11 @@ async function handleDatabaseIntent(routingData, context = {}) {
     }
     const result = await supabaseMemories.deleteAllDatabaseRows(targetTable);
     _setPendingDatabase(context, null);
+    if (isTelegram) {
+      return result.success
+        ? `💥 Pemusnahan Massal Selesai.\nSeluruh data di tabel <b>${esc(result.table)}</b> telah dihapus. Baris terdampak: ${result.deletedRows.length}${driveDeletedMsg}`
+        : `❌ Gagal memusnahkan isi tabel <b>${esc(targetTable)}</b>: ${esc(result.error)}`;
+    }
     return result.success
       ? `💥 Pemusnahan Massal Selesai.\nSeluruh data di tabel ${result.table} telah dihapus. Baris terdampak: ${result.deletedRows.length}${driveDeletedMsg}`
       : `❌ Gagal memusnahkan isi tabel ${targetTable}: ${result.error}`;
