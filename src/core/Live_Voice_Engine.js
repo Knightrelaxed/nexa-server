@@ -13,6 +13,7 @@ const fs                 = require('fs');
 const path               = require('path');
 const os                 = require('os');
 const env                = require('../config/env');
+const { VERSION, SYSTEM_NAME } = require('../config/version');
 const { LIVE_TOOL_DECLARATIONS, executeLiveTool, noteUserTurn, cancelEndCallSafetyTimer } = require('./Live_Tool_Registry');
 const geminiVectorCache  = require('../utils/gemini_vector_cache');
 const supabaseMemories   = require('../infrastructure/Supabase_Memories');
@@ -326,7 +327,7 @@ class LiveVoiceSession {
     const now     = new Date();
     const dateStr = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
     const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-    const temporalContext = `\n\n[WAKTU NYATA SAAT INI]: ${dateStr}, pukul ${timeStr} WIB.`;
+    const temporalContext = `\n\n[WAKTU NYATA SAAT INI]: ${dateStr}, pukul ${timeStr} WIB.\n[STATUS SISTEM]: ${SYSTEM_NAME} (v${VERSION}).`;
 
     // ── Parallel Context Fetch ───────────────────────────────────────────
     let profileFactsBlock    = '';

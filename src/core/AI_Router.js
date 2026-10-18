@@ -1,6 +1,7 @@
 const { executeWithFallback } = require('./Fallback_Engine');
 const supabaseMemories = require('../infrastructure/Supabase_Memories');
 const { NEXA_PERSONALITY } = require('../config/personality');
+const { VERSION, SYSTEM_NAME } = require('../config/version');
 const geminiVectorCache = require('../utils/gemini_vector_cache');
 const presenceModel = require('../domain/Presence_Model');
 
@@ -1469,6 +1470,11 @@ ${_applyTokenBudgetGuard(factsContext + activeAccountsBlock + activeCategoriesBl
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
 ISO Date Hari Ini: ${currentJakartaISO}
+
+[STATUS & VERSI SISTEM N.E.X.A SAAT INI]
+Entitas: ${SYSTEM_NAME}
+Versi Aktif: v${VERSION}
+(Jika Tuan bertanya mengenai versimu saat ini, jawablah secara lugas bahwa kamu berada di versi v${VERSION}.)
 ${presenceContext}${miniCalStr ? `
 [KALENDER REFERENSI${hasCal ? ' (7 HARI KE DEPAN)' : ''}]
 ${miniCalStr}
