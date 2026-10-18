@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { sanitizeDirective } = require('../utils/directive_utils');
 const env = require('../config/env');
 
 // Initialize only if URL and KEY are provided to avoid crashing on empty .env
@@ -873,18 +874,7 @@ async function upsertIdentityTrait(trait) {
     return { success: false, error: 'Field layer, trait_key, dan trait_value wajib diisi.' };
   }
 
-  const payload = {
-    layer: String(trait.layer).toUpperCase(),
-    trait_key: String(trait.trait_key).toLowerCase().trim(),
-    trait_value: String(trait.trait_value).trim(),
-    confidence: parseFloat(trait.confidence) || 0.90,
-    directive: trait.directive ? String(trait.directive).slice(0, 160) : null,
-    scope: trait.scope || 'global',
-    sensitivity: trait.sensitivity || 'normal',
-    inferred_from_summary: trait.inferred_from_summary ? String(trait.inferred_from_summary) : null,
-    last_reinforced_at: trait.last_reinforced_at || new Date().toISOString(), // [PHASE 7 M1] Reset decay clock
-    updated_at: new Date().toISOString()
-  };
+  const payload = buildIdentityTraitPayload(trait); // [v3.3.2] only the fields that were actually provided
 
   const { data, error } = await supabase
     .from('nexa_identity_model')
@@ -1082,13 +1072,25 @@ async function approveIdentityProposal(proposalId) {
   }
 
   // 3. Commit ke nexa_identity_model menggunakan upsertIdentityTrait
+  // [v3.3.2] Carry the operational directive through approval. Before this, every approval upserted
+  // directive: null and silently erased any directive the trait had. WEAKNESSES are always private.
+  const approvedSensitivity = String(proposalData.layer).toUpperCase() === 'WEAKNESSES' ? 'private' : undefined;
+  const approvedDirective = sanitizeDirective(proposalData.directive, {
+    traitValue: proposalData.proposed_value,
+    sensitivity: approvedSensitivity || 'normal'
+  });
+  const valueChanged = traitOldValue !== null &&
+    String(traitOldValue).trim() !== String(proposalData.proposed_value).trim();
+
   const result = await upsertIdentityTrait({
     layer: proposalData.layer,
     trait_key: proposalData.trait_key,
     trait_value: proposalData.proposed_value,
     confidence: proposalData.confidence,
     inferred_from_summary: proposalData.reasoning,
-    last_reinforced_at: new Date().toISOString()  // [PHASE 7 M1] Reset decay clock saat approve
+    last_reinforced_at: new Date().toISOString(),  // [PHASE 7 M1] Reset decay clock saat approve
+    ...(approvedDirective ? { directive: approvedDirective } : (valueChanged ? { clearDirective: true } : {})),
+    ...(approvedSensitivity ? { sensitivity: approvedSensitivity } : {})
   });
 
   if (!result.success) {
@@ -1566,12 +1568,65 @@ async function recordMicroReviewRun(dateKey) {
   }
 }
 
+/**
+ * [v3.3.2] Build the identity-model upsert payload. directive / scope / sensitivity are written ONLY when
+ * the caller provides them, so reinforcing a trait can no longer erase its directive or reset its privacy flag
+ * (new rows get the column defaults: scope 'global', sensitivity 'normal').
+ */
+function buildIdentityTraitPayload(trait) {
+  const payload = {
+    layer: String(trait.layer).toUpperCase(),
+    trait_key: String(trait.trait_key).toLowerCase().trim(),
+    trait_value: String(trait.trait_value).trim(),
+    confidence: parseFloat(trait.confidence) || 0.90,
+    inferred_from_summary: trait.inferred_from_summary ? String(trait.inferred_from_summary) : null,
+    last_reinforced_at: trait.last_reinforced_at || new Date().toISOString(), // [PHASE 7 M1] Reset decay clock
+    updated_at: new Date().toISOString()
+  };
+  if (trait.directive !== undefined) payload.directive = trait.directive ? String(trait.directive).slice(0, 160) : null;
+  if (trait.clearDirective) payload.directive = null;
+  if (trait.scope !== undefined) payload.scope = trait.scope || 'global';
+  if (trait.sensitivity !== undefined) payload.sensitivity = trait.sensitivity || 'normal';
+  return payload;
+}
+
+/**
+ * [v3.3.2] Atomically bump a playbook version's counters. Uses the nexa_bump_playbook_counters RPC and falls
+ * back to a read-modify-write when the migration has not been applied yet. Never throws.
+ */
+async function bumpPlaybookCounters({ intent, version, use = 0, correction = 0 } = {}) {
+  if (!supabase || !intent || !(use || correction)) return false;
+  try {
+    const intentUpper = String(intent).toUpperCase().trim();
+    const v = Number(version) || 1;
+    const { error } = await supabase.rpc('nexa_bump_playbook_counters', {
+      p_intent: intentUpper, p_version: v, p_use: use, p_correction: correction
+    });
+    if (!error) return true;
+    const { data } = await supabase.from('nexa_playbooks')
+      .select('id, use_count, correction_count').eq('intent', intentUpper).eq('version', v).limit(1);
+    const row = data && data[0];
+    if (!row) return false;
+    const patch = {
+      use_count: (row.use_count || 0) + use,
+      correction_count: (row.correction_count || 0) + correction
+    };
+    if (use) patch.last_used_at = new Date().toISOString();
+    const { error: upErr } = await supabase.from('nexa_playbooks').update(patch).eq('id', row.id);
+    return !upErr;
+  } catch (_) {
+    return false;
+  }
+}
+
 module.exports = {
   supabase,
   // ── [PHASE 13 / v3.3] Closed Learning Loop & Playbooks ─────────────
   recordLearningEvent,
   getUnprocessedLearningEvents,
   markLearningEventsProcessed,
+  buildIdentityTraitPayload,
+  bumpPlaybookCounters,
   incrementLearningEventAttempts,
   countMicroReviewRunsToday,
   recordMicroReviewRun,

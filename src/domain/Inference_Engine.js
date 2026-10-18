@@ -37,6 +37,23 @@
 const { createClient } = require('@supabase/supabase-js');
 const env = require('../config/env');
 const { executeWithFallback } = require('../core/Fallback_Engine');
+const { sanitizeDirective, defaultSensitivityForLayer, DIRECTIVE_PROMPT_RULES } = require('../utils/directive_utils');
+
+// [v3.3.2] Does nexa_identity_proposals have the 'directive' column yet? Probed once, re-probed after 10 min
+// if missing, so deploying the code before the migration can never break the weekly proposals.
+let _proposalsDirectiveSupport = { ok: null, checkedAt: 0 };
+async function _proposalsSupportDirective(sb) {
+  const now = Date.now();
+  if (_proposalsDirectiveSupport.ok === true) return true;
+  if (_proposalsDirectiveSupport.ok === false && now - _proposalsDirectiveSupport.checkedAt < 10 * 60 * 1000) return false;
+  try {
+    const { error } = await sb.from('nexa_identity_proposals').select('directive').limit(1);
+    _proposalsDirectiveSupport = { ok: !error, checkedAt: now };
+  } catch (_) {
+    _proposalsDirectiveSupport = { ok: false, checkedAt: now };
+  }
+  return _proposalsDirectiveSupport.ok;
+}
 
 // ── Lazy Supabase client (shared pattern) ─────────────────────
 let _supabase = null;
@@ -412,6 +429,9 @@ ATURAN SANGAT KETAT:
 4. confidence harus jujur: 0.60–0.85 jika pola hanya terlihat 3-4x, >0.85 jika konsisten hampir setiap hari dalam 7 hari.
 5. reasoning harus spesifik menyebut BUKTI dari data (jam, frekuensi, contoh konkret).
 6. Jika data minggu ini tidak cukup untuk menyimpulkan apapun yang baru → kembalikan array kosong [].
+7. Untuk SETIAP hipotesis sertakan field "directive" sesuai ATURAN DIRECTIVE berikut.
+
+${DIRECTIVE_PROMPT_RULES}
 
 FORMAT OUTPUT (JSON MURNI, tanpa markdown, tanpa penjelasan):
 [
@@ -422,7 +442,8 @@ FORMAT OUTPUT (JSON MURNI, tanpa markdown, tanpa penjelasan):
     "old_value": null,
     "confidence": 0.88,
     "reasoning": "Dari 7 hari observasi, mayoritas pesan dikirim antara pukul 21:00-01:00 WIB. Check-in pagi menunjukkan energi rendah (rata-rata 2.1/5). Transaksi makan malam konsisten >22:00 WIB.",
-    "is_contradiction": false
+    "is_contradiction": false,
+    "directive": "Jadwalkan pekerjaan berat sebelum pukul 23:00; setelah itu tawarkan hanya langkah ringan."
   }
 ]`;
 
@@ -642,6 +663,13 @@ async function _persistProposal(hypothesis, stagedProposals, currentIdentityFull
   const traitKey = String(hypothesis.trait_key).toLowerCase().trim();
   const newConfidence = parseFloat(hypothesis.confidence) || 0;
 
+  // [v3.3.2] Operational directive: sanitized once, then carried through every branch and into approval.
+  const directive = sanitizeDirective(hypothesis.directive, {
+    traitValue: hypothesis.proposed_value,
+    sensitivity: defaultSensitivityForLayer(layer)
+  });
+  const proposalDirective = directive && await _proposalsSupportDirective(sb) ? directive : null;
+
   // ── [PHASE 7 — M1] Klasifikasikan tier persetujuan ────────────
   const { tier, existingTrait, confidenceShift } = _classifyApprovalTier(hypothesis, currentIdentityFull);
   console.log(`[INFERENCE] [${layer}] ${traitKey} → Tier ${tier} | shift=${(confidenceShift * 100).toFixed(1)}%`);
@@ -660,6 +688,7 @@ async function _persistProposal(hypothesis, stagedProposals, currentIdentityFull
         confidence:            parseFloat(newConfidence.toFixed(2)),
         inferred_from_summary: String(hypothesis.reasoning).trim(),
         last_reinforced_at:    new Date().toISOString(),
+        ...(directive ? { directive } : {}), // [v3.3.2] never overwrite with null
         decay_lambda:          correctLambda, // [BUG FIX #5] Set lambda yang benar per layer
         updated_at:            new Date().toISOString()
       })
@@ -701,7 +730,8 @@ async function _persistProposal(hypothesis, stagedProposals, currentIdentityFull
         proposed_value:     hypothesis.proposed_value,
         status:             newStatus,
         approval_tier:      mergedTier,
-        soft_approve_after: softApproveAfter
+        soft_approve_after: softApproveAfter,
+        ...(proposalDirective ? { directive: proposalDirective } : {})
       })
       .eq('id', existingStaged.id)
       .select()
@@ -732,6 +762,7 @@ async function _persistProposal(hypothesis, stagedProposals, currentIdentityFull
     status,
     approval_tier:      tier,
     soft_approve_after: softApproveAfter,
+    ...(proposalDirective ? { directive: proposalDirective } : {}),
     created_at:         new Date().toISOString()
   };
 

@@ -287,6 +287,7 @@ async function evaluateTurn(params = {}) {
 
   // 3. Simpan ke database via Supabase_Memories dengan Turn Attribution
   const recorded = [];
+  const bumpedPlaybooks = new Set(); // [v3.3.2] one correction count per utterance and playbook version
   for (const ev of allEvents) {
     // [TURN ATTRIBUTION] Koreksi pengguna selalu merujuk pada respons turn sebelumnya (N-1)!
     const isCorrection = ev.event_type === 'CORRECTION';
@@ -316,7 +317,21 @@ async function evaluateTurn(params = {}) {
 
     try {
       const res = await _store.recordLearningEvent(eventPayload);
-      if (res && res.success) recorded.push(res.data);
+      if (res && res.success) {
+        recorded.push(res.data);
+        // [v3.3.2] The only direct evidence that a playbook helps: corrections per use, per version.
+        if (isCorrection && targetPlaybook && targetPlaybook.intent && typeof _store.bumpPlaybookCounters === 'function') {
+          const key = `${targetPlaybook.intent}@${targetPlaybook.version || 1}`;
+          if (!bumpedPlaybooks.has(key)) {
+            bumpedPlaybooks.add(key);
+            try {
+              Promise.resolve(_store.bumpPlaybookCounters({
+                intent: targetPlaybook.intent, version: targetPlaybook.version || 1, correction: 1
+              })).catch(() => {});
+            } catch (_) { /* ignore */ }
+          }
+        }
+      }
     } catch (err) {
       console.warn('[SIGNAL_DETECTOR] Failed to write event:', err.message);
     }

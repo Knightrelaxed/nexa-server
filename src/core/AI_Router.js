@@ -1336,6 +1336,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
       _playbookBlock = await playbookEngine.formatPlaybookContextBlock(_topicContext);
       if (_playbookBlock) {
         console.log(`[ROUTER] Playbook injected: intent=${_activePlaybook.intent} (v${_activePlaybook.version})`);
+        playbookEngine.recordPlaybookUse(_activePlaybook); // [v3.3.2] fire-and-forget usage counter
       }
     }
   } catch (_pbErr) {

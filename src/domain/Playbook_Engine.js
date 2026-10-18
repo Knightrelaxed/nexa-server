@@ -321,7 +321,9 @@ async function formatPlaybookDetail(intent) {
       `• <code>NORMAL_CHAT</code>\n\n` +
       `💡 <i>Ketik <code>/playbook</code> untuk melihat ringkasan semua playbook.</i>`;
   }
-  const pb = await getPlaybookForIntent(targetIntent);
+  // [v3.3.2] Read fresh counters (the cached copy can be minutes old); fall back to the cache.
+  const fresh = typeof _store.getActivePlaybook === 'function' ? await _store.getActivePlaybook(targetIntent) : null;
+  const pb = fresh || await getPlaybookForIntent(targetIntent);
   if (!pb) {
     return `❌ Playbook untuk intent <b>${escapeHtml(targetIntent)}</b> tidak ditemukan.`;
   }
@@ -332,9 +334,26 @@ async function formatPlaybookDetail(intent) {
     `<b>Aturan Terstruktur:</b>\n<code>${escapeHtml(rulesFormatted)}</code>\n\n` +
     `• Dipakai: <b>${pb.use_count || 0} kali</b>\n` +
     `• Koreksi diterima: <b>${pb.correction_count || 0} kali</b>\n` +
+    `• Tingkat koreksi: <b>${formatCorrectionRate(pb)}</b>\n` +
     `• Status: <b>${escapeHtml(pb.status)}</b>${pb.pinned ? ' (PINNED)' : ''}\n` +
     `• Terakhir diupdate: <b>${new Date(pb.updated_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</b>\n\n` +
     `💡 <i>Ketik <code>/playbook undo ${escapeHtml(pb.intent)}</code> jika ingin kembali ke versi sebelumnya.</i>`;
+}
+
+/** [v3.3.2] corrections per use, e.g. "15% (3 dari 20 pemakaian)"; "-" until the playbook has been used. */
+function formatCorrectionRate(pb) {
+  const use = Number(pb && pb.use_count) || 0;
+  const corr = Number(pb && pb.correction_count) || 0;
+  if (use <= 0) return '-';
+  return `${Math.round((corr / use) * 1000) / 10}% (${corr} dari ${use} pemakaian)`;
+}
+
+/** [v3.3.2] Count one injection of this playbook version. Fire-and-forget: never blocks or throws. */
+function recordPlaybookUse(pb) {
+  if (!pb || !pb.intent || typeof _store.bumpPlaybookCounters !== 'function') return;
+  try {
+    Promise.resolve(_store.bumpPlaybookCounters({ intent: pb.intent, version: pb.version || 1, use: 1 })).catch(() => {});
+  } catch (_) { /* ignore */ }
 }
 
 module.exports = {
@@ -346,6 +365,8 @@ module.exports = {
   seedDefaultPlaybooks,
   undoPlaybook,
   setStore,
+  recordPlaybookUse,
+  formatCorrectionRate,
   formatPlaybooksSummary,
   formatPlaybookDetail,
   DEFAULT_PLAYBOOKS
