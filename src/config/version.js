@@ -7,27 +7,28 @@
  * Single Source of Truth (SSOT) untuk versi sistem N.E.X.A.
  * Versi resmi didefinisikan HANYA di `package.json`.
  * Seluruh modul backend, health check, logger, dan network header
- * mengimpor konstanta dari file ini.
+ * mengimpor konstanta dari file ini secara 100% dinamis.
  * ============================================================
  */
 
 const path = require('path');
 const pkg = require(path.resolve(__dirname, '../../package.json'));
 
-const VERSION = String(pkg.version || '3.4.0').trim();
-const SEMVER_PARTS = VERSION.split('.');
-const MAJOR = SEMVER_PARTS[0] || '3';
-const MINOR = SEMVER_PARTS[1] || '4';
-const PATCH = SEMVER_PARTS[2] || '0';
+if (!pkg || !pkg.version) {
+  throw new Error('[VERSION] File package.json tidak memiliki field "version"!');
+}
+
+const VERSION = String(pkg.version).trim();
+const [MAJOR = '0', MINOR = '0', PATCH = '0'] = VERSION.split('.');
 const MAJOR_MINOR = `${MAJOR}.${MINOR}`;
 
 module.exports = {
-  VERSION,                                        // Full Semantic Version: e.g. "3.3.3"
-  MAJOR,                                          // "3"
-  MINOR,                                          // "3"
-  PATCH,                                          // "3"
-  MAJOR_MINOR,                                    // "3.3" (Series / Generasi Fase)
-  SYSTEM_TAG: `[N.E.X.A ${MAJOR_MINOR}]`,         // e.g. "[N.E.X.A 3.3]"
-  SYSTEM_NAME: `N.E.X.A Cloud Core v${VERSION}`,  // e.g. "N.E.X.A Cloud Core v3.3.3"
-  USER_AGENT: `NexaAssistant/${MAJOR_MINOR}`      // e.g. "NexaAssistant/3.3"
+  VERSION,                                        // Full Semantic Version (e.g. "3.4.0")
+  MAJOR,                                          // Angka Major (e.g. "3")
+  MINOR,                                          // Angka Minor (e.g. "4")
+  PATCH,                                          // Angka Patch (e.g. "0")
+  MAJOR_MINOR,                                    // Generasi Fase / Series (e.g. "3.4")
+  SYSTEM_TAG: `[N.E.X.A ${MAJOR_MINOR}]`,         // Tag Log Sistem (e.g. "[N.E.X.A 3.4]")
+  SYSTEM_NAME: `N.E.X.A Cloud Core v${VERSION}`,  // Nama Lengkap Sistem (e.g. "N.E.X.A Cloud Core v3.4.0")
+  USER_AGENT: `NexaAssistant/${MAJOR_MINOR}`      // HTTP User-Agent Header (e.g. "NexaAssistant/3.4")
 };
