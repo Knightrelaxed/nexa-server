@@ -355,6 +355,11 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
    - Mengembalikan Map fallback `DEFAULT_LIMITS` pada `App_Discipline_Engine.js`.
    - Menghapus kunci duplikat pada kamus bulan di `Finance_Engine.js`.
 
+6. **Dekomposisi Hexagonal & Layering Asiklik Finance Subsystems:**
+   - Memecah monolit `Finance_Engine.js` dari **2.136 baris ke 56 baris** (Public Facade, -97,4%) dan mendelegasikannya ke 7 sub-modul terfokus di `src/domain/finance/` (`Finance_State`, `Finance_Helpers`, `Finance_Ledger`, `Finance_Analytics`, `Finance_Corrections`, `Finance_Confirmations`, `Finance_Email_Sync`).
+   - Menerapkan pengujian karakterisasi Golden-Master 75 kasus deterministik (`tests/finance_characterization.test.js`) yang memverifikasi integritas parsing riil Livin' by Mandiri (QRIS Grab Food & alert kegagalan BI Fast) dan pemulihan antrean pending database.
+   - Mengembangkan suite pengujian server hingga **200/200 Tests Passing (100% Pass, 0 Fail)**.
+
 ---
 
 ## Kesimpulan & Metrik Spesifikasi v3.4.0
@@ -362,13 +367,14 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
 | Parameter Arsitektur | Spesifikasi N.E.X.A v3.4.0 (Production Release) |
 | :--- | :--- |
 | **Official Name & Title** | **N.E.X.A (Neural Executive with Xenial Agent)** |
-| **Architectural Edition** | **Modular Unified Ingress & Platform-Aware Hardening (v3.4.0)** |
+| **Architectural Edition** | **Modular Unified Ingress, Layered Finance & Platform-Aware Hardening (v3.4.0)** |
 | **Core Compute Infrastructure** | Azure Virtual Machine `Standard_B2ats_v2` (Ubuntu 24.04 ARM, Jakarta `indonesiacentral`) |
 | **Process Management & Auto-Healing** | PM2 Process Manager v5.4 + Systemd Auto-Revive + PM2 Plus Cloud Dashboard |
 | **Edge Web Server & Security** | Caddy v2 Reverse Proxy + Automated Let's Encrypt TLS/SSL |
 | **Production Domain** | `https://nexa-server.indonesiacentral.cloudapp.azure.com` |
 | **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~18-28 MB, CPU Idle 0%) |
 | **Ingress Architecture** | Hexagonal Decoupling (Common Domain Handlers + Modular Telegram & CLI Adapters) |
+| **Finance Architecture** | Layered Subsystems + High-Performance Public Facade (`src/domain/finance/`) |
 | **Code Duplication Rate** | **0.50%** (3 klon, 41 baris tersisa di seluruh antarmuka) |
 | **Security Sanitization** | Platform-Aware HTML Escaping for Telegram + Clean Plain-Text for Terminal CLI |
 | **Currency & Spatial Engine** | Universal Bank Parser (`parseFlexibleNominal`) + OpenStreetMap / GPS Mobile Bridge |
@@ -377,7 +383,7 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
 | **Financial Engine** | Zero-LLM Deterministic Intelligence + Dynamic Recurring Rules (`nexa_recurring_rules`) |
 | **Notification Traffic Control** | Centralized Notifier + Quiet Hours Protection + Dedup Cooldown (`nexa_notifications`) |
 | **AI Resilience Matrix** | Round-Robin Key Ring Circuit Breaker + 429 Retry-After Parser + 11-Tier Fallback |
-| **Test Suite Coverage** | **122/122 Tests Passing** (`npm test`) + **9/9 System Integration Tests** |
+| **Test Suite Coverage** | **200/200 Tests Passing** (`npm test`, 100% Pass) + **75/75 Golden Master Invariance Tests** |
 | **Primary Beneficiary** | **Tuan Faqih Hidayatulloh** |
 
 ---

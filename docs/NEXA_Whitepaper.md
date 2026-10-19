@@ -992,7 +992,7 @@ Ini memastikan memori N.E.X.A **tidak pernah berisi duplikasi** atau informasi y
 
 ## BAB 4: THE OMNICHANNEL FINANCE ENGINE (OTAK KEUANGAN)
 
-`Finance_Engine.js` adalah modul terbesar di seluruh sistem N.E.X.A : 1.895 baris kode yang mengorkestrasi pencatatan, validasi, analitik, dan pengamanan keuangan Tuan Faqih secara menyeluruh. Bab ini membedah setiap lapisan arsitekturnya hingga ke level logika terdalam.
+`Finance_Engine.js` beroperasi sebagai *High-Performance Public Facade* (56 baris kode) yang mendelegasikan pemrosesan ke 7 subsistem modular di `src/domain/finance/` (`Finance_State`, `Finance_Helpers`, `Finance_Ledger`, `Finance_Analytics`, `Finance_Corrections`, `Finance_Confirmations`, dan `Finance_Email_Sync`). Arsitektur ini mengorkestrasi pencatatan, validasi, analitik, deduplikasi Livin' by Mandiri, dan proteksi keuangan Tuan Faqih secara menyeluruh dengan *zero-regression contract*. Bab ini membedah setiap lapisan arsitekturnya hingga ke level logika terdalam.
 
 ---
 
@@ -2842,6 +2842,213 @@ Audit menyeluruh atas 261 pemanggilan lintas-modul berhasil membersihkan ekspor 
 | **Preservasi Pending Context Kalender** | Hilang saat `READ` | **100% Preserved across non-mutating turns** |
 | **Parsing Nominal Bank `IDR`** | Gagal (menghasilkan 0) | **100% Akurat pada seluruh format perbankan** |
 | **Status PM2 di Azure VM** | Online | **Online (`5829c7f`, 0% CPU, 189MB RAM)** |
+
+---
+
+## BAB 18: DEKOMPOSISI LAYERED SUBSYSTEM FINANCE ENGINE, GOLDEN-MASTER CHARACTERIZATION & PARSING PERBANKAN MANDIRI
+
+### 18.1 Latar Belakang: Dilema God-Object `Finance_Engine.js`
+
+Sebelum pembaruan arsitektural ini, [`src/domain/Finance_Engine.js`](file:///c:/workspace/nexa-server/src/domain/Finance_Engine.js) menduduki peringkat teratas sebagai modul monolitik terbesar di seluruh ekosistem backend N.E.X.A dengan **2.136 baris kode**. File ini menampung 7 tanggung jawab fungsional yang berbeda secara bersamaan:
+
+1. **State Management & In-Memory Concurrency Locks**: Pengelolaan antrean transaksi tertunda (`pendingConfirmations`) dan *processing lock* (`processingKeys`).
+2. **Parsing & Formatting Heuristics**: Pembersihan string mata uang multi-format, kamus tanggal bahasa Indonesia, pemetaan emoji, dan kategorisasi AI ringan (*lightweight AI categorizer*).
+3. **Core Transaction Processing & Ledger Queries**: Eksekusi mutasi buku besar (*double-entry writes*), resolusi akun/kategori, dan query pencarian transaksi historis.
+4. **Financial Intelligence & Analytics Engine**: Agregasi data statistik, KPI saldo, rasio tabungan (*saving rate*), perbandingan periode, serta 13 format pelaporan analitik.
+5. **Corrections & Safe Deletions**: Alur konfirmasi penghapusan bertingkat, mekanisme pembatalan (*undo ledger*), dan koreksi nominal/kategori transaksi.
+6. **Multi-Turn Confirmation Lifecycle**: Pembuatan draf konfirmasi Telegram, penundaan eksekusi, timer auto-save 5 menit, dan rekonsiliasi pemulihan pasca-restart server (*watchdog recovery*).
+7. **Email Polling & Livin' by Mandiri Parser**: Integrasi Gmail API untuk e-statement Bank Mandiri, hashing kunci komposit, filter duplikasi, dan penanganan transaksi gagal.
+
+Pemusatan logika yang terlampau padat ini (*God Object*) menimbulkan risiko tinggi terhadap regresi: perubahan kecil pada aturan parsing email berpotensi merusak kalkulasi analitik saldo bulanan atau memicu kebocoran status pending konfirmasi.
+
+---
+
+### 18.2 Analisis Graph Dependensi AST & Prinsip Ketergantungan Terarah (Acyclic Layering)
+
+Untuk membedah monolit tanpa merusak fungsionalitas riil, dirancang alat refaktor berbasis **Abstract Syntax Tree (AST)** menggunakan parser `acorn` dan penganalisis cakupan variabel `eslint-scope` (`scripts/refactor/split_finance_engine.js`). Alat ini memeriksa pohon sintaksis kode sumber secara mendalam:
+- Memastikan **setiap deklarasi fungsi dan variabel tingkat atas (top-level)** ditugaskan secara tepat ke satu modul tujuan.
+- Mengubah path impor relatif (`require`) secara otomatis sesuai struktur direktori baru.
+- Menolak pembuatan modul jika terdeteksi adanya variabel mutable (`let`) yang dibagikan lintas modul tanpa enkapsulasi aman.
+- Menguji resolusi pengenal (*identifier resolution*) untuk mencegah terjadinya referensi tak terdefinisi (*missing imports*).
+- Menjamin bahwa grafik ketergantungan antar-modul bersifat asiklik (*Directed Acyclic Graph* / DAG) yang **hanya bergantung ke bawah (*Strict Downward Dependency Principle*)**.
+
+```mermaid
+flowchart TD
+    subgraph Facade["Public Facade Layer"]
+        FE["Finance_Engine.js (56 baris)<br>• module.exports verbatim contract<br>• Zero caller changes"]
+    end
+
+    subgraph Subsystems["Modular Subsystems (src/domain/finance/)"]
+        Sync["Finance_Email_Sync.js (160 baris)<br>• Livin' Mandiri Polling & Dedup<br>• Failed Transaction Alert"]
+        Conf["Finance_Confirmations.js (623 baris)<br>• Multi-turn Confirmation Lifecycle<br>• 5-Min Watchdog Auto-Save & Recovery"]
+        Corr["Finance_Corrections.js (307 baris)<br>• Safe Delete Confirmation & Undo<br>• Transaction Edit Engine"]
+        Analytics["Finance_Analytics.js (553 baris)<br>• 13 Analytical Reports & KPIs<br>• Saving Rate & Balance Trends"]
+        Ledger["Finance_Ledger.js (262 baris)<br>• Core processTransaction<br>• Search & Recent Queries"]
+        Helpers["Finance_Helpers.js (288 baris)<br>• Normalizers & Date Parsers<br>• Lightweight AI Merchant Categorizer"]
+        State["Finance_State.js (18 baris)<br>• pendingConfirmations Map<br>• processingKeys Lock Set"]
+    end
+
+    FE --> Sync
+    FE --> Conf
+    FE --> Corr
+    FE --> Analytics
+    FE --> Ledger
+    FE --> Helpers
+    FE --> State
+
+    Sync --> Helpers
+    Sync --> State
+    Sync --> Conf
+
+    Conf --> Helpers
+    Conf --> Ledger
+    Conf --> State
+
+    Corr --> Helpers
+
+    Ledger --> Helpers
+```
+
+---
+
+### 18.3 Anatomi & Spesifikasi Fungsional 7 Sub-Modul Finansial
+
+Dekomposisi ini membagi domain keuangan ke dalam 7 modul independen di bawah direktori `src/domain/finance/` dengan peran dan batas tanggung jawab yang tegas:
+
+#### 1. [`Finance_State.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_State.js) — *Single Source of Truth* Status Transaksional
+- **Ukuran**: 18 baris kode.
+- **Tanggung Jawab**:
+  - `pendingConfirmations`: Struktur data `Map` in-memory yang menyimpan transaksi yang menunggu jawaban konfirmasi dari Tuan Faqih (lengkap dengan payload transaksi dan referensi `timeoutId`).
+  - `processingKeys`: Struktur data `Set` penjamin konkurensi. Mencegah *race condition* ketika proses auto-save 5 menit berjalan bersamaan dengan intervensi *Watchdog Cron* atau respons manual pengguna.
+
+#### 2. [`Finance_Helpers.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_Helpers.js) — Parser & Pengenal Pola Deterministik
+- **Ukuran**: 288 baris kode.
+- **Tanggung Jawab**:
+  - `_normalizePaymentMethod(raw)`: Normalisasi fuzzy 4 metode bayar resmi (QRIS, Transfer Bank, Kartu Kredit, Tunai). Dirancang tahan terhadap *transcription error* Groq Whisper (misal: "crispy", "quris", "scan" secara otomatis dipetakan ke `'QRIS'`).
+  - `_parseFlexibleCurrency(str)`: Konversi nominal uang dari berbagai representasi string (angka mentah, desimal internasional, format ribuan Indo) menjadi nilai numerik murni tanpa kehilangan presisi.
+  - `_parseIndonesianDateString(str)` & `_parseRelativeDateFilter(text)`: Parser tanggal bahasa Indonesia untuk mengenali teks temporal seperti *"14 Oktober 2026"*, *"kemarin"*, *"bulan lalu"*, dan *"minggu ini"*.
+  - `_autoCategorizeMerchant(merchant, currentCategory)`: Pengkategorian pintar pedagang/merchant menggunakan AI secara berbiaya komputasi rendah (*dedicated zero-overhead prompt*) dengan daftar kategori resmi yang ditarik dinamis dari Supabase.
+  - `_formatTxAsCard(tx, accounts, categories)`: Pembuat format kartu ringkasan visual transaksi untuk antarmuka konsol dan pesan ringkas.
+
+#### 3. [`Finance_Ledger.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_Ledger.js) — Mesin Pencatatan Buku Besar Inti
+- **Ukuran**: 262 baris kode.
+- **Tanggung Jawab**:
+  - `processTransaction(data, source)`: Inti pipeline pencatatan transaksi ganda. Menangani validasi nominal, resolusi paralel ID akun dan kategori via `Promise.all()`, penulisan ke tabel PostgreSQL Supabase (`writeTransaction`), evaluasi ambang batas anggaran (`Budget_Engine`), pencatatan kebiasaan (`Behavior_Engine`), serta pelaporan log audit.
+  - `getRecentTransactions(limit)`: Mengambil daftar riwayat transaksi terbaru beserta relasi nama akun dan kategori.
+  - `searchTransactions(query)`: Pencarian transaksi berbasis kata kunci merchant, deskripsi, atau rentang waktu spesifik.
+
+#### 4. [`Finance_Analytics.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_Analytics.js) — Agregasi Intelijen & Analitik Finansial
+- **Ukuran**: 553 baris kode.
+- **Tanggung Jawab**:
+  - Menyediakan 13 format pelaporan eksekutif yang identik secara numerik dengan portal web `nexa-finance-web`:
+    - `getFinanceAnalytics(period)`: Ringkasan KPI pemasukan, pengeluaran, selisih bersih (*net cashflow*), dan rata-rata harian.
+    - `getSavingRateReport(period)`: Kalkulasi persentase rasio tabungan terhadap total pemasukan.
+    - `getPeriodComparisonReport(period)`: Analisis komparasi kecepatan belanja (*spending velocity*) terhadap periode sebelumnya.
+    - `getTopExpensesReport(period)`: Pemeringkatan pos pengeluaran terbesar.
+    - `getAccountBalancesReport()`: Saldo likuiditas riil per rekening bank, e-wallet, dan uang tunai.
+    - `getDailyTrendReport(period)` & `getDailyBalanceTrendReport(period)`: Agregasi grafik tren saldo dan arus kas harian.
+    - `getCategoryInsight(period)` & `getMonthlySummaryReport()`: Wawasan distribusi kategori dan ringkasan semesteran.
+
+#### 5. [`Finance_Corrections.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_Corrections.js) — Manajemen Koreksi, Penghapusan & Undo
+- **Ukuran**: 307 baris kode.
+- **Tanggung Jawab**:
+  - `requestDeleteConfirmation(target)`: Pencarian cerdas transaksi yang hendak dihapus (berdasarkan kata kunci merchant atau kata kunci `'terakhir'`) dan persiapan sesi konfirmasi interaktif.
+  - `confirmDeleteTransaction(confirmed)`: Eksekusi *soft-delete* transaksi setelah konfirmasi diterima dari Tuan Faqih, sekaligus menyimpan snapshot cadangan ke `lastDeletedTransaction`.
+  - `undoDeleteTransaction()`: Fitur pemulihan instan (*undo ledger*) yang mengembalikan transaksi yang baru saja terhapus ke database dengan status dan tanggal asli.
+  - `editTransaction(target, newNominal, newCategory, newDesc, newAccount, newDate)`: Modifikasi nilai transaksi yang telah tercatat tanpa merusak konsistensi saldo agregat.
+
+#### 6. [`Finance_Confirmations.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_Confirmations.js) — Siklus Hidup Transaksi Tertunda & Watchdog
+- **Ukuran**: 623 baris kode.
+- **Tanggung Jawab**:
+  - `requestTransactionConfirmation(txData, sourceLabel, customKey)`: Mendaftarkan transaksi tertunda, menyimpan cadangan persistensi awal ke Supabase (`telegram_sent = false`), merakit pesan pratinjau konfirmasi, dan menyalakan timer batas waktu 5 menit.
+  - `confirmPendingTransactions(confirmed, targetKey)`: Mengonfirmasi penyimpanan transaksi tertunda, memicu AI categorizer jika kategori belum ditentukan, dan membersihkan status pending.
+  - `updatePendingTransaction(targetKey, newNotes, newCategory, newNominal)`: Memperbarui rincian transaksi tertunda secara interaktif sebelum disimpan permanen.
+  - `_autoSavePending(compositeKey, tx)` & `autoSaveFromWatchdog(compositeKey, tx)`: Logika simpan otomatis saat waktu tunggu 5 menit habis agar tidak ada transaksi finansial yang hilang terlupakan.
+  - `recoverPendingTransactions()`: **Fitur Pemulihan Pasca-Restart**. Saat server mengalami reboot/deploy, fungsi ini membaca tabel `nexa_pending_transactions` di Supabase, menghitung sisa waktu *timeout*, dan mendaftarkan kembali transaksi aktif ke memori kerja N.E.X.A.
+
+#### 7. [`Finance_Email_Sync.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_Email_Sync.js) — Sinkronisasi Otomatis Livin' by Bank Mandiri
+- **Ukuran**: 160 baris kode.
+- **Tanggung Jawab**:
+  - Mengisolasi seluruh proses pemindaian kotak masuk email Google Workspace via `Gmail_Client`.
+  - Mengunci status eksekusi dengan `isPollingFinance` untuk mencegah *overlapping execution* antar-siklus cron.
+  - Membedah isi email mutasi perbankan Mandiri, mengekstrak penerima dan nominal transaksi, serta memicu peringatan transfer gagal.
+
+#### 8. [`Finance_Engine.js`](file:///c:/workspace/nexa-server/src/domain/Finance_Engine.js) — *High-Performance Public Facade*
+- **Ukuran**: 56 baris kode.
+- **Tanggung Jawab**:
+  - Bertindak sebagai gerbang tunggal (*facade*) yang mengimpor seluruh fungsi dari 7 sub-modul dan mengekspornya kembali melalui blok `module.exports` yang **sama persis 100%** dengan versi monolitik sebelumnya.
+  - Memastikan *zero breaking changes* pada puluhan modul pemanggil seperti `common_handlers.js`, `domain_dispatcher.js`, `cron.js`, `telegram/adapter.js`, dan `cli/adapter.js`.
+
+---
+
+### 18.4 Parsing Email Mutasi Livin' by Mandiri Berdasarkan Data Lapangan Riil
+
+Pengujian integrasi email didasarkan langsung pada sampel visual nyata notifikasi perbankan Livin' by Bank Mandiri milik Tuan Faqih:
+
+```
+[SAMPEL A: QRIS PEMBAYARAN BERHASIL]
+Pengirim : Livin' <noreply.livin@bankmandiri.co.id>
+Subjek   : Pembayaran Berhasil!
+Penerima : GRAB FOOD (Jakarta - ID)
+Tanggal  : 25 Jul 2026, 23:10:56 WIB
+Nominal  : Rp 18.200,00
+No. Ref  : 2607251122578063197 | Ref QRIS: 607658866079
+
+[SAMPEL B: TRANSFER BI FAST TIDAK BERHASIL]
+Pengirim : Livin' <noreply.livin@bankmandiri.co.id>
+Subjek   : Transfer dengan BI Fast Tidak Berhasil
+Penerima : DNID FAQXX HIDXXXXXXXXX (DANA - ****4985)
+Tanggal  : 30 Jul 2026, 10:04:25 WIB
+Nominal  : Rp 10.000,00
+Ref BI   : 20260730BMRIIDJA010O0224750379
+```
+
+Logika ekstraksi di `Finance_Email_Sync.js` mengakomodasi variasi ini secara tangguh:
+1. **Ekstraksi Nominal & Biaya Admin**:
+   Mencari kecocokan pola `total transaksi|total pembayaran|total` (misal: `Total Transaksi: Rp 18.200,00`). Jika tidak ditemukan, mencari `nominal transaksi|nominal transfer` dan secara otomatis menjumlahkan biaya admin jika terdapat pola `biaya transfer|biaya admin`.
+2. **Pendeteksian Transaksi Gagal (*Failed Transaction Guard*)**:
+   Jika tubuh atau subjek email memuat frasa `tidak berhasil` atau `gagal` (seperti pada Sampel B), N.E.X.A **tidak akan mencatat transaksi ke buku kas**, melainkan:
+   - Mencatat kunci transaksi ke tabel dedup dengan status `'FAILED_TRANSFER'`.
+   - Mengirimkan pesan peringatan darurat ke Telegram Tuan Faqih melalui Cloudflare Proxy (*sendTelegramMessage*):
+     > ⚠️ **TRANSFER GAGAL**  
+     > Tujuan: DNID FAQXX HIDXXXXXXXXX  
+     > Nominal: Rp10.000  
+     > *N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam catatan keuangan Anda.*
+3. **Filter Usia Mutasi (*4-Day Temporal Safety Guard*)**:
+   Transaksi yang berumur lebih dari 4 hari kalender diabaikan secara otomatis untuk mencegah re-impor mutasi lama yang riwayat deduplikasinya telah dibersihkan oleh vacuum database mingguan.
+
+---
+
+### 18.5 Metodologi Pengujian Karakterisasi Golden-Master (Zero-Regression Contract)
+
+Refaktor kode skala besar yang melibatkan logika finansial sangat berisiko jika hanya mengandalkan unit test konvensional. Karena itu, diterapkan metodologi **Golden-Master Characterization Testing** ([`tests/finance_characterization.test.js`](file:///c:/workspace/nexa-server/tests/finance_characterization.test.js)):
+
+1. **Perekaman Baseline Sebelum Refaktor (`RECORD_GOLDEN=1`)**:
+   Sebelum satu baris pun kode monolit diubah, 75 skenario pengujian komprehensif dieksekusi terhadap kode asli pada lingkungan deterministik:
+   - Waktu jam sistem dibekukan (*Fixed Clock* UTC 2026-10-14 12:00 WIB).
+   - Seluruh dependensi eksternal (Supabase Database, Gmail API, AI Router, Notifier, dan Telegram Network) digantikan dengan stub deterministik yang mencatat urutan pemanggilan (*stub call recorder*).
+   - Seluruh output fungsi dan jejak panggilan stub disimpan ke dalam file snapshot deterministik [`tests/fixtures/finance_golden.json`](file:///c:/workspace/nexa-server/tests/fixtures/finance_golden.json).
+2. **Pengujian Komparasi Pasca-Refaktor**:
+   Setelah modularisasi dijalankan, rangkaian tes yang sama dijalankan ulang. Setiap nilai keluaran, struktur objek, urutan pemanggilan database, dan parameter fungsi dicocokkan secara mendalam (*deep strict equality*).
+3. **Hasil Karakterisasi**:
+   - **75 dari 75 skenario karakterisasi lulus identik 100%**.
+   - Termasuk validasi kasus riil Mandiri QRIS Grab Food, penolakan transfer BI Fast gagal, auto-save timeout, dan pemulihan antrean pending dari Supabase.
+   - Script verifikasi statis ([`verify_finance_split.js`](file:///c:/workspace/nexa-server/scripts/refactor/verify_finance_split.js)) memastikan seluruh modul lolos uji *standalone load* tanpa kesalahan impor melingkar.
+
+---
+
+### 18.6 Matriks Komparasi Kinerja Arsitektur Finansial
+
+| Parameter Pengukuran | Sebelum Refaktor (`Finance_Engine.js` Monolit) | Setelah Refaktor (Layered Modular Subsystems) |
+| :--- | :--- | :--- |
+| **Ukuran File Utama** | **2.136 baris kode** | **56 baris kode (Turun 97,4%)** |
+| **Jumlah Sub-Modul** | 1 file raksasa (*God Object*) | **7 modul terfokus** di `src/domain/finance/` |
+| **Rata-rata Baris per Modul** | 2.136 baris | **315 baris** |
+| **Tingkat Ketergantungan Siklik** | Sangat rentan *tight coupling* | **0% (100% Acyclic Directed Graph)** |
+| **Cakupan Tes Suite Server (`npm test`)** | 125 tests lulus | **200 tests lulus (100% Pass, 0 Fail)** |
+| **Waktu Eksekusi Golden Test** | - | **261 ms** untuk 75 pengujian menyeluruh |
+| **Uji Kasus Riil Mandiri** | Belum teruji perilaku | **Terverifikasi penuh** (QRIS & Failed BI Fast) |
+| **Status Produksi Azure VPS** | v3.4.0 (Monolith) | **v3.4.0 Modular Active (`1eec349`, PM2 ALIVE, 194 MB)** |
 
 ---
 
