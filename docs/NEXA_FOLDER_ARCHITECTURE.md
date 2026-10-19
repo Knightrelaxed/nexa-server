@@ -85,13 +85,18 @@ nexa-server/
 │   ├── clean_bad_memories.js             # Supabase memory hygiene & corrupted fact cleaner
 │   ├── generate_google_master_token.js   # OAuth2 refresh token generator for Google APIs
 │   ├── generate_vector_snapshot.js       # Disk-to-Supabase vector embedding synchronizer
-│   └── trigger_weekly.js                 # Manual runner for weekly cognitive synthesis
+│   ├── trigger_weekly.js                 # Manual runner for weekly cognitive synthesis
+│   └── refactor/                         # AST Automated Refactoring & Validation Tooling
+│       ├── README.md                     # Refactoring runbook & safety architecture
+│       ├── split_finance_engine.js       # AST-based non-destructive module splitter
+│       └── verify_finance_split.js       # Static scope & cyclic dependency validator
 │
 ├── tests/                                # Automated Unit Test Suites & Active Diagnostics
 │   ├── cli_adapter.test.js               # Unit tests: CLI ingress adapter & multi-turn prompts
 │   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers (15 bank cases, escaping)
 │   ├── day_simulation.test.js            # Unit tests: Full 24-hour simulation (Briefing to Midnight)
 │   ├── directive_utils.test.js           # Unit tests: Behavioral directive parsing & counter increments
+│   ├── finance_characterization.test.js  # Golden master: Invariance test suite for modular Finance Engine (75 cases)
 │   ├── identity_directive_flow.test.js   # Unit tests: Dynamic persona directives & alignment flow
 │   ├── micro_reviewer.test.js            # Unit tests: Micro-reviewer cognitive reflection & feedback loops
 │   ├── playbook_counters.test.js         # Unit tests: Behavioral playbook counters & limits
@@ -105,7 +110,9 @@ nexa-server/
 │   ├── test_midnight_screen_trigger.js   # Evaluation: Midnight screen time trigger test
 │   ├── topic_classifier.test.js          # Classification: Topic classification & fast prompt router
 │   ├── upgrade.test.js                   # Migration: Schema upgrade & database integrity validator
-│   └── version.test.js                   # Verification: Centralized version resolver & git SHA tests
+│   ├── version.test.js                   # Verification: Centralized version resolver & git SHA tests
+│   └── fixtures/                         # Golden Master Serialized Fixtures
+│       └── finance_golden.json           # Deterministic baseline outputs & stub call signatures
 │
 ├── tools/                                # Command Line & Developer Tools
 │   ├── chat_cli.js                       # Interactive CLI terminal for talking to N.E.X.A
@@ -152,8 +159,16 @@ nexa-server/
     │   ├── Dialectic_Engine.js           # Dialectic reasoning, cognitive debate & counter-argument synthesis
     │   ├── Discipline_GodMode.js         # Strict focus & god-mode disciplinary rules enforcement
     │   ├── Episodic_Recall.js            # Long-term episodic memory RAG & semantic retrieval
-    │   ├── Finance_Engine.js             # Financial transaction processor & double-entry logic
+    │   ├── Finance_Engine.js             # Public Facade (56 baris) delegating to modular finance subsystems
     │   ├── Finance_Intel.js              # Financial intelligence, spending pattern heuristics & anomaly detection
+    │   ├── finance/                      # Decomposed Modular Finance Subsystems
+    │   │   ├── Finance_Analytics.js      # Financial reports, spending velocity, saving rate & balance trends
+    │   │   ├── Finance_Confirmations.js  # Multi-turn confirmation lifecycle, auto-save timeout & restart recovery
+    │   │   ├── Finance_Corrections.js    # Safe transaction deletions, edit & undo manager
+    │   │   ├── Finance_Email_Sync.js     # Livin' by Mandiri Gmail polling, parsing & transaction dedup
+    │   │   ├── Finance_Helpers.js        # Currency normalizer, date parsers & lightweight AI merchant categorizer
+    │   │   ├── Finance_Ledger.js         # Core double-entry ledger, transaction writes & search queries
+    │   │   └── Finance_State.js          # Shared in-memory state & lock sets (single source of truth)
     │   ├── Inference_Engine.js           # Psychological trait & user pattern inferrer
     │   ├── Intelligence_Brief.js         # Morning Briefing, Midnight & Evening brief synthesizer
     │   ├── Intention_Engine.js           # Short & long-term commitments tracker

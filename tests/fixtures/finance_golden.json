@@ -1,0 +1,716 @@
+{
+  "exports": {
+    "processTransaction": "function",
+    "getRecentTransactions": "function",
+    "searchTransactions": "function",
+    "getFinanceAnalytics": "function",
+    "getCategoryInsight": "function",
+    "getPeriodComparisonReport": "function",
+    "getTopExpensesReport": "function",
+    "getAccountBalancesReport": "function",
+    "getDailyTrendReport": "function",
+    "getSmartFinanceSummary": "function",
+    "getMonthlySummaryReport": "function",
+    "getSavingRateReport": "function",
+    "getDailyBalanceTrendReport": "function",
+    "deleteTransaction": "function",
+    "confirmDeleteTransaction": "function",
+    "getPendingDeletionsContext": "function",
+    "undoDeleteTransaction": "function",
+    "editTransaction": "function",
+    "pollFinanceEmails": "function",
+    "confirmPendingTransactions": "function",
+    "updatePendingTransaction": "function",
+    "requestTransactionConfirmation": "function",
+    "recoverPendingTransactions": "function",
+    "_parseFlexibleCurrency": "function",
+    "_autoCategorizeMerchant": "function",
+    "buildConfirmationMessage": "function",
+    "autoSaveFromWatchdog": "function",
+    "getPendingConfirmationsContext": "function",
+    "resolveTargetKeyFromSnippet": "function",
+    "getPendingConfirmationsCount": "function",
+    "_findBestTransactionMatch": "function"
+  },
+  "cases": {
+    "parse: flexible currency": {
+      "outcome": {
+        "ok": [
+          25,
+          1250000,
+          15,
+          25,
+          50,
+          1250,
+          null,
+          null
+        ]
+      },
+      "stubCalls": []
+    },
+    "categorize: valid category is kept": {
+      "outcome": {
+        "ok": "Makan Berat / Makan Luar"
+      },
+      "stubCalls": []
+    },
+    "categorize: AI path (Lainnya)": {
+      "outcome": {
+        "ok": "Jajan / Ngopi / Kafe"
+      },
+      "stubCalls": [
+        "SF.getCategoriesList",
+        "AI.callAI"
+      ]
+    },
+    "ledger: processTransaction (expense)": {
+      "outcome": {
+        "ok": {
+          "status": "SUCCESS",
+          "message": "✅ Transaksi <b>Pengeluaran</b> sebesar <b>Rp25.000</b> berhasil dicatat ke database Supabase (Akun: Cash)."
+        }
+      },
+      "stubCalls": [
+        "SF.writeTransaction",
+        "SM.logTransactionKey",
+        "Behavior.logFinanceRecord",
+        "Budget.checkAndAlertBudget",
+        "webhook.sendTelegramOutbound"
+      ]
+    },
+    "ledger: processTransaction (invalid nominal)": {
+      "outcome": {
+        "threw": "Nominal tidak valid: \"abc\". Harus berupa angka positif."
+      },
+      "stubCalls": []
+    },
+    "ledger: processTransaction (email duplicate path)": {
+      "outcome": {
+        "ok": {
+          "status": "SUCCESS",
+          "message": "✅ Transaksi <b>Pengeluaran</b> sebesar <b>Rp54.000</b> berhasil dicatat ke database Supabase (Akun: Bank Mandiri)."
+        }
+      },
+      "stubCalls": [
+        "SM.isDuplicateTransaction",
+        "SF.getCategoriesList",
+        "AI.callAI",
+        "SF.writeTransaction",
+        "SM.logTransactionKey",
+        "Behavior.logFinanceRecord",
+        "Budget.checkAndAlertBudget",
+        "webhook.sendTelegramOutbound"
+      ]
+    },
+    "ledger: getRecentTransactions": {
+      "outcome": {
+        "ok": "💸 <b>3 Transaksi Terakhir (Supabase):</b>\n\n🟢 <b>ID: t3</b>\n<b>Tanggal:</b> 2026-10-01\n<b>Waktu:</b> 07:00\n<b>Tipe:</b> Pemasukan\n<b>Kategori:</b> Pemasukan\n<b>Akun:</b> Bank Mandiri\n<b>Deskripsi:</b> Kiriman bulanan\n<b>Nominal (Rp):</b> Rp5.000.000\n──────────────\n🔴 <b>ID: t2</b>\n<b>Tanggal:</b> 2026-10-05\n<b>Waktu:</b> 08:00\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Langganan\n<b>Akun:</b> Bank Mandiri\n<b>Deskripsi:</b> Netflix\n<b>Nominal (Rp):</b> Rp54.000\n──────────────\n🔴 <b>ID: t1</b>\n<b>Tanggal:</b> 2026-10-14\n<b>Waktu:</b> 09:30\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe\n<b>Akun:</b> Cash\n<b>Deskripsi:</b> Kopi Kenangan\n<b>Nominal (Rp):</b> Rp25.000\n──────────────"
+      },
+      "stubCalls": [
+        "SF.readTransactions"
+      ]
+    },
+    "ledger: searchTransactions": {
+      "outcome": {
+        "ok": "🔍 <b>Ditemukan 3 transaksi — \"kopi\":</b>\n\n🟢 <b>ID: t3</b>\n<b>Tanggal:</b> 2026-10-01\n<b>Waktu:</b> 07:00\n<b>Tipe:</b> Pemasukan\n<b>Kategori:</b> Pemasukan\n<b>Akun:</b> Bank Mandiri\n<b>Deskripsi:</b> Kiriman bulanan\n<b>Nominal (Rp):</b> Rp5.000.000\n──────────────\n🔴 <b>ID: t2</b>\n<b>Tanggal:</b> 2026-10-05\n<b>Waktu:</b> 08:00\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Langganan\n<b>Akun:</b> Bank Mandiri\n<b>Deskripsi:</b> Netflix\n<b>Nominal (Rp):</b> Rp54.000\n──────────────\n🔴 <b>ID: t1</b>\n<b>Tanggal:</b> 2026-10-14\n<b>Waktu:</b> 09:30\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe\n<b>Akun:</b> Cash\n<b>Deskripsi:</b> Kopi Kenangan\n<b>Nominal (Rp):</b> Rp25.000"
+      },
+      "stubCalls": [
+        "SF.readTransactions"
+      ]
+    },
+    "confirm: pending context (empty)": {
+      "outcome": {
+        "ok": null
+      },
+      "stubCalls": [
+        "SM.getPendingTransactions"
+      ]
+    },
+    "confirm: pending count": {
+      "outcome": {
+        "ok": 0
+      },
+      "stubCalls": []
+    },
+    "confirm: confirmPendingTransactions(true) with nothing pending": {
+      "outcome": {
+        "ok": null
+      },
+      "stubCalls": []
+    },
+    "confirm: resolveTargetKeyFromSnippet": {
+      "outcome": {
+        "ok": null
+      },
+      "stubCalls": []
+    },
+    "confirm: requestTransactionConfirmation": {
+      "outcome": {
+        "ok": "💸 <b>TEST</b>\n\n<b>No:</b> [Auto]\n<b>Tanggal:</b> 14 Oktober 2026\n<b>Waktu:</b> 12.00\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe [Auto-AI]\n<b>Akun:</b> Cash\n<b>Metode:</b> -\n<b>Deskripsi:</b> [KOSONG - Tujuan: Kopi Kenangan]\n<b>Nominal (Rp):</b> Rp18.000\n<b>Saldo (Rp) Saat Ini:</b> Rp2.650.000\n\n❓ <b>N.E.X.A mencatat pengeluaran ke Kopi Kenangan.</b>\n\nTuan, uang ini digunakan untuk keperluan apa ya? <i>(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).</i>"
+      },
+      "stubCalls": [
+        "SF.getCategoriesList",
+        "AI.callAI",
+        "SM.savePendingTransaction",
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "confirm: pending count after request": {
+      "outcome": {
+        "ok": 1
+      },
+      "stubCalls": []
+    },
+    "confirm: pending context after request": {
+      "outcome": {
+        "ok": "STATUS FINANCE TERTUNDA (MENUNGGU RESPON USER):\n- Ada transaksi tertunda: Pengeluaran Rp18000 ke/dari Kopi Kenangan.\n  User mungkin sedang mencoba memberi tahu rincian/kategori untuk transaksi ini!\n"
+      },
+      "stubCalls": []
+    },
+    "confirm: updatePendingTransaction": {
+      "outcome": {
+        "ok": "💸 <b>DETAIL TRANSAKSI DIPERBARUI ✏️</b>\n\n<b>No:</b> [Auto]\n<b>Tanggal:</b> 14 Oktober 2026\n<b>Waktu:</b> 12.00\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe [Auto-AI]\n<b>Akun:</b> Cash\n<b>Metode:</b> -\n<b>Deskripsi:</b> Es kopi susu\n<b>Nominal (Rp):</b> Rp20.000\n<b>Saldo (Rp) Saat Ini:</b> Rp2.650.000\n\n✏️ <b>Detail catatan diperbarui!</b>\n\nSatu hal lagi Tuan, mohon informasikan metode pembayarannya (QRIS/Transfer/Tunai/Kredit) untuk transaksi ini."
+      },
+      "stubCalls": [
+        "SF.getCategoriesList",
+        "SM.savePendingTransaction",
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "confirm: confirmPendingTransactions(true)": {
+      "outcome": {
+        "ok": "✅ Transaksi <b>Pengeluaran</b> sebesar <b>Rp20.000</b> berhasil dicatat ke database Supabase (Akun: Cash)."
+      },
+      "stubCalls": [
+        "SF.writeTransaction",
+        "SM.logTransactionKey",
+        "Behavior.logFinanceRecord",
+        "Budget.checkAndAlertBudget",
+        "webhook.sendTelegramOutbound",
+        "SM.deletePendingTransaction"
+      ]
+    },
+    "confirm: pending count after confirm": {
+      "outcome": {
+        "ok": 0
+      },
+      "stubCalls": []
+    },
+    "confirm: autoSaveFromWatchdog (unknown key)": {
+      "outcome": {},
+      "stubCalls": [
+        "SM.deletePendingTransaction",
+        "SM.isDuplicateTransaction",
+        "SF.getCategoriesList",
+        "AI.callAI",
+        "SF.getAccountsList",
+        "SF.writeTransaction",
+        "SM.logTransactionKey",
+        "Behavior.logFinanceRecord",
+        "Budget.checkAndAlertBudget",
+        "webhook.sendTelegramOutbound",
+        "webhook.sendTelegramOutbound"
+      ]
+    },
+    "confirm: recoverPendingTransactions": {
+      "outcome": {},
+      "stubCalls": [
+        "SM.getPendingTransactions",
+        "SM.isDuplicateTransaction",
+        "SF.getCategoriesList",
+        "AI.callAI",
+        "SM.isDuplicateTransaction",
+        "SF.writeTransaction",
+        "SM.logTransactionKey",
+        "Behavior.logFinanceRecord",
+        "Budget.checkAndAlertBudget",
+        "webhook.sendTelegramOutbound",
+        "SM.deletePendingTransaction"
+      ]
+    },
+    "corrections: pending deletions context (empty)": {
+      "outcome": {
+        "ok": null
+      },
+      "stubCalls": []
+    },
+    "corrections: undoDeleteTransaction with nothing deleted": {
+      "outcome": {
+        "ok": {
+          "status": "FAILED",
+          "message": "⚠️ Tidak ada transaksi yang bisa di-undo. Mungkin sudah lebih dari 10 menit atau belum ada penghapusan."
+        }
+      },
+      "stubCalls": []
+    },
+    "corrections: confirmDeleteTransaction(true) with nothing pending": {
+      "outcome": {
+        "ok": null
+      },
+      "stubCalls": []
+    },
+    "corrections: deleteTransaction (no match)": {
+      "outcome": {
+        "ok": {
+          "status": "FAILED",
+          "message": "Tidak ada transaksi yang cocok dengan \"kopi\"."
+        }
+      },
+      "stubCalls": [
+        "SF.readTransactions"
+      ]
+    },
+    "corrections: deleteTransaction latest (request)": {
+      "outcome": {
+        "ok": {
+          "status": "SUCCESS",
+          "message": "⚠️ <b>KONFIRMASI PENGHAPUSAN TRANSAKSI</b>\n\nN.E.X.A menemukan data berikut di Supabase:\n<b>ID:</b> t1\n<b>Tanggal:</b> 2026-10-14 09:30\n<b>Tipe/Kategori:</b> Pengeluaran - Jajan / Ngopi / Kafe\n<b>Catatan:</b> Kopi Kenangan\n<b>Nominal:</b> Rp25.000\n\n❓ Apakah ini transaksi yang ingin Tuan hapus? (Balas <b>ya/hapus</b> atau <b>batal</b>)"
+        }
+      },
+      "stubCalls": [
+        "SF.readTransactions"
+      ]
+    },
+    "corrections: pending deletions context (after request)": {
+      "outcome": {
+        "ok": {}
+      },
+      "stubCalls": []
+    },
+    "corrections: confirmDeleteTransaction(true)": {
+      "outcome": {
+        "ok": "🗑️ <b>TRANSAKSI DIHAPUS DARI DATABASE</b>\n\n\"Kopi Kenangan\" sebesar Rp25.000 telah dihapus sepenuhnya.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata \"batalkan hapus\" atau \"undo\".</i>"
+      },
+      "stubCalls": [
+        "SF.deleteTransaction"
+      ]
+    },
+    "corrections: undoDeleteTransaction (after delete)": {
+      "outcome": {
+        "ok": {
+          "status": "SUCCESS",
+          "message": "↩️ <b>Transaksi dikembalikan!</b>\n\n\"Kopi Kenangan\" sebesar <b>Rp25.000</b> telah dipulihkan ke database Supabase."
+        }
+      },
+      "stubCalls": [
+        "SF.writeTransaction"
+      ]
+    },
+    "corrections: editTransaction latest nominal": {
+      "outcome": {
+        "ok": {
+          "status": "SUCCESS",
+          "message": "💸 <b>TRANSAKSI DIEDIT</b>\n\n<b>No:</b> t1\n<b>Tanggal:</b> 2026-10-14\n<b>Waktu:</b> 09:30\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe\n<b>Akun:</b> Cash\n<b>Deskripsi:</b> Kopi Kenangan\n<b>Nominal (Rp):</b> Rp30.000\n<b>Saldo (Rp) Saat Ini:</b> -\n\nYang saya edit adalah:\n- Nominal (dari Rp25.000 menjadi Rp30.000)\n\nApakah ada hal lain yang mau diedit, Tuan?"
+        }
+      },
+      "stubCalls": [
+        "SF.readTransactions",
+        "SF.updateTransaction"
+      ]
+    },
+    "corrections: editTransaction (no match)": {
+      "outcome": {
+        "ok": {
+          "status": "FAILED",
+          "message": "Tidak ada transaksi yang cocok dengan \"kopi\"."
+        }
+      },
+      "stubCalls": [
+        "SF.readTransactions"
+      ]
+    },
+    "email: pollFinanceEmails (empty inbox)": {
+      "outcome": {
+        "ok": 0
+      },
+      "stubCalls": [
+        "Gmail.getLatestEmails"
+      ]
+    },
+    "email: pollFinanceEmails (real Mandiri QRIS & failed BI Fast emails)": {
+      "outcome": {
+        "ok": 1
+      },
+      "stubCalls": [
+        "Gmail.getLatestEmails",
+        "SM.isDuplicateTransaction",
+        "SF.getCategoriesList",
+        "AI.callAI",
+        "SF.getAccountsList",
+        "SM.savePendingTransaction",
+        "SF.getFinanceAnalytics",
+        "net.sendTelegramMessage",
+        "SM.markPendingTransactionSent",
+        "SM.isDuplicateTransaction",
+        "SM.logTransactionKey",
+        "net.sendTelegramMessage"
+      ]
+    },
+    "analytics: getFinanceAnalytics(null)": {
+      "outcome": {
+        "ok": "⚠️ Gagal membaca tabel analitik: Cannot read properties of undefined (reading 'toFixed')"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getFinanceAnalytics(\"hari ini\")": {
+      "outcome": {
+        "ok": "⚠️ Gagal membaca tabel analitik: Cannot read properties of undefined (reading 'toFixed')"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getFinanceAnalytics(\"minggu ini\")": {
+      "outcome": {
+        "ok": "⚠️ Gagal membaca tabel analitik: Cannot read properties of undefined (reading 'toFixed')"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getFinanceAnalytics(\"bulan ini\")": {
+      "outcome": {
+        "ok": "⚠️ Gagal membaca tabel analitik: Cannot read properties of undefined (reading 'toFixed')"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getFinanceAnalytics(\"bulan lalu\")": {
+      "outcome": {
+        "ok": "⚠️ Gagal membaca tabel analitik: Cannot read properties of undefined (reading 'toFixed')"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getCategoryInsight(null)": {
+      "outcome": {
+        "ok": "📊 <b>Breakdown Pengeluaran — Bulan Ini</b>\n\n<b>1. 🍽️ Makan Berat / Makan Luar</b>\n   Rp900.000 · 28.0% · 30 transaksi\n   <code>███░░░░░░░</code>\n\n<b>2. ☕ Jajan / Ngopi / Kafe</b>\n   Rp450.000 · 14.0% · 22 transaksi\n   <code>█░░░░░░░░░</code>\n\n<b>3. 🚌 Transportasi Umum</b>\n   Rp300.000 · 9.0% · 12 transaksi\n   <code>█░░░░░░░░░</code>"
+      },
+      "stubCalls": [
+        "SF.getCategoryBreakdown"
+      ]
+    },
+    "analytics: getCategoryInsight(\"hari ini\")": {
+      "outcome": {
+        "ok": "📊 <b>Breakdown Pengeluaran — Hari Ini</b>\n\n<b>1. 🍽️ Makan Berat / Makan Luar</b>\n   Rp900.000 · 28.0% · 30 transaksi\n   <code>███░░░░░░░</code>\n\n<b>2. ☕ Jajan / Ngopi / Kafe</b>\n   Rp450.000 · 14.0% · 22 transaksi\n   <code>█░░░░░░░░░</code>\n\n<b>3. 🚌 Transportasi Umum</b>\n   Rp300.000 · 9.0% · 12 transaksi\n   <code>█░░░░░░░░░</code>"
+      },
+      "stubCalls": [
+        "SF.getCategoryBreakdown"
+      ]
+    },
+    "analytics: getCategoryInsight(\"minggu ini\")": {
+      "outcome": {
+        "ok": "📊 <b>Breakdown Pengeluaran — Minggu Ini</b>\n\n<b>1. 🍽️ Makan Berat / Makan Luar</b>\n   Rp900.000 · 28.0% · 30 transaksi\n   <code>███░░░░░░░</code>\n\n<b>2. ☕ Jajan / Ngopi / Kafe</b>\n   Rp450.000 · 14.0% · 22 transaksi\n   <code>█░░░░░░░░░</code>\n\n<b>3. 🚌 Transportasi Umum</b>\n   Rp300.000 · 9.0% · 12 transaksi\n   <code>█░░░░░░░░░</code>"
+      },
+      "stubCalls": [
+        "SF.getCategoryBreakdown"
+      ]
+    },
+    "analytics: getCategoryInsight(\"bulan ini\")": {
+      "outcome": {
+        "ok": "📊 <b>Breakdown Pengeluaran — Bulan Ini</b>\n\n<b>1. 🍽️ Makan Berat / Makan Luar</b>\n   Rp900.000 · 28.0% · 30 transaksi\n   <code>███░░░░░░░</code>\n\n<b>2. ☕ Jajan / Ngopi / Kafe</b>\n   Rp450.000 · 14.0% · 22 transaksi\n   <code>█░░░░░░░░░</code>\n\n<b>3. 🚌 Transportasi Umum</b>\n   Rp300.000 · 9.0% · 12 transaksi\n   <code>█░░░░░░░░░</code>"
+      },
+      "stubCalls": [
+        "SF.getCategoryBreakdown"
+      ]
+    },
+    "analytics: getCategoryInsight(\"bulan lalu\")": {
+      "outcome": {
+        "ok": "📊 <b>Breakdown Pengeluaran — Bulan Lalu</b>\n\n<b>1. 🍽️ Makan Berat / Makan Luar</b>\n   Rp900.000 · 28.0% · 30 transaksi\n   <code>███░░░░░░░</code>\n\n<b>2. ☕ Jajan / Ngopi / Kafe</b>\n   Rp450.000 · 14.0% · 22 transaksi\n   <code>█░░░░░░░░░</code>\n\n<b>3. 🚌 Transportasi Umum</b>\n   Rp300.000 · 9.0% · 12 transaksi\n   <code>█░░░░░░░░░</code>"
+      },
+      "stubCalls": [
+        "SF.getCategoryBreakdown"
+      ]
+    },
+    "analytics: getPeriodComparisonReport(null)": {
+      "outcome": {
+        "ok": "📊 <b>Perbandingan Periode</b>\n\n<b>Periode:</b> Bulan Ini vs Bulan Lalu\n\n<b>💰 Pengeluaran</b>\n  Bulan Ini: RpNaN\n  Bulan Lalu: RpNaN 📉 NaN%\n\n<b>🟢 Pemasukan</b>\n  Bulan Ini: RpNaN\n  Bulan Lalu: RpNaN 📉 NaN%\n\n<b>🏦 Saldo Bersih</b>\n  Bulan Ini: RpNaN\n  Bulan Lalu: RpNaN 📉 NaN%"
+      },
+      "stubCalls": [
+        "SF.getPeriodComparison"
+      ]
+    },
+    "analytics: getPeriodComparisonReport(\"hari ini\")": {
+      "outcome": {
+        "ok": "📊 <b>Perbandingan Periode</b>\n\n<b>Periode:</b> Hari Ini vs Hari Lalu\n\n<b>💰 Pengeluaran</b>\n  Hari Ini: RpNaN\n  Hari Lalu: RpNaN 📉 NaN%\n\n<b>🟢 Pemasukan</b>\n  Hari Ini: RpNaN\n  Hari Lalu: RpNaN 📉 NaN%\n\n<b>🏦 Saldo Bersih</b>\n  Hari Ini: RpNaN\n  Hari Lalu: RpNaN 📉 NaN%"
+      },
+      "stubCalls": [
+        "SF.getPeriodComparison"
+      ]
+    },
+    "analytics: getPeriodComparisonReport(\"minggu ini\")": {
+      "outcome": {
+        "ok": "📊 <b>Perbandingan Periode</b>\n\n<b>Periode:</b> Minggu Ini vs Minggu Lalu\n\n<b>💰 Pengeluaran</b>\n  Minggu Ini: RpNaN\n  Minggu Lalu: RpNaN 📉 NaN%\n\n<b>🟢 Pemasukan</b>\n  Minggu Ini: RpNaN\n  Minggu Lalu: RpNaN 📉 NaN%\n\n<b>🏦 Saldo Bersih</b>\n  Minggu Ini: RpNaN\n  Minggu Lalu: RpNaN 📉 NaN%"
+      },
+      "stubCalls": [
+        "SF.getPeriodComparison"
+      ]
+    },
+    "analytics: getPeriodComparisonReport(\"bulan ini\")": {
+      "outcome": {
+        "ok": "📊 <b>Perbandingan Periode</b>\n\n<b>Periode:</b> Bulan Ini vs Bulan Lalu\n\n<b>💰 Pengeluaran</b>\n  Bulan Ini: RpNaN\n  Bulan Lalu: RpNaN 📉 NaN%\n\n<b>🟢 Pemasukan</b>\n  Bulan Ini: RpNaN\n  Bulan Lalu: RpNaN 📉 NaN%\n\n<b>🏦 Saldo Bersih</b>\n  Bulan Ini: RpNaN\n  Bulan Lalu: RpNaN 📉 NaN%"
+      },
+      "stubCalls": [
+        "SF.getPeriodComparison"
+      ]
+    },
+    "analytics: getPeriodComparisonReport(\"bulan lalu\")": {
+      "outcome": {
+        "ok": "📊 <b>Perbandingan Periode</b>\n\n<b>Periode:</b> Bulan Lalu vs Bulan Lalu\n\n<b>💰 Pengeluaran</b>\n  Bulan Lalu: RpNaN\n  Bulan Lalu: RpNaN 📉 NaN%\n\n<b>🟢 Pemasukan</b>\n  Bulan Lalu: RpNaN\n  Bulan Lalu: RpNaN 📉 NaN%\n\n<b>🏦 Saldo Bersih</b>\n  Bulan Lalu: RpNaN\n  Bulan Lalu: RpNaN 📉 NaN%"
+      },
+      "stubCalls": [
+        "SF.getPeriodComparison"
+      ]
+    },
+    "analytics: getTopExpensesReport(null)": {
+      "outcome": {
+        "ok": "💸 <b>Top 3 Pengeluaran — Bulan Ini</b>\n\n<b>1. 💳 Belanja 1</b>\n   Rp150.000 · undefined\n\n<b>2. 💳 Belanja 2</b>\n   Rp300.000 · undefined\n\n<b>3. 💳 Belanja 3</b>\n   Rp450.000 · undefined"
+      },
+      "stubCalls": [
+        "SF.getTopExpenses"
+      ]
+    },
+    "analytics: getTopExpensesReport(\"hari ini\")": {
+      "outcome": {
+        "ok": "💸 <b>Top 3 Pengeluaran — Hari Ini</b>\n\n<b>1. 💳 Belanja 1</b>\n   Rp150.000 · undefined\n\n<b>2. 💳 Belanja 2</b>\n   Rp300.000 · undefined\n\n<b>3. 💳 Belanja 3</b>\n   Rp450.000 · undefined"
+      },
+      "stubCalls": [
+        "SF.getTopExpenses"
+      ]
+    },
+    "analytics: getTopExpensesReport(\"minggu ini\")": {
+      "outcome": {
+        "ok": "💸 <b>Top 3 Pengeluaran — Minggu Ini</b>\n\n<b>1. 💳 Belanja 1</b>\n   Rp150.000 · undefined\n\n<b>2. 💳 Belanja 2</b>\n   Rp300.000 · undefined\n\n<b>3. 💳 Belanja 3</b>\n   Rp450.000 · undefined"
+      },
+      "stubCalls": [
+        "SF.getTopExpenses"
+      ]
+    },
+    "analytics: getTopExpensesReport(\"bulan ini\")": {
+      "outcome": {
+        "ok": "💸 <b>Top 3 Pengeluaran — Bulan Ini</b>\n\n<b>1. 💳 Belanja 1</b>\n   Rp150.000 · undefined\n\n<b>2. 💳 Belanja 2</b>\n   Rp300.000 · undefined\n\n<b>3. 💳 Belanja 3</b>\n   Rp450.000 · undefined"
+      },
+      "stubCalls": [
+        "SF.getTopExpenses"
+      ]
+    },
+    "analytics: getTopExpensesReport(\"bulan lalu\")": {
+      "outcome": {
+        "ok": "💸 <b>Top 3 Pengeluaran — Bulan Lalu</b>\n\n<b>1. 💳 Belanja 1</b>\n   Rp150.000 · undefined\n\n<b>2. 💳 Belanja 2</b>\n   Rp300.000 · undefined\n\n<b>3. 💳 Belanja 3</b>\n   Rp450.000 · undefined"
+      },
+      "stubCalls": [
+        "SF.getTopExpenses"
+      ]
+    },
+    "analytics: getDailyTrendReport(null)": {
+      "outcome": {
+        "ok": "📈 <b>Tren Pengeluaran Harian — Bulan Ini</b>\n\n<b>Pola:</b> 📈 Meningkat di akhir periode\n<b>Rata-rata harian:</b> Rp33.928,571\n<b>Hari termahal:</b> 2026-10-04 (Rp75.000)\n<b>Hari terhemat:</b> 2026-10-02 (Rp25.000)\n<b>Hari ada transaksi:</b> 10 hari\n\n<b>Grafik Pengeluaran:</b>\n<code>10-01 ░░░░░░░░ Rp0\n10-02 ███░░░░░ Rp25.000\n10-03 █████░░░ Rp50.000\n10-04 ████████ Rp75.000\n10-05 ░░░░░░░░ Rp0\n10-06 ███░░░░░ Rp25.000\n10-07 █████░░░ Rp50.000\n10-08 ████████ Rp75.000\n10-09 ░░░░░░░░ Rp0\n10-10 ███░░░░░ Rp25.000\n10-11 █████░░░ Rp50.000\n10-12 ████████ Rp75.000\n10-13 ░░░░░░░░ Rp0\n10-14 ███░░░░░ Rp25.000\n</code>"
+      },
+      "stubCalls": [
+        "SF.getDailyTrend"
+      ]
+    },
+    "analytics: getDailyTrendReport(\"hari ini\")": {
+      "outcome": {
+        "ok": "📈 <b>Tren Pengeluaran Harian — Hari Ini</b>\n\n<b>Pola:</b> 📈 Meningkat di akhir periode\n<b>Rata-rata harian:</b> Rp33.928,571\n<b>Hari termahal:</b> 2026-10-04 (Rp75.000)\n<b>Hari terhemat:</b> 2026-10-02 (Rp25.000)\n<b>Hari ada transaksi:</b> 10 hari\n\n<b>Grafik Pengeluaran:</b>\n<code>10-01 ░░░░░░░░ Rp0\n10-02 ███░░░░░ Rp25.000\n10-03 █████░░░ Rp50.000\n10-04 ████████ Rp75.000\n10-05 ░░░░░░░░ Rp0\n10-06 ███░░░░░ Rp25.000\n10-07 █████░░░ Rp50.000\n10-08 ████████ Rp75.000\n10-09 ░░░░░░░░ Rp0\n10-10 ███░░░░░ Rp25.000\n10-11 █████░░░ Rp50.000\n10-12 ████████ Rp75.000\n10-13 ░░░░░░░░ Rp0\n10-14 ███░░░░░ Rp25.000\n</code>"
+      },
+      "stubCalls": [
+        "SF.getDailyTrend"
+      ]
+    },
+    "analytics: getDailyTrendReport(\"minggu ini\")": {
+      "outcome": {
+        "ok": "📈 <b>Tren Pengeluaran Harian — Minggu Ini</b>\n\n<b>Pola:</b> 📈 Meningkat di akhir periode\n<b>Rata-rata harian:</b> Rp33.928,571\n<b>Hari termahal:</b> 2026-10-04 (Rp75.000)\n<b>Hari terhemat:</b> 2026-10-02 (Rp25.000)\n<b>Hari ada transaksi:</b> 10 hari\n\n<b>Grafik Pengeluaran:</b>\n<code>10-01 ░░░░░░░░ Rp0\n10-02 ███░░░░░ Rp25.000\n10-03 █████░░░ Rp50.000\n10-04 ████████ Rp75.000\n10-05 ░░░░░░░░ Rp0\n10-06 ███░░░░░ Rp25.000\n10-07 █████░░░ Rp50.000\n10-08 ████████ Rp75.000\n10-09 ░░░░░░░░ Rp0\n10-10 ███░░░░░ Rp25.000\n10-11 █████░░░ Rp50.000\n10-12 ████████ Rp75.000\n10-13 ░░░░░░░░ Rp0\n10-14 ███░░░░░ Rp25.000\n</code>"
+      },
+      "stubCalls": [
+        "SF.getDailyTrend"
+      ]
+    },
+    "analytics: getDailyTrendReport(\"bulan ini\")": {
+      "outcome": {
+        "ok": "📈 <b>Tren Pengeluaran Harian — Bulan Ini</b>\n\n<b>Pola:</b> 📈 Meningkat di akhir periode\n<b>Rata-rata harian:</b> Rp33.928,571\n<b>Hari termahal:</b> 2026-10-04 (Rp75.000)\n<b>Hari terhemat:</b> 2026-10-02 (Rp25.000)\n<b>Hari ada transaksi:</b> 10 hari\n\n<b>Grafik Pengeluaran:</b>\n<code>10-01 ░░░░░░░░ Rp0\n10-02 ███░░░░░ Rp25.000\n10-03 █████░░░ Rp50.000\n10-04 ████████ Rp75.000\n10-05 ░░░░░░░░ Rp0\n10-06 ███░░░░░ Rp25.000\n10-07 █████░░░ Rp50.000\n10-08 ████████ Rp75.000\n10-09 ░░░░░░░░ Rp0\n10-10 ███░░░░░ Rp25.000\n10-11 █████░░░ Rp50.000\n10-12 ████████ Rp75.000\n10-13 ░░░░░░░░ Rp0\n10-14 ███░░░░░ Rp25.000\n</code>"
+      },
+      "stubCalls": [
+        "SF.getDailyTrend"
+      ]
+    },
+    "analytics: getDailyTrendReport(\"bulan lalu\")": {
+      "outcome": {
+        "ok": "📈 <b>Tren Pengeluaran Harian — Bulan Lalu</b>\n\n<b>Pola:</b> 📈 Meningkat di akhir periode\n<b>Rata-rata harian:</b> Rp33.928,571\n<b>Hari termahal:</b> 2026-10-04 (Rp75.000)\n<b>Hari terhemat:</b> 2026-10-02 (Rp25.000)\n<b>Hari ada transaksi:</b> 10 hari\n\n<b>Grafik Pengeluaran:</b>\n<code>10-01 ░░░░░░░░ Rp0\n10-02 ███░░░░░ Rp25.000\n10-03 █████░░░ Rp50.000\n10-04 ████████ Rp75.000\n10-05 ░░░░░░░░ Rp0\n10-06 ███░░░░░ Rp25.000\n10-07 █████░░░ Rp50.000\n10-08 ████████ Rp75.000\n10-09 ░░░░░░░░ Rp0\n10-10 ███░░░░░ Rp25.000\n10-11 █████░░░ Rp50.000\n10-12 ████████ Rp75.000\n10-13 ░░░░░░░░ Rp0\n10-14 ███░░░░░ Rp25.000\n</code>"
+      },
+      "stubCalls": [
+        "SF.getDailyTrend"
+      ]
+    },
+    "analytics: getSmartFinanceSummary(null)": {
+      "outcome": {
+        "ok": "💡 <b>Ringkasan Keuangan Cerdas — Bulan Ini</b>\n\n📊 <b>Ringkasan:</b>\n  💰 Pengeluaran: Rp3.200.000\n  🟢 Pemasukan:   Rp5.000.000\n  🏦 Saldo Bersih: <b>Rp2.650.000</b>\n\n🏆 <b>Top Kategori Pengeluaran:</b>\n  1. 🍽️ Makan Berat / Makan Luar: Rp900.000 (28%)\n  2. ☕ Jajan / Ngopi / Kafe: Rp450.000 (14%)\n  3. 🚌 Transportasi Umum: Rp300.000 (9%)\n\n💳 <b>Saldo Akun:</b>\n  📱 Bank Mandiri: <b>Rp2.500.000</b>\n  📱 Cash: <b>Rp150.000</b>\n\n🧠 <b>Insight AI:</b>\n<i>Jajan / Ngopi / Kafe</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics",
+        "SF.getCategoryBreakdown",
+        "SF.getPeriodComparison",
+        "SF.getAccountBalances",
+        "AI.callAI"
+      ]
+    },
+    "analytics: getSmartFinanceSummary(\"hari ini\")": {
+      "outcome": {
+        "ok": "💡 <b>Ringkasan Keuangan Cerdas — Hari Ini</b>\n\n📊 <b>Ringkasan:</b>\n  💰 Pengeluaran: Rp3.200.000\n  🟢 Pemasukan:   Rp5.000.000\n  🏦 Saldo Bersih: <b>Rp2.650.000</b>\n\n🏆 <b>Top Kategori Pengeluaran:</b>\n  1. 🍽️ Makan Berat / Makan Luar: Rp900.000 (28%)\n  2. ☕ Jajan / Ngopi / Kafe: Rp450.000 (14%)\n  3. 🚌 Transportasi Umum: Rp300.000 (9%)\n\n💳 <b>Saldo Akun:</b>\n  📱 Bank Mandiri: <b>Rp2.500.000</b>\n  📱 Cash: <b>Rp150.000</b>\n\n🧠 <b>Insight AI:</b>\n<i>Jajan / Ngopi / Kafe</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics",
+        "SF.getCategoryBreakdown",
+        "SF.getPeriodComparison",
+        "SF.getAccountBalances",
+        "AI.callAI"
+      ]
+    },
+    "analytics: getSmartFinanceSummary(\"minggu ini\")": {
+      "outcome": {
+        "ok": "💡 <b>Ringkasan Keuangan Cerdas — Minggu Ini</b>\n\n📊 <b>Ringkasan:</b>\n  💰 Pengeluaran: Rp3.200.000\n  🟢 Pemasukan:   Rp5.000.000\n  🏦 Saldo Bersih: <b>Rp2.650.000</b>\n\n🏆 <b>Top Kategori Pengeluaran:</b>\n  1. 🍽️ Makan Berat / Makan Luar: Rp900.000 (28%)\n  2. ☕ Jajan / Ngopi / Kafe: Rp450.000 (14%)\n  3. 🚌 Transportasi Umum: Rp300.000 (9%)\n\n💳 <b>Saldo Akun:</b>\n  📱 Bank Mandiri: <b>Rp2.500.000</b>\n  📱 Cash: <b>Rp150.000</b>\n\n🧠 <b>Insight AI:</b>\n<i>Jajan / Ngopi / Kafe</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics",
+        "SF.getCategoryBreakdown",
+        "SF.getPeriodComparison",
+        "SF.getAccountBalances",
+        "AI.callAI"
+      ]
+    },
+    "analytics: getSmartFinanceSummary(\"bulan ini\")": {
+      "outcome": {
+        "ok": "💡 <b>Ringkasan Keuangan Cerdas — Bulan Ini</b>\n\n📊 <b>Ringkasan:</b>\n  💰 Pengeluaran: Rp3.200.000\n  🟢 Pemasukan:   Rp5.000.000\n  🏦 Saldo Bersih: <b>Rp2.650.000</b>\n\n🏆 <b>Top Kategori Pengeluaran:</b>\n  1. 🍽️ Makan Berat / Makan Luar: Rp900.000 (28%)\n  2. ☕ Jajan / Ngopi / Kafe: Rp450.000 (14%)\n  3. 🚌 Transportasi Umum: Rp300.000 (9%)\n\n💳 <b>Saldo Akun:</b>\n  📱 Bank Mandiri: <b>Rp2.500.000</b>\n  📱 Cash: <b>Rp150.000</b>\n\n🧠 <b>Insight AI:</b>\n<i>Jajan / Ngopi / Kafe</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics",
+        "SF.getCategoryBreakdown",
+        "SF.getPeriodComparison",
+        "SF.getAccountBalances",
+        "AI.callAI"
+      ]
+    },
+    "analytics: getSmartFinanceSummary(\"bulan lalu\")": {
+      "outcome": {
+        "ok": "💡 <b>Ringkasan Keuangan Cerdas — Bulan Lalu</b>\n\n📊 <b>Ringkasan:</b>\n  💰 Pengeluaran: Rp3.200.000\n  🟢 Pemasukan:   Rp5.000.000\n  🏦 Saldo Bersih: <b>Rp2.650.000</b>\n\n🏆 <b>Top Kategori Pengeluaran:</b>\n  1. 🍽️ Makan Berat / Makan Luar: Rp900.000 (28%)\n  2. ☕ Jajan / Ngopi / Kafe: Rp450.000 (14%)\n  3. 🚌 Transportasi Umum: Rp300.000 (9%)\n\n💳 <b>Saldo Akun:</b>\n  📱 Bank Mandiri: <b>Rp2.500.000</b>\n  📱 Cash: <b>Rp150.000</b>\n\n🧠 <b>Insight AI:</b>\n<i>Jajan / Ngopi / Kafe</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics",
+        "SF.getCategoryBreakdown",
+        "SF.getPeriodComparison",
+        "SF.getAccountBalances",
+        "AI.callAI"
+      ]
+    },
+    "analytics: getSavingRateReport(null)": {
+      "outcome": {
+        "ok": "💰 <b>Tingkat Tabungan — Bulan Ini</b>\n\n<b>Pemasukan:</b>   Rp5.000.000\n<b>Pengeluaran:</b> Rp3.200.000\n<b>Sisa/Tabungan:</b> <b>Rp1.800.000</b>\n──────────────\n<b>Saving Rate: 36.0%</b>\n🏆 <i>Sangat Baik! Hemat sekali.</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getSavingRateReport(\"hari ini\")": {
+      "outcome": {
+        "ok": "💰 <b>Tingkat Tabungan — Hari Ini</b>\n\n<b>Pemasukan:</b>   Rp5.000.000\n<b>Pengeluaran:</b> Rp3.200.000\n<b>Sisa/Tabungan:</b> <b>Rp1.800.000</b>\n──────────────\n<b>Saving Rate: 36.0%</b>\n🏆 <i>Sangat Baik! Hemat sekali.</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getSavingRateReport(\"minggu ini\")": {
+      "outcome": {
+        "ok": "💰 <b>Tingkat Tabungan — Minggu Ini</b>\n\n<b>Pemasukan:</b>   Rp5.000.000\n<b>Pengeluaran:</b> Rp3.200.000\n<b>Sisa/Tabungan:</b> <b>Rp1.800.000</b>\n──────────────\n<b>Saving Rate: 36.0%</b>\n🏆 <i>Sangat Baik! Hemat sekali.</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getSavingRateReport(\"bulan ini\")": {
+      "outcome": {
+        "ok": "💰 <b>Tingkat Tabungan — Bulan Ini</b>\n\n<b>Pemasukan:</b>   Rp5.000.000\n<b>Pengeluaran:</b> Rp3.200.000\n<b>Sisa/Tabungan:</b> <b>Rp1.800.000</b>\n──────────────\n<b>Saving Rate: 36.0%</b>\n🏆 <i>Sangat Baik! Hemat sekali.</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getSavingRateReport(\"bulan lalu\")": {
+      "outcome": {
+        "ok": "💰 <b>Tingkat Tabungan — Bulan Lalu</b>\n\n<b>Pemasukan:</b>   Rp5.000.000\n<b>Pengeluaran:</b> Rp3.200.000\n<b>Sisa/Tabungan:</b> <b>Rp1.800.000</b>\n──────────────\n<b>Saving Rate: 36.0%</b>\n🏆 <i>Sangat Baik! Hemat sekali.</i>"
+      },
+      "stubCalls": [
+        "SF.getFinanceAnalytics"
+      ]
+    },
+    "analytics: getDailyBalanceTrendReport(null)": {
+      "outcome": {
+        "ok": "📈 <b>Tren Saldo Harian — Bank Mandiri (Bulan Ini)</b>\n\n<code>10-05 ████████ Rp2.040.000\n10-06 ████████ Rp2.050.000\n10-07 ████████ Rp2.060.000\n10-08 ████████ Rp2.070.000\n10-09 ████████ Rp2.080.000\n10-10 ████████ Rp2.090.000\n10-11 ████████ Rp2.100.000\n10-12 ████████ Rp2.110.000\n10-13 ████████ Rp2.120.000\n10-14 ████████ Rp2.130.000\n</code>\n<b>Saldo akhir periode:</b> Rp2.130.000"
+      },
+      "stubCalls": [
+        "SF.getAccountsList",
+        "SF.getAccountBalances",
+        "SF.getDailyBalanceTrend"
+      ]
+    },
+    "analytics: getDailyBalanceTrendReport(\"hari ini\")": {
+      "outcome": {
+        "ok": "📈 <b>Tren Saldo Harian — Bank Mandiri (Hari Ini)</b>\n\n<code>10-05 ████████ Rp2.040.000\n10-06 ████████ Rp2.050.000\n10-07 ████████ Rp2.060.000\n10-08 ████████ Rp2.070.000\n10-09 ████████ Rp2.080.000\n10-10 ████████ Rp2.090.000\n10-11 ████████ Rp2.100.000\n10-12 ████████ Rp2.110.000\n10-13 ████████ Rp2.120.000\n10-14 ████████ Rp2.130.000\n</code>\n<b>Saldo akhir periode:</b> Rp2.130.000"
+      },
+      "stubCalls": [
+        "SF.getAccountsList",
+        "SF.getAccountBalances",
+        "SF.getDailyBalanceTrend"
+      ]
+    },
+    "analytics: getDailyBalanceTrendReport(\"minggu ini\")": {
+      "outcome": {
+        "ok": "📈 <b>Tren Saldo Harian — Bank Mandiri (Minggu Ini)</b>\n\n<code>10-05 ████████ Rp2.040.000\n10-06 ████████ Rp2.050.000\n10-07 ████████ Rp2.060.000\n10-08 ████████ Rp2.070.000\n10-09 ████████ Rp2.080.000\n10-10 ████████ Rp2.090.000\n10-11 ████████ Rp2.100.000\n10-12 ████████ Rp2.110.000\n10-13 ████████ Rp2.120.000\n10-14 ████████ Rp2.130.000\n</code>\n<b>Saldo akhir periode:</b> Rp2.130.000"
+      },
+      "stubCalls": [
+        "SF.getAccountsList",
+        "SF.getAccountBalances",
+        "SF.getDailyBalanceTrend"
+      ]
+    },
+    "analytics: getDailyBalanceTrendReport(\"bulan ini\")": {
+      "outcome": {
+        "ok": "📈 <b>Tren Saldo Harian — Bank Mandiri (Bulan Ini)</b>\n\n<code>10-05 ████████ Rp2.040.000\n10-06 ████████ Rp2.050.000\n10-07 ████████ Rp2.060.000\n10-08 ████████ Rp2.070.000\n10-09 ████████ Rp2.080.000\n10-10 ████████ Rp2.090.000\n10-11 ████████ Rp2.100.000\n10-12 ████████ Rp2.110.000\n10-13 ████████ Rp2.120.000\n10-14 ████████ Rp2.130.000\n</code>\n<b>Saldo akhir periode:</b> Rp2.130.000"
+      },
+      "stubCalls": [
+        "SF.getAccountsList",
+        "SF.getAccountBalances",
+        "SF.getDailyBalanceTrend"
+      ]
+    },
+    "analytics: getDailyBalanceTrendReport(\"bulan lalu\")": {
+      "outcome": {
+        "ok": "📈 <b>Tren Saldo Harian — Bank Mandiri (Bulan Lalu)</b>\n\n<code>10-05 ████████ Rp2.040.000\n10-06 ████████ Rp2.050.000\n10-07 ████████ Rp2.060.000\n10-08 ████████ Rp2.070.000\n10-09 ████████ Rp2.080.000\n10-10 ████████ Rp2.090.000\n10-11 ████████ Rp2.100.000\n10-12 ████████ Rp2.110.000\n10-13 ████████ Rp2.120.000\n10-14 ████████ Rp2.130.000\n</code>\n<b>Saldo akhir periode:</b> Rp2.130.000"
+      },
+      "stubCalls": [
+        "SF.getAccountsList",
+        "SF.getAccountBalances",
+        "SF.getDailyBalanceTrend"
+      ]
+    },
+    "analytics: getAccountBalancesReport": {
+      "outcome": {
+        "ok": "🏦 <b>Saldo Per Akun (Real-time)</b>\n\n📱 <b>Bank Mandiri</b> <i>(BANK)</i>\n   Saldo: <b>Rp2.500.000</b>\n   Masuk: +RpNaN · Keluar: -RpNaN\n\n📱 <b>Cash</b> <i>(CASH)</i>\n   Saldo: <b>Rp150.000</b>\n   Masuk: +RpNaN · Keluar: -RpNaN\n\n──────────────\n💰 <b>Total Kekayaan Bersih: Rp2.650.000</b>"
+      },
+      "stubCalls": [
+        "SF.getAccountBalances"
+      ]
+    },
+    "analytics: getMonthlySummaryReport": {
+      "outcome": {
+        "ok": "📅 <b>Tren Keuangan 7 Bulan Terakhir</b>\n\n<b>Mei 2026</b> ✅\n<code>  🟢 ███████░ Rp4.000.000\n  🔴 █████░░░ Rp3.000.000</code>\n\n<b>Jun 2026</b> ✅\n<code>  🟢 ███████░ Rp4.100.000\n  🔴 ██████░░ Rp3.150.000</code>\n\n<b>Jul 2026</b> ✅\n<code>  🟢 ███████░ Rp4.200.000\n  🔴 ██████░░ Rp3.300.000</code>\n\n<b>Ags 2026</b> ✅\n<code>  🟢 ████████ Rp4.300.000\n  🔴 ██████░░ Rp3.450.000</code>\n\n<b>Sep 2026</b> ✅\n<code>  🟢 ████████ Rp4.400.000\n  🔴 ██████░░ Rp3.600.000</code>\n\n<b>Okt 2026</b> ✅\n<code>  🟢 ████████ Rp4.500.000\n  🔴 ███████░ Rp3.750.000</code>"
+      },
+      "stubCalls": [
+        "SF.getMonthlySummary"
+      ]
+    }
+  }
+}

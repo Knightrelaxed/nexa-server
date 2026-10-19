@@ -5,7 +5,7 @@
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
-    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js tests/signal_detector.test.js tests/playbook_engine.test.js tests/micro_reviewer.test.js tests/directive_utils.test.js tests/identity_directive_flow.test.js tests/playbook_counters.test.js tests/topic_classifier.test.js tests/reviewer_resilience.test.js tests/telegram_adapter.test.js tests/cli_adapter.test.js tests/common_handlers.test.js tests/version.test.js"
+    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js tests/signal_detector.test.js tests/playbook_engine.test.js tests/micro_reviewer.test.js tests/directive_utils.test.js tests/identity_directive_flow.test.js tests/playbook_counters.test.js tests/topic_classifier.test.js tests/reviewer_resilience.test.js tests/telegram_adapter.test.js tests/cli_adapter.test.js tests/common_handlers.test.js tests/version.test.js tests/finance_characterization.test.js"
   },
   "keywords": [],
   "author": "",
