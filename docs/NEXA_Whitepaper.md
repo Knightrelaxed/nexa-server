@@ -514,7 +514,18 @@ nexa-server/
 │   │   ├── Location_Engine.js          # Reverse geocoding & Brave Place API
 │   │   ├── Notion_Client.js            # Notion Database sync client
 │   │   ├── Supabase_Finance.js         # Supabase PostgreSQL financial schema bridge
-│   │   ├── Supabase_Memories.js        # Supabase PostgreSQL long-term memory & profile bridge
+│   │   ├── Supabase_Memories.js        # Public Facade (90 lines, re-exporting 69 memory APIs)
+│   │   ├── memories/                   # Modular Memory & Living Persistence Subsystem (10 Modules)
+│   │   │   ├── Memory_Client.js        # Supabase client init, table allowlist & ID matching helpers
+│   │   │   ├── Memory_Living.js        # Living memory metadata, active memory fetch, archiving & pruning
+│   │   │   ├── Memory_Chat.js          # Chat memory persistence, temporal buffers (today/yesterday) & FTS
+│   │   │   ├── Memory_Finance_Dedup.js # Transaction deduplication keys, 7-day hygiene & pending transactions
+│   │   │   ├── Memory_Vault.js         # 2nd Brain Vault (ideas, thoughts, notes & multi-keyword fuzzy match)
+│   │   │   ├── Memory_Identity.js      # User profile, core identity facts, proposals & trait commitments
+│   │   │   ├── Memory_Self_Model.js    # N.E.X.A self-learning model (capabilities, limitations, rules, corrections)
+│   │   │   ├── Memory_Learning.js      # Closed learning loop events, micro-reviewer runs & playbook counters
+│   │   │   ├── Memory_Chrono.js        # 90-day rolling daily narrative consolidation & raw chat buffer search
+│   │   │   └── Memory_Db_Browser.js    # Generic database schema overview, table inspection & CRUD operations
 │   │   └── Web_Search.js               # Real-time web search (Tavily AI & Serper.dev)
 │   ├── interfaces/                     # Inbound & Outbound Ingress Adapters
 │   │   ├── common/                     # Unified Domain Ingress Subsystem
@@ -550,15 +561,18 @@ nexa-server/
 │   ├── trigger_weekly.js               # Manual runner for weekly cognitive synthesis
 │   └── refactor/                       # AST Automated Refactoring & Validation Tooling
 │       ├── README.md                   # Refactoring runbook & safety architecture
-│       ├── split_finance_engine.js     # AST-based non-destructive module splitter
+│       ├── capture_memories_golden.js  # Golden fixture capture utility for Supabase Memories
+│       ├── split_finance_engine.js     # AST-based non-destructive module splitter for Finance Engine
+│       ├── split_supabase_memories.js  # AST-based non-destructive module splitter for Supabase Memories
 │       └── verify_finance_split.js     # Static scope & cyclic dependency validator
-├── tests/                              # Automated Unit Test Suites & Active Diagnostics (200 Tests)
+├── tests/                              # Automated Unit Test Suites & Active Diagnostics (269 Tests)
 │   ├── cli_adapter.test.js             # CLI ingress adapter & multi-turn prompts
 │   ├── common_handlers.test.js         # Shared domain intent handlers (15 bank cases, escaping)
 │   ├── day_simulation.test.js          # Full 24-hour simulation (Briefing to Midnight)
 │   ├── directive_utils.test.js         # Behavioral directive parsing & counter increments
 │   ├── finance_characterization.test.js# Golden master: Invariance test suite for modular Finance Engine (75 cases)
 │   ├── identity_directive_flow.test.js # Dynamic persona directives & alignment flow
+│   ├── memories_characterization.test.js # Golden master: Invariance test suite for modular Supabase Memories (69 cases)
 │   ├── micro_reviewer.test.js          # Micro-reviewer cognitive reflection & feedback loops
 │   ├── playbook_counters.test.js       # Behavioral playbook counters & limits
 │   ├── playbook_engine.test.js         # Playbook engine rules & conditional SOPs
@@ -572,7 +586,8 @@ nexa-server/
 │   ├── topic_classifier.test.js        # Topic classification & fast prompt router
 │   ├── upgrade.test.js                 # Schema upgrade & database integrity validator
 │   ├── version.test.js                 # Centralized version resolver & git SHA tests
-│   └── fixtures/                       # Golden Master Serialized Fixtures (finance_golden.json)
+│   ├── helpers/                        # Test Harness Helpers (memories_harness.js)
+│   └── fixtures/                       # Golden Master Serialized Fixtures (finance_golden.json, memories_golden.json)
 ├── tools/                              # Interactive CLI & Google Workspace OAuth2 tools
 └── docs/                               # Comprehensive architectural blueprints & specifications
 ```
@@ -593,7 +608,7 @@ nexa-server/
 | **Domain** | `Agenda_Manager.js` | Pengelolaan kalender Google Calendar, kalkulasi slot kosong (*free/busy*), dan peringatan kedekatan agenda (*proximity alert* 30 menit sebelum acara). |
 | **Domain** | `Task_Manager.js` | Sinkronisasi dua arah Google Tasks dan Notion dengan preservasi timezone lokal (WIB). |
 | **Infra** | `Google_Master_Client.js` | Klien Singleton tunggal pengelola 16 scope Google Workspace dengan auto-refresh token senyap dan proteksi circuit breaker. |
-| **Infra** | `Supabase_Memories.js` | Manajemen database PostgreSQL untuk riwayat chat, fakta profil, dan identitas inti dengan cache RAM ber-TTL 30 menit. |
+| **Infra** | `Supabase_Memories.js` (Facade) & `memories/` | Public facade (90 baris) dan 10 subsistem memori modular (`Memory_Client`, `Memory_Living`, `Memory_Chat`, `Memory_Finance_Dedup`, `Memory_Vault`, `Memory_Identity`, `Memory_Self_Model`, `Memory_Learning`, `Memory_Chrono`, `Memory_Db_Browser`) yang mengelola riwayat chat, dedup transaksi, vault ide, proposal identitas kognitif, self-model, dan generic DB explorer tanpa circular dependency. |
 
 ---
 
@@ -3111,6 +3126,132 @@ Refaktor kode skala besar yang melibatkan logika finansial sangat berisiko jika 
 | **Waktu Eksekusi Golden Test** | - | **261 ms** untuk 75 pengujian menyeluruh |
 | **Uji Kasus Riil Mandiri** | Belum teruji perilaku | **Terverifikasi penuh** (QRIS & Failed BI Fast) |
 | **Status Produksi Azure VPS** | v3.4.0 (Monolith) | **v3.4.0 Modular Active (`1eec349`, PM2 ALIVE, 194 MB)** |
+
+---
+
+## BAB 19: DEKOMPOSISI ACYCLICAL PERSISTENCE SUBSYSTEMS, MODULAR LIVING MEMORY & 69 GOLDEN-MASTER REGRESSION GATES
+
+### 19.1 Urgensi Modularisasi Persistence Layer (2.004 Baris Monolit)
+
+Seiring bertambahnya kapabilitas N.E.X.A dari v1.0 hingga v3.4.0, berkas [`src/infrastructure/Supabase_Memories.js`](file:///c:/workspace/nexa-server/src/infrastructure/Supabase_Memories.js) mengalami pembengkakan struktural ekstrem hingga mencapai **2.004 baris kode**. Berkas ini bertindak sebagai *God Object* infrastruktur data yang menampung 10 domain tanggung jawab yang sepenuhnya heterogen:
+
+1. **Inisialisasi Klien & Helper Validasi** (`supabase`, `resolveAllowedTableName`, `findMatchingIds`).
+2. **Histori Obrolan & Memori Temporal** (`saveChatMemory`, `getRecentMemories`, `getTodayMemories`, `getYesterdayMemories`, `searchPastChats`).
+3. **Dedup Keuangan & Antrean Pending** (`isDuplicateTransaction`, `logTransactionKey`, `cleanupOldFinanceDedup`, pending transaction CRUD).
+4. **2nd Brain Vault & Ide** (`saveIdeaToVault`, `deleteIdeaFromVault`, `editIdeaInVault`, `saveVaultItem`, `updateVaultItemById`).
+5. **Identitas Pengguna & Proposal Kognitif** (`saveUserProfile`, `saveCoreIdentity`, `getPersonalFacts`, trait proposals Git-style commit).
+6. **Living Memory & Hygiene Phase 9** (`saveMemoryWithMeta`, `getAllActiveMemories`, `archiveMemoryById`, `bulkArchiveMemories`, `reinforceMemoryById`, `getStagedForPruning`).
+7. **Model Belajar Mandiri N.E.X.A** (`upsertSelfModelTrait`, `getSelfModel`, `getSelfModelByLayer`, `deleteFromSelfModel`).
+8. **Closed Learning Loop & Playbooks v3.3** (`recordLearningEvent`, `getUnprocessedLearningEvents`, micro-reviewer runs, playbook counters).
+9. **Chrono-Episodic 90-Day Rolling Narratives** (`getCandidateDatesToConsolidate`, `getChatsForDateWib`, `saveDailyNarrative`, `searchDailyNarratives`).
+10. **Generic Database Explorer & Schema Browser** (`getDatabaseOverview`, `readDatabaseTable`, `insertDatabaseRow`, dynamic updates/deletions).
+
+Lebih dari **40 berkas** di seluruh `nexa-server` mengimpor `Supabase_Memories.js`. Melakukan refaktor manual pada lapisan sepenting ini memiliki probabilitas regresi yang sangat tinggi tanpa alat verifikasi statis dan karakterisasi dinamis.
+
+---
+
+### 19.2 Arsitektur Sub-Modul & Graf Asiklik (`src/infrastructure/memories/`)
+
+Berbeda dari modul keuangan yang memiliki state mutable di memori, `Supabase_Memories.js` adalah pembungkus PostgREST yang bersifat murni fungsional (*stateless client wrappers*). Melalui analisis AST komprehensif, dependensi antar-fungsi berhasil dipetakan ke dalam struktur lapisan yang **100% asiklik (tanpa circular dependency)**:
+
+```mermaid
+graph TD
+    Facade["Supabase_Memories.js (Facade - 90 Baris)"]
+    
+    subgraph "src/infrastructure/memories/"
+        Client["Memory_Client.js<br/>(Supabase Client & Shared Helpers)"]
+        Living["Memory_Living.js<br/>(Active Memory & Pruning)"]
+        Identity["Memory_Identity.js<br/>(User Traits & Git Proposals)"]
+        SelfModel["Memory_Self_Model.js<br/>(NEXA Capabilities & Rules)"]
+        Chat["Memory_Chat.js<br/>(Chat History & WIB Buffers)"]
+        FinanceDedup["Memory_Finance_Dedup.js<br/>(Dedup Keys & Pending Tx)"]
+        Vault["Memory_Vault.js<br/>(2nd Brain & Ideas)"]
+        Learning["Memory_Learning.js<br/>(Playbooks & Micro-Reviewer)"]
+        Chrono["Memory_Chrono.js<br/>(90-Day Daily Chronicles)"]
+        DbBrowser["Memory_Db_Browser.js<br/>(Generic DB CRUD Browser)"]
+    end
+
+    Facade --> Client
+    Facade --> Living
+    Facade --> Identity
+    Facade --> SelfModel
+    Facade --> Chat
+    Facade --> FinanceDedup
+    Facade --> Vault
+    Facade --> Learning
+    Facade --> Chrono
+    Facade --> DbBrowser
+
+    Living --> Client
+    Identity --> Living
+    Identity --> Client
+    SelfModel --> Client
+    Chat --> Client
+    FinanceDedup --> Client
+    Vault --> Client
+    Learning --> Client
+    Chrono --> Client
+    DbBrowser --> Client
+
+    classDef facade fill:#4a154b,stroke:#e01e5a,stroke-width:2px,color:#fff;
+    classDef base fill:#1e3d59,stroke:#17b978,stroke-width:2px,color:#fff;
+    classDef domain fill:#17252a,stroke:#3aafa9,stroke-width:1px,color:#fff;
+    class Facade facade;
+    class Client base;
+    class Living,Identity,SelfModel,Chat,FinanceDedup,Vault,Learning,Chrono,DbBrowser domain;
+```
+
+#### Spesifikasi Ukuran & Tanggung Jawab Sub-Modul:
+
+| No | Berkas Modul | Baris | Peran Arsitektural & API Kunci |
+|:---:|---|:---:|---|
+| 1 | `Memory_Client.js` | **92** | Lapisan dasar (*leaf node*): Klien Supabase, tabel yang diizinkan (`resolveAllowedTableName`), dan helper pencocokan kata kunci fuzzy (`findMatchingIds`). |
+| 2 | `Memory_Living.js` | **174** | Siklus hidup memori aktif: penyimpanan berekstensi metadata, pengarsipan ID, penguatan memori (*reinforce*), dan penentuan kandidat pemangkasan (*pruning stage*). |
+| 3 | `Memory_Identity.js` | **442** | Profil kepribadian pengguna, fakta personal, evaluasi dimensi psikologis, dan alur proposal trait berformat git commit. |
+| 4 | `Memory_Self_Model.js` | **142** | Model kesadaran mandiri N.E.X.A: pencatatan kapabilitas, batasan sistem, aturan permanen, dan riwayat koreksi perilaku. |
+| 5 | `Memory_Chat.js` | **144** | Persistensi riwayat interaksi obrolan Telegram/CLI/WhatsApp, pengambilan memori temporal (hari ini/kemarin dalam WIB), dan Full-Text Search. |
+| 6 | `Memory_Finance_Dedup.js` | **164** | Pencegahan duplikasi transaksi perbankan (kunci komposit 7 hari) dan antrean transaksi menunggu konfirmasi (*pending tx store*). |
+| 7 | `Memory_Vault.js` | **120** | Brankas ide kognitif Tuan (*2nd Brain*): CRUD ide spontan, penyimpanan item vault, dan manipulasi catatan berbasis keyword. |
+| 8 | `Memory_Learning.js` | **249** | Closed learning loop (v3.3): event antrean pembelajaran, micro-reviewer logging, playbook counters, dan registri SOP taktis. |
+| 9 | `Memory_Chrono.js` | **219** | Konsolidasi kronologis 90 hari: pengambilan transkrip harian WIB, penyimpanan narasi sintetis, pemangkasan chat mentah, dan pencarian lintas narasi. |
+| 10 | `Memory_Db_Browser.js` | **148** | Antarmuka administrasi database dinamis: pembacaan skema, paginasi baris, penambahan, pembaruan, dan penghapusan baris tabel. |
+| 11 | `Supabase_Memories.js` (Facade) | **90** | Public facade murni yang mengekspor **69 API unik** dengan nama dan urutan identik ke pemanggil eksternal. |
+
+---
+
+### 19.3 Metodologi Golden-Master Characterization (69 Kasus Uji, 1.153 Query Assertions)
+
+Untuk menjamin refaktor tidak mengubah bentuk payload, urutan query, maupun perlakuan error PostgREST:
+
+1. **Mock Recording Harness (`memories_harness.js`)**:
+   Dibuat harness perekam tanpa jaringan (*zero network dependency*) yang menyadap seluruh metode query Supabase (`from`, `select`, `insert`, `update`, `delete`, `upsert`, `eq`, `gte`, `lte`, `ilike`, `order`, `limit`, `single`).
+2. **Perekaman Deterministik 3 Skenario (`capture_memories_golden.js`)**:
+   Setiap fungsi dari 69 ekspor diuji pada 3 kondisi eksekusi:
+   - **Skenario A:** Database mengembalikan baris data normal.
+   - **Skenario B:** Database mengembalikan data kosong (`data: []`).
+   - **Skenario C:** Database melempar error (`error: { message, code }`).
+   Total **1.153 pemanggilan query** terekam secara deterministik dalam [`tests/fixtures/memories_golden.json`](file:///c:/workspace/nexa-server/tests/fixtures/memories_golden.json) (~212 KB).
+3. **Pemisahan Berbasis AST Tanpa Modifikasi Semantik (`split_supabase_memories.js`)**:
+   Setiap deklarasi fungsi dipindahkan **verbatim** (termasuk komentar pendahulu), hanya jalur `require` relatif yang disesuaikan secara otomatis (`../utils/` → `../../utils/`).
+4. **Verifikasi Statis & Dinamis**:
+   - `split_supabase_memories.js --verify`: 75 deklarasi asli diperiksa dan ditemukan tepat 1x tanpa kehilangan atau duplikasi.
+   - `tests/memories_characterization.test.js`: 69/69 skenario identik 100%.
+   - `npm test`: **269 dari 269 tes lulus (100% PASS)**.
+
+---
+
+### 19.4 Matriks Komparasi Refactoring Persistence Layer
+
+| Parameter Metrik | Sebelum Refaktor (`Supabase_Memories.js` Monolit) | Setelah Refaktor (`memories/` Modular Architecture) |
+| :--- | :--- | :--- |
+| **Ukuran Berkas Utama** | **2.004 baris kode** | **90 baris kode (Turun 95,5%)** |
+| **Jumlah Sub-Modul** | 1 file raksasa (*God Object*) | **10 modul modular** di `src/infrastructure/memories/` |
+| **Berkas Terbesar** | 2.004 baris (`Supabase_Memories.js`) | **442 baris** (`Memory_Identity.js`, seluruhnya < 500 baris) |
+| **Ketergantungan Siklik** | Tersembunyi dalam satu file raksasa | **0% (100% Strict Acyclic Layering)** |
+| **Jumlah API Ekspor Unik** | 69 ekspor (termasuk 2 kunci duplikat) | **69 ekspor bersih (Dukungan backward-compatible 100%)** |
+| **Cakupan Pengujian Monorepo** | 200 tests passing | **269 tests passing (100% Pass, 0 Fail)** |
+| **Regression Gates** | Belum memiliki fixture query Supabase | **144 Golden Master Tests** (75 Finance + 69 Memories) |
+| **Status Produksi** | v3.4.0 (Monolith DB Wrapper) | **v3.4.0 Production Verified & Deployed** |
 
 ---
 

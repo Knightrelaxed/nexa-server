@@ -360,6 +360,12 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
    - Menerapkan pengujian karakterisasi Golden-Master 75 kasus deterministik (`tests/finance_characterization.test.js`) yang memverifikasi integritas parsing riil Livin' by Mandiri (QRIS Grab Food & alert kegagalan BI Fast) dan pemulihan antrean pending database.
    - Mengembangkan suite pengujian server hingga **200/200 Tests Passing (100% Pass, 0 Fail)**.
 
+7. **Dekomposisi Acyclical Memory Infrastructure Subsystems (`memories/`):**
+   - Membedah monolit `Supabase_Memories.js` dari **2.004 baris menjadi 90 baris** (Public Facade, -95,5%) tanpa siklus dependensi dan tanpa breaking changes untuk >40 file pemanggil.
+   - Mengorganisasikan 10 subsistem memori terisolasi di bawah `src/infrastructure/memories/`: `Memory_Client`, `Memory_Living`, `Memory_Chat`, `Memory_Finance_Dedup`, `Memory_Vault`, `Memory_Identity`, `Memory_Self_Model`, `Memory_Learning`, `Memory_Chrono`, dan `Memory_Db_Browser`.
+   - Mengimplementasikan rangkaian uji karakterisasi Golden-Master 69 skenario (`tests/memories_characterization.test.js`) dengan harness mock recorder yang memvalidasi 1.153 pemanggilan query PostgREST/Supabase identik secara deterministik.
+   - Meningkatkan jangkauan uji regresi otomatis monorepo menjadi **269/269 Tests Passing (100% Pass, 0 Fail)**.
+
 ---
 
 ## Kesimpulan & Metrik Spesifikasi v3.4.0
@@ -367,7 +373,7 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
 | Parameter Arsitektur | Spesifikasi N.E.X.A v3.4.0 (Production Release) |
 | :--- | :--- |
 | **Official Name & Title** | **N.E.X.A (Neural Executive with Xenial Agent)** |
-| **Architectural Edition** | **Modular Unified Ingress, Layered Finance & Platform-Aware Hardening (v3.4.0)** |
+| **Architectural Edition** | **Modular Unified Ingress, Layered Finance & Modular Memory Architecture (v3.4.0)** |
 | **Core Compute Infrastructure** | Azure Virtual Machine `Standard_B2ats_v2` (Ubuntu 24.04 ARM, Jakarta `indonesiacentral`) |
 | **Process Management & Auto-Healing** | PM2 Process Manager v5.4 + Systemd Auto-Revive + PM2 Plus Cloud Dashboard |
 | **Edge Web Server & Security** | Caddy v2 Reverse Proxy + Automated Let's Encrypt TLS/SSL |
@@ -375,6 +381,7 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
 | **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~18-28 MB, CPU Idle 0%) |
 | **Ingress Architecture** | Hexagonal Decoupling (Common Domain Handlers + Modular Telegram & CLI Adapters) |
 | **Finance Architecture** | Layered Subsystems + High-Performance Public Facade (`src/domain/finance/`) |
+| **Memory Architecture** | Layered Persistence Subsystems + High-Performance Public Facade (`src/infrastructure/memories/`) |
 | **Code Duplication Rate** | **0.50%** (3 klon, 41 baris tersisa di seluruh antarmuka) |
 | **Security Sanitization** | Platform-Aware HTML Escaping for Telegram + Clean Plain-Text for Terminal CLI |
 | **Currency & Spatial Engine** | Universal Bank Parser (`parseFlexibleNominal`) + OpenStreetMap / GPS Mobile Bridge |
@@ -383,7 +390,7 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
 | **Financial Engine** | Zero-LLM Deterministic Intelligence + Dynamic Recurring Rules (`nexa_recurring_rules`) |
 | **Notification Traffic Control** | Centralized Notifier + Quiet Hours Protection + Dedup Cooldown (`nexa_notifications`) |
 | **AI Resilience Matrix** | Round-Robin Key Ring Circuit Breaker + 429 Retry-After Parser + 11-Tier Fallback |
-| **Test Suite Coverage** | **200/200 Tests Passing** (`npm test`, 100% Pass) + **75/75 Golden Master Invariance Tests** |
+| **Test Suite Coverage** | **269/269 Tests Passing** (`npm test`, 100% Pass) + **144 Golden Master Invariance Tests** (75 Finance + 69 Memories) |
 | **Primary Beneficiary** | **Tuan Faqih Hidayatulloh** |
 
 ---

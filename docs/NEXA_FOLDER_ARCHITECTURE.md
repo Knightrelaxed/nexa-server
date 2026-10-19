@@ -88,16 +88,19 @@ nexa-server/
 │   ├── trigger_weekly.js                 # Manual runner for weekly cognitive synthesis
 │   └── refactor/                         # AST Automated Refactoring & Validation Tooling
 │       ├── README.md                     # Refactoring runbook & safety architecture
-│       ├── split_finance_engine.js       # AST-based non-destructive module splitter
+│       ├── capture_memories_golden.js    # Golden fixture capture utility for Supabase Memories
+│       ├── split_finance_engine.js       # AST-based non-destructive module splitter for Finance Engine
+│       ├── split_supabase_memories.js    # AST-based non-destructive module splitter for Supabase Memories
 │       └── verify_finance_split.js       # Static scope & cyclic dependency validator
 │
-├── tests/                                # Automated Unit Test Suites & Active Diagnostics
+├── tests/                                # Automated Unit Test Suites & Active Diagnostics (269 Tests)
 │   ├── cli_adapter.test.js               # Unit tests: CLI ingress adapter & multi-turn prompts
 │   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers (15 bank cases, escaping)
 │   ├── day_simulation.test.js            # Unit tests: Full 24-hour simulation (Briefing to Midnight)
 │   ├── directive_utils.test.js           # Unit tests: Behavioral directive parsing & counter increments
 │   ├── finance_characterization.test.js  # Golden master: Invariance test suite for modular Finance Engine (75 cases)
 │   ├── identity_directive_flow.test.js   # Unit tests: Dynamic persona directives & alignment flow
+│   ├── memories_characterization.test.js # Golden master: Invariance test suite for modular Supabase Memories (69 cases)
 │   ├── micro_reviewer.test.js            # Unit tests: Micro-reviewer cognitive reflection & feedback loops
 │   ├── playbook_counters.test.js         # Unit tests: Behavioral playbook counters & limits
 │   ├── playbook_engine.test.js           # Unit tests: Playbook engine rules & conditional SOPs
@@ -111,8 +114,11 @@ nexa-server/
 │   ├── topic_classifier.test.js          # Classification: Topic classification & fast prompt router
 │   ├── upgrade.test.js                   # Migration: Schema upgrade & database integrity validator
 │   ├── version.test.js                   # Verification: Centralized version resolver & git SHA tests
+│   ├── helpers/                          # Test Harness Helpers
+│   │   └── memories_harness.js           # Mock Supabase recording harness for characterization
 │   └── fixtures/                         # Golden Master Serialized Fixtures
-│       └── finance_golden.json           # Deterministic baseline outputs & stub call signatures
+│       ├── finance_golden.json           # Deterministic baseline outputs & stub call signatures (Finance)
+│       └── memories_golden.json          # Deterministic baseline query & mutation fixtures (Memories, 1,153 queries)
 │
 ├── tools/                                # Command Line & Developer Tools
 │   ├── chat_cli.js                       # Interactive CLI terminal for talking to N.E.X.A
@@ -189,7 +195,18 @@ nexa-server/
     │   ├── Location_Engine.js            # Reverse geocoding & coordinates resolver
     │   ├── Notion_Client.js              # Notion workspace sync (notes & database)
     │   ├── Supabase_Finance.js           # Supabase PostgreSQL financial ledger client
-    │   ├── Supabase_Memories.js          # Supabase pgvector memory store & episodic facts
+    │   ├── Supabase_Memories.js          # Public Facade (90 lines, re-exporting 69 memory APIs)
+    │   ├── memories/                     # Modular Memory & Living Persistence Subsystem (10 Modules)
+    │   │   ├── Memory_Client.js          # Supabase client init, table allowlist & ID matching helpers
+    │   │   ├── Memory_Living.js          # Living memory metadata, active memory fetch, archiving & pruning
+    │   │   ├── Memory_Chat.js            # Chat memory persistence, temporal buffers (today/yesterday) & FTS
+    │   │   ├── Memory_Finance_Dedup.js   # Transaction deduplication keys, 7-day hygiene & pending transactions
+    │   │   ├── Memory_Vault.js           # 2nd Brain Vault (ideas, thoughts, notes & multi-keyword fuzzy match)
+    │   │   ├── Memory_Identity.js        # User profile, core identity facts, proposals & trait commitments
+    │   │   ├── Memory_Self_Model.js      # N.E.X.A self-learning model (capabilities, limitations, rules, corrections)
+    │   │   ├── Memory_Learning.js        # Closed learning loop events, micro-reviewer runs & playbook counters
+    │   │   ├── Memory_Chrono.js          # 90-day rolling daily narrative consolidation & raw chat buffer search
+    │   │   └── Memory_Db_Browser.js      # Generic database schema overview, table inspection & CRUD operations
     │   └── Web_Search.js                 # Real-time web search crawler
     │
     ├── interfaces/                       # Ingress & Egress Channels (Modular Ingress Architecture v3.4.0)
