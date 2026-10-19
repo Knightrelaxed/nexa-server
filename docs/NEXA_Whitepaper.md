@@ -388,9 +388,9 @@ Setiap kali Tuan Faqih melakukan perbaikan kode atau penambahan fitur pada CLI d
 
 ---
 
-### 2.6 Struktur Arsitektur Monorepo Codebase & Peta Modul Komprehensif (v3.1)
+#### 2.6 Struktur Arsitektur Monorepo Codebase & Peta Modul Komprehensif (v3.4.0)
 
-Arsitektur codebase N.E.X.A mengadopsi pola **Modular Hexagonal / Layered Architecture** yang memisahkan secara ketat antara antarmuka (*Interfaces/Adapters*), orkestrasi kognitif (*Core Brain*), logika domain otonom (*Domain Engines*), dan lapisan infrastruktur/database (*Infrastructure & Data*).
+Arsitektur codebase N.E.X.A mengadopsi pola **Modular Hexagonal / Layered Architecture** yang memisahkan secara ketat antara antarmuka (*Interfaces/Adapters*), orkestrasi kognitif (*Core Brain*), logika domain otonom (*Domain Engines & Subsystems*), dan lapisan infrastruktur/database (*Infrastructure & Data*).
 
 ```mermaid
 flowchart TD
@@ -415,8 +415,8 @@ flowchart TD
         VOICE["Live_Voice_Engine.js & Voice_Engine.js (Audio Stream & Groq Whisper)"]
     end
 
-    subgraph DomainLogic["4. Autonomous Domain Engines (src/domain/)"]
-        FIN["Finance_Engine, Budget_Engine & Split_Engine"]
+    subgraph DomainLogic["4. Autonomous Domain Engines & Subsystems (src/domain/)"]
+        FIN["Finance_Engine (Facade) & finance/ (7 Subsystems)"]
         DISC["Discipline_GodMode & App_Discipline_Engine"]
         MEM["Episodic_Recall & Chrono_Consolidator (23:59 WIB)"]
         INF["Inference_Engine (Cognitive Sunday Pass) & Behavior_Engine"]
@@ -433,7 +433,7 @@ flowchart TD
     end
 
     subgraph FrontendUI["6. Visual Presentation Layer"]
-        NFW["nexa-finance-web (Next.js 14 App Router)"]
+        NFW["nexa-finance-web (Next.js 16 App Router)"]
     end
 
     Ingress --> APP
@@ -448,20 +448,33 @@ flowchart TD
 
 ```text
 nexa-server/
+├── Dockerfile                          # Production container build specification
+├── .dockerignore                       # Docker build artifact exclusion rules
+├── .gitignore                          # Git repository ignore rules
+├── ecosystem.config.js                 # PM2 process manager configuration (VPS deployment)
+├── package.json                        # Main project manifest & production dependencies (v3.4.0)
+├── package-lock.json                   # Deterministic dependency lockfile
+├── README.md                           # Repository overview & quick start guide
+├── .env.example                        # Blueprint environment variable template
+│
 ├── src/
 │   ├── app.js                          # Main server boot, security headers, IPv4 agent, WS & cron init
 │   ├── config/
 │   │   ├── env.js                      # Environment variable loader & validator
 │   │   ├── personality.js              # Persona, System Prompts, dan aturan karakter N.E.X.A
-│   │   └── model_backup_plan.json      # Model fallback configuration matrix
-│   ├── core/                           # Cognitive Brain & Orchestration Layer
+│   │   ├── model_backup_plan.json      # Model fallback configuration matrix
+│   │   └── version.js                  # Centralized version definition (v3.4.0) & Git SHA resolver
+│   ├── core/                           # Cognitive Brain & Orchestration Layer (9 Subsystems)
 │   │   ├── AI_Router.js                # Contextual intent routing, progressive fact injection, token guard
-│   │   ├── Fallback_Engine.js          # Multi-provider zero-downtime failover engine
+│   │   ├── Fallback_Engine.js          # Multi-provider zero-downtime failover engine (SACR v2.4)
 │   │   ├── Live_Tool_Registry.js       # Dynamic tool calling & function execution registry
 │   │   ├── Live_Voice_Engine.js        # Full-duplex WebSocket voice streaming engine
+│   │   ├── Notifier.js                 # Cross-channel proactive notification dispatcher & queue manager
+│   │   ├── Provider_Health.js          # Dynamic API health check, circuit breaker & failover tracker
+│   │   ├── Topic_Classifier.js         # Fast intent/topic classification & prompt template selector
 │   │   ├── Vision_Engine.js            # 11-Tier OCR & document visual extraction pipeline
 │   │   └── Voice_Engine.js             # Voice note processing & Groq Whisper transcription
-│   ├── domain/                         # Autonomous Business & Domain Logic (17 Engines)
+│   ├── domain/                         # Autonomous Business & Domain Logic (23 Engines)
 │   │   ├── Agenda_Manager.js           # Google Calendar sync, conflict check, and proximity alert
 │   │   ├── Anticipatory_Engine.js      # Cognitive pattern prediction & stress anticipation
 │   │   ├── App_Discipline_Engine.js    # Screen time quotas & Android application discipline
@@ -469,17 +482,31 @@ nexa-server/
 │   │   ├── Budget_Engine.js            # Monthly budget envelopes & spending allocation
 │   │   ├── Chrono_Consolidator.js      # 23:59 WIB daily episodic narrative reduction
 │   │   ├── Device_Control_Engine.js    # Mobile bridge device telemetry & hardware control
+│   │   ├── Dialectic_Engine.js         # Dialectic stance & cognitive counter-argument generator
 │   │   ├── Discipline_GodMode.js       # Tiered physical screen lock, grayscale, and TTS intervention
 │   │   ├── Episodic_Recall.js          # Semantic vector & keyword long-term memory retriever
-│   │   ├── Finance_Engine.js           # Income/expense ledger, NLP correction, pending recovery
+│   │   ├── Finance_Engine.js           # Public Facade (56 baris) delegating to modular finance subsystems
+│   │   ├── Finance_Intel.js            # Deterministic spending patterns, recurring bills & anomaly detection
+│   │   ├── finance/                    # Decomposed Modular Finance Subsystems
+│   │   │   ├── Finance_Analytics.js    # 13 financial reports, spending velocity, saving rate & KPIs
+│   │   │   ├── Finance_Confirmations.js# Multi-turn confirmation lifecycle, 5-min auto-save & recovery
+│   │   │   ├── Finance_Corrections.js  # Safe transaction deletions, edit & undo manager
+│   │   │   ├── Finance_Email_Sync.js   # Livin' by Mandiri Gmail polling, parsing & transaction dedup
+│   │   │   ├── Finance_Helpers.js      # Currency normalizer, date parsers & lightweight AI merchant categorizer
+│   │   │   ├── Finance_Ledger.js       # Core double-entry ledger, transaction writes & search queries
+│   │   │   └── Finance_State.js        # Shared in-memory state & lock sets (single source of truth)
 │   │   ├── Inference_Engine.js         # Weekly cognitive Sunday pass & personality evolution
 │   │   ├── Intelligence_Brief.js       # Morning briefing, midnight check-in, and evening debrief
 │   │   ├── Intention_Engine.js         # Stated-vs-revealed reconciler & strategic target tracker
 │   │   ├── Location_Orchestrator.js    # GPS location contextual inference & place discovery
 │   │   ├── Memory_Hygiene_Engine.js    # Memory deduplication, compaction, and factual hygiene
+│   │   ├── Micro_Reviewer.js           # Micro-reviewer cognitive reflection, output quality critic & guardrails
+│   │   ├── Playbook_Engine.js          # Behavioral playbooks, conditional execution & contextual SOPs
+│   │   ├── Presence_Model.js           # User physical presence, device state & focus mode estimator
+│   │   ├── Signal_Detector.js          # Real-time behavioral signal detector & emotional state cue parser
 │   │   ├── Split_Engine.js             # Bill split calculator & peer debt ledger
 │   │   └── Task_Manager.js             # Google Tasks discovery & Notion parallel synchronization
-│   ├── infrastructure/                 # External Integrations & Storage Clients
+│   ├── infrastructure/                 # External Integrations & Storage Clients (9 Clients)
 │   │   ├── Gmail_Client.js             # Gmail API m-banking polling & message delivery
 │   │   ├── Google_Master_Client.js     # Unified Google Master OAuth 2.0 Client (16 scopes)
 │   │   ├── Google_Tasks.js             # Google Tasks API interface with date-only normalization
@@ -490,29 +517,64 @@ nexa-server/
 │   │   ├── Supabase_Memories.js        # Supabase PostgreSQL long-term memory & profile bridge
 │   │   └── Web_Search.js               # Real-time web search (Tavily AI & Serper.dev)
 │   ├── interfaces/                     # Inbound & Outbound Ingress Adapters
-│   │   ├── common/                     # Unified Domain Intent Handlers & Cross-Interface Helpers
+│   │   ├── common/                     # Unified Domain Ingress Subsystem
 │   │   │   ├── domain_dispatcher.js    # Master domain intent router delegating to dedicated handlers
+│   │   │   ├── follow_up_resolver.js   # Unified multi-turn follow-up resolver & clarification validator
 │   │   │   ├── helpers.js              # Formatting, escaping, currency & temporal query helpers
 │   │   │   └── handlers/               # Decoupled domain handlers (Calendar, DB, Email, Finance, Memory, System, Task)
 │   │   ├── cli/                        # Modular Remote CLI adapter (adapter, interceptors, intent_dispatcher)
 │   │   ├── cron.js                     # Cron pulse scheduler (01:00, 05:30, 08:15, 20:00, 21:00, 23:59 WIB)
 │   │   ├── gmail/                      # Google Cloud Pub/Sub push webhook handler
 │   │   ├── mobile_bridge/              # WebSocket /ws server & Android command dispatcher
-│   │   ├── telegram/                   # Modular Telegram adapter (adapter, command, email, interceptors, intent, vault, actions)
+│   │   ├── telegram/                   # Modular Telegram adapter (actions, adapter, callback, command, intent, interceptors, media, vault)
 │   │   ├── webhook.js                  # Master /webhook facade router
 │   │   └── whatsapp/                   # WhatsApp Baileys socket adapter (local deployment mode)
 │   └── utils/                          # Low-Level Utilities & Hardening
+│       ├── directive_utils.js          # Dynamic directive parser, counters & prompt injector
 │       ├── gemini_vector_cache.js      # Sub-millisecond in-memory vector cache & JSON snapshot
 │       ├── logger.js                   # Self-awareness contextual logger
 │       ├── security.js                 # Identity lock, webhook secret verification & CLI token auth
 │       ├── telegram_network.js         # Network retry & proxy fallbacks
 │       └── telegram_proxy.js           # Socks5 proxy support for restricted networks
-├── nexa-finance-web/                   # Next.js 14 Web Frontend Dashboard (Tailwind CSS, React)
-├── database/                           # PostgreSQL Schema definitions & migration SQL scripts
+├── nexa-finance-web/                   # Next.js 16 Web Frontend Dashboard (Tailwind CSS, React 19)
+├── database/                           # PostgreSQL Schema definitions & migration SQL scripts (18 Migrations)
 ├── cloudflare-worker/                  # Cloudflare edge relay for Telegram API bypass
 ├── vercel-relay/                       # Vercel serverless relay for outbound webhook proxying
-├── tools/ & scripts/                   # Token generation, prompt audits, and maintenance tools
-└── docs/                              # Comprehensive architectural blueprints & specifications
+├── scripts/                            # Maintenance, Migrations & AST Refactoring Tooling
+│   ├── audit_codebase.js               # AST codebase scanner & dependency auditor
+│   ├── audit_prompt_memory_efficiency.js # Memory token consumption profiler
+│   ├── backfill_directives.js          # Behavioral directives backfill utility
+│   ├── clean_bad_memories.js           # Supabase memory hygiene cleaner
+│   ├── generate_google_master_token.js # Google OAuth2 master token generator
+│   ├── generate_vector_snapshot.js     # Disk-to-Supabase vector embedding synchronizer
+│   ├── trigger_weekly.js               # Manual runner for weekly cognitive synthesis
+│   └── refactor/                       # AST Automated Refactoring & Validation Tooling
+│       ├── README.md                   # Refactoring runbook & safety architecture
+│       ├── split_finance_engine.js     # AST-based non-destructive module splitter
+│       └── verify_finance_split.js     # Static scope & cyclic dependency validator
+├── tests/                              # Automated Unit Test Suites & Active Diagnostics (200 Tests)
+│   ├── cli_adapter.test.js             # CLI ingress adapter & multi-turn prompts
+│   ├── common_handlers.test.js         # Shared domain intent handlers (15 bank cases, escaping)
+│   ├── day_simulation.test.js          # Full 24-hour simulation (Briefing to Midnight)
+│   ├── directive_utils.test.js         # Behavioral directive parsing & counter increments
+│   ├── finance_characterization.test.js# Golden master: Invariance test suite for modular Finance Engine (75 cases)
+│   ├── identity_directive_flow.test.js # Dynamic persona directives & alignment flow
+│   ├── micro_reviewer.test.js          # Micro-reviewer cognitive reflection & feedback loops
+│   ├── playbook_counters.test.js       # Behavioral playbook counters & limits
+│   ├── playbook_engine.test.js         # Playbook engine rules & conditional SOPs
+│   ├── reviewer_resilience.test.js     # Reviewer engine fallback & fault tolerance
+│   ├── signal_detector.test.js         # Real-time behavioral signal detector
+│   ├── telegram_adapter.test.js        # Telegram adapter, action builders & callbacks
+│   ├── test_all_crons.js               # Autonomous runner for all scheduled crons
+│   ├── test_cf_relay_live.js           # Cloudflare Edge relay live connectivity tester
+│   ├── test_google_master_client.js    # Google OAuth2 master client validator
+│   ├── test_midnight_screen_trigger.js # Midnight screen time trigger test
+│   ├── topic_classifier.test.js        # Topic classification & fast prompt router
+│   ├── upgrade.test.js                 # Schema upgrade & database integrity validator
+│   ├── version.test.js                 # Centralized version resolver & git SHA tests
+│   └── fixtures/                       # Golden Master Serialized Fixtures (finance_golden.json)
+├── tools/                              # Interactive CLI & Google Workspace OAuth2 tools
+└── docs/                               # Comprehensive architectural blueprints & specifications
 ```
 
 #### 2. Spesifikasi Modul Domain & Peran Fungsional
@@ -523,7 +585,7 @@ nexa-server/
 | **Core** | `Fallback_Engine.js` | Menjamin *Zero Single Point of Failure* dengan orkestrasi failover model LLM (Gemini 2.5 Flash → Groq Llama 3.3 70B → Cerebras Llama 3.1 8B → Mistral → OpenRouter → Puter). |
 | **Core** | `Vision_Engine.js` | Rantai failover 11 lapis untuk OCR struk belanja, visualisasi bagan, dan dokumen PDF/gambar. |
 | **Core** | `Live_Voice_Engine.js` | Streaming audio dupleks penuh berbasis WebSocket untuk percakapan suara real-time. |
-| **Domain** | `Finance_Engine.js` | Pengelolaan mutasi keuangan, deteksi duplikasi transaksi, koreksi ralat natural (*"eh tadi bukan 50rb tapi 40rb"*), dan pemulihan transaksi saat boot. |
+| **Domain** | `Finance_Engine.js` (Facade) & `finance/` | Public facade (56 baris) dan 7 subsistem modular terfokus (`Finance_State`, `Finance_Helpers`, `Finance_Ledger`, `Finance_Analytics`, `Finance_Corrections`, `Finance_Confirmations`, `Finance_Email_Sync`) yang mengelola mutasi, analitik 13 laporan, auto-sync Gmail Mandiri, dan recovery. |
 | **Domain** | `Discipline_GodMode.js` | Eksekusi penegakan disiplin digital berjenjang pada HP Android (Audio TTS warning → Home screen redirect → Grayscale monokrom → Lock screen). |
 | **Domain** | `Chrono_Consolidator.js` | Engine konsolidasi harian pada 23:59 WIB yang memadatkan seluruh transkrip hari itu menjadi narasi reflektif dan memperbarui basis pengetahuan jangka panjang. |
 | **Domain** | `Inference_Engine.js` | *Cognitive Sunday Pass* (Minggu 21:00 WIB) yang menyimpulkan hipotesis preferensi, gaya komunikasi, dan pola kebiasaan pengguna. |
