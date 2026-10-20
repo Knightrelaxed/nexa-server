@@ -465,7 +465,15 @@ nexa-server/
 │   │   ├── model_backup_plan.json      # Model fallback configuration matrix
 │   │   └── version.js                  # Centralized version definition (v3.4.0) & Git SHA resolver
 │   ├── core/                           # Cognitive Brain & Orchestration Layer (9 Subsystems)
-│   │   ├── AI_Router.js                # Contextual intent routing, progressive fact injection, token guard
+│   │   ├── AI_Router.js                # Public Facade (37 lines, re-exporting 18 cognitive routing APIs)
+│   │   ├── router/                     # Modular Cognitive Router Subsystem (7 Modules)
+│   │   │   ├── Router_Cache.js         # RAM cache & TTL invalidator for personal facts, identity & self-model
+│   │   │   ├── Router_Classifier.js    # Fast reflex detection, candidate domain gating & topic classifier
+│   │   │   ├── Router_Dispatcher.js    # Master routeUserMessage orchestration loop & JSON repair
+│   │   │   ├── Router_Output.js        # Routing output normalization, em-dash cleanup & domain fixers
+│   │   │   ├── Router_Prompts.js       # Token Budget Guard, system prompt builder & anti-stalker reframing
+│   │   │   ├── Router_Selectors.js     # Semantic token extraction, word stemmer & fact relevance scorers
+│   │   │   └── Router_Utilities.js     # LLM utilities (callAI, classifyYesNo, classifyPending, dedupFact)
 │   │   ├── Fallback_Engine.js          # Multi-provider zero-downtime failover engine (SACR v2.4)
 │   │   ├── Live_Tool_Registry.js       # Dynamic tool calling & function execution registry
 │   │   ├── Live_Voice_Engine.js        # Full-duplex WebSocket voice streaming engine
@@ -562,10 +570,12 @@ nexa-server/
 │   └── refactor/                       # AST Automated Refactoring & Validation Tooling
 │       ├── README.md                   # Refactoring runbook & safety architecture
 │       ├── capture_memories_golden.js  # Golden fixture capture utility for Supabase Memories
+│       ├── capture_router_golden.js    # Golden fixture capture utility for AI Router
+│       ├── split_ai_router.js          # AST-based non-destructive module splitter for AI Router
 │       ├── split_finance_engine.js     # AST-based non-destructive module splitter for Finance Engine
 │       ├── split_supabase_memories.js  # AST-based non-destructive module splitter for Supabase Memories
 │       └── verify_finance_split.js     # Static scope & cyclic dependency validator
-├── tests/                              # Automated Unit Test Suites & Active Diagnostics (269 Tests)
+├── tests/                              # Automated Unit Test Suites & Active Diagnostics (317 Tests)
 │   ├── cli_adapter.test.js             # CLI ingress adapter & multi-turn prompts
 │   ├── common_handlers.test.js         # Shared domain intent handlers (15 bank cases, escaping)
 │   ├── day_simulation.test.js          # Full 24-hour simulation (Briefing to Midnight)
@@ -577,6 +587,7 @@ nexa-server/
 │   ├── playbook_counters.test.js       # Behavioral playbook counters & limits
 │   ├── playbook_engine.test.js         # Playbook engine rules & conditional SOPs
 │   ├── reviewer_resilience.test.js     # Reviewer engine fallback & fault tolerance
+│   ├── router_characterization.test.js # Golden master: Invariance test suite for modular AI Router (48 cases)
 │   ├── signal_detector.test.js         # Real-time behavioral signal detector
 │   ├── telegram_adapter.test.js        # Telegram adapter, action builders & callbacks
 │   ├── test_all_crons.js               # Autonomous runner for all scheduled crons
@@ -586,8 +597,8 @@ nexa-server/
 │   ├── topic_classifier.test.js        # Topic classification & fast prompt router
 │   ├── upgrade.test.js                 # Schema upgrade & database integrity validator
 │   ├── version.test.js                 # Centralized version resolver & git SHA tests
-│   ├── helpers/                        # Test Harness Helpers (memories_harness.js)
-│   └── fixtures/                       # Golden Master Serialized Fixtures (finance_golden.json, memories_golden.json)
+│   ├── helpers/                        # Test Harness Helpers (memories_harness.js, router_harness.js)
+│   └── fixtures/                       # Golden Master Serialized Fixtures (finance_golden.json, memories_golden.json, router_golden.json)
 ├── tools/                              # Interactive CLI & Google Workspace OAuth2 tools
 └── docs/                               # Comprehensive architectural blueprints & specifications
 ```
@@ -596,7 +607,7 @@ nexa-server/
 
 | Layer | Modul / Berkas | Fungsi & Tanggung Jawab Kritis |
 | :--- | :--- | :--- |
-| **Core** | `AI_Router.js` | Klasifikasi niat (11 domain intents), Dynamic Word Resonance, pemangkasan histori percakapan berbasis Token Budget Guard, dan injeksi profil progresif. |
+| **Core** | `AI_Router.js` (Facade) & `router/` | Public facade (37 baris) dan 7 subsistem router modular (`Router_Cache`, `Router_Classifier`, `Router_Dispatcher`, `Router_Output`, `Router_Prompts`, `Router_Selectors`, `Router_Utilities`) yang mengelola klasifikasi niat, gating domain instan, prompt assembler, Token Budget Guard, dan integrasi multi-LLM fallback tanpa circular dependency. |
 | **Core** | `Fallback_Engine.js` | Menjamin *Zero Single Point of Failure* dengan orkestrasi failover model LLM (Gemini 2.5 Flash → Groq Llama 3.3 70B → Cerebras Llama 3.1 8B → Mistral → OpenRouter → Puter). |
 | **Core** | `Vision_Engine.js` | Rantai failover 11 lapis untuk OCR struk belanja, visualisasi bagan, dan dokumen PDF/gambar. |
 | **Core** | `Live_Voice_Engine.js` | Streaming audio dupleks penuh berbasis WebSocket untuk percakapan suara real-time. |
@@ -3255,8 +3266,118 @@ Untuk menjamin refaktor tidak mengubah bentuk payload, urutan query, maupun perl
 
 ---
 
+## BAB 20: DEKOMPOSISI ACYCLICAL COGNITIVE ROUTER, MODULAR INTENT DISPATCH & 48 GOLDEN-MASTER REGRESSION GATES
+
+### 20.1 Urgensi Dekomposisi Otak Kognisi Monolit (2.097 Baris God Object)
+
+Sebagai *Single Point of Entry* bagi seluruh masukan pengguna, berkas [`src/core/AI_Router.js`](file:///c:/workspace/nexa-server/src/core/AI_Router.js) telah berkembang menjadi monolit kognisi raksasa berukuran **2.097 baris kode**. Berkas ini mengonsentrasikan seluruh beban kognitif sistem, mulai dari manipulasi memori RAM, pemangkasan string riwayat, heuristik regex bahasa alami, injeksi persona, pemanggilan LLM multi-provider, hingga perbaikan sintaks JSON yang rusak.
+
+Dengan lebih dari **30 modul eksternal** yang mengimpor fungsi-fungsinya (termasuk Telegram, CLI, WhatsApp, Live Voice, Webhook, dan Cron), berkas ini adalah *critical path* paling vital di seluruh arsitektur N.E.X.A. Kesalahan sekecil apa pun pada refaktor modul ini akan melumpuhkan kecerdasan sistem secara global.
+
+---
+
+### 20.2 Topologi & Pemetaan 7 Subsistem Asiklik (`src/core/router/`)
+
+Berbeda dari modul murni fungsional, `AI_Router.js` memiliki **state mutable in-memory** berupa enam variabel `let` yang mengelola cache RAM fakta profil, model identitas, dan self-model beserta timestamp TTL-nya. Melalui analisis AST komprehensif, seluruh state mutable ini dienkapsulasi secara steril di dalam modul `Router_Cache.js`, dan graf dependensi dibentuk menjadi arsitektur berlapis yang **100% asiklik (bebas dari siklus impor)**:
+
+```mermaid
+graph TD
+    Facade["AI_Router.js (Facade - 37 Baris)"]
+    
+    subgraph "src/core/router/"
+        Cache["Router_Cache.js<br/>(RAM Cache State & TTL Invalidator)"]
+        Classifier["Router_Classifier.js<br/>(Reflex Detector & Domain Gating)"]
+        Selectors["Router_Selectors.js<br/>(Semantic Token Extraction & Scoring)"]
+        Prompts["Router_Prompts.js<br/>(Token Budget Guard & Prompt Fusion)"]
+        Output["Router_Output.js<br/>(Output Normalizer & Em-Dash Cleaner)"]
+        Utilities["Router_Utilities.js<br/>(LLM Utilities & Fact Dedup Engine)"]
+        Dispatcher["Router_Dispatcher.js<br/>(Master routeUserMessage Orchestrator)"]
+    end
+
+    Facade --> Dispatcher
+    Facade --> Utilities
+    Facade --> Prompts
+    Facade --> Selectors
+    Facade --> Classifier
+    Facade --> Output
+    Facade --> Cache
+
+    Dispatcher --> Prompts
+    Dispatcher --> Classifier
+    Dispatcher --> Selectors
+    Dispatcher --> Utilities
+    Dispatcher --> Output
+    Dispatcher --> Cache
+
+    Utilities --> Cache
+    Prompts --> Cache
+    Prompts --> Selectors
+    Prompts --> Output
+    Classifier --> Selectors
+
+    classDef facade fill:#4a154b,stroke:#e01e5a,stroke-width:2px,color:#fff;
+    classDef top fill:#b23b3b,stroke:#ff6b6b,stroke-width:2px,color:#fff;
+    classDef base fill:#1e3d59,stroke:#17b978,stroke-width:2px,color:#fff;
+    classDef domain fill:#17252a,stroke:#3aafa9,stroke-width:1px,color:#fff;
+    class Facade facade;
+    class Dispatcher top;
+    class Cache,Output base;
+    class Classifier,Selectors,Prompts,Utilities domain;
+```
+
+#### Spesifikasi Ukuran & Tanggung Jawab Sub-Modul:
+
+| No | Berkas Modul | Baris | Peran Arsitektural & API Kunci |
+|:---:|---|:---:|---|
+| 1 | `Router_Cache.js` | **142** | Enkapsulasi 6 variabel state RAM cache: `_personalFactsCache`, `_identityModelCache`, `_selfModelCache` beserta loader dan invalidator TTL (15–30 menit). |
+| 2 | `Router_Output.js` | **116** | Normalisasi format JSON luaran routing, konversi em-dash (`—`), koreksi pemetaan domain `FINANCIAL` ke `FINANCE`, dan ekstraksi aman. |
+| 3 | `Router_Classifier.js` | **223** | Gating performa tinggi: deteksi pesan refleks instan (`_isReflexMessage`), klasifikasi domain kandidat (`_detectCandidateDomains`), dan `_detectTopicContext`. |
+| 4 | `Router_Selectors.js` | **232** | Ekstraksi token resonansi bahasa Indonesia, stemmer afiks (`_stemIndonesianWord`), kalkulasi relevansi skor fakta, dan selektor fakta profil/identitas/vault. |
+| 5 | `Router_Prompts.js` | **342** | Perakitan prompt master: Token Budget Guard (`_applyTokenBudgetGuard`), injeksi blok Anti-Stalker Re-framing (`_buildIdentityContextBlock`), jam WIB, dan `buildRouterSystemPrompt`. |
+| 6 | `Router_Utilities.js` | **367** | Pembungkus tugas LLM spesifik: `callAI`, `classifyYesNo`, `classifyPendingTransactionIntent`, `analyzeSystemLogs`, serta dedup fakta semantik (`deduplicateAndSaveFact`). |
+| 7 | `Router_Dispatcher.js` | **540** | Orkestrator utama: `routeUserMessage` (Reflex check → Domain gating → Cache hydration → System prompt build → Fallback LLM execution → JSON repair & action normalization). |
+| 8 | `AI_Router.js` (Facade) | **37** | Public facade ultra-ringan yang mengekspor **18 API publik & alias pengujian** dengan nama, urutan, dan identitas fungsi yang identik. |
+
+---
+
+### 20.3 Metodologi Golden-Master Characterization (48 Kasus Uji Komparatif)
+
+Untuk memastikan akurasi routing kognitif tidak tergeser 1 bit pun:
+
+1. **Mock Recording Harness (`router_harness.js`)**:
+   Menyediakan lingkungan deterministik yang membekukan jam sistem, meniru respons LLM secara deterministik, dan menyadap seluruh string prompt yang dirakit sistem.
+2. **48 Skenario Karakterisasi Komprehensif (`tests/router_characterization.test.js`)**:
+   - **20 Uji Fungsi Murni:** Memvalidasi kestabilan ekstraksi token kata kunci, stemmer bahasa Indonesia, kalkulasi skor relevansi fakta, dan perakitan blok Anti-Stalker.
+   - **28 Skenario End-to-End:** Menguji alur percakapan refleks, perbankan, penjadwalan, JSON rusak (*malformed*), pemulihan crash LLM, stres sentimen, dan invalidasi cache TTL.
+   - Snapshot deterministik direkam ke dalam [`tests/fixtures/router_golden.json`](file:///c:/workspace/nexa-server/tests/fixtures/router_golden.json) (~959 KB).
+3. **Uji Sabotase Mutasi (11 Skenario Mutasi)**:
+   Perkakas splitter diuji dengan 11 bentuk perusakan kode sengaja (merusak teks prompt, menukar alias facade, mengubah konstanta TTL, merusak guard regex refleks, dll.). Seluruh 11 sabotase tertangkap 100% oleh rangkaian uji golden.
+4. **Verifikasi Statis & Dinamis**:
+   - `split_ai_router.js --verify`: 69 deklarasi asli verbatim ditemukan tepat 1x tanpa hilang atau ganda, 29 require relatif ter-resolve sempurna, dan 0 siklus impor.
+   - `tests/signal_detector.test.js`: Lulus tanpa perubahan satu baris kode pun.
+   - `npm test`: **317 dari 317 tes lulus (100% PASS, 0 Fail)**.
+
+---
+
+### 20.4 Matriks Komparasi Refactoring Cognitive Router
+
+| Parameter Metrik | Sebelum Refaktor (`AI_Router.js` Monolit) | Setelah Refaktor (`router/` Modular Architecture) |
+| :--- | :--- | :--- |
+| **Ukuran Berkas Utama** | **2.097 baris kode** | **37 baris kode (Turun 98,2%)** |
+| **Jumlah Sub-Modul** | 1 file raksasa (*God Object*) | **7 modul modular** di `src/core/router/` |
+| **Berkas Terbesar** | 2.097 baris (`AI_Router.js`) | **540 baris** (`Router_Dispatcher.js`, seluruh modul < 600 baris) |
+| **Isolasi State Mutable** | Bercampur aduk dengan fungsi routing | **100% Terenkapsulasi** di `Router_Cache.js` |
+| **Ketergantungan Siklik** | Berpotensi siklik tak terdeteksi | **0% (100% Strict Acyclic Layering)** |
+| **Kontrak Ekspor Publik** | 18 simbol (termasuk alias internal) | **18 simbol identik (100% Zero Breaking Changes)** |
+| **Cakupan Pengujian Monorepo** | 269 tests passing | **317 tests passing (100% Pass, 0 Fail)** |
+| **Regression Gates** | Belum memiliki fixture prompt deterministik | **192 Golden Master Tests** (75 Finance + 69 Memories + 48 Router) |
+| **Status Produksi** | v3.4.0 (Monolith Router) | **v3.4.0 Production Verified & Deployed** |
+
+---
+
 ---
 **~ TAMAT ~**
+*Mahakarya arsitektur The Chief of Staff, secara eksklusif dikembangkan untuk memperluas kognisi dan otonomi penggunanya, Tuan Faqih Hidayatulloh.*
 *Mahakarya arsitektur The Chief of Staff, secara eksklusif dikembangkan untuk memperluas kognisi dan otonomi penggunanya, Tuan Faqih Hidayatulloh.*
 
 

@@ -40,17 +40,11 @@ nexa-server/
 │   ├── migration_enable_all_nexa_rls.sql # Comprehensive Row Level Security (RLS) hardening
 │   ├── migration_enable_rls.sql          # Base RLS security policies
 │   ├── migration_learning_loop_v3_3.sql  # Micro-reviewer cognitive reflection & feedback schema
-│   ├── migration_learning_loop_v3_3_1.sql # Learning loop counter & schema refinements
 │   ├── migration_notifier_recurring.sql  # Scheduled notifications & recurring task triggers
-│   ├── migration_settings.sql            # Core assistant settings & user configuration store
-│   ├── migration_split_transaction.sql   # Shared expense & transaction splitting ledger
 │   ├── phase6_migration.sql              # Cognitive Identity, Mood Time-Series & Dual Memory tables
 │   ├── phase7_migration.sql              # Causal Knowledge Graph & dynamic self-inference schema
 │   ├── phase8_discipline_state_migration.sql # Screen lock, god-mode & discipline enforcement states
-│   ├── schema.sql                        # Base consolidated PostgreSQL schema
-│   ├── seed_phase9_core_identity.sql     # Seed data for core persona traits & executive identity
-│   ├── seed_phase10_cron_architecture.sql # Seed configuration for scheduled cron tasks
-│   └── whatsapp_and_platform_migration.sql # Multi-platform ingress & WhatsApp session tables
+│   └── schema.sql                        # Base consolidated PostgreSQL schema
 │
 ├── docs/                                 # Architecture Whitepapers & Documentation
 │   ├── CORE_IDENTITY_AUDIT_REPORT.md     # Persona integrity & identity verification report
@@ -89,11 +83,13 @@ nexa-server/
 │   └── refactor/                         # AST Automated Refactoring & Validation Tooling
 │       ├── README.md                     # Refactoring runbook & safety architecture
 │       ├── capture_memories_golden.js    # Golden fixture capture utility for Supabase Memories
+│       ├── capture_router_golden.js      # Golden fixture capture utility for AI Router
+│       ├── split_ai_router.js            # AST-based non-destructive module splitter for AI Router
 │       ├── split_finance_engine.js       # AST-based non-destructive module splitter for Finance Engine
 │       ├── split_supabase_memories.js    # AST-based non-destructive module splitter for Supabase Memories
 │       └── verify_finance_split.js       # Static scope & cyclic dependency validator
 │
-├── tests/                                # Automated Unit Test Suites & Active Diagnostics (269 Tests)
+├── tests/                                # Automated Unit Test Suites & Active Diagnostics (317 Tests)
 │   ├── cli_adapter.test.js               # Unit tests: CLI ingress adapter & multi-turn prompts
 │   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers (15 bank cases, escaping)
 │   ├── day_simulation.test.js            # Unit tests: Full 24-hour simulation (Briefing to Midnight)
@@ -105,6 +101,7 @@ nexa-server/
 │   ├── playbook_counters.test.js         # Unit tests: Behavioral playbook counters & limits
 │   ├── playbook_engine.test.js           # Unit tests: Playbook engine rules & conditional SOPs
 │   ├── reviewer_resilience.test.js       # Unit tests: Reviewer engine fallback & fault tolerance
+│   ├── router_characterization.test.js   # Golden master: Invariance test suite for modular AI Router (48 cases)
 │   ├── signal_detector.test.js           # Unit tests: Real-time behavioral signal detector
 │   ├── telegram_adapter.test.js          # Unit tests: Telegram adapter, action builders & callbacks
 │   ├── test_all_crons.js                 # Diagnostic: Autonomous runner for all scheduled crons
@@ -115,10 +112,12 @@ nexa-server/
 │   ├── upgrade.test.js                   # Migration: Schema upgrade & database integrity validator
 │   ├── version.test.js                   # Verification: Centralized version resolver & git SHA tests
 │   ├── helpers/                          # Test Harness Helpers
-│   │   └── memories_harness.js           # Mock Supabase recording harness for characterization
+│   │   ├── memories_harness.js           # Mock Supabase recording harness for characterization
+│   │   └── router_harness.js             # Mock LLM recording harness for characterization
 │   └── fixtures/                         # Golden Master Serialized Fixtures
 │       ├── finance_golden.json           # Deterministic baseline outputs & stub call signatures (Finance)
-│       └── memories_golden.json          # Deterministic baseline query & mutation fixtures (Memories, 1,153 queries)
+│       ├── memories_golden.json          # Deterministic baseline query & mutation fixtures (Memories, 1,153 queries)
+│       └── router_golden.json            # Deterministic baseline prompt & routing fixtures (AI Router, 28 scenarios)
 │
 ├── tools/                                # Command Line & Developer Tools
 │   ├── chat_cli.js                       # Interactive CLI terminal for talking to N.E.X.A

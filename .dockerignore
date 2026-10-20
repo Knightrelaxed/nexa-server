@@ -42,4 +42,8 @@ database/
 # IDE files
 .vscode/
 .idea/
+# Agent skills & development configs
+.agents/
+skills-lock.json
+
 nexa-finance-web/

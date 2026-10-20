@@ -373,7 +373,7 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
 | Parameter Arsitektur | Spesifikasi N.E.X.A v3.4.0 (Production Release) |
 | :--- | :--- |
 | **Official Name & Title** | **N.E.X.A (Neural Executive with Xenial Agent)** |
-| **Architectural Edition** | **Modular Unified Ingress, Layered Finance & Modular Memory Architecture (v3.4.0)** |
+| **Architectural Edition** | **Modular Ingress, Layered Finance, Modular Memory & Decoupled Cognitive Router (v3.4.0)** |
 | **Core Compute Infrastructure** | Azure Virtual Machine `Standard_B2ats_v2` (Ubuntu 24.04 ARM, Jakarta `indonesiacentral`) |
 | **Process Management & Auto-Healing** | PM2 Process Manager v5.4 + Systemd Auto-Revive + PM2 Plus Cloud Dashboard |
 | **Edge Web Server & Security** | Caddy v2 Reverse Proxy + Automated Let's Encrypt TLS/SSL |
@@ -381,6 +381,7 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
 | **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~18-28 MB, CPU Idle 0%) |
 | **Ingress Architecture** | Hexagonal Decoupling (Common Domain Handlers + Modular Telegram & CLI Adapters) |
 | **Finance Architecture** | Layered Subsystems + High-Performance Public Facade (`src/domain/finance/`) |
+| **Router Architecture** | Decoupled Cognitive Subsystems + Public Facade (`src/core/router/`) |
 | **Memory Architecture** | Layered Persistence Subsystems + High-Performance Public Facade (`src/infrastructure/memories/`) |
 | **Code Duplication Rate** | **0.50%** (3 klon, 41 baris tersisa di seluruh antarmuka) |
 | **Security Sanitization** | Platform-Aware HTML Escaping for Telegram + Clean Plain-Text for Terminal CLI |
@@ -390,7 +391,7 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
 | **Financial Engine** | Zero-LLM Deterministic Intelligence + Dynamic Recurring Rules (`nexa_recurring_rules`) |
 | **Notification Traffic Control** | Centralized Notifier + Quiet Hours Protection + Dedup Cooldown (`nexa_notifications`) |
 | **AI Resilience Matrix** | Round-Robin Key Ring Circuit Breaker + 429 Retry-After Parser + 11-Tier Fallback |
-| **Test Suite Coverage** | **269/269 Tests Passing** (`npm test`, 100% Pass) + **144 Golden Master Invariance Tests** (75 Finance + 69 Memories) |
+| **Test Suite Coverage** | **317/317 Tests Passing** (`npm test`, 100% Pass) + **192 Golden Master Invariance Tests** (75 Finance + 69 Memories + 48 Router) |
 | **Primary Beneficiary** | **Tuan Faqih Hidayatulloh** |
 
 ---
