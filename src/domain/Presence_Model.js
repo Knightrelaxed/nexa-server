@@ -15,6 +15,8 @@ class PresenceModel {
   constructor() {
     this.place = null;
     this.placeAt = null;
+    this.activity = null;
+    this.activityAt = null;
     this.light = null; // { condition: string, lux: number|null, at: number }
     this.isScreenOn = null;
     this.batteryLevel = null;
@@ -49,7 +51,16 @@ class PresenceModel {
       this.placeAt = now;
     }
 
-    // 2. Light & Ambient Room Condition
+    // 2. Mobility & Physical Activity Mapping
+    if (event === 'USER_MOVING' || event.includes('MOVING')) {
+      this.activity = 'SEDANG_BERGERAK / MOBILITAS';
+      this.activityAt = now;
+    } else if (event === 'USER_STILL' || event.includes('STILL')) {
+      this.activity = 'DIAM / ISTIRAHAT';
+      this.activityAt = now;
+    }
+
+    // 3. Light & Ambient Room Condition
     const rawLux = (d.lux !== undefined && d.lux !== null) ? Number(d.lux) : (typeof report.lux === 'number' ? report.lux : null);
     const rawState = String(d.state || report.state || report.condition || '').toUpperCase();
 
@@ -74,7 +85,7 @@ class PresenceModel {
       };
     }
 
-    // 3. Physical Device Pickup
+    // 4. Physical Device Pickup
     if (event.includes('PICKUP')) {
       this.lastPickupAt = now;
     }
@@ -93,6 +104,11 @@ class PresenceModel {
       ? `${this.place}${this.placeAt ? ` (${this._ago(this.placeAt)})` : ''}`
       : 'Belum diketahui';
     lines.push(`- Lokasi Fisik: ${placeStr}`);
+
+    if (this.activity) {
+      const actAge = this.activityAt ? ` (${this._ago(this.activityAt)})` : '';
+      lines.push(`- Aktivitas Fisik: ${this.activity}${actAge}`);
+    }
 
     let lightStr = 'Belum diketahui';
     if (this.light) {
@@ -130,6 +146,8 @@ Gunakan informasi ini sebagai konteks pendukung alami saat relevan. Jangan memba
     return {
       place: this.place,
       placeAt: this.placeAt,
+      activity: this.activity,
+      activityAt: this.activityAt,
       light: this.light,
       isScreenOn: this.isScreenOn,
       batteryLevel: this.batteryLevel,

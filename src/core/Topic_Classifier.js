@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * [N.E.X.A v3.3] TOPIC CLASSIFIER — Topic_Classifier.js
+ * [N.E.X.A v3.4] TOPIC CLASSIFIER — Topic_Classifier.js
  * ============================================================
  * Heuristik zero-token untuk memilih topik/playbook dari teks pesan.
  * Modul murni (tanpa dependensi) agar mudah dites secara terisolasi.
@@ -10,8 +10,10 @@
  *   2. Kata benda DOMAIN KUAT (keuangan, jadwal) sebelum kata kerja GENERIK.
  *   3. Kata kerja generik ("cek", "baca", "cari") baru menentukan RESEARCH
  *      jika tidak ada domain yang lebih spesifik.
- *   4. Kata waktu LEMAH ("besok", "hari ini") hanya menentukan SCHEDULING
- *      setelah STRATEGIC, supaya "fokus ke skripsi hari ini" tidak tertelan.
+ *   4. Emosi/curhat/keluh kesah ("capek hari ini", "lelah") menentukan CASUAL
+ *      agar kata waktu lemah tidak membajak ke SCHEDULING kaku.
+ *   5. Kata waktu LEMAH ("besok", "hari ini") hanya menentukan SCHEDULING
+ *      jika tidak ada perasaan/curhat dan setelah STRATEGIC.
  *
  * Kasus uji emas ada di tests/topic_classifier.test.js. Setiap kali
  * menambah/menggeser aturan, jalankan test itu.
@@ -37,6 +39,10 @@ const FINANCE_SPEND_VERB_RE = /\b(beli|belanja|makan\s+(siang|malam|pagi)|jajan)
 
 // Kata benda jadwal yang KUAT (jelas urusan agenda)
 const SCHEDULE_STRONG_RE = /\b(jadwal|kalender|deadline|tugas|agenda|meeting|rapat|kelas|matkul|kuis|ujian|reminder|alarm)\b/;
+
+// Rasa, emosi, atau curhat (agar kata waktu lemah seperti "hari ini capek" tidak tertelan ke SCHEDULING)
+const FEELINGS_CASUAL_RE = /\b(lelah|capek|ngantuk|pusing|stres|penat|letih|bosan|bosen|jenuh|santai|rebahan|istirahat|tidur|cerita|curhat|senang|bahagia|kecewa|galau|kesal|kacau)\b/;
+
 // Kata waktu yang LEMAH (muncul di banyak jenis kalimat)
 const SCHEDULE_WEAK_RE = /\b(besok|hari\s+ini|lusa|bangun)\b/;
 
@@ -83,10 +89,13 @@ function detectTopicContext(text) {
   // 9. STRATEGIC
   if (STRATEGIC_RE.test(t)) return 'STRATEGIC';
 
-  // 10. SCHEDULING (kata waktu lemah) — terakhir sebelum sapaan
+  // 10. FEELINGS & REFLECTION — Mencegah "aku lelah hari ini" atau "hari ini kacau" tertelan ke SCHEDULING
+  if (FEELINGS_CASUAL_RE.test(t)) return 'CASUAL';
+
+  // 11. SCHEDULING (kata waktu lemah) — hanya jika bukan curhat/emosi
   if (SCHEDULE_WEAK_RE.test(t)) return 'SCHEDULING';
 
-  // 11. CASUAL
+  // 12. CASUAL
   if (CASUAL_RE.test(t)) return 'CASUAL';
 
   return 'DEFAULT';

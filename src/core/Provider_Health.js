@@ -15,8 +15,9 @@ const DEFAULTS = {
   baseOpenMs: 30 * 1000,       // first open window (30s)
   maxOpenMs: 10 * 60 * 1000,   // cap for exponential backoff (10m)
   default429Ms: 60 * 1000,     // key cooldown when no Retry-After is available (60s)
-  dailyQuotaMs: 30 * 60 * 1000,// daily quota exhausted (30m)
+  dailyQuotaMs: 30 * 60 * 1000,// daily quota exhausted fallback (30m)
   badKeyMs: 10 * 60 * 1000,    // 401/403 invalid key cooldown (10m)
+  badModelMs: 60 * 60 * 1000,  // 404 model not found group cooldown (1h)
   probeTimeoutMs: 30 * 1000    // half-open probe timeout (30s)
 };
 
@@ -65,19 +66,62 @@ function reportSuccess(group, keyId = '0') {
   keyCooldown.delete(_kid(group, keyId));
 }
 
+function msUntilMidnightPacific() {
+  try {
+    const now = new Date();
+    const ptStr = now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+    const ptDate = new Date(ptStr);
+    const midnightPt = new Date(ptStr);
+    midnightPt.setHours(24, 0, 0, 0);
+    const diff = midnightPt.getTime() - ptDate.getTime();
+    return Math.max(diff, 60 * 1000);
+  } catch (_) {
+    return 24 * 60 * 60 * 1000;
+  }
+}
+
 function classifyError(err) {
   if (err && err.isValidation) return 'VALIDATION';
-  const status = err?.status ?? err?.response?.status;
+  let status = err?.status ?? err?.response?.status;
   const msg = String(err?.message || err?.response?.data?.error?.message || err || '');
-  if (status === 429 || /\b429\b|quota|rate.?limit|too many requests|resource_exhausted/i.test(msg)) {
-    return /per day|daily|\bRPD\b/i.test(msg) ? 'QUOTA_DAILY' : 'RATE_LIMIT';
+
+  // Fallback: extract status from message (e.g. "Gemini error: 403 - ...") if status property missing
+  if (!status) {
+    const mStatus = /(?:Gemini|Gemma|Google|Groq|Mistral|HTTP)\s+error:\s*(\d{3})/i.exec(msg);
+    if (mStatus) status = Number(mStatus[1]);
   }
-  if (status === 401 || status === 403) return 'BAD_KEY';
-  if (status === 400) return 'CLIENT_ERROR';
-  return 'SERVER'; // 404 / 5xx / timeout / network
+
+  // 1. Quota & Rate Limits (429)
+  const is429 = status === 429 || /\b429\b|quota|rate.?limit|too many requests|resource_exhausted/i.test(msg);
+  if (is429) {
+    const quotaIds = Array.isArray(err?.quotaIds) ? err.quotaIds.join(' ') : '';
+    const detailsStr = Array.isArray(err?.details) ? JSON.stringify(err.details) : '';
+    const isDaily = /per day|daily|\bRPD\b/i.test(msg) || /PerDay|PerProjectPerModel/i.test(quotaIds + detailsStr);
+    return isDaily ? 'QUOTA_DAILY' : 'RATE_LIMIT';
+  }
+
+  // 2. Model Not Found (404)
+  if (status === 404 || /\b404\b|not_found|models?\/\S+ is not found/i.test(msg)) {
+    return 'BAD_MODEL';
+  }
+
+  // 3. Bad Key / Unauthorized (401 / 403)
+  if (status === 401 || status === 403 || /\b(401|403)\b|unauthorized|forbidden|api.?key.?(?:invalid|not.valid)/i.test(msg)) {
+    return 'BAD_KEY';
+  }
+
+  // 4. Bad Request / Client Error (400)
+  if (status === 400 || /\b400\b|bad request|invalid argument/i.test(msg)) {
+    return 'CLIENT_ERROR';
+  }
+
+  return 'SERVER'; // 5xx / timeout / network
 }
 
 function retryAfterMs(err) {
+  if (typeof err?.retryDelayMs === 'number' && err.retryDelayMs > 0) {
+    return err.retryDelayMs;
+  }
   const h = err?.response?.headers;
   const raw = h && (typeof h.get === 'function' ? h.get('retry-after') : h['retry-after']);
   if (raw && !isNaN(Number(raw))) return Number(raw) * 1000;
@@ -100,11 +144,18 @@ function reportFailure(group, keyId = '0', err) {
       g.probingSince = 0;
       break;
     case 'QUOTA_DAILY':
-      keyCooldown.set(_kid(group, keyId), t + cfg.dailyQuotaMs);
+      keyCooldown.set(_kid(group, keyId), t + Math.max(msUntilMidnightPacific(), cfg.dailyQuotaMs));
       g.probingSince = 0;
       break;
     case 'BAD_KEY':
       keyCooldown.set(_kid(group, keyId), t + cfg.badKeyMs);
+      g.probingSince = 0;
+      break;
+    case 'BAD_MODEL':
+      // Model 404: Cool down the entire model group for badModelMs (1 hour)
+      // to avoid failing across all keys repeatedly
+      g.fails = cfg.failThreshold;
+      g.openUntil = t + cfg.badModelMs;
       g.probingSince = 0;
       break;
     default: // SERVER

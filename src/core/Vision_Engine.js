@@ -176,7 +176,7 @@ async function callGeminiVision(apiKey, modelName, imageData, caption, retries =
 
   const finalSystemPrompt = systemPromptOverride || (VISION_SYSTEM_PROMPT + captionContext);
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
   const payload = {
     systemInstruction: { parts: [{ text: finalSystemPrompt }] },
     contents: [{
@@ -191,7 +191,10 @@ async function callGeminiVision(apiKey, modelName, imageData, caption, retries =
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await axios.post(url, payload, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
         httpsAgent: ipv4Agent,

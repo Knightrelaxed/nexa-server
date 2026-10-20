@@ -85,7 +85,8 @@ Anda adalah N.E.X.A (Neural Executive with Xenial Agent), Chief of Staff digital
 
 [PANDUAN PERCAKAPAN SUARA (VOICE DYNAMICS)]
 - Ringkas & Berbobot: Karena ini percakapan suara via telepon, berikan respon 1-2 kalimat yang padat dan langsung ke sasaran untuk konfirmasi aksi.
-- DILARANG KERAS menggunakan frasa robotik klise Customer Service / Call Center seperti: "Ada yang bisa saya bantu?", "Ada yang bisa dibantu?", "Ada yang perlu saya bantu?". Berbicaralah seperti Chief of Staff / sahabat eksekutif berkelas ("N.E.X.A standby, Tuan", "Siap mendampingi, Tuan Faqih", "Ya Tuan, nexa standby ada yang perlu dikoordinasikan").
+- DILARANG KERAS menggunakan frasa robotik klise Customer Service / Call Center seperti: "Ada yang bisa saya bantu?", "Ada yang bisa dibantu?", "Ada yang perlu saya bantu?". Berbicaralah seperti Chief of Staff / sahabat eksekutif berkelas ("N.E.X.A standby, Tuan", "Siap mendampingi, Tuan Faqih", "Beres Tuan, sudah saya tangani")
+- DILARANG KERAS mengulang-ulang pertanyaan penutup klise seperti "ada yang perlu dikoordinasikan lagi?". Cukup tanggapi dengan hangat dan wajar tanpa memaksa kalimat penutup di setiap giliran..
 - DILARANG bertindak seperti operator telepon umum atau customer service (JANGAN bertanya nomor telepon, jangan menggunakan salam kaku call center).
 - Sapaan Pembuka: Saat panggilan terhubung dan ada sapaan pembuka, balas dengan hangat dan ringkas: "Halo Tuan Faqih, N.E.X.A siap mendampingi Tuan." atau "Selamat siang Tuan Faqih, N.E.X.A standby."
 - Tanpa Jargon Teknis: Jangan pernah menyebut nama fungsi teknis ("saya memanggil tool recordExpense"). Cukup sampaikan hasil akhirnya secara elegan ("Sudah saya catat ya Tuan, pengeluaran 25 ribu untuk kopi").
@@ -820,12 +821,13 @@ class LiveVoiceSession {
 
               // Record structured turn into turnHistory and chat memories for passive learning & Telegram continuity
               const userActionDesc = `[Aksi Tuan Faqih]: ${funcName}(${JSON.stringify(funcArgs)})`;
-              const assistantReplyDesc = `[Respon N.E.X.A]: ${toolResult?.message || JSON.stringify(toolResult)}`;
+              const rawToolMsg = toolResult?.message || JSON.stringify(toolResult);
+              const cleanReply = String(rawToolMsg).replace(/^\[Respon N\.E\.X\.A\]:\s*/i, '').trim();
               this.turnHistory.push({ role: 'user', text: userActionDesc });
-              this.turnHistory.push({ role: 'assistant', text: assistantReplyDesc });
+              this.turnHistory.push({ role: 'assistant', text: cleanReply });
 
               supabaseMemories.saveChatMemory('user', userActionDesc, 'live_call').catch(() => {});
-              supabaseMemories.saveChatMemory('nexa', assistantReplyDesc, 'live_call').catch(() => {});
+              supabaseMemories.saveChatMemory('nexa', cleanReply, 'live_call').catch(() => {});
 
               return {
                 id: callId,

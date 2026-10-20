@@ -93,10 +93,13 @@ async function computeQueryVector(text, timeoutMs = 1500) {
     for (const model of models) {
       try {
         const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-        const url = `${baseUrl}/v1beta/models/${model}:embedContent?key=${apiKey}`;
+        const url = `${baseUrl}/v1beta/models/${model}:embedContent`;
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+          },
           body: JSON.stringify({
             content: { parts: [{ text: cleanText }] }
           }),
@@ -115,6 +118,9 @@ async function computeQueryVector(text, timeoutMs = 1500) {
     }
   }
 
+  if (cleanText.length >= 3) {
+    console.warn(`[VECTOR-CACHE] ⚠️ Gagal menghitung embedding query: "${cleanText.substring(0, 30)}..." (Semua key/model embedding gagal atau timeout).`);
+  }
   return [];
 }
 
@@ -207,10 +213,13 @@ async function generateAndSaveSnapshot() {
 
       const apiKey = getNextApiKey();
       const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-      const url = `${baseUrl}/v1beta/models/gemini-embedding-2:batchEmbedContents?key=${apiKey}`;
+      const url = `${baseUrl}/v1beta/models/gemini-embedding-2:batchEmbedContents`;
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify({ requests })
       });
 

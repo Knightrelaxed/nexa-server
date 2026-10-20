@@ -28,6 +28,11 @@ Thumbs.db
 tests/scratch_*
 scripts/scratch_*
 scripts/temp_*
+scripts/*_dump*
+scripts/*.json
+scripts/*_logs*
+scripts/fetch_diagnostics.js
+scripts/analyze_chats.js
 data/transcripts_dump/
 data/*.json
 data/facts_vectors.json

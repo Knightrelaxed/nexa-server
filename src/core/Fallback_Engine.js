@@ -159,7 +159,11 @@ function isHeavyContext(prompt, systemInstruction, options = {}) {
 const getErrDetails = (e) => {
   const status = e.status || e.response?.status || 'NET';
   const data = e.response?.data ? JSON.stringify(e.response.data) : '';
-  return `[${status}] ${e.message} ${data ? '| ' + data : ''}`.substring(0, 500);
+  const raw = `[${status}] ${e.message} ${data ? '| ' + data : ''}`;
+  return raw
+    .replace(/([?&](?:key|token|secret)=)[^&\s]+/gi, '$1<REDACTED>')
+    .replace(/AIza[0-9A-Za-z_-]{35}/g, '<REDACTED>')
+    .substring(0, 500);
 };
 
 function extractFirstValidJson(str) {
@@ -523,7 +527,7 @@ function cleanGemmaOutput(rawText, jsonMode = false) {
 
 async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperature = 0.3, jsonMode = true, retries = 1) {
   const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const url = `${baseUrl}/v1beta/models/gemma-4-26b-a4b-it:generateContent?key=${apiKey}`;
+  const url = `${baseUrl}/v1beta/models/gemma-4-26b-a4b-it:generateContent`;
 
   // Injeksi Instruksi Anti-CoT (Mematikan Monolog Internal & Draf)
   let optimizedSys = systemInstruction || '';
@@ -553,14 +557,30 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(7000)
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(`Google Gemma error: ${res.status} - ${err.error?.message || res.statusText}`);
+        const errData = await res.json().catch(() => ({}));
+        const errorObj = errData.error || {};
+        const errorMsg = errorObj.message || res.statusText;
+        const err = new Error(`Google Gemma error: ${res.status} - ${errorMsg}`);
+        err.status = res.status;
+        err.details = errorObj.details || [];
+        const violations = (errorObj.details || []).flatMap(d => d.violations || []);
+        err.quotaIds = violations.map(v => v.quotaId).filter(Boolean);
+        const retryInfo = (errorObj.details || []).find(d => d['@type']?.includes('RetryInfo'));
+        if (retryInfo?.retryDelay) {
+          const m = /^([\d.]+)s?$/.exec(String(retryInfo.retryDelay).trim());
+          if (m) err.retryDelayMs = Math.ceil(parseFloat(m[1]) * 1000);
+        }
+        err.model = 'gemma-4-26b-a4b-it';
+        throw err;
       }
 
       const resJson = await res.json();
@@ -581,7 +601,7 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
 
 async function callGeminiWithRetry(apiKey, modelName, prompt, systemInstruction, temperature, jsonMode = true, retries = 1) {
   const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const url = `${baseUrl}/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+  const url = `${baseUrl}/v1beta/models/${modelName}:generateContent`;
 
   const generationConfig = {
     temperature,
@@ -612,14 +632,30 @@ async function callGeminiWithRetry(apiKey, modelName, prompt, systemInstruction,
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(15000)
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(`Gemini error: ${res.status} - ${err.error?.message || res.statusText}`);
+        const errData = await res.json().catch(() => ({}));
+        const errorObj = errData.error || {};
+        const errorMsg = errorObj.message || res.statusText;
+        const err = new Error(`Gemini error: ${res.status} - ${errorMsg}`);
+        err.status = res.status;
+        err.details = errorObj.details || [];
+        const violations = (errorObj.details || []).flatMap(d => d.violations || []);
+        err.quotaIds = violations.map(v => v.quotaId).filter(Boolean);
+        const retryInfo = (errorObj.details || []).find(d => d['@type']?.includes('RetryInfo'));
+        if (retryInfo?.retryDelay) {
+          const m = /^([\d.]+)s?$/.exec(String(retryInfo.retryDelay).trim());
+          if (m) err.retryDelayMs = Math.ceil(parseFloat(m[1]) * 1000);
+        }
+        err.model = modelName;
+        throw err;
       }
 
       const data = await res.json();

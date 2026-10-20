@@ -159,7 +159,7 @@ async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
   const base64Audio = audioBuffer.toString('base64');
   const mimeType = tmpFilePath.endsWith('.wav') ? 'audio/wav' : 'audio/ogg';
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
   const payload = {
     contents: [{
       parts: [
@@ -180,7 +180,10 @@ async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await axios.post(url, payload, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
         timeout: 45000

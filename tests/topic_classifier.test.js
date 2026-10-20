@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * [N.E.X.A v3.3] GOLDEN TESTS — tests/topic_classifier.test.js
+ * [N.E.X.A v3.4] GOLDEN TESTS — tests/topic_classifier.test.js
  * ============================================================
  * Tabel kasus uji emas untuk Topic_Classifier. Tambahkan baris baru
  * setiap kali menemukan salah-klasifikasi di log produksi.
@@ -61,9 +61,13 @@ const GOLDEN = [
   ['kirim morning briefing sekarang', 'BRIEFING_MORNING'],
   ['aku prokrastinasi terus seharian, tolong aktifkan god mode', 'DISCIPLINE_NUDGE'],
 
-  // ── Sapaan murni ──
+  // ── Sapaan & Curhat/Emosi (waktu lemah tidak boleh membajak ke SCHEDULING) ──
   ['selamat pagi nexa', 'CASUAL'],
   ['halo nexa apa kabar', 'CASUAL'],
+  ['aku lelah banget hari ini', 'CASUAL'],
+  ['hari ini kacau nex', 'CASUAL'],
+  ['besok pengen istirahat aja', 'CASUAL'],
+  ['tadi pagi bangun kesiangan pusing pala', 'CASUAL'],
 
   // ── Tidak ada sinyal ──
   ['', 'DEFAULT'],

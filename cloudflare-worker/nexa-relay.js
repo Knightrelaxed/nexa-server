@@ -212,10 +212,13 @@ export default {
 
         console.log('[RELAY] Sending to Gemini Vision...');
         const geminiResp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${gemini_key}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': gemini_key,
+            },
             body: JSON.stringify(geminiPayload),
           }
         );

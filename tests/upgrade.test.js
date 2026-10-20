@@ -54,6 +54,41 @@ test('orderKeys rotates the starting key', () => {
   assert.deepEqual(health.orderKeys('g', 3), [2, 0, 1]);
 });
 
+test('Google 429 with quotaId PerDay classifies as QUOTA_DAILY and cools down key', () => {
+  health._reset();
+  let t = 0; health._setClock(() => t);
+  const googleDailyErr = Object.assign(new Error('Resource has been exhausted (e.g. check quota).'), {
+    status: 429,
+    quotaIds: ['GenerateContentRequestsPerDayPerProjectPerModel']
+  });
+  assert.equal(health.classifyError(googleDailyErr), 'QUOTA_DAILY');
+  assert.equal(health.reportFailure('gemini', 'k1', googleDailyErr), 'QUOTA_DAILY');
+  assert.equal(health.acquire('gemini', 'k1'), false);
+  assert.equal(health.acquire('gemini', 'k2'), true);
+});
+
+test('404 model not found triggers BAD_MODEL and cools down the entire model group for 1 hour', () => {
+  health._reset();
+  let t = 0; health._setClock(() => t);
+  const notFound = Object.assign(new Error('models/gemini-3.8-flash is not found'), { status: 404 });
+  assert.equal(health.classifyError(notFound), 'BAD_MODEL');
+  assert.equal(health.reportFailure('gemini-3.8-flash', 'k1', notFound), 'BAD_MODEL');
+  // Group should be immediately open/in cooldown for 1 hour, blocking k2 and k3 as well
+  assert.equal(health.acquire('gemini-3.8-flash', 'k2'), false);
+  assert.equal(health.acquire('gemini-3.8-flash', 'k3'), false);
+  assert.ok(health.snapshot().groups['gemini-3.8-flash'].reopenInMs > 3500_000);
+});
+
+test('401/403 triggers BAD_KEY with 10m cooldown', () => {
+  health._reset();
+  let t = 0; health._setClock(() => t);
+  const badKey = Object.assign(new Error('API key not valid'), { status: 403 });
+  assert.equal(health.classifyError(badKey), 'BAD_KEY');
+  assert.equal(health.reportFailure('gemini', 'k1', badKey), 'BAD_KEY');
+  assert.equal(health.acquire('gemini', 'k1'), false);
+  assert.equal(health.acquire('gemini', 'k2'), true);
+});
+
 // ---------------- Notifier ----------------
 function setup(iso) {
   const sent = []; let clock = new Date(iso);
