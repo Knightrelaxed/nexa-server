@@ -566,30 +566,18 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
 
       const now = new Date();
 
+      let situationalSummary = null;
+
       if (action === 'READ_TODAY' || (!start && !end && action === 'READ')) {
         events = await googleWorkspace.getTodaysEvents();
 
-        // [DSAE] Deteksi pertanyaan situasional spesifik (ongoing/remaining time)
-        const isSituationalOngoingQuery = /\b(sekarang|lagi apa|berapa menit|selesai jam|jam berapa selesai|kapan selesai|kapan kelar|masih ada kelas|beres jam)\b/i.test(rawUserText || '');
-        if (isSituationalOngoingQuery && Array.isArray(events) && events.length > 0) {
-          const situationalSynthesizer = require('./Situational_Synthesizer');
-          const evalRes = situationalSynthesizer.evaluateAgendaPosition(events, now.getTime());
-          if (evalRes.status === 'ONGOING' && evalRes.ongoingEvent) {
-            const ev = evalRes.ongoingEvent;
-            const remainingStr = ev.remainingMins <= 0 ? 'sebentar lagi (kurang dari 1 menit)' : `sekitar ${ev.remainingMins} menit lagi`;
-            let msg = `Saat ini Tuan masih berada di sesi '<b>${escapeHtml(ev.summary)}</b>'${ev.location ? ` di ${escapeHtml(ev.location)}` : ''}.\n` +
-              `⏰ Selesai pukul <b>${ev.endHHMM} WIB</b> (<b>tersisa ${remainingStr}</b>).`;
-            if (evalRes.nextUpcomingEvent) {
-              msg += `\n\nAgenda berikutnya: '<b>${escapeHtml(evalRes.nextUpcomingEvent.summary)}</b>' pukul <b>${evalRes.nextUpcomingEvent.startHHMM} WIB</b>.`;
-            }
-            return { status: 'SUCCESS', message: msg, isSituationalDirect: true };
-          } else if (evalRes.status === 'GAP' && evalRes.lastCompletedEvent && evalRes.nextUpcomingEvent) {
-            let msg = `Saat ini sedang waktu jeda, Tuan. Sesi '<b>${escapeHtml(evalRes.lastCompletedEvent.summary)}</b>' sudah selesai ${evalRes.lastCompletedEvent.endedAgoMins} menit lalu.\n` +
-              `Agenda berikutnya adalah '<b>${escapeHtml(evalRes.nextUpcomingEvent.summary)}</b>' pukul <b>${evalRes.nextUpcomingEvent.startHHMM} WIB</b> (dalam ~${evalRes.nextUpcomingEvent.startsInMins} menit lagi).`;
-            return { status: 'SUCCESS', message: msg, isSituationalDirect: true };
-          } else if (evalRes.status === 'ALL_COMPLETED' && evalRes.lastCompletedEvent) {
-            return { status: 'SUCCESS', message: `Seluruh agenda kalender Tuan hari ini sudah selesai. Sesi terakhir tadi '<b>${escapeHtml(evalRes.lastCompletedEvent.summary)}</b>' selesai pukul ${evalRes.lastCompletedEvent.endHHMM} WIB. Saat ini Tuan dalam waktu luang / istirahat.`, isSituationalDirect: true };
-          }
+        // Evaluasi posisi agenda deterministik untuk sintesis situasional
+        if (Array.isArray(events) && events.length > 0) {
+          try {
+            const situationalSynthesizer = require('./Situational_Synthesizer');
+            const evalRes = situationalSynthesizer.evaluateAgendaPosition(events, now.getTime());
+            situationalSummary = evalRes.summaryText;
+          } catch (_) {}
         }
 
         tasks = await googleTasks.getTasksDueToday();
@@ -673,7 +661,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         }).join('\n');
       }
 
-      return { status: 'SUCCESS', message: msg, eventsCount: events.length, tasksCount: tasks.length };
+      return { status: 'SUCCESS', message: msg, eventsCount: events.length, tasksCount: tasks.length, situationalSummary };
     }
 
     return { status: 'FAILED', message: `Aksi kalender '${action}' tidak dikenali.` };

@@ -40,13 +40,16 @@ const CANNED_BASE = {
   'Supabase_Memories.saveMemoryWithMeta': { success: true, id: 'm-new' }, 'Supabase_Memories.archiveMemoryById': true, 'Supabase_Memories.reinforceMemoryById': true,
   'gemini_vector_cache.isSnapshotReady': false, 'gemini_vector_cache.getRelevantFacts': [],
   'Presence_Model.toPromptBlock': '[PRESENCE: aktif]', 'Episodic_Recall.searchMemories': [],
+  'Situational_Synthesizer.buildSituationalPromptBlock': '[SITUATIONAL: aktif]',
+  'Situational_Synthesizer.getActiveEmotionalInertia': null,
+  'Situational_Synthesizer.recordTurnEmotion': undefined,
   'Playbook_Engine.getPlaybookForIntent': { intent: 'NORMAL_CHAT', version: 1, rendered: 'Jawab natural dan singkat.' },
   'Playbook_Engine.formatPlaybookContextBlock': '[PLAYBOOK] Jawab natural dan singkat.',
   'Dialectic_Engine.getStanceNoteBlock': '[STANCE] tenang', 'Finance_Engine.getRecentTransactions': 'Rp25.000 kopi',
-  'Google_Workspace.getTodaysEvents': 'Rapat 09:00', 'Supabase_Finance.getAccountsList': [{ name: 'Mandiri' }], 'Supabase_Finance.getCategoriesList': [{ name: 'Makanan' }],
+  'Google_Workspace.getTodaysEvents': [{ id: 'e1', summary: 'Rapat 09:00', start: { dateTime: '2026-10-12T02:00:00.000Z' }, end: { dateTime: '2026-10-12T03:00:00.000Z' } }], 'Supabase_Finance.getAccountsList': [{ name: 'Mandiri' }], 'Supabase_Finance.getCategoriesList': [{ name: 'Makanan' }],
   'logger.getRecentLogs': '[LOG] server ok'
 };
-const SYNC = new Set(['Presence_Model.toPromptBlock', 'gemini_vector_cache.isSnapshotReady', 'Dialectic_Engine.getStanceNoteBlock', 'logger.getRecentLogs']);
+const SYNC = new Set(['Presence_Model.toPromptBlock', 'Situational_Synthesizer.buildSituationalPromptBlock', 'Situational_Synthesizer.getActiveEmotionalInertia', 'Situational_Synthesizer.recordTurnEmotion', 'gemini_vector_cache.isSnapshotReady', 'Dialectic_Engine.getStanceNoteBlock', 'logger.getRecentLogs']);
 const ROUTER_JSON = (o) => JSON.stringify({ intent: 'NORMAL_CHAT', extracted_data: {}, reply_message: 'ok', actions: [], ...o });
 
 // ── pemasangan stub ────────────────────────────────────────────────────────────

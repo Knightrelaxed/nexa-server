@@ -103,8 +103,8 @@ async function handleCalendarIntent(routingData, context = {}) {
     const isReadAction = ['READ', 'READ_TODAY', 'READ_TOMORROW', 'READ_UPCOMING'].includes(action);
 
     if (!isPast && (isSuccessfulMutation || isReadAction)) {
-      if (!calResult?.isSituationalDirect && typeof context.triggerSynthesis === 'function') {
-        context.triggerSynthesis(textInput, replyMsg, action, context.sessionKey);
+      if (typeof context.triggerSynthesis === 'function') {
+        context.triggerSynthesis(textInput, replyMsg, action, context.sessionKey, calResult?.situationalSummary);
       }
     }
     return replyMsg;

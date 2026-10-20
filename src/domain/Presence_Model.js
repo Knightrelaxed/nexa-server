@@ -52,11 +52,11 @@ class PresenceModel {
     }
 
     // 2. Mobility & Physical Activity Mapping
-    if (event === 'USER_MOVING' || event.includes('MOVING')) {
-      this.activity = 'SEDANG_BERGERAK / MOBILITAS';
+    if (event.includes('MOVING')) {
+      this.activity = 'Bergerak';
       this.activityAt = now;
-    } else if (event === 'USER_STILL' || event.includes('STILL')) {
-      this.activity = 'DIAM / ISTIRAHAT';
+    } else if (event.includes('STILL')) {
+      this.activity = 'Diam / Istirahat';
       this.activityAt = now;
     }
 
@@ -143,10 +143,16 @@ Gunakan informasi ini sebagai konteks pendukung alami saat relevan. Jangan memba
   }
 
   snapshot() {
+    const now = Date.now();
+    let currentActivity = this.activity;
+    if (this.activityAt && (now - this.activityAt > 20 * 60 * 1000)) {
+      currentActivity = null; // Stale after 20 minutes
+    }
+
     return {
       place: this.place,
       placeAt: this.placeAt,
-      activity: this.activity,
+      activity: currentActivity,
       activityAt: this.activityAt,
       light: this.light,
       isScreenOn: this.isScreenOn,

@@ -40,8 +40,8 @@ const FINANCE_SPEND_VERB_RE = /\b(beli|belanja|makan\s+(siang|malam|pagi)|jajan)
 // Kata benda jadwal yang KUAT (jelas urusan agenda)
 const SCHEDULE_STRONG_RE = /\b(jadwal|kalender|deadline|tugas|agenda|meeting|rapat|kelas|matkul|kuis|ujian|reminder|alarm)\b/;
 
-// Rasa, emosi, atau curhat (agar kata waktu lemah seperti "hari ini capek" tidak tertelan ke SCHEDULING)
-const FEELINGS_CASUAL_RE = /\b(lelah|capek|ngantuk|pusing|stres|penat|letih|bosan|bosen|jenuh|santai|rebahan|istirahat|tidur|cerita|curhat|senang|bahagia|kecewa|galau|kesal|kacau)\b/;
+// Rasa, emosi, atau curhat (agar curhat seperti "capek abis kelas" atau "hari ini lelah" tidak tertelan ke SCHEDULING)
+const FEELINGS_CASUAL_RE = /\b(lelah|capek|ngantuk|pusing|stres|penat|letih|bosan|bosen|jenuh|santai|rebahan|istirahat|tidur|cerita|curhat|senang|bahagia|kecewa|galau|kesal|kesel|kacau|sedih|males|malas|bete|badmood)\b/;
 
 // Kata waktu yang LEMAH (muncul di banyak jenis kalimat)
 const SCHEDULE_WEAK_RE = /\b(besok|hari\s+ini|lusa|bangun)\b/;
@@ -80,19 +80,19 @@ function detectTopicContext(text) {
     return 'FINANCE';
   }
 
-  // 7. SCHEDULING (kata benda kuat) — sebelum "cek/baca/cari" generik
-  if (SCHEDULE_STRONG_RE.test(t)) return 'SCHEDULING';
-
-  // 8. RESEARCH generik
-  if (RESEARCH_GENERIC_RE.test(t)) return 'RESEARCH';
-
-  // 9. STRATEGIC
-  if (STRATEGIC_RE.test(t)) return 'STRATEGIC';
-
-  // 10. FEELINGS & REFLECTION — Mencegah "aku lelah hari ini" atau "hari ini kacau" tertelan ke SCHEDULING
+  // 7. FEELINGS & CASUAL SHARING (Prioritas sebelum kata benda jadwal, agar "capek abis kelas" atau "pusing tugas" diakui sebagai curhat)
   if (FEELINGS_CASUAL_RE.test(t)) return 'CASUAL';
 
-  // 11. SCHEDULING (kata waktu lemah) — hanya jika bukan curhat/emosi
+  // 8. SCHEDULING (kata benda kuat) — sebelum "cek/baca/cari" generik
+  if (SCHEDULE_STRONG_RE.test(t)) return 'SCHEDULING';
+
+  // 9. RESEARCH generik
+  if (RESEARCH_GENERIC_RE.test(t)) return 'RESEARCH';
+
+  // 10. STRATEGIC
+  if (STRATEGIC_RE.test(t)) return 'STRATEGIC';
+
+  // 11. SCHEDULING (kata waktu lemah)
   if (SCHEDULE_WEAK_RE.test(t)) return 'SCHEDULING';
 
   // 12. CASUAL

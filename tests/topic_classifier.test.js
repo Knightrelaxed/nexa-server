@@ -68,6 +68,10 @@ const GOLDEN = [
   ['hari ini kacau nex', 'CASUAL'],
   ['besok pengen istirahat aja', 'CASUAL'],
   ['tadi pagi bangun kesiangan pusing pala', 'CASUAL'],
+  ['capek banget abis kelas hari ini', 'CASUAL'],
+  ['pusing tugas numpuk', 'CASUAL'],
+  ['sedih dan males ngapa-ngapain', 'CASUAL'],
+  ['lagi bete banget nih nex', 'CASUAL'],
 
   // ── Tidak ada sinyal ──
   ['', 'DEFAULT'],

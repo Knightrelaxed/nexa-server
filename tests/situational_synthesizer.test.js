@@ -94,8 +94,6 @@ test('Situational_Synthesizer - evaluateAgendaPosition handles ALL_COMPLETED and
 });
 
 test('Situational_Synthesizer - Emotional Inertia tracks and decays over 15 minutes', () => {
-  const baseTime = 1000000;
-
   synthesizer.recordTurnEmotion('STRESSED', 'Tugas numpuk pusing banget');
   
   // Dalam 5 menit
@@ -109,7 +107,7 @@ test('Situational_Synthesizer - Emotional Inertia tracks and decays over 15 minu
   assert.equal(expiredInertia, null);
 });
 
-test('Situational_Synthesizer - buildSituationalPromptBlock generates comprehensive warning', () => {
+test('Situational_Synthesizer - buildSituationalPromptBlock generates declarative compact context', () => {
   const nowMs = new Date('2026-10-20T12:36:00+07:00').getTime();
   const mockEvents = [
     {
@@ -124,8 +122,53 @@ test('Situational_Synthesizer - buildSituationalPromptBlock generates comprehens
     nowMs
   });
 
-  assert.match(promptBlock, /SITUASI & KONDISI NYATA TUAN FAQIH/);
-  assert.match(promptBlock, /SEDANG BERLANGSUNG 'Sosiolinguistik Arab \(Arb\)'/);
-  assert.match(promptBlock, /JANGAN PERNAH menyatakan sesi ini sudah selesai/);
-  assert.match(promptBlock, /Status Fisik & Sensor/);
+  assert.match(promptBlock, /Konteks Situasi & Lingkungan Nyata/);
+  assert.match(promptBlock, /Status Agenda: SEDANG BERLANGSUNG 'Sosiolinguistik Arab \(Arb\)'/);
+  assert.match(promptBlock, /Kondisi Fisik & Sensor/);
+  // Verify no shouty uppercase or rigid guidelines in the block
+  assert.doesNotMatch(promptBlock, /JANGAN PERNAH/);
+  assert.doesNotMatch(promptBlock, /PANDUAN OPERASIONAL/);
+});
+
+test('Router_Dispatcher - _fetchUpcomingEventsSummary handles Google_Workspace item array cleanly', async () => {
+  const routerDispatcher = require('../src/core/router/Router_Dispatcher');
+  const googleWorkspace = require('../src/infrastructure/Google_Workspace');
+
+  const now = Date.now();
+  const origGetTodaysEvents = googleWorkspace.getTodaysEvents;
+  googleWorkspace.getTodaysEvents = async () => [
+    { summary: 'Kuliah A', start: { dateTime: new Date(now + 1800000).toISOString() }, end: { dateTime: new Date(now + 3600000).toISOString() } },
+    { summary: 'Kuliah B', start: { dateTime: new Date(now + 5400000).toISOString() }, end: { dateTime: new Date(now + 7200000).toISOString() } }
+  ];
+
+  try {
+    const summary = await routerDispatcher._fetchUpcomingEventsSummary(2);
+    assert.ok(typeof summary === 'string');
+    assert.match(summary, /Kuliah A/);
+
+    const raw = await routerDispatcher._fetchTodaysRawEvents();
+    assert.ok(Array.isArray(raw));
+    assert.equal(raw.length, 2);
+  } finally {
+    googleWorkspace.getTodaysEvents = origGetTodaysEvents;
+  }
+});
+
+test('Presence_Model - activity decay expires after 20 minutes', () => {
+  const presenceModel = require('../src/domain/Presence_Model');
+  const t0 = Date.now();
+  presenceModel.updateFromContextEvent('USER_MOVING', {});
+
+  const snap1 = presenceModel.snapshot();
+  assert.equal(snap1.activity, 'Bergerak');
+
+  // Advance time past 20 minutes
+  const origNow = Date.now;
+  Date.now = () => t0 + 21 * 60 * 1000;
+  try {
+    const snap2 = presenceModel.snapshot();
+    assert.equal(snap2.activity, null);
+  } finally {
+    Date.now = origNow;
+  }
 });

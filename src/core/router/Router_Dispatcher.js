@@ -52,12 +52,12 @@ async function _handleReflexRouting(textInput, runtimeHints = {}) {
     `${_DAYS[_jkt.getUTCDay()]}, ${_jkt.getUTCDate()} ${_MONTHS[_jkt.getUTCMonth()]} ${_jkt.getUTCFullYear()} ` +
     `pukul ${String(_jkt.getUTCHours()).padStart(2, '0')}:${String(_jkt.getUTCMinutes()).padStart(2, '0')} WIB`;
 
-  const presenceContext = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
+  const reflexPresenceContext = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
 
   const reflexPrompt = `
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
-${presenceContext}
+${reflexPresenceContext}
 
 [RIWAYAT OBROLAN SINGKAT]
 ${contextStr}
@@ -106,21 +106,34 @@ async function _fetchRecentFinanceSummary(limit) {
   }
 }
 
-async function _fetchUpcomingEventsSummary(limit) {
+async function _fetchUpcomingEventsSummary(limit = 3) {
   try {
     const googleWorkspace = require('../../infrastructure/Google_Workspace');
-    // Using getTodaysEvents and taking the next 'limit' events
-    const todayStr = await googleWorkspace.getTodaysEvents();
-    if (!todayStr || todayStr.includes('Tidak ada jadwal')) return null;
+    const items = await googleWorkspace.getTodaysEvents();
+    if (!Array.isArray(items) || items.length === 0) return null;
 
-    // Just parse the first few lines
-    const lines = todayStr.split('\n').filter(l => l.trim().length > 0);
-    // Take up to `limit` lines that look like events (ignoring the header)
-    const eventLines = lines.slice(1, limit + 1);
-    if (eventLines.length === 0) return null;
-    return eventLines.join(', ');
+    const nowMs = Date.now();
+    const futureOrOngoing = items
+      .filter(ev => {
+        const endStr = ev.end?.dateTime || ev.end?.date;
+        return endStr ? new Date(endStr).getTime() >= nowMs : true;
+      })
+      .slice(0, limit);
+
+    if (futureOrOngoing.length === 0) return null;
+    return futureOrOngoing.map(e => e.summary || '(Tanpa Judul)').join(', ');
   } catch (e) {
     return null;
+  }
+}
+
+async function _fetchTodaysRawEvents() {
+  try {
+    const googleWorkspace = require('../../infrastructure/Google_Workspace');
+    const items = await googleWorkspace.getTodaysEvents();
+    return Array.isArray(items) ? items : [];
+  } catch (_) {
+    return [];
   }
 }
 
@@ -131,7 +144,15 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // ── Sentiment Detection (Empathy Layer) ──────────────────────────────────
   // Silently score user's stress/urgency from writing style.
   // We do NOT call AI for this — it's pure heuristic (zero latency).
-  const _sentimentScore = _detectSentiment(textInput);
+  const situationalSynthesizer = require('../../domain/Situational_Synthesizer');
+  const rawSentiment = _detectSentiment(textInput);
+  if (rawSentiment && rawSentiment !== 'NEUTRAL') {
+    situationalSynthesizer.recordTurnEmotion(rawSentiment, textInput);
+  }
+  const activeInertia = situationalSynthesizer.getActiveEmotionalInertia();
+  const _sentimentScore = (rawSentiment === 'NEUTRAL' || !rawSentiment) && activeInertia
+    ? activeInertia.mood
+    : rawSentiment;
 
   // ── Pre-flight Domain Classifier (0 tokens, 0ms) ─────────────────────────
   const { hasTime, hasCal } = _preflightClassify(textInput);
@@ -387,10 +408,12 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   let crossDomainBlock = '';
   let activeAccountsBlock = '';
   let activeCategoriesBlock = '';
+  let rawEventsResult = null;
   try {
-    const [recentTxResult, upcomingEvResult, accountsResult, categoriesResult] = await Promise.allSettled([
+    const results = await Promise.allSettled([
       _fetchRecentFinanceSummary(3),
       _fetchUpcomingEventsSummary(3),
+      _loadCalendarContext ? _fetchTodaysRawEvents() : Promise.resolve([]),
       // Load daftar akun aktif dari Supabase Finance (hanya jika domain finance aktif)
       _loadFinanceContext ? (async () => {
         try {
@@ -406,6 +429,11 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
         } catch (_) { return []; }
       })() : Promise.resolve([])
     ]);
+    const recentTxResult = results[0];
+    const upcomingEvResult = results[1];
+    rawEventsResult = results[2];
+    const accountsResult = results[3];
+    const categoriesResult = results[4];
     const finLines = [];
     if (recentTxResult.status === 'fulfilled' && recentTxResult.value) {
       finLines.push(`Keuangan Terkini (3 terakhir): ${recentTxResult.value}`);
@@ -495,7 +523,20 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
 
   // ── Compile Selective System Prompt based on Candidate Domains ──────────
   const routerSystemPrompt = buildRouterSystemPrompt(_candidateDomains);
-  const presenceContext = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
+  let situationalBlock = '';
+  const rawEvents = rawEventsResult && rawEventsResult.status === 'fulfilled' && Array.isArray(rawEventsResult.value)
+    ? rawEventsResult.value
+    : [];
+
+  if (_loadCalendarContext || _topicContext === 'CASUAL' || _topicContext === 'SCHEDULING' || _hasContextRef) {
+    try {
+      situationalBlock = situationalSynthesizer.buildSituationalPromptBlock({
+        calendarEvents: rawEvents,
+        nowMs: Date.now()
+      });
+    } catch (_) {}
+  }
+  const presenceBlock = situationalBlock || (presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '');
   const _dynamicOperationalBlock = `${_playbookBlock || ''}${_stanceBlock || ''}`.trim();
 
   // [v3.3 CACHING & SALIENCE OPTIMIZATION]
@@ -519,7 +560,7 @@ ISO Date Hari Ini: ${currentJakartaISO}
 Entitas: ${SYSTEM_NAME}
 Versi Aktif: v${VERSION}
 (Jika Tuan bertanya mengenai versimu saat ini, jawablah secara lugas bahwa kamu berada di versi v${VERSION}.)
-${presenceContext}${miniCalStr ? `
+${presenceBlock}${miniCalStr ? `
 [KALENDER REFERENSI${hasCal ? ' (7 HARI KE DEPAN)' : ''}]
 ${miniCalStr}
 (Gunakan tabel di atas sebagai acuan mutlak. Jika user menyebut nama hari seperti "Jumat" atau "Senin depan", cocokkan dengan baris yang tepat.)` : ''}${sentimentBlock}${crossDomainBlock}
@@ -598,5 +639,6 @@ module.exports = {
   _handleReflexRouting,
   _fetchRecentFinanceSummary,
   _fetchUpcomingEventsSummary,
+  _fetchTodaysRawEvents,
   routeUserMessage
 };

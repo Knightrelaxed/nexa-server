@@ -204,46 +204,43 @@ function evaluateAgendaPosition(events = [], nowMs = Date.now()) {
  */
 function evaluatePhysicalState(now = Date.now()) {
   const snap = presenceModel.snapshot ? presenceModel.snapshot() : {};
-  const lines = [];
+  const items = [];
 
   // 1. Lokasi Spasial
   if (snap.place) {
     const placeAgo = snap.placeAt ? Math.round((now - snap.placeAt) / 60000) : null;
     const agoStr = placeAgo !== null ? (placeAgo <= 0 ? 'baru saja' : `${placeAgo}m lalu`) : '';
-    lines.push(`Lokasi: ${snap.place}${agoStr ? ` (${agoStr})` : ''}`);
+    items.push(`Lokasi: ${snap.place}${agoStr ? ` (${agoStr})` : ''}`);
   }
 
-  // 2. Mobilitas & Pergerakan (dari Tasker sensor)
-  if (snap.lastEvent) {
-    const isMoving = snap.lastEvent === 'USER_MOVING' || snap.lastEvent.includes('MOVING');
-    const eventAgo = snap.lastEventAt ? Math.round((now - snap.lastEventAt) / 60000) : null;
-    if (isMoving && eventAgo !== null && eventAgo <= 20) {
-      lines.push(`Mobilitas: Terdeteksi sedang bergerak / berjalan / berpindah tempat (${eventAgo <= 0 ? 'baru saja' : `${eventAgo}m lalu`})`);
-    } else if (snap.lastEvent && eventAgo !== null && eventAgo <= 15) {
-      lines.push(`Sensor Terakhir: ${snap.lastEvent} (${eventAgo <= 0 ? 'baru saja' : `${eventAgo}m lalu`})`);
+  // 2. Aktivitas & Mobilitas (menggunakan snap.activity dan snap.activityAt dengan decay 20 menit)
+  if (snap.activity) {
+    const actAgo = snap.activityAt ? Math.round((now - snap.activityAt) / 60000) : null;
+    if (actAgo !== null && actAgo <= 20) {
+      items.push(`Mobilitas: ${snap.activity} (${actAgo <= 0 ? 'baru saja' : `${actAgo}m lalu`})`);
     }
   }
 
   // 3. Telemetri HP (Layar & Baterai)
-  const deviceDetails = [];
+  const device = [];
   if (snap.isScreenOn !== null && snap.isScreenOn !== undefined) {
-    deviceDetails.push(`Layar ${snap.isScreenOn ? 'Menyala' : 'Mati'}`);
+    device.push(`Layar ${snap.isScreenOn ? 'Menyala' : 'Mati'}`);
   }
   if (snap.batteryLevel !== null && snap.batteryLevel !== undefined) {
-    deviceDetails.push(`Baterai ${snap.batteryLevel}%`);
+    device.push(`Baterai ${snap.batteryLevel}%`);
   }
   if (snap.light && snap.light.condition) {
-    deviceDetails.push(`Ruangan ${snap.light.condition}`);
+    device.push(`Ruangan ${snap.light.condition}`);
   }
-  if (deviceDetails.length > 0) {
-    lines.push(`Perangkat HP: ${deviceDetails.join(', ')}`);
+  if (device.length > 0) {
+    items.push(device.join(', '));
   }
 
-  return lines.length > 0 ? lines.join(' | ') : 'Kondisi fisik: Standby normal';
+  return items.length > 0 ? items.join(' | ') : 'Standby normal';
 }
 
 /**
- * Bangun blok prompt komprehensif untuk diinjeksi ke AI Router
+ * Bangun blok konteks deklaratif dan ringkas untuk diinjeksi ke AI Router
  * @param {object} params
  * @param {Array} [params.calendarEvents] - Daftar event hari ini (dari Google_Workspace)
  * @param {number} [params.nowMs] - Timestamp sekarang
@@ -257,21 +254,14 @@ function buildSituationalPromptBlock(params = {}) {
   const emotionInertia = getActiveEmotionalInertia(nowMs);
 
   const lines = [
-    `[SITUASI & KONDISI NYATA TUAN FAQIH (REAL-TIME SITUATIONAL AWARENESS)]:`,
-    `- Status Agenda: ${agendaEval.summaryText}`
+    `[Konteks Situasi & Lingkungan Nyata]`,
+    `• Status Agenda: ${agendaEval.summaryText}`,
+    `• Kondisi Fisik & Sensor: ${physicalState}`
   ];
 
-  if (agendaEval.ongoingEvent) {
-    lines.push(`  * PERINGATAN TEMPORAL: Sesi '${agendaEval.ongoingEvent.summary}' MASIH BERLANGSUNG hingga pukul ${agendaEval.ongoingEvent.endHHMM} WIB (sisa ${agendaEval.ongoingEvent.remainingMins} menit lagi). JANGAN PERNAH menyatakan sesi ini sudah selesai!`);
-  }
-
-  lines.push(`- Status Fisik & Sensor: ${physicalState}`);
-
   if (emotionInertia) {
-    lines.push(`- Inersia Suasana Hati: Tuan menunjukkan tanda '${emotionInertia.mood}' (${emotionInertia.minsAgo}m lalu: "${emotionInertia.userText}"). Tetap responsif, hangat, dan berempati.`);
+    lines.push(`• Suasana Hati Terdeteksi: '${emotionInertia.mood}' (${emotionInertia.minsAgo}m lalu: "${emotionInertia.userText}")`);
   }
-
-  lines.push(`PANDUAN OPERASIONAL: Integrasikan pemahaman situasi di atas secara luwes. Jika Tuan bertanya atau menguji situasi ("lagi apa", "selesai jam berapa", "berapa menit lagi"), jawab langsung dengan fakta waktu & durasi riil di atas secara alami dan presisi.`);
 
   return `\n${lines.join('\n')}\n`;
 }
