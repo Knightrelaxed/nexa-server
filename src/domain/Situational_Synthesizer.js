@@ -174,13 +174,13 @@ function evaluateAgendaPosition(events = [], nowMs = Date.now()) {
     }
   } else if (nextUpcomingEvent && lastCompletedEvent) {
     status = 'GAP';
-    summaryText = `WAKTU JEDA / TRANSISI. Baru saja selesai '${lastCompletedEvent.summary}' (${lastCompletedEvent.endedAgoMins} menit lalu). Agenda berikutnya '${nextUpcomingEvent.summary}' pukul ${nextUpcomingEvent.startHHMM} WIB (dalam ~${nextUpcomingEvent.startsInMins} menit lagi).`;
+    summaryText = `WAKTU JEDA / TRANSISI. Baru saja selesai '${lastCompletedEvent.summary}' (selesai ${lastCompletedEvent.endHHMM} WIB, ~${lastCompletedEvent.endedAgoMins} menit lalu). Agenda berikutnya '${nextUpcomingEvent.summary}' pukul ${nextUpcomingEvent.startHHMM} WIB (dalam ~${nextUpcomingEvent.startsInMins} menit lagi).`;
   } else if (nextUpcomingEvent && !lastCompletedEvent) {
     status = 'BEFORE_FIRST';
     summaryText = `BELUM ADA SESI DIMULAI. Agenda pertama hari ini: '${nextUpcomingEvent.summary}' pukul ${nextUpcomingEvent.startHHMM} WIB (dalam ~${nextUpcomingEvent.startsInMins} menit lagi).`;
   } else if (!nextUpcomingEvent && lastCompletedEvent) {
     status = 'ALL_COMPLETED';
-    summaryText = `SELURUH AGENDA HARI INI TELAH SELESAI. Sesi terakhir adalah '${lastCompletedEvent.summary}' (selesai ${lastCompletedEvent.endHHMM} WIB). Tuan dalam waktu luang / istirahat.`;
+    summaryText = `SELURUH AGENDA HARI INI TELAH SELESAI. Sesi terakhir adalah '${lastCompletedEvent.summary}' (selesai ${lastCompletedEvent.endHHMM} WIB, ~${lastCompletedEvent.endedAgoMins} menit lalu). Tuan dalam waktu luang / istirahat.`;
   } else if (allDayEvents.length > 0) {
     status = 'ALL_DAY_ONLY';
     summaryText = `Agenda seharian aktif: ${allDayEvents.map(a => a.summary).join(', ')}.`;
@@ -240,6 +240,78 @@ function evaluatePhysicalState(now = Date.now()) {
 }
 
 /**
+ * Buat timeline ringkas seluruh agenda hari ini (~40-50 token)
+ * Memberikan LLM pemahaman menyeluruh atas struktur hari Tuan Faqih (lalu, aktif, mendatang).
+ * @param {Array} events - Event Google Calendar hari ini
+ * @param {number} [nowMs] - Timestamp saat ini
+ */
+function buildDailyTimeline(events = [], nowMs = Date.now()) {
+  if (!Array.isArray(events) || events.length === 0) {
+    return '[TIMELINE AGENDA TUAN HARI INI]\n• Tidak ada agenda terjadwal di kalender hari ini.';
+  }
+
+  const timedEvents = [];
+  const allDayEvents = [];
+
+  for (const ev of events) {
+    const summary = ev.summary || '(Tanpa Judul)';
+    const location = ev.location || null;
+    const startRaw = ev.start?.dateTime || ev.start?.date;
+    const endRaw = ev.end?.dateTime || ev.end?.date;
+    if (!startRaw || !endRaw) continue;
+
+    if (!ev.start?.dateTime) {
+      allDayEvents.push({ summary, location });
+      continue;
+    }
+
+    const startMs = new Date(startRaw).getTime();
+    const endMs = new Date(endRaw).getTime();
+    if (isNaN(startMs) || isNaN(endMs)) continue;
+
+    timedEvents.push({
+      summary,
+      location,
+      startMs,
+      endMs,
+      startHHMM: formatHHMM_WIB(startMs),
+      endHHMM: formatHHMM_WIB(endMs)
+    });
+  }
+
+  if (timedEvents.length === 0 && allDayEvents.length === 0) {
+    return '[TIMELINE AGENDA TUAN HARI INI]\n• Tidak ada agenda terjadwal di kalender hari ini.';
+  }
+
+  timedEvents.sort((a, b) => a.startMs - b.startMs);
+
+  const lines = ['[TIMELINE AGENDA TUAN HARI INI]'];
+
+  for (const ev of timedEvents) {
+    const locStr = ev.location ? ` (${ev.location})` : '';
+    if (nowMs >= ev.startMs && nowMs <= ev.endMs) {
+      const remainingMins = Math.max(0, Math.round((ev.endMs - nowMs) / 60000));
+      lines.push(`• [${ev.startHHMM}–${ev.endHHMM} WIB] ${ev.summary}${locStr} — SEDANG BERLANGSUNG (tersisa ~${remainingMins} menit)`);
+    } else if (nowMs > ev.endMs) {
+      const endedAgoMins = Math.max(0, Math.round((nowMs - ev.endMs) / 60000));
+      lines.push(`• [${ev.startHHMM}–${ev.endHHMM} WIB] ${ev.summary}${locStr} — SELESAI pukul ${ev.endHHMM} WIB (~${endedAgoMins} menit lalu)`);
+    } else {
+      const startsInMins = Math.max(1, Math.round((ev.startMs - nowMs) / 60000));
+      const startsStr = startsInMins >= 60
+        ? `~${(startsInMins / 60).toFixed(1).replace('.0', '')} jam lagi`
+        : `~${startsInMins} menit lagi`;
+      lines.push(`• [${ev.startHHMM}–${ev.endHHMM} WIB] ${ev.summary}${locStr} — MENDATANG pukul ${ev.startHHMM} WIB (dalam ${startsStr})`);
+    }
+  }
+
+  for (const ev of allDayEvents) {
+    lines.push(`• [SEHARIAN] ${ev.summary}${ev.location ? ` (${ev.location})` : ''}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * Bangun blok konteks deklaratif dan ringkas untuk diinjeksi ke AI Router
  * @param {object} params
  * @param {Array} [params.calendarEvents] - Daftar event hari ini (dari Google_Workspace)
@@ -250,11 +322,13 @@ function buildSituationalPromptBlock(params = {}) {
   const calendarEvents = params.calendarEvents || [];
 
   const agendaEval = evaluateAgendaPosition(calendarEvents, nowMs);
+  const dailyTimeline = buildDailyTimeline(calendarEvents, nowMs);
   const physicalState = evaluatePhysicalState(nowMs);
   const emotionInertia = getActiveEmotionalInertia(nowMs);
 
   const lines = [
     `[Konteks Situasi & Lingkungan Nyata]`,
+    dailyTimeline,
     `• Status Agenda: ${agendaEval.summaryText}`,
     `• Kondisi Fisik & Sensor: ${physicalState}`
   ];
@@ -270,6 +344,7 @@ module.exports = {
   recordTurnEmotion,
   getActiveEmotionalInertia,
   evaluateAgendaPosition,
+  buildDailyTimeline,
   evaluatePhysicalState,
   buildSituationalPromptBlock,
   formatHHMM_WIB

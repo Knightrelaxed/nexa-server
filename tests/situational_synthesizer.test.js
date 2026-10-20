@@ -72,6 +72,7 @@ test('Situational_Synthesizer - evaluateAgendaPosition detects GAP between event
   assert.equal(result.nextUpcomingEvent.summary, 'Bahasa Arab Tulis III (Arb1)');
   assert.equal(result.nextUpcomingEvent.startsInMins, 15);
   assert.match(result.summaryText, /WAKTU JEDA \/ TRANSISI/);
+  assert.match(result.summaryText, /selesai 12:40 WIB, ~5 menit lalu/);
 });
 
 test('Situational_Synthesizer - evaluateAgendaPosition handles ALL_COMPLETED and NO_EVENTS', () => {
@@ -88,9 +89,43 @@ test('Situational_Synthesizer - evaluateAgendaPosition handles ALL_COMPLETED and
   const resCompleted = synthesizer.evaluateAgendaPosition(mockEvents, nowMs);
   assert.equal(resCompleted.status, 'ALL_COMPLETED');
   assert.match(resCompleted.summaryText, /SELURUH AGENDA HARI INI TELAH SELESAI/);
+  assert.match(resCompleted.summaryText, /selesai 10:00 WIB, ~540 menit lalu/);
 
   const resEmpty = synthesizer.evaluateAgendaPosition([], nowMs);
   assert.equal(resEmpty.status, 'NO_EVENTS');
+});
+
+test('Situational_Synthesizer - buildDailyTimeline generates compact bulleted timeline with relative status', () => {
+  const nowMs = new Date('2026-10-20T15:05:00+07:00').getTime();
+  const mockEvents = [
+    {
+      summary: 'Genre Sastra Arab (Arb1)',
+      location: 'Soegondo 403',
+      start: { dateTime: '2026-10-20T09:10:00+07:00' },
+      end: { dateTime: '2026-10-20T10:50:00+07:00' }
+    },
+    {
+      summary: 'Bahasa Arab Tulis III (Arb1)',
+      location: 'Soegondo 403',
+      start: { dateTime: '2026-10-20T13:00:00+07:00' },
+      end: { dateTime: '2026-10-20T14:40:00+07:00' }
+    },
+    {
+      summary: 'Do my Duolingo',
+      start: { dateTime: '2026-10-20T18:15:00+07:00' },
+      end: { dateTime: '2026-10-20T18:30:00+07:00' }
+    }
+  ];
+
+  const timeline = synthesizer.buildDailyTimeline(mockEvents, nowMs);
+  assert.match(timeline, /\[TIMELINE AGENDA TUAN HARI INI\]/);
+  assert.match(timeline, /\[09:10–10:50 WIB\] Genre Sastra Arab \(Arb1\) \(Soegondo 403\) — SELESAI pukul 10:50 WIB/);
+  assert.match(timeline, /\[13:00–14:40 WIB\] Bahasa Arab Tulis III \(Arb1\) \(Soegondo 403\) — SELESAI pukul 14:40 WIB \(~25 menit lalu\)/);
+  assert.match(timeline, /\[18:15–18:30 WIB\] Do my Duolingo — MENDATANG pukul 18:15 WIB/);
+
+  // Empty events test
+  const emptyTimeline = synthesizer.buildDailyTimeline([]);
+  assert.match(emptyTimeline, /Tidak ada agenda terjadwal di kalender hari ini/);
 });
 
 test('Situational_Synthesizer - Emotional Inertia tracks and decays over 15 minutes', () => {

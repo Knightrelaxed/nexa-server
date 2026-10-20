@@ -37,7 +37,7 @@ async function _handleReflexRouting(textInput, runtimeHints = {}) {
     const rawMemories = await supabaseMemories.getRecentMemories(4);
     if (rawMemories && rawMemories.length > 0) {
       contextStr = rawMemories.map(m => {
-        const timeStr = formatTimeWIB(m.created_at);
+        const timeStr = formatMemoryTime(m.created_at);
         const platform = (m.platform || 'telegram').toUpperCase();
         return `[${timeStr} | via ${platform}] [${m.role.toUpperCase()}]: ${m.content}`;
       }).join('\n');
@@ -259,8 +259,8 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     console.log(`[ROUTER] History trimmed by char cap: ${_rawMemories.length}msg/${_totalHistChars}ch → ${_memories.length}msg/${_chars}ch`);
   }
 
-  // Helper untuk formatting waktu WIB
-  const formatTimeWIB = (isoStr) => {
+  // Helper untuk formatting waktu WIB dan isolasi temporal riwayat obrolan
+  const formatMemoryTime = (isoStr) => {
     if (!isoStr) return 'Unknown Time';
     try {
       const d = new Date(isoStr);
@@ -270,8 +270,18 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
       const MM = String(tzDate.getUTCMonth() + 1).padStart(2, '0');
       const HH = String(tzDate.getUTCHours()).padStart(2, '0');
       const MIN = String(tzDate.getUTCMinutes()).padStart(2, '0');
-      return `${DD}/${MM} ${HH}:${MIN} WIB`;
-    } catch (e) {
+      const nowJkt = new Date(Date.now() + 7 * 60 * 60 * 1000);
+      const nowDayNum = Math.floor(nowJkt.getTime() / 86400000);
+      const msgDayNum = Math.floor(tzDate.getTime() / 86400000);
+      const dayDiff = nowDayNum - msgDayNum;
+      if (dayDiff <= 0) {
+        return `HARI INI ${HH}:${MIN} WIB`;
+      } else if (dayDiff === 1) {
+        return `KEMARIN (${DD}/${MM}) ${HH}:${MIN} WIB`;
+      } else {
+        return `MASA LALU — ${dayDiff} HARI LALU (${DD}/${MM}) ${HH}:${MIN} WIB`;
+      }
+    } catch (_) {
       return 'Unknown Time';
     }
   };
@@ -413,7 +423,7 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     const results = await Promise.allSettled([
       _fetchRecentFinanceSummary(3),
       _fetchUpcomingEventsSummary(3),
-      _loadCalendarContext ? _fetchTodaysRawEvents() : Promise.resolve([]),
+      _fetchTodaysRawEvents(),
       // Load daftar akun aktif dari Supabase Finance (hanya jika domain finance aktif)
       _loadFinanceContext ? (async () => {
         try {
@@ -528,14 +538,12 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     ? rawEventsResult.value
     : [];
 
-  if (_loadCalendarContext || _topicContext === 'CASUAL' || _topicContext === 'SCHEDULING' || _hasContextRef) {
-    try {
-      situationalBlock = situationalSynthesizer.buildSituationalPromptBlock({
-        calendarEvents: rawEvents,
-        nowMs: Date.now()
-      });
-    } catch (_) {}
-  }
+  try {
+    situationalBlock = situationalSynthesizer.buildSituationalPromptBlock({
+      calendarEvents: rawEvents,
+      nowMs: Date.now()
+    });
+  } catch (_) {}
   const presenceBlock = situationalBlock || (presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '');
   const _dynamicOperationalBlock = `${_playbookBlock || ''}${_stanceBlock || ''}`.trim();
 
@@ -551,6 +559,7 @@ ${runtimeContextBlock || '[Tidak ada konteks runtime tambahan]'}
 
 [RIWAYAT OBROLAN]
 ${_applyTokenBudgetGuard(factsContext + activeAccountsBlock + activeCategoriesBlock + sentimentBlock + crossDomainBlock + runtimeContextBlock, contextStr, routerSystemPrompt)}
+(Catatan: Rujukan jadwal dan waktu hari ini adalah [TIMELINE AGENDA TUAN HARI INI]. Catatan berlabel [MASA LALU] adalah riwayat obrolan arsip dan dilarang dijadikan rujukan jadwal hari ini.)
 
 [WAKTU SERVER SAAT INI (ASIA/JAKARTA)]
 ${currentJakartaTime}
