@@ -906,21 +906,19 @@ Jika validasi gagal, N.E.X.A mengirim pertanyaan klarifikasi spesifik dan menghe
 
 #### Matriks Kognitif SACR v2.6 (LIGHT vs HEAVY)
 
-| Mode | Urutan Prioritas Tier | Model AI | Karakteristik & Peran |
+| Mode | Urutan Prioritas Tier | Model AI & Akun | Karakteristik & Peran |
 |--|--|--|--|
-| **LIGHT** (Chat Harian, Perintah Cepat, Konfirmasi) | **Tier 1 - 4** | **Google Gemma 4 26B** (4 Kunci) | Persona Natural, Cepat, Tanpa Monolog Internal |
-| | **Tier 5 - 8** | **Gemini 3.5 Flash Lite** (4 Kunci) | Kecepatan Sub-Detik, Respons Kilat |
-| | **Tier 9 - 12** | **Gemini 3.6 Flash** (4 Kunci) | Cadangan Stabil, Jendela Konteks 1 Juta Token |
-| | **Tier 13 - 16** | **Groq Qwen 3.8 27B** (4 Kunci) | Mesin Inferensi LPU Tercepat (Ultra-Low Latency) |
-| | **Tier 17** | **Mistral Codestral** | Inferensi Independen Server Eropa |
+| **LIGHT** (Chat Harian, Perintah Cepat, Konfirmasi) | **Tier 1 - 4** | **Google Gemma 4 26B** (4 Akun Google Terpisah) | Persona Natural, Cepat, Tanpa Monolog Internal |
+| | **Tier 5 - 8** | **Gemini 3.5 Flash Lite** (4 Akun Google Terpisah) | Kecepatan Sub-Detik, Respons Kilat |
+| | **Tier 9 - 12** | **Gemini 3.6 Flash** (4 Akun Google Terpisah) | Cadangan Stabil, Jendela Konteks 1 Juta Token |
+| | **Tier 13** | **Mistral Codestral** (Kondisional / Standby) | Jaring Pengaman Darurat Server Eropa |
+| | **Tier 14** | **Dumb Mode** | Jaring Pengaman Darurat Offline |
+| **HEAVY** (Rekap Keuangan, Riset, Bedah Dokumen, Coding) | **Tier 1 - 4** | **Gemini 3.8 Flash** (4 Akun Google Terpisah) | Penalaran Mendalam (*Deep Reasoning Priority*) |
+| | **Tier 5 - 8** | **Gemini 3.6 Flash** (4 Akun Google Terpisah) | Workhorse Utama, Analisis Dokumen Panjang |
+| | **Tier 9 - 12** | **Google Gemma 4 26B** (4 Akun Google Terpisah) | Evaluasi Cepat Pendamping |
+| | **Tier 13 - 16** | **Gemini 3.5 Flash** (4 Akun Google Terpisah) | Cadangan Terbuka Skala Besar |
+| | **Tier 17** | **Mistral Codestral** (Kondisional / Standby) | Jaring Pengaman Darurat Server Eropa |
 | | **Tier 18** | **Dumb Mode** | Jaring Pengaman Darurat Offline |
-| **HEAVY** (Rekap Keuangan, Riset, Bedah Dokumen, Coding) | **Tier 1 - 4** | **Gemini 3.8 Flash** (4 Kunci) | Penalaran Mendalam (*Deep Reasoning Priority*) |
-| | **Tier 5 - 8** | **Gemini 3.6 Flash** (4 Kunci) | Workhorse Utama, Analisis Dokumen Panjang |
-| | **Tier 9 - 12** | **Google Gemma 4 26B** (4 Kunci) | Evaluasi Cepat Pendamping |
-| | **Tier 13 - 16** | **Gemini 3.5 Flash** (4 Kunci) | Cadangan Terbuka Skala Besar |
-| | **Tier 17 - 20** | **Groq Qwen 3.8 27B** (4 Kunci) | Failover Berkecepatan Tinggi |
-| | **Tier 21** | **Mistral Codestral** | Failover Eropa Mandiri |
-| | **Tier 22** | **Dumb Mode** | Jaring Pengaman Darurat Offline |
 
 ---
 
@@ -1005,13 +1003,12 @@ function extractFirstValidJson(str) {
 
 ---
 
-#### 3.5.4 Rotasi Kunci Round-Robin Dinamis (`orderKeys`)
+#### 3.5.4 Rotasi Kunci Round-Robin Dinamis (`orderKeys`) & Arsitektur 4 Akun Google Terpisah
 
-**Kelemahan Arsitektur Lama:**
-Sebelumnya, sistem selalu memulai pemanggilan dari Kunci #1 (`API Key 1`). Akibatnya Kunci #1 menanggung 90%+ beban dan cepat terkena limit kuota RPM/TPM sementara Kunci #2, #3, #4 menganggur.
-
-**Implementasi Solusi v3.2:**
-Modul `orderKeys(group, count)` memutar indeks awal kunci per request menggunakan modulo counter:
+**Arsitektur 4 Akun Google Independen:**  
+Keempat API key yang dikonfigurasi pada server (`GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4`) **berasal dari 4 Akun Google Cloud yang berdiri sendiri (independen)**, bukan dari satu proyek yang sama. Hal ini memberikan implikasi arsitektural krusial:
+1. **Kapasitas 4x Lipat Murni:** Batas *Request per Minute* (RPM) dan *Request per Day* (RPD) dari masing-masing akun terisolasi sepenuhnya. Kehabisan kuota pada Akun 1 sama sekali tidak mengurangi sisa kuota pada Akun 2, 3, dan 4.
+2. **Rotasi Beban Merata:** Modul `orderKeys(group, count)` memutar indeks awal kunci per request menggunakan modulo counter:
 ```javascript
 function orderKeys(group, count) {
   if (count <= 0) return [];
@@ -1020,22 +1017,38 @@ function orderKeys(group, count) {
   return Array.from({ length: count }, (_, i) => (start + i) % count);
 }
 ```
-Setiap panggilan berurutan mendistribusikan beban secara seragam ke seluruh kunci (`Key 1 → Key 2 → Key 3 → Key 4`), memperpanjang daya tahan kuota gratis hingga 4x lipat.
+Setiap panggilan berurutan mendistribusikan beban secara seragam ke seluruh akun (`Akun 1 → Akun 2 → Akun 3 → Akun 4`), mencegah satu akun terkuras habis sementara akun lain menganggur.
 
 ---
 
-#### 3.5.5 Smart Retry-After & Deteksi Kuota Harian (RPD)
+#### 3.5.5 Smart Retry-After, Deteksi Kuota Harian (RPD), dan Cooldown Pacific Time
 
-Ketika provider mengembalikan status `429 Too Many Requests`:
-1. **Parsing `Retry-After`**: Sistem mengekstrak durasi jeda resmi dari HTTP response header `retry-after` atau teks error (`"Please retry in 15.2s"`), lalu mencatat cooldown presisi untuk kunci tersebut.
-2. **Isolasi Kuota Harian (Daily Quota)**: Jika error mengandung pola `/per day|daily|\bRPD\b/i`, sistem mengaktifkan cooldown **30 menit** khusus untuk kunci tersebut. Server tidak membuang waktu me-retry kunci yang sudah habis kuota hariannya dan langsung melompat ke tier/model berikutnya.
+Ketika Google API mengembalikan status `429 Too Many Requests`:
+1. **Normalisasi Status Error:** Kode wrapper mengekstrak objek `error.details` dan array `violations` dari response body JSON Google, lalu menyematkan `err.status = 429`, `err.details`, dan `err.quotaIds`.
+2. **Deteksi Kuota Harian Akurat (`QUOTA_DAILY`):**  
+   Google tidak mencantumkan frasa *"per day"* pada pesan teks utama melainkan pada `details[].violations[].quotaId` (misal: `...GenerateContentRequestsPerDayPerProjectPerModel...`). Sistem memeriksa keberadaan string `PerDay` atau `PerProjectPerModel` pada `quotaId`.
+3. **Pendinginan Hingga Tengah Malam Pacific (`msUntilMidnightPacific()`):**  
+   Batas kuota harian Google di-reset secara global pada tengah malam waktu Pasifik (00:00 PST/PDT atau pukul 14:00/15:00 WIB). Ketika Akun $i$ terkena limit harian:
+   - **Hanya Akun $i$ yang diistirahatkan** sampai jam reset Pacific.
+   - **Akun lain tetap aktif 100%**, dan request berikutnya langsung dialihkan ke akun sehat tanpa pernah menyentuh Akun $i$ yang sedang tidur.
+4. **Penanganan Rate Limit Menit (`RATE_LIMIT`):**  
+   Jika error 429 bersifat sementara (per-menit), sistem mengekstrak durasi jeda presisi dari `RetryInfo.retryDelay` atau header `retry-after`, lalu mendinginkan akun tersebut selama durasi tersebut (default 60 detik) sambil langsung mengalihkan request saat itu ke akun berikutnya.
 
 ---
 
-#### 3.5.6 Arsitektur Provider Health State Machine (`Provider_Health.js`)
+#### 3.5.6 Penanganan Model Deprecated (`BAD_MODEL`) dan Key Revoked (`BAD_KEY`)
 
-Modul `Provider_Health.js` mengimplementasikan *Circuit Breaker* lintas request dengan tiga status hidup:
-- **`CLOSED`**: Provider beroperasi normal.
+1. **`BAD_MODEL` (HTTP 404):**  
+   Jika Google mengembalikan error 404 (model dipensiunkan atau salah nama), circuit breaker langsung menutup **seluruh grup model tersebut selama 1 jam** (`badModelMs = 3600000`). Ini mengeliminasi pemborosan 4 request gagal di setiap turn dan langsung mengalirkan request ke model Google berikutnya dalam rantai fallback.
+2. **`BAD_KEY` (HTTP 401 / 403):**  
+   Jika sebuah key dicabut (*revoked*) atau tidak valid, key tersebut diistirahatkan selama **10 menit** (`badKeyMs = 600000`) agar server tidak berulang kali mencoba key yang mati.
+
+---
+
+#### 3.5.7 Arsitektur Provider Health State Machine (`Provider_Health.js`)
+
+Modul `Provider_Health.js` mengimplementasikan *Circuit Breaker* dua lapis (Level Model/Grup dan Level Kunci):
+- **`CLOSED`**: Provider dan kunci beroperasi normal.
 - **`OPEN`**: Terjadi kegagalan server berturut-turut ($\ge 2$ kali error 5xx/timeout). Seluruh request ke model ini diblokir sementara dengan *exponential backoff* ($30\text{s} \rightarrow 60\text{s} \rightarrow 120\text{s}$, maks 10 menit).
 - **`HALF-OPEN`**: Jendela cooldown berakhir. Tepat **satu probe request** diizinkan lewat. Jika berhasil, sirkuit kembali `CLOSED`. Jika gagal, waktu jeda digandakan kembali.
 
@@ -1043,7 +1056,29 @@ Fungsi `snapshot()` mengekspos telemetri status sirkuit dan waktu jeda kunci sec
 
 ---
 
-#### 3.5.7 Dumb Mode : Jaring Pengaman Darurat Terakhir
+#### 3.5.8 Keamanan Transmisi & Redaksi Log (Zero Query Leakage)
+
+1. **Otentikasi Header `x-goog-api-key`:**  
+   Seluruh titik panggilan Google API di N.E.X.A (`Fallback_Engine.js`, `Vision_Engine.js`, `Voice_Engine.js`, `gemini_vector_cache.js`, Cloudflare Worker, dan Vercel Relay) **100% menggunakan HTTP Header `x-goog-api-key: apiKey`** dan tidak lagi menggunakan query parameter `?key=...`. URL yang tercatat pada *access log* proxy perantara tidak pernah memuat secret API key.
+2. **Auto-Redaction pada Log Konsol & File:**  
+   Fungsi `getErrDetails()` menyaring pesan error menggunakan regex pembersih otomatis, menggantikan string berformat `AIza...` atau `?key=...` menjadi `<REDACTED>`.
+
+---
+
+#### 3.5.9 Matriks Komprehensif Seluruh Domain AI di N.E.X.A
+
+| Domain & Jalur | Model Utama | Mekanisme Rotasi | Model Fallback / Standby |
+|---|---|---|---|
+| **Text Routing (LIGHT)** | `gemma-4-26b-a4b-it` | 4 Akun Google (Round-Robin) | `gemini-3.5-flash-lite` → `gemini-3.6-flash` → `codestral-latest` (Mistral) |
+| **Text Routing (HEAVY)** | `gemini-3.8-flash` | 4 Akun Google (Round-Robin) | `gemini-3.6-flash` → `gemma-4-26b-a4b-it` → `gemini-3.5-flash` → `codestral-latest` |
+| **Vision (Foto & Nota)** | `gemini-3.6-flash` | 4 Akun Google (Round-Robin) | HuggingFace `Qwen2-VL-7B-Instruct` |
+| **Voice Note (Telegram)** | `gemini-2.5-flash` (Native Audio) | 4 Akun Google (Round-Robin) | HuggingFace `whisper-large-v3-turbo` |
+| **Live Call (Telepon 2 Arah)** | `models/gemini-3.8-live` | 4 Akun Google (Bidi WebSocket) | `models/gemini-3.1-flash-live-preview` |
+| **Vector Embedding** | `gemini-embedding-2` | 4 Akun Google (Round-Robin) | `gemini-embedding-001` |
+
+---
+
+#### 3.5.10 Dumb Mode : Jaring Pengaman Darurat Terakhir
 
 Jika seluruh lapisan peladen dunia mengalami pemadaman total secara bersamaan, sistem mengembalikan struktur darurat terisolasi tanpa crash:
 ```json
