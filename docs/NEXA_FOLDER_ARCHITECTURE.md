@@ -2,7 +2,7 @@
 
 > **Document:** `docs/NEXA_FOLDER_ARCHITECTURE.md`  
 > **Ecosystem:** N.E.X.A 3.4 (Sovereign Cloud Core, Finance Web Portal, Mobile Hardware Bridge, US Gemini Proxy & Universal CLI)  
-> **Last Updated:** 2026-10-19  
+> **Last Updated:** 2026-10-20  
 > **Format:** Comprehensive Plain-Text ASCII Tree with Deep Functional Annotations  
 
 ---
@@ -143,7 +143,15 @@ nexa-server/
     │   └── version.js                    # Centralized version definition (v3.4.0) & Git SHA resolver
     │
     ├── core/                             # Core Cognitive & Inference Engines (9 Subsystems)
-    │   ├── AI_Router.js                  # Master Cognitive Brain, Intent Classifier & Prompt Fusion
+    │   ├── AI_Router.js                  # Public Facade (37 lines, re-exporting 18 cognitive routing APIs)
+    │   ├── router/                       # Modular Cognitive Router Subsystem (7 Modules)
+    │   │   ├── Router_Cache.js           # RAM cache & TTL invalidator for personal facts, identity & self-model
+    │   │   ├── Router_Classifier.js      # Fast reflex detection, candidate domain gating & topic classifier
+    │   │   ├── Router_Dispatcher.js      # Master routeUserMessage orchestration loop & JSON repair
+    │   │   ├── Router_Output.js          # Routing output normalization, em-dash cleanup & domain fixers
+    │   │   ├── Router_Prompts.js         # Token Budget Guard, system prompt builder & anti-stalker reframing
+    │   │   ├── Router_Selectors.js       # Semantic token extraction, word stemmer & fact relevance scorers
+    │   │   └── Router_Utilities.js       # LLM utilities (callAI, classifyYesNo, classifyPending, dedupFact)
     │   ├── Fallback_Engine.js            # SACR v2.4 (15-Tier Dual-Mode Dynamic Fallback Router)
     │   ├── Live_Tool_Registry.js         # Function calling & Agent Tool execution catalog
     │   ├── Live_Voice_Engine.js          # Bidirectional real-time Gemini Live WebSocket relay
@@ -612,6 +620,7 @@ nexa-cli/
 | Jalur Aliran Data | Protokol / Saluran | Komponen Asal | Komponen Tujuan | Deskripsi / Fungsi |
 |---|---|---|---|---|
 | **Modular Intent Ingress** | Inter-process / Pipeline | Adapter Kanal (`telegram/`, `cli/`) | Common Dispatcher (`common/`) | Normalisasi payload intent lintas-kanal ke 7 handler domain bersama dengan platform-aware escaping & state retention. |
+| **Cognitive AI Routing** | Pipeline / Fallback Engine | Server (`AI_Router.js` Facade & `router/`) | Fallback Engine & LLM Providers | Klasifikasi 13 domain intent, gating dinamis skema tool, injeksi persona, RAM cache TTL, dan eksekusi multi-provider dengan Token Budget Guard. |
 | **Hardware Commands** | WebSocket (`EXECUTE_COMMAND`) | Server (`MobileBridge_WS.js`) | Android (`DeviceCommandDispatcher.kt`) | Eksekusi 28 aksi fisik (kamera, screenshot, klik layar, volume, senter, dll.). |
 | **Command Results** | WebSocket (`COMMAND_RESULT`) | Android (`DeviceCommandDispatcher.kt`) | Server (`MobileBridge_WS.js`) | Pengembalian data eksekusi (Base64 foto, hierarki UI, status). |
 | **Situational Context** | WebSocket (`CONTEXT_UPDATE`) | Android (`ContextEngine.kt`) | Server (`adapter.js`) | Laporan sensor real-time (`ROOM_DARK_NIGHT`, `PHONE_PICKUP_MORNING`, dll.). |
