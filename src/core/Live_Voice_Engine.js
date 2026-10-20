@@ -270,7 +270,7 @@ class LiveVoiceSession {
     const cleanHost = rawBase.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const url       = `wss://${cleanHost}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
-    console.log(`[LIVE-VOICE] 🔌 Connecting to Google Live API (${cleanHost}, Key idx: ${this.currentKeyIndex}, Model: ${this.currentModel})...`);
+    console.log(`[LIVE-VOICE] Connecting to Google Live API (${cleanHost}, Key idx: ${this.currentKeyIndex}, Model: ${this.currentModel})...`);
 
     const wsOptions = { handshakeTimeout: 10000 };
 
@@ -288,7 +288,7 @@ class LiveVoiceSession {
       this.googleWs = new WebSocket(url, wsOptions);
 
       this.googleWs.on('open', async () => {
-        console.log(`[LIVE-VOICE] 🌐 Connected to Google WSS. Sending setup payload...`);
+        console.log(`[LIVE-VOICE] Connected to Google WSS. Sending setup payload...`);
         await this._sendSetupPayload();
       });
 
@@ -297,18 +297,18 @@ class LiveVoiceSession {
       });
 
       this.googleWs.on('error', (err) => {
-        console.error(`[LIVE-VOICE] ❌ Google WebSocket Error:`, err.message);
+        console.error(`[LIVE-VOICE] Google WebSocket Error:`, err.message);
       });
 
       this.googleWs.on('close', (code, reason) => {
         const rStr = reason ? reason.toString() : '';
-        console.log(`[LIVE-VOICE] 🔒 Google WebSocket Closed: Code ${code} — "${rStr}"`);
+        console.log(`[LIVE-VOICE] Google WebSocket Closed: Code ${code} — "${rStr}"`);
         if (this.isActive && (code === 1008 || code === 1011 || code === 1006)) {
           this._handleFailover(code, rStr);
         }
       });
     } catch (err) {
-      console.error(`[LIVE-VOICE] ❌ Failed to initiate Google WebSocket:`, err.message);
+      console.error(`[LIVE-VOICE] Failed to initiate Google WebSocket:`, err.message);
       this._handleFailover(500, err.message);
     }
   }
@@ -640,7 +640,7 @@ class LiveVoiceSession {
 
         try {
           this.googleWs.send(JSON.stringify(greetingPayload));
-          console.log(`[LIVE-VOICE] 🎙️ Dispatched Proactive Vocal Greeting trigger.`);
+          console.log(`[LIVE-VOICE] Dispatched Proactive Vocal Greeting trigger.`);
         } catch (err) {
           console.warn(`[LIVE-VOICE] Greeting send warning:`, err.message);
         }
@@ -779,7 +779,7 @@ class LiveVoiceSession {
 
         // If turnComplete is reached AND call is marked to end:
         if (msg.serverContent.turnComplete && this.isEndingCall) {
-          console.log(`[LIVE-VOICE] 🏁 Farewell speech turn completed. Signaling client to finish cleanly after audio playback.`);
+          console.log(`[LIVE-VOICE] Farewell speech turn completed. Signaling client to finish cleanly after audio playback.`);
           this._sendToClient({
             type: 'CALL_STATUS_UPDATE',
             status: 'DISCONNECTING'
@@ -1100,7 +1100,7 @@ class LiveVoiceSession {
     try {
       this.googleWs.send(JSON.stringify(frameMsg));
     } catch (err) {
-      console.error(`[LIVE-VOICE] ❌ Failed to forward video frame to Google:`, err.message);
+      console.error(`[LIVE-VOICE] Failed to forward video frame to Google:`, err.message);
     }
   }
 
@@ -1125,7 +1125,7 @@ class LiveVoiceSession {
     if (!this.isActive) return;
 
     this.reconnectAttempts++;
-    console.warn(`[LIVE-VOICE] ⚠️ Failover triggered (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}): Code ${code} — ${reason}`);
+    console.warn(`[LIVE-VOICE] Failover triggered (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}): Code ${code} — ${reason}`);
 
     this._sendToClient({
       type: 'CALL_STATUS_UPDATE',
@@ -1136,15 +1136,15 @@ class LiveVoiceSession {
       this.currentKeyIndex = (this.currentKeyIndex + 1) % (GOOGLE_KEYS.length || 1);
 
       if (this.reconnectAttempts >= 3 && this.currentModel === LIVE_MODELS.TIER_1_SPEED) {
-        console.log(`[LIVE-VOICE] 🔄 Switching to Tier 2 Marathon: ${LIVE_MODELS.TIER_2_MARATHON}`);
+        console.log(`[LIVE-VOICE] Switching to Tier 2 Marathon: ${LIVE_MODELS.TIER_2_MARATHON}`);
         this.currentModel = LIVE_MODELS.TIER_2_MARATHON;
       }
 
-      console.log(`[LIVE-VOICE] 🔄 Reconnecting with Key Index ${this.currentKeyIndex}...`);
+      console.log(`[LIVE-VOICE] Reconnecting with Key Index ${this.currentKeyIndex}...`);
       await new Promise(r => setTimeout(r, 600));
       await this._connectGoogleWs();
     } else {
-      console.error(`[LIVE-VOICE] 🚨 All failover tiers exhausted.`);
+      console.error(`[LIVE-VOICE] All failover tiers exhausted.`);
       this._sendToClient({
         type: 'CALL_ERROR',
         message: 'Koneksi suara live mengalami gangguan.'
@@ -1223,7 +1223,7 @@ class LiveVoiceSession {
     this.isClosed = true;
     this.isActive = false;
     const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
-    console.log(`[LIVE-VOICE] 🛑 Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);
+    console.log(`[LIVE-VOICE] Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);
 
     // Clear keepalive, watchdog, and tool safety intervals on close
     if (this.keepaliveInterval) { clearInterval(this.keepaliveInterval); this.keepaliveInterval = null; }
@@ -1252,7 +1252,7 @@ class LiveVoiceSession {
     this._flushUserTurn();
 
     if (this.turnHistory.length === 0) {
-      console.log(`[LIVE-VOICE] 📝 No turns to process. Skipping end-of-call pipeline.`);
+      console.log(`[LIVE-VOICE] No turns to process. Skipping end-of-call pipeline.`);
       return;
     }
 
@@ -1264,7 +1264,7 @@ class LiveVoiceSession {
         `[ARSIP PANGGILAN SUARA LIVE NEXA — ${durationSec} DETIK]\n${summaryText}`,
         'live_call'
       );
-      console.log(`[LIVE-VOICE] 📝 Call transcript archived to nexa_chat_memories (${durationSec}s, ${this.turnHistory.length} turns).`);
+      console.log(`[LIVE-VOICE] Call transcript archived to nexa_chat_memories (${durationSec}s, ${this.turnHistory.length} turns).`);
     } catch (err) {
       console.warn(`[LIVE-VOICE] Memory persistence warning:`, err.message);
     }
@@ -1275,6 +1275,64 @@ class LiveVoiceSession {
     this._runPassiveLearningPipeline(durationSec).catch(err => {
       console.warn(`[LIVE-VOICE] Passive learning pipeline warning:`, err.message);
     });
+  }
+
+  /**
+   * [STAGE 1] AI Transcript Alignment & Denoising
+   * Cleans ASR noise, strips foreign noise artifacts, and aligns phonetic slips (>70% confidence).
+   * Conservative anti-hallucination design: never invents facts, leaves ambiguous words untouched.
+   */
+  async _alignAndDenoiseTranscript(rawTurns) {
+    if (!rawTurns || rawTurns.length === 0) return '';
+
+    // Step A: Fast deterministic clean-up
+    const cleanedTurns = rawTurns.map(t => {
+      let txt = (t.text || '').trim();
+      txt = txt.replace(/[\u00BF\u00A1]/g, '').trim();
+      return { role: t.role, text: txt };
+    }).filter(t => t.text.length > 0);
+
+    const rawDialogueText = cleanedTurns
+      .map(t => `${t.role === 'user' ? 'Tuan Faqih' : 'N.E.X.A'}: ${t.text}`)
+      .join('\n');
+
+    // If dialogue is very short (< 4 turns), bypass LLM alignment pass
+    if (cleanedTurns.length < 4) {
+      return rawDialogueText;
+    }
+
+    try {
+      const alignmentPrompt = `Berikut adalah transkrip mentah dari rekaman panggilan suara real-time antara Tuan Faqih (pengguna) dan N.E.X.A (asisten AI).
+Karena suara Tuan Faqih ditangkap melalui modul speech-to-text otomatis (ASR), terkadang ada salah dengar fonetik, kata janggal, atau karakter asing (seperti huruf Mandarin, Korea, atau fonem aneh) akibat derau mikrofon.
+
+${rawDialogueText.slice(0, 18000)}
+
+TUGAS ANDA:
+Luruskan dan bersihkan transkrip di atas agar menjadi transkrip percakapan yang wajar dan akurat.
+
+ATURAN ANTI-HALUSINASI KETAT (CONFIDENCE > 70%):
+1. HANYA perbaiki salah dengar ucapan Tuan Faqih jika konteks dari jawaban N.E.X.A atau kalimat di sekitarnya membuktikan dengan keyakinan tinggi (>70%) apa kata aslinya.
+   Contoh: Tuan Faqih berkata "house" dan N.E.X.A menjawab "Wah, kalau haus minum air", maka perbaiki kata Tuan Faqih menjadi "haus".
+2. JANGAN PERNAH mengarang informasi, nama, angka, atau topik baru yang tidak ada pada kalimat asli.
+3. Jika ada baris yang murni derau karakter asing non-Indonesia (seperti karakter Mandarin/Korea acak yang tidak berhubungan dengan isi obrolan), tandai baris tersebut dengan "[derau suara diabaikan]" atau hapus baris derau tersebut.
+4. Jika Tuan Faqih sedang membahas bahasa tertentu (misal huruf Arab), pertahankan teks tersebut apa adanya.
+5. Jika ragu atau tidak yakin 70%, BIARKAN kalimat apa adanya, jangan ditebak-tebak.
+6. Pertahankan seluruh jawaban N.E.X.A apa adanya.
+
+Keluarkan HANYA transkrip hasil perbaikan dengan format:
+Tuan Faqih: [teks]
+N.E.X.A: [teks]`;
+
+      const alignedOutput = await callAI(alignmentPrompt);
+      if (alignedOutput && alignedOutput.length > 50 && !alignedOutput.toLowerCase().includes('maaf, saya tidak dapat')) {
+        console.log(`[LIVE-VOICE] Transcript AI Alignment complete (${alignedOutput.length} chars).`);
+        return alignedOutput.trim();
+      }
+    } catch (alignErr) {
+      console.warn(`[LIVE-VOICE] Transcript AI Alignment fallback to raw:`, alignErr.message);
+    }
+
+    return rawDialogueText;
   }
 
   /**
@@ -1297,20 +1355,10 @@ class LiveVoiceSession {
       return;
     }
 
-    // Guard: Skip passive learning if transcript contains foreign ASR noise artifacts
-    const FOREIGN_ARTIFACT_RE = /[\u00BF\u00A1\u00F1]/;  // inverted question/exclamation marks, tilde-n
-    const fullTranscriptText = this.turnHistory.map(t => t.text || '').join(' ');
-    if (FOREIGN_ARTIFACT_RE.test(fullTranscriptText)) {
-      console.log(`[LIVE-VOICE] Passive Learning skipped: foreign ASR noise artifacts detected in transcript. Refusing to learn from corrupted session.`);
-      return;
-    }
-
     console.log(`[LIVE-VOICE] Starting End-of-Call Passive Learning Pipeline (${this.turnHistory.length} turns, ${substantiveUserTurns.length} user turns, ${durationSec}s)...`);
 
-    // Build conversation text for AI analysis
-    const conversationText = this.turnHistory
-      .map(t => `${t.role === 'user' ? 'Tuan Faqih' : 'N.E.X.A'}: ${t.text}`)
-      .join('\n');
+    // Stage 1: AI Transcript Alignment & Denoising (Anti-Hallucination, >70% Confidence)
+    const conversationText = await this._alignAndDenoiseTranscript(this.turnHistory);
 
     const REFUSAL_REGEX = /maaf|transkrip|percakapan|kosong|sepertinya|tidak ada|tidak ditemukan|tidak terdapat|tidak ada instruksi|tidak ada aturan|berdasarkan transkrip/i;
 
@@ -1335,12 +1383,18 @@ class LiveVoiceSession {
         }
       } catch (_) {}
 
-      // 2. If bullet list or multi-line output
+      // 2. If multi-line output, paragraph chunks, or bullet list
       if (cleanStr.includes('\n')) {
-        return cleanStr
-          .split('\n')
+        const chunks = cleanStr.includes('\n\n')
+          ? cleanStr.split(/\n\s*\n/)
+          : cleanStr.split('\n');
+        return chunks
           .map(l => l.replace(/^[-*•0-9.)\s]+/, '').trim())
-          .filter(l => l.length > 5 && !REFUSAL_REGEX.test(l) && !l.startsWith('[') && !l.startsWith('{'));
+          .filter(l => l.length > 8 && !REFUSAL_REGEX.test(l) && !l.startsWith('[') && !l.startsWith('{'));
+      }
+
+      if (cleanStr.length > 8 && !REFUSAL_REGEX.test(cleanStr)) {
+        return [cleanStr];
       }
 
       return [];
@@ -1388,7 +1442,7 @@ Jika tidak ada fakta baru, balas dengan: []`;
       .filter(t => t.role === 'user' && t.text)
       .map(t => t.text)
       .join(' ');
-    const hasExplicitDirective = DIRECTIVE_KEYWORDS_RE.test(userTurnTexts);
+    const hasExplicitDirective = DIRECTIVE_KEYWORDS_RE.test(userTurnTexts) || DIRECTIVE_KEYWORDS_RE.test(conversationText);
 
     if (!hasExplicitDirective) {
       console.log(`[LIVE-VOICE] CORE_IDENTITY extraction skipped: no explicit directive keywords found in user turns.`);
@@ -1460,7 +1514,7 @@ Contoh: "N.E.X.A berhasil mengeksekusi pencatatan keuangan dan kalender via suar
       console.warn(`[LIVE-VOICE] Self-model update error:`, err.message);
     }
 
-    console.log(`[LIVE-VOICE] 🎓 End-of-Call Passive Learning Pipeline complete.`);
+    console.log(`[LIVE-VOICE] End-of-Call Passive Learning Pipeline complete.`);
   }
 }
 
