@@ -65,6 +65,13 @@ test('Google 429 with quotaId PerDay classifies as QUOTA_DAILY and cools down ke
   assert.equal(health.reportFailure('gemini', 'k1', googleDailyErr), 'QUOTA_DAILY');
   assert.equal(health.acquire('gemini', 'k1'), false);
   assert.equal(health.acquire('gemini', 'k2'), true);
+
+  // Per-minute quota should strictly be RATE_LIMIT, NEVER QUOTA_DAILY
+  const googleMinuteErr = Object.assign(new Error('Resource has been exhausted (e.g. check quota).'), {
+    status: 429,
+    quotaIds: ['GenerateRequestsPerMinutePerProjectPerModel-FreeTier']
+  });
+  assert.equal(health.classifyError(googleMinuteErr), 'RATE_LIMIT');
 });
 
 test('404 model not found triggers BAD_MODEL and cools down the entire model group for 1 hour', () => {
@@ -77,6 +84,10 @@ test('404 model not found triggers BAD_MODEL and cools down the entire model gro
   assert.equal(health.acquire('gemini-3.8-flash', 'k2'), false);
   assert.equal(health.acquire('gemini-3.8-flash', 'k3'), false);
   assert.ok(health.snapshot().groups['gemini-3.8-flash'].reopenInMs > 3500_000);
+
+  // Generic 404 (not model not found) should be SERVER, not BAD_MODEL
+  const generic404 = Object.assign(new Error('Endpoint not found'), { status: 404 });
+  assert.equal(health.classifyError(generic404), 'SERVER');
 });
 
 test('401/403 triggers BAD_KEY with 10m cooldown', () => {

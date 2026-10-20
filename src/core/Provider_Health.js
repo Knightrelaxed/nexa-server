@@ -96,12 +96,15 @@ function classifyError(err) {
   if (is429) {
     const quotaIds = Array.isArray(err?.quotaIds) ? err.quotaIds.join(' ') : '';
     const detailsStr = Array.isArray(err?.details) ? JSON.stringify(err.details) : '';
-    const isDaily = /per day|daily|\bRPD\b/i.test(msg) || /PerDay|PerProjectPerModel/i.test(quotaIds + detailsStr);
+    const fullQuotaContext = `${quotaIds} ${detailsStr}`;
+    const hasDailyMarker = /\b(?:per\s*day|daily|rpd)\b/i.test(msg) || /PerDay/i.test(fullQuotaContext);
+    const hasMinuteMarker = /\b(?:per\s*minute|rpm|tpm)\b/i.test(msg) || /PerMinute/i.test(fullQuotaContext);
+    const isDaily = hasDailyMarker && !hasMinuteMarker;
     return isDaily ? 'QUOTA_DAILY' : 'RATE_LIMIT';
   }
 
   // 2. Model Not Found (404)
-  if (status === 404 || /\b404\b|not_found|models?\/\S+ is not found/i.test(msg)) {
+  if (status === 404 && (/\bmodels?\/\S+ (?:is not found|not found)/i.test(msg) || /model.*not.found/i.test(msg) || /resource.*models?\//i.test(msg))) {
     return 'BAD_MODEL';
   }
 

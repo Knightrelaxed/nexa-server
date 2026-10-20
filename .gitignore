@@ -15,6 +15,12 @@ nexa-core-*.json
 logs/
 *.log
 npm-debug.log*
+*_dump*
+*_logs*
+*_chats*
+*last_500_logs*
+*last_100_chats*
+*last_50_behaviors*
 
 # OS artifacts
 .DS_Store
