@@ -26,7 +26,7 @@ async function handleDirectCommand(textInput, { respondToTelegram, deliverWebhoo
   // 1. Direct Call Interceptor (/call, /telepon, /callnexa, /panggilan)
   if (/^(\/call|\/telepon|\/callnexa|\/panggilan)\b/i.test(trimmed)) {
     console.log('[TELEGRAM-CMD] Menerima perintah direct call:', trimmed);
-    const mobileBridge = require('../mobile_bridge/adapter');
+    const mobileBridge = require('../bridge').mobile.adapter;
     if (!mobileBridge.isConnected()) {
       await respondToTelegram(
         '<b>Panggilan Tidak Dapat Terhubung</b>\n\nNexa Bridge pada HP Samsung A33 5G sedang offline atau belum terhubung ke WebSocket server. Pastikan aplikasi Nexa Bridge aktif di HP dan terhubung ke internet.'
