@@ -736,10 +736,10 @@ class LiveVoiceSession {
           const chunk = msg.serverContent.inputTranscription.text;
 
           // Phantom Hallucination Guard: Reject foreign/noise ghost tokens if recent vocal energy was absent
-          const isKnownPhantom = /^(¿\s*Qué\??|Qué\??|¿|de|C'est|c'est|tercero|0\.2|\?|\.{2,}|None|none|you|<no speech>.*)$/i.test(chunk.trim());
+          const isKnownPhantom = /^(¿\s*Qué\??|Qué\??|¿|de|C'est|c'est|tercero|0\.2|\?|\.{2,}|None|none|you|<no speech>.*|traje|gato|¿?cómo\??|como\??|la|el)$/i.test(chunk.trim());
           const hasRecentVoice = this._lastVocalActivityTime && (Date.now() - this._lastVocalActivityTime < 2000);
 
-          if (isKnownPhantom && (!hasRecentVoice || (this._lastUserAudioRms || 0) < 40)) {
+          if ((isKnownPhantom || (chunk.trim().split(/\s+/).length <= 1 && (this._lastUserAudioRms || 0) < 25)) && (!hasRecentVoice || (this._lastUserAudioRms || 0) < 35)) {
             console.log(`[LIVE-VOICE] 🛡️ Suppressed phantom ASR chunk: "${chunk.trim()}" (RMS: ${(this._lastUserAudioRms || 0).toFixed(0)})`);
           } else {
             if (this._userTranscriptBuf && !this._userTranscriptBuf.endsWith(' ') && !chunk.startsWith(' ')) {
