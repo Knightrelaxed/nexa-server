@@ -475,7 +475,7 @@ Antarmuka dibangun dengan **Slint GUI Engine** (konsumsi RAM <10 MB, render Dire
 
 ## 11. Struktur Direktori Proyek (`nexa-windows-bridge`)
 
-Repositori dibuat di `C:\workspace\nexa-server\nexa-windows-bridge` (Git Remote: [github.com/Knightrelaxed/nexa-windows-bridge](https://github.com/Knightrelaxed/nexa-windows-bridge)) dengan nama file dan folder yang baku dan normal:
+Repositori dibuat di `C:\workspace\nexa-windows-bridge` (Git Remote: [github.com/Knightrelaxed/nexa-windows-bridge](https://github.com/Knightrelaxed/nexa-windows-bridge)) dengan nama file dan folder yang baku dan normal:
 
 ```text
 nexa-windows-bridge/
@@ -563,21 +563,22 @@ flowchart TD
 
 ### Rincian Eksekusi & Checkpoint Validasi Tiap Fase:
 
-#### 🔹 Fase 0: Penyelarasan Server & Protokol Multi-Device (`nexa-server`)
+#### 🔹 Fase 0: Penyelarasan Server & Protokol Multi-Device (`nexa-server`) — [SELESAI ✅]
 * **Lokasi Kerja:** `c:\workspace\nexa-server`
 * **Langkah Kerja:**
-  1. `MobileBridge_WS.js`: Ubah manajemen `activeClient` menjadi multi-client: `activeClients: { mobile: null, desktop: null }` berbasis header `X-Device-Type: windows`.
+  1. `gateway.js`: Mount WebSocket Server di `/ws` berbasis header `X-Device-Type: windows` vs `android`.
   2. `Live_Tool_Registry.js`: Daftarkan toolset desktop standar (`desktopClick`, `desktopScroll`, `desktopTypeText`, `desktopPressKey`, `highlightElement`, `pointCursor`, `clearHighlights`).
   3. `Live_Voice_Engine.js`: Integrasikan Dual-Tier Router (`gemini-3.8-live` default cepat + `gemini-3.8-live-extended-thinking` deep reasoning).
-* **Checkpoint Validasi:** Menjalankan unit test server (`npm test`) ➔ Seluruh 336 automated test tetap **100% PASS (Green)** tanpa merusak Mobile Bridge Android.
+  4. Modularisasi `src/interfaces/bridge/` dan penghapusan total legacy folder `mobile_bridge`.
+* **Checkpoint Validasi:** Menjalankan unit test server (`npm test`) ➔ Seluruh 362 automated test **100% PASS (Green)** tanpa merusak Mobile Bridge Android.
 
-#### 🔹 Fase 1: Scaffolding Proyek Rust & UI Settings (`nexa-windows-bridge`)
-* **Lokasi Kerja:** `C:\workspace\nexa-server\nexa-windows-bridge` (Git Remote: `https://github.com/Knightrelaxed/nexa-windows-bridge`)
+#### 🔹 Fase 1: Scaffolding Proyek Rust & UI Settings (`nexa-windows-bridge`) — [SELESAI ✅]
+* **Lokasi Kerja:** `C:\workspace\nexa-windows-bridge` (Git Remote: `https://github.com/Knightrelaxed/nexa-windows-bridge`)
 * **Langkah Kerja:**
   1. Inisialisasi Cargo workspace & dependensi di `Cargo.toml` (`slint`, `tokio`, `tungstenite`, `serde`, `windows`, dll).
-  2. Implementasi `src/config.rs`: Membaca/menyimpan `~/.nexa-bridge.json` (WebSocket URL + Bearer Token, fallback otomatis ke `~/.nexa-config.json`).
-  3. Mendesain antarmuka Slint `ui/settings_dialog.slint` (Identik dengan UI Settings Android).
-* **Checkpoint Validasi:** Menjalankan `cargo run` ➔ Window Settings muncul di layar ThinkPad, bisa menyimpan URL & token, dan menyimpan konfigurasi lokal dengan benar.
+  2. Implementasi `src/config.rs`: Membaca/menyimpan `~/.nexa-bridge.json` (WebSocket URL + Bearer Token, fallback otomatis ke `~/.nexa-config.json`, dilengkapi `#[serde(default)]`).
+  3. Mendesain antarmuka Slint `ui/settings_dialog.slint`, `ui/main_window.slint`, dan `ui/components/avatar.slint`.
+* **Checkpoint Validasi:** Menjalankan `cargo check` dan `cargo test` ➔ Kompilasi 0 warning, 0 error, unit test lulus 100%, binary `nexa-windows-bridge.exe` terkompilasi dan commit ter-push ke GitHub.
 
 #### 🔹 Fase 2: Jaringan WebSocket & Ketahanan Daya OS (`network/` & `platform/`)
 * **Lokasi Kerja:** `src/network/` & `src/platform/`
