@@ -223,7 +223,7 @@ class LiveVoiceSession {
     if (!text) return;
 
     // Phantom hallucination filter: reject ghost noise tokens from polluting history & memories
-    const PHANTOM_REGEX = /^(¿\s*Qué\??|Qué\??|¿|de|\?|\.{2,}|None|none|you)$/i;
+    const PHANTOM_REGEX = /^(¿\s*Qué\??|Qué\??|¿|de|C'est|c'est|tercero|0\.2|\?|\.{2,}|None|none|you|<no speech>.*)$/i;
     if (PHANTOM_REGEX.test(text)) {
       console.log(`[LIVE-VOICE] 🛡️ Ignored phantom ASR user turn: "${text}"`);
       return;
@@ -697,8 +697,8 @@ class LiveVoiceSession {
       if (msg.serverContent) {
         if (msg.serverContent.interrupted) {
           const hasRecentVoice = this._lastVocalActivityTime && (Date.now() - this._lastVocalActivityTime < 1500);
-          if (!hasRecentVoice && (this._lastUserAudioRms || 0) < 8) {
-            console.log(`[LIVE-VOICE] ⚠️ Ignored spurious barge-in during silence (RMS: ${(this._lastUserAudioRms || 0).toFixed(0)})`);
+          if (!hasRecentVoice || (this._lastUserAudioRms || 0) < 40) {
+            console.log(`[LIVE-VOICE] ⚠️ Ignored spurious barge-in without user vocal energy (RMS: ${(this._lastUserAudioRms || 0).toFixed(0)})`);
           } else {
             console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
             this._visualTurnInjected = false;
@@ -735,10 +735,10 @@ class LiveVoiceSession {
           const chunk = msg.serverContent.inputTranscription.text;
 
           // Phantom Hallucination Guard: Reject foreign/noise ghost tokens if recent vocal energy was absent
-          const isKnownPhantom = /^(¿\s*Qué\??|Qué\??|¿|de|\?|\.{2,}|None|none|you)$/i.test(chunk.trim());
+          const isKnownPhantom = /^(¿\s*Qué\??|Qué\??|¿|de|C'est|c'est|tercero|0\.2|\?|\.{2,}|None|none|you|<no speech>.*)$/i.test(chunk.trim());
           const hasRecentVoice = this._lastVocalActivityTime && (Date.now() - this._lastVocalActivityTime < 2000);
 
-          if (isKnownPhantom && (!hasRecentVoice || (this._lastUserAudioRms || 0) < 12)) {
+          if (isKnownPhantom && (!hasRecentVoice || (this._lastUserAudioRms || 0) < 40)) {
             console.log(`[LIVE-VOICE] 🛡️ Suppressed phantom ASR chunk: "${chunk.trim()}" (RMS: ${(this._lastUserAudioRms || 0).toFixed(0)})`);
           } else {
             if (this._userTranscriptBuf && !this._userTranscriptBuf.endsWith(' ') && !chunk.startsWith(' ')) {
@@ -1020,7 +1020,7 @@ class LiveVoiceSession {
       pcmBuf = Buffer.from(pcmBase64, 'base64');
       rms = this._calculatePcmRms(pcmBuf);
       this._lastUserAudioRms = rms;
-      if (rms > 8) {
+      if (rms > 40) {
         this._lastVocalActivityTime = Date.now();
       }
     } catch (_) {}
