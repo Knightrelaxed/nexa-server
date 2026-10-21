@@ -3,8 +3,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { LIVE_TOOL_DECLARATIONS, executeLiveTool } = require('../src/core/Live_Tool_Registry');
-const mobileBridgeWs = require('../src/interfaces/mobile_bridge/MobileBridge_WS');
-const legacyAdapter = require('../src/interfaces/mobile_bridge/adapter');
 const bridge = require('../src/interfaces/bridge');
 
 test('Multi-Device Tools: All 8 desktop automation and cognitive tools are declared', () => {
@@ -55,22 +53,23 @@ test('Cognitive Tools: escalateToDeepThinking returns Extended Thinking status',
   assert.equal(res.model, 'models/gemini-3.8-live-extended-thinking');
 });
 
-test('MobileBridge_WS: multi-device sendCommand handles offline routing cleanly', async () => {
+test('Device Clients: multi-device sendCommand handles offline routing cleanly', async () => {
   // When no device is connected, sendCommand returns OFFLINE status cleanly without throwing
-  const resMobile = await mobileBridgeWs.sendCommand('flashlight.on', {});
+  const resMobile = await bridge.mobile.client.sendCommand('flashlight.on', {});
   assert.equal(resMobile.success, false);
   assert.equal(resMobile.status, 'OFFLINE');
 
-  const resDesktop = await mobileBridgeWs.sendCommand('DESKTOP_CLICK', { x: 500, y: 500 });
+  const resDesktop = await bridge.windows.client.sendCommand('DESKTOP_CLICK', { x: 500, y: 500 });
   assert.equal(resDesktop.success, false);
   assert.equal(resDesktop.status, 'OFFLINE');
   assert.match(resDesktop.message, /desktop bridge is offline/i);
 });
 
-test('MobileBridge_WS: isConnected supports device-specific checks', () => {
-  assert.equal(mobileBridgeWs.isConnected('desktop'), false);
-  assert.equal(mobileBridgeWs.isConnected('mobile'), false);
-  assert.equal(mobileBridgeWs.isConnected(), false);
+test('Device Clients: isConnected supports device-specific checks', () => {
+  assert.equal(bridge.windows.client.isConnected(), false);
+  assert.equal(bridge.mobile.client.isConnected(), false);
+  assert.equal(bridge.isWindowsConnected(), false);
+  assert.equal(bridge.isMobileConnected(), false);
 });
 
 test('Bridge Subsystem: exports full modular interface structure', () => {
@@ -148,11 +147,11 @@ test('Windows Bridge Adapter: high-level methods return clean offline status', a
   assert.equal(snap.is_online, false);
 });
 
-test('Legacy Adapters: backward-compatibility shims retain identity and parity', () => {
-  assert.equal(legacyAdapter, bridge.mobile.adapter, 'legacy adapter must equal modular mobile adapter singleton');
-  assert.equal(typeof legacyAdapter.execute, 'function');
-  assert.equal(typeof legacyAdapter.toggleFlashlight, 'function');
-  assert.equal(typeof legacyAdapter.simulateIncomingCall, 'function');
-  assert.equal(typeof legacyAdapter.isScreenActive, 'function');
-  assert.equal(typeof legacyAdapter.getSnapshot, 'function');
+test('Mobile Adapter: methods are exposed and functional', () => {
+  const adapter = bridge.mobile.adapter;
+  assert.equal(typeof adapter.execute, 'function');
+  assert.equal(typeof adapter.toggleFlashlight, 'function');
+  assert.equal(typeof adapter.simulateIncomingCall, 'function');
+  assert.equal(typeof adapter.isScreenActive, 'function');
+  assert.equal(typeof adapter.getSnapshot, 'function');
 });

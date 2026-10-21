@@ -257,7 +257,7 @@ async function triggerGodMode(level = 1, metadata = {}) {
 
   // Kirim perintah fisik ke Nexa Bridge Android App jika terhubung
   try {
-    const mobileBridgeWs = require('../interfaces/mobile_bridge/MobileBridge_WS');
+    const mobileBridgeWs = require('../interfaces/bridge').mobile.client;
     if (mobileBridgeWs && typeof mobileBridgeWs.sendCommand === 'function') {
       // 1. Suara TTS AI (untuk semua level)
       if (plan.speechMessage) {

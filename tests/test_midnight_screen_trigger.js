@@ -22,7 +22,7 @@ function test(name, fn) {
 }
 
 // Load adapter
-const bridgeAdapter = require('../src/interfaces/mobile_bridge/adapter');
+const bridgeAdapter = require('../src/interfaces/bridge').mobile.adapter;
 
 // Save original methods and states for restoration
 const originalIsConnected = bridgeAdapter.isConnected;

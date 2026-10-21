@@ -112,7 +112,7 @@ app.get('/health', (req, res) => {
   let bridgeSnapshot = null;
   let presenceSnapshot = null;
   try {
-    const bridgeAdapter = require('./interfaces/mobile_bridge/adapter');
+    const bridgeAdapter = require('./interfaces/bridge').mobile.adapter;
     bridgeSnapshot = bridgeAdapter.getSnapshot();
   } catch (_) {}
   try {
@@ -145,13 +145,13 @@ app.use('/webhook', webhookRouter);
 // ============================================================
 const cronInterface = require('./interfaces/cron');
 const http = require('http');
-const mobileBridgeWs = require('./interfaces/mobile_bridge/MobileBridge_WS');
+const bridge = require('./interfaces/bridge');
 
 if (require.main === module) {
   const port = process.env.PORT || env.PORT || 3000;
   
   const server = http.createServer(app);
-  mobileBridgeWs.initWebSocket(server);
+  bridge.initWebSocket(server);
 
   server.listen(port, '127.0.0.1', () => {
     console.log(`${SYSTEM_TAG} ✅ Server running on port ${port} (${process.env.NODE_ENV || 'development'} mode)`);

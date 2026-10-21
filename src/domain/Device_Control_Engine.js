@@ -6,7 +6,7 @@
 // ============================================================
 'use strict';
 
-const bridge = require('../interfaces/mobile_bridge/adapter');
+const bridge = require('../interfaces/bridge').mobile.adapter;
 const env = require('../config/env');
 
 class DeviceControlEngine {

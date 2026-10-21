@@ -6,7 +6,7 @@
 'use strict';
 
 const locationEngine = require('../infrastructure/Location_Engine');
-const bridge = require('../interfaces/mobile_bridge/adapter');
+const bridge = require('../interfaces/bridge').mobile.adapter;
 
 /**
  * Pemetaan kata percakapan Indonesia ke sinonim POI OpenStreetMap yang optimal
