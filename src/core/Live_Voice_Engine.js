@@ -221,6 +221,14 @@ class LiveVoiceSession {
     const text = (this._userTranscriptBuf || '').trim();
     this._userTranscriptBuf = '';
     if (!text) return;
+
+    // Phantom hallucination filter: reject ghost noise tokens from polluting history & memories
+    const PHANTOM_REGEX = /^(¿\s*Qué\??|Qué\??|¿|de|\?|\.{2,}|None|none|you)$/i;
+    if (PHANTOM_REGEX.test(text)) {
+      console.log(`[LIVE-VOICE] 🛡️ Ignored phantom ASR user turn: "${text}"`);
+      return;
+    }
+
     noteUserTurn(text);
     console.log(`[LIVE-VOICE] User call (ASR): "${text}"`);
     this.turnHistory.push({ role: 'user', text });
@@ -527,12 +535,15 @@ class LiveVoiceSession {
     // ── Situational Physical Presence Context ────────────────────────────
     const presenceModelBlock = presenceModel.toPromptBlock ? presenceModel.toPromptBlock() : '';
 
-    // ── Language Lock Directive (Anchor Attention to Indonesian) ───────────
+    // ── Language Lock Directive & Anti-Hallucination Guard ───────────────
     const languageLockPrefix =
-      `[BAHASA: INDONESIA]\n` +
-      `Percakapan telepon suara ini berlangsung sepenuhnya dalam Bahasa Indonesia. ` +
-      `Tuan Faqih berbicara dengan gaya santai sehari-hari. ` +
-      `Pahami ucapan kasual dan potongan kata dengan penalaran kontekstual, lalu tanggapi secara alami dalam Bahasa Indonesia.\n\n`;
+      `[BAHASA: INDONESIA - ATURAN MUTLAK PERCAKAPAN]\n` +
+      `Percakapan telepon suara ini berlangsung SEPENUHNYA dalam Bahasa Indonesia kasual/santai antara Tuan Faqih dan N.E.X.A.\n` +
+      `Tuan Faqih terkadang berbicara dari jarak agak jauh dari mikrofon ponsel (handsfree/speaker). Dengarkan dengan seksama.\n` +
+      `PENTING TENTANG AKUSTIK & HALUSINASI:\n` +
+      `1. JANGAN PERNAH merespons, memvalidasi, atau mengeluarkan kata bahasa Spanyol/asing seperti "¿Qué?" atau "de" saat jeda hening.\n` +
+      `2. Jika mendengar desis hening atau audio tidak jelas, TETAPLAH DIAM dan dengarkan terus tanpa memotong giliran bicara.\n` +
+      `3. Pahami ucapan kasual, santai, dan potongan kata dengan penalaran kontekstual, lalu tanggapi secara alami dalam Bahasa Indonesia.\n\n`;
 
     // ── Assemble Full System Prompt ──────────────────────────────────────
     const fullSystemPrompt =
@@ -685,47 +696,61 @@ class LiveVoiceSession {
       // ── 2. Server Content: Audio Chunks & Text Transcripts ──────────────
       if (msg.serverContent) {
         if (msg.serverContent.interrupted) {
-          console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
-          this._visualTurnInjected = false;
-          if (this._toolSafetyTimer) {
-            clearTimeout(this._toolSafetyTimer);
-            this._toolSafetyTimer = null;
+          const hasRecentVoice = this._lastVocalActivityTime && (Date.now() - this._lastVocalActivityTime < 1500);
+          if (!hasRecentVoice && (this._lastUserAudioRms || 0) < 8) {
+            console.log(`[LIVE-VOICE] ⚠️ Ignored spurious barge-in during silence (RMS: ${(this._lastUserAudioRms || 0).toFixed(0)})`);
+          } else {
+            console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
+            this._visualTurnInjected = false;
+            if (this._toolSafetyTimer) {
+              clearTimeout(this._toolSafetyTimer);
+              this._toolSafetyTimer = null;
+            }
+            if (this._assistantSpeechDecayTimer) {
+              clearTimeout(this._assistantSpeechDecayTimer);
+              this._assistantSpeechDecayTimer = null;
+            }
+            this.isAssistantSpeaking = false;
+            this.isExecutingTool     = false;
+            this.isWaitingToolReply  = false;
+            this._flushUserTurn();
+            if (this.currentTurnAssistantText && this.currentTurnAssistantText.trim()) {
+              const interruptedText = this.currentTurnAssistantText.trim() + ' (terpotong)';
+              console.log(`[LIVE-VOICE] N.E.X.A terpotong: "${interruptedText}"`);
+              this.turnHistory.push({ role: 'assistant', text: interruptedText });
+              supabaseMemories.saveChatMemory('nexa', interruptedText.slice(0, 800), 'live_call').catch(() => {});
+            }
+            this.currentTurnAssistantText = '';
+            // Signal Android to flush playback queue and re-open mic immediately
+            this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
+            this._sendToClient({
+              type: 'CALL_STATUS_UPDATE',
+              status: 'LISTENING'
+            });
           }
-          if (this._assistantSpeechDecayTimer) {
-            clearTimeout(this._assistantSpeechDecayTimer);
-            this._assistantSpeechDecayTimer = null;
-          }
-          this.isAssistantSpeaking = false;
-          this.isExecutingTool     = false;
-          this.isWaitingToolReply  = false;
-          this._flushUserTurn();
-          if (this.currentTurnAssistantText && this.currentTurnAssistantText.trim()) {
-            const interruptedText = this.currentTurnAssistantText.trim() + ' (terpotong)';
-            console.log(`[LIVE-VOICE] N.E.X.A terpotong: "${interruptedText}"`);
-            this.turnHistory.push({ role: 'assistant', text: interruptedText });
-            supabaseMemories.saveChatMemory('nexa', interruptedText.slice(0, 800), 'live_call').catch(() => {});
-          }
-          this.currentTurnAssistantText = '';
-          // Signal Android to flush playback queue and re-open mic immediately
-          this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
-          this._sendToClient({
-            type: 'CALL_STATUS_UPDATE',
-            status: 'LISTENING'
-          });
         }
 
         // Accumulate user speech transcript from Google neural transcription
         if (msg.serverContent.inputTranscription?.text) {
           const chunk = msg.serverContent.inputTranscription.text;
-          if (this._userTranscriptBuf && !this._userTranscriptBuf.endsWith(' ') && !chunk.startsWith(' ')) {
-            this._userTranscriptBuf += ' ' + chunk;
+
+          // Phantom Hallucination Guard: Reject foreign/noise ghost tokens if recent vocal energy was absent
+          const isKnownPhantom = /^(¿\s*Qué\??|Qué\??|¿|de|\?|\.{2,}|None|none|you)$/i.test(chunk.trim());
+          const hasRecentVoice = this._lastVocalActivityTime && (Date.now() - this._lastVocalActivityTime < 2000);
+
+          if (isKnownPhantom && (!hasRecentVoice || (this._lastUserAudioRms || 0) < 12)) {
+            console.log(`[LIVE-VOICE] 🛡️ Suppressed phantom ASR chunk: "${chunk.trim()}" (RMS: ${(this._lastUserAudioRms || 0).toFixed(0)})`);
           } else {
-            this._userTranscriptBuf = (this._userTranscriptBuf || '') + chunk;
+            if (this._userTranscriptBuf && !this._userTranscriptBuf.endsWith(' ') && !chunk.startsWith(' ')) {
+              this._userTranscriptBuf += ' ' + chunk;
+            } else {
+              this._userTranscriptBuf = (this._userTranscriptBuf || '') + chunk;
+            }
+            this._sendToClient({
+              type: 'CALL_STATUS_UPDATE',
+              user_transcript: this._userTranscriptBuf.trim()
+            });
           }
-          this._sendToClient({
-            type: 'CALL_STATUS_UPDATE',
-            user_transcript: this._userTranscriptBuf.trim()
-          });
 
           // Multimodal Vision Injection: If user speech contains visual query keywords
           // and fresh visual frame (<15s) exists, inject inlineData visual turn context
@@ -969,6 +994,10 @@ class LiveVoiceSession {
     try {
       pcmBuf = Buffer.from(pcmBase64, 'base64');
       rms = this._calculatePcmRms(pcmBuf);
+      this._lastUserAudioRms = rms;
+      if (rms > 8) {
+        this._lastVocalActivityTime = Date.now();
+      }
     } catch (_) {}
 
     // Periodic stream heartbeat logging (every ~5s / 50 chunks)
