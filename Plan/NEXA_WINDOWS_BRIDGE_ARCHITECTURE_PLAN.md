@@ -761,13 +761,143 @@ flowchart TD
 * **Checkpoint Validasi:** Seluruh 37 automated tests di `nexa-windows-bridge` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`88ef07c`).
 
 #### 🔹 Fase 6: Sorotan Layar (DirectComposition) & Otomasi Input (SendInput)
-* **Lokasi Kerja:** `src/automation/`
-* **Langkah Kerja:**
-  1. Window overlay DirectComposition + Direct2D transparan (`automation/highlighter.rs`) dengan atribut `WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE` (100% tembus klik mouse).
-  2. **Smart-Snap Elemen UI** (`automation/element_finder.rs`): Query instan Windows UI Automation (`IUIAutomation::ElementFromPoint`) untuk menempelkan kotak pas 1 piksel di batas tombol.
-  3. Animasi sorotan: Bounding Box, Cincin Penunjuk, dan Pointer Kursor.
-  4. Otomasi Input (`automation/input.rs`): Win32 `SendInput` untuk klik mouse, scroll halaman, dan ketik teks dengan indikator klik visual 300ms (`click_indicator.slint`).
-* **Checkpoint Validasi:** Perintah suara: *"Nexa, arahin tombol submit"* ➔ Muncul kotak bersinar membingkai tombol, dan mouse Tuan bisa langsung mengeklik menembus kotak tersebut.
+* **Lokasi Kerja:** `src/automation/`, `ui/`, `src/main.rs`
+* **Filosofi & Desain Inti:**
+  * Memberikan kemampuan tangan (otomasi input fisik) dan telunjuk (sorotan layar transparan) kepada N.E.X.A.
+  * **Zero Interference / Click-Through:** Seluruh overlay visual 100% tembus klik mouse dan tidak pernah mencuri fokus jendela Tuan Faqih.
+  * **Precision Grounding:** Denormalisasi koordinat yang akurat serta integrasi *Magnetic Smart-Snap* dengan Windows UI Automation.
+  * **Safety First:** Perlindungan kendali fisik prioritas (*human override*) dan verifikasi bounds.
+
+---
+
+### 📑 SUBPLAN SUPER RINCI FASE 6
+
+```mermaid
+flowchart TD
+    M6_1["Milestone 6.1: Desktop Input Automation (automation/input.rs)<br/>• SendInput Mouse (Click, Double-Click, Right-Click, Scroll)<br/>• SendInput Keyboard (Unicode TypeText & Virtual Keys)<br/>• Denormalisasi Koordinat (0-1000 -> Resolusi Monitor Layar)<br/>• Human Override Safety Guard"] --> M6_2
+    M6_2["Milestone 6.2: Magnetic Smart-Snap (automation/element_finder.rs)<br/>• Windows UI Automation (IUIAutomation::ElementFromPoint)<br/>• Ambil UIA_BoundingRectanglePropertyId Otomatis<br/>• Sub-Pixel Precision Snapping & Fallback Cerdas"] --> M6_3
+    M6_3["Milestone 6.3: Stealth Overlay & Click Ripple (automation/highlighter.rs & click_indicator)<br/>• Win32 Layered Window (WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE)<br/>• Gaya Sorotan: BOX, RING, SPOTLIGHT, POINTER<br/>• Auto-Dissolve Timer & Click Indicator 300ms"] --> M6_4
+    M6_4["Milestone 6.4: Dispatcher EXECUTE_COMMAND & Main Binding (src/automation/mod.rs & src/main.rs)<br/>• Router 7 Perintah Desktop: DESKTOP_CLICK, SCROLL, TYPE_TEXT, PRESS_KEY, HIGHLIGHT_ELEMENT, POINT_CURSOR, CLEAR_HIGHLIGHTS<br/>• Respon Protokol Tipe-Kuat COMMAND_RESULT"] --> M6_5
+    M6_5["Milestone 6.5: Verifikasi Menyeluruh, Zero-Warning Clippy, & Git Push<br/>• Automated Test Suite Semua Aksi Otomasi<br/>• Zero Compiler Warning (cargo clippy clean)<br/>• Git Commit & Push ke GitHub Remote"]
+```
+
+---
+
+#### 6.1 Milestone 6.1: Desktop Input Automation (`src/automation/input.rs`)
+1. **Denormalisasi Koordinat (0–1000) Skala Layar:**
+   - Masukan dari Gemini Live berupa koordinat ternormalisasi `x: [0..1000]`, `y: [0..1000]`.
+   - Mengambil resolusi layar aktif melalui Win32 `GetSystemMetrics(SM_CXSCREEN)` dan `GetSystemMetrics(SM_CYSCREEN)` (atau `SM_CXVIRTUALSCREEN` / `SM_CYVIRTUALSCREEN` untuk skenario multi-monitor).
+   - Menghitung koordinat piksel aktual:
+     $$X_{px} = \frac{x}{1000} \times \text{Width}$$
+     $$Y_{px} = \frac{y}{1000} \times \text{Height}$$
+   - Konversi ke koordinat absolut mouse Windows `[0..65535]` untuk bendera `MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE`.
+2. **Otomasi Mouse Win32 `SendInput`:**
+   - **`desktop_click(x, y, button, double_click)`**:
+     - `button == "LEFT"`: `MOUSEEVENTF_LEFTDOWN` disusul jeda singkat (20 ms) lalu `MOUSEEVENTF_LEFTUP`.
+     - `button == "RIGHT"`: `MOUSEEVENTF_RIGHTDOWN` disusul jeda lalu `MOUSEEVENTF_RIGHTUP` (membuka menu konteks).
+     - `button == "MIDDLE"`: `MOUSEEVENTF_MIDDLEDOWN` disusul `MOUSEEVENTF_MIDDLEUP`.
+     - `double_click == true`: Menjalankan siklus down/up pertama, jeda 80 ms, disusul siklus down/up kedua.
+   - **`desktop_scroll(direction, amount)`**:
+     - Menghitung `WHEEL_DELTA` (120 per notch).
+     - `direction == "UP"`: `amount * 120` pada `mouseData`.
+     - `direction == "DOWN"`: `-(amount * 120)` pada `mouseData`.
+     - Memicu `MOUSEEVENTF_WHEEL`.
+3. **Otomasi Keyboard Win32 `SendInput`:**
+   - **`desktop_type_text(text, press_enter)`**:
+     - Menggunakan `KEYEVENTF_UNICODE` dengan `wScan` berisi karakter UTF-16, sehingga teks bahasa Indonesia, simbol khusus, maupun aksara non-Latin terketik sempurna tanpa distorsi tata letak keyboard OS.
+     - Setiap karakter dikirim berpasangan (key-down disusul `KEYEVENTF_KEYUP | KEYEVENTF_UNICODE`).
+     - Jika `press_enter == true`, menyusulkan ketukan tombol virtual `VK_RETURN`.
+   - **`desktop_press_key(key)`**:
+     - Pemetaan string nama tombol: `"ENTER"` / `"RETURN"` $\to$ `VK_RETURN`, `"SPACE"` $\to$ `VK_SPACE`, `"ESCAPE"` / `"ESC"` $\to$ `VK_ESCAPE`, `"TAB"` $\to$ `VK_TAB`, `"BACKSPACE"` $\to$ `VK_BACK`, `"UP"` / `"DOWN"` / `"LEFT"` / `"RIGHT"` $\to$ panah navigasi, `"HOME"`, `"END"`, `"PAGEUP"`, `"PAGEDOWN"`.
+     - Mengirimkan pasangan event key-down dan key-up `INPUT_KEYBOARD`.
+4. **Safety & Bounds Guard:**
+   - Validasi ketat koordinat `0 <= x <= 1000` dan `0 <= y <= 1000`.
+   - Pencegahan loop macet (*runaway automation*).
+5. **Unit Tests:**
+   - Pengujian fungsi denormalisasi koordinat ke nilai piksel dan skala `0..65535`.
+   - Pengujian pemetaan nama tombol ke Virtual Key Code Win32.
+   - Pengujian kalkulasi arah & nilai wheel delta pada scroll.
+
+---
+
+#### 6.2 Milestone 6.2: Magnetic Smart-Snap via Windows UI Automation (`src/automation/element_finder.rs`)
+1. **Inisialisasi COM & UI Automation:**
+   - Inisialisasi thread COM menggunakan `CoInitializeEx` (`COINIT_APARTMENTTHREADED` / `COINIT_MULTITHREADED`).
+   - Membuat instansiasi `CUIAutomation` (`IUIAutomation`) dari API resmi Windows.
+2. **Deteksi Elemen dari Koordinat Target:**
+   - `find_element_at(x_norm, y_norm)`:
+     - Mengonversi koordinat normalisasi (0–1000) menjadi koordinat fisik piksel Windows `POINT { x, y }`.
+     - Memanggil `IUIAutomation::ElementFromPoint(POINT, &mut element)`.
+3. **Ekstraksi Bounding Box & Smart-Snap:**
+   - Membaca `CurrentBoundingRectangle(&mut rect)` (`UiaRect`: `left`, `top`, `width`, `height`).
+   - Validasi rasionalitas bounding box (lebar & tinggi > 4px dan < 95% layar untuk menghindari snapping ke seluruh background desktop).
+   - Menghasilkan batas kotak presisi sub-piksel `SnappedRect { xmin, ymin, xmax, ymax, is_snapped: true }` yang ditransformasikan kembali ke koordinat ternormalisasi (0–1000).
+4. **Fallback Cerdas (*Graceful AI Vision Fallback*):**
+   - Jika UI Automation gagal (misal elemen berada di dalam canvas drawing, game, atau elemen custom tak terstruktur), sistem otomatis menggunakan bounding box mentah yang diberikan Gemini Live tanpa menimbulkan error (`is_snapped: false`).
+5. **Unit Tests:**
+   - Pengujian validasi dan filtering rasionalitas dimensi UiaRect.
+   - Pengujian konversi bolak-balik piksel UIA $\leftrightarrow$ koordinat normalisasi (0–1000).
+   - Pengujian jalur fallback saat deteksi UIA tidak tersedia.
+
+---
+
+#### 6.3 Milestone 6.3: Stealth Overlay & Click Ripple (`src/automation/highlighter.rs` & `ui/click_indicator.slint`)
+1. **Arsitektur Jendela Siluman (*Stealth Overlay Window*):**
+   - Window transparan seluas seluruh layar monitor dengan konfigurasi Win32 API khusus:
+     - `WS_EX_TOPMOST`: Selalu di lapisan visual teratas di atas jendela aplikasi mana pun.
+     - `WS_EX_TRANSPARENT`: Seluruh event mouse lolos tembus 100% (*click-through*), Tuan Faqih bisa mengklik tombol di bawah sorotan tanpa halangan.
+     - `WS_EX_NOACTIVATE`: Kemunculan sorotan tidak pernah mencuri fokus keyboard/jendela Tuan.
+     - `WS_EX_LAYERED`: Rendering transparansi dan alpha blending Direct2D / Slint yang bersih dan halus.
+2. **Koleksi Gaya Sorotan (*Visual Highlight Styles*):**
+   - **`BOX` (Default):** Kotak pembatas bersinar (*glowing cyan/gold border*) membingkai elemen, dilengkapi teks label mini mengambang di atasnya (misal: `[ Tombol Submit ]`).
+   - **`RING`:** Cincin melingkar berdenyut halus mengelilingi ikon atau checkbox.
+   - **`POINTER`:** Titik panah penunjuk kursor futuristik yang mengarah ke target.
+   - **`SPOTLIGHT`:** Efek vignetting lembut yang meredupkan sekeliling untuk memfokuskan pandangan Tuan.
+3. **Efek Riak Klik (*Click Indicator Ripple*):**
+   - Saat `desktopClick` dieksekusi, memunculkan riak lingkaran ekspansif berdurasi 300 ms di koordinat klik, memberikan konfirmasi visual bahwa klik telah dilakukan N.E.X.A.
+4. **Siklus Hidup & Auto-Dissolve:**
+   - Parameter `duration_ms` (default 4000 ms).
+   - Timer auto-dismiss yang memudarkan (*fade-out*) sorotan secara halus setelah durasi berakhir.
+   - API pembersihan manual `clear_all()` untuk aksi `CLEAR_HIGHLIGHTS`.
+5. **Unit Tests:**
+   - Pengujian parsing opsi styling highlight (`HighlightRequest`).
+   - Pengujian clamping durasi highlight (minimum 500 ms, maksimum 15000 ms).
+   - Pengujian pembersihan state saat clear dipanggil.
+
+---
+
+#### 6.4 Milestone 6.4: Dispatcher Perintah & Integrasi Main Loop (`src/automation/mod.rs` & `src/main.rs`)
+1. **Modul Fasad Otomasi (`src/automation/mod.rs`):**
+   - Mengorkestrasi `InputAutomator`, `ElementFinder`, dan `HighlighterController`.
+   - Mengekspos method utama:
+     - `handle_execute_command(command_id, action, params) -> ClientMessage::CommandResult`.
+2. **Penyelarasan 7 Aksi Standar Live Tool Registry:**
+   - `'DESKTOP_CLICK'`: Validasi `(x, y)`, opsi `button`, `double_click`, jalankan click indicator 300ms, panggil `SendInput`.
+   - `'DESKTOP_SCROLL'`: Validasi `direction` (`"UP"`/`"DOWN"`), `amount`, panggil `SendInput` scroll.
+   - `'DESKTOP_TYPE_TEXT'`: Validasi `text`, opsi `press_enter`, ketik teks via Unicode `SendInput`.
+   - `'DESKTOP_PRESS_KEY'`: Validasi `key`, panggil press key via Virtual Key `SendInput`.
+   - `'HIGHLIGHT_ELEMENT'`: Evaluasi `(ymin, xmin, ymax, xmax)`, smart-snap dengan `ElementFinder`, render via `HighlighterController`.
+   - `'POINT_CURSOR'`: Arahkan penunjuk ke `(x, y)` selama `duration_ms`.
+   - `'CLEAR_HIGHLIGHTS'`: Bersihkan semua visual highlight instan.
+3. **Koneksi ke Thread Jaringan & UI di `src/main.rs`:**
+   - Menyambungkan incoming `ServerMessage::ExecuteCommand` dari WebSocket loop ke `handle_execute_command`.
+   - Mengirimkan balik `ClientMessage::CommandResult` ke socket via tokio channel.
+   - Thread-safe dispatching ke Slint / Win32 overlay tanpa memblokir audio duplex atau network loop.
+4. **Unit Tests:**
+   - Simulasi pesan `ExecuteCommand` untuk setiap aksi dari 7 aksi yang didukung, memastikan format JSON `CommandResult` sesuai kontrak dengan server.
+
+---
+
+#### 6.5 Milestone 6.5: Verifikasi Menyeluruh, Zero-Warning Clippy, & Git Push
+1. **Pengujian Regresi & Suite Test:**
+   - Menjalankan seluruh test suite (`cargo test`) untuk memastikan semua test (audio, capture, ui, network, config, automation) lulus 100% tanpa regresi.
+2. **Audit Kualitas Kode (Clippy):**
+   - Menjalankan `cargo clippy --all-targets --all-features` dan memastikan 0 warning, 0 error.
+3. **Commit & Push GitHub Remote:**
+   - Push ke `https://github.com/Knightrelaxed/nexa-windows-bridge`.
+   - Update status milestone di `NEXA_WINDOWS_BRIDGE_ARCHITECTURE_PLAN.md`.
+
+---
 
 #### 🔹 Fase 7: Profiling Memori (<25 MB RAM) & Standalone Release Build
 * **Lokasi Kerja:** Konfigurasi biner akhir
