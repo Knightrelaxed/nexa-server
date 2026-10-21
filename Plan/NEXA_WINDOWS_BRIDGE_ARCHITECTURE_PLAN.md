@@ -821,24 +821,25 @@ flowchart TD
 
 ---
 
-#### 6.2 Milestone 6.2: Magnetic Smart-Snap via Windows UI Automation (`src/automation/element_finder.rs`)
+#### 6.2 Milestone 6.2: Magnetic Smart-Snap via Windows UI Automation (`src/automation/element_finder.rs`) — [SELESAI ✅]
 1. **Inisialisasi COM & UI Automation:**
-   - Inisialisasi thread COM menggunakan `CoInitializeEx` (`COINIT_APARTMENTTHREADED` / `COINIT_MULTITHREADED`).
-   - Membuat instansiasi `CUIAutomation` (`IUIAutomation`) dari API resmi Windows.
+   - Inisialisasi thread COM menggunakan `CoInitializeEx` (`COINIT_APARTMENTTHREADED`).
+   - Membuat instansiasi `CUIAutomation` (`IUIAutomation`) dari API resmi Microsoft Windows via crate `windows`.
 2. **Deteksi Elemen dari Koordinat Target:**
-   - `find_element_at(x_norm, y_norm)`:
+   - `find_element_bounds_at_point(px, py, screen_w, screen_h)`:
      - Mengonversi koordinat normalisasi (0–1000) menjadi koordinat fisik piksel Windows `POINT { x, y }`.
-     - Memanggil `IUIAutomation::ElementFromPoint(POINT, &mut element)`.
+     - Memanggil `IUIAutomation::ElementFromPoint(POINT)`.
 3. **Ekstraksi Bounding Box & Smart-Snap:**
-   - Membaca `CurrentBoundingRectangle(&mut rect)` (`UiaRect`: `left`, `top`, `width`, `height`).
-   - Validasi rasionalitas bounding box (lebar & tinggi > 4px dan < 95% layar untuk menghindari snapping ke seluruh background desktop).
+   - Membaca `CurrentBoundingRectangle(&mut rect)` (`RECT`: `left`, `top`, `right`, `bottom`).
+   - Validasi rasionalitas bounding box (`is_valid_control`): lebar & tinggi > 4px dan < 95% layar untuk menghindari snapping ke seluruh background desktop.
    - Menghasilkan batas kotak presisi sub-piksel `SnappedRect { xmin, ymin, xmax, ymax, is_snapped: true }` yang ditransformasikan kembali ke koordinat ternormalisasi (0–1000).
 4. **Fallback Cerdas (*Graceful AI Vision Fallback*):**
    - Jika UI Automation gagal (misal elemen berada di dalam canvas drawing, game, atau elemen custom tak terstruktur), sistem otomatis menggunakan bounding box mentah yang diberikan Gemini Live tanpa menimbulkan error (`is_snapped: false`).
-5. **Unit Tests:**
-   - Pengujian validasi dan filtering rasionalitas dimensi UiaRect.
+5. **Unit Tests & Checkpoint Validasi:**
+   - Pengujian validasi dan filtering rasionalitas dimensi PixelRect.
    - Pengujian konversi bolak-balik piksel UIA $\leftrightarrow$ koordinat normalisasi (0–1000).
-   - Pengujian jalur fallback saat deteksi UIA tidak tersedia.
+   - Pengujian jalur fallback dan eksekusi safe query.
+   - Seluruh 48 automated tests di `nexa-windows-bridge` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`6584975`).
 
 ---
 
