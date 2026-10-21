@@ -155,21 +155,36 @@ test('Telegram Module: adapter webhook deduplication and callback handling', asy
   assert.strictEqual(secondResBody, 'OK');
 
   // 2. Callback query handling test
-  let cbResStatus = null;
-  let cbResBody = null;
-  const mockCbRes = {
-    status(s) { cbResStatus = s; return this; },
-    send(b) { cbResBody = b; return this; }
+  let cbHandled = false;
+  let passedContextOps = null;
+  const originalHandleCallbackQuery = callbackHandler.handleCallbackQuery;
+  callbackHandler.handleCallbackQuery = async (cbQuery, contextOps) => {
+    cbHandled = true;
+    passedContextOps = contextOps;
+    return true;
   };
-  const cbReq = {
-    body: {
-      callback_query: {
-        id: 'cb_test_1',
-        data: 'HYGIENE_HOLD_ALL',
-        message: { message_id: 12345, chat: { id: 111 } }
+
+  try {
+    let cbResStatus = null;
+    let cbResBody = null;
+    const mockCbRes = {
+      status(s) { cbResStatus = s; return this; },
+      send(b) { cbResBody = b; return this; }
+    };
+    const cbReq = {
+      body: {
+        callback_query: {
+          id: 'cb_test_1',
+          data: 'HYGIENE_HOLD_ALL',
+          message: { message_id: 12345, chat: { id: 111 } }
+        }
       }
-    }
-  };
-  await handleTelegramWebhook(cbReq, mockCbRes);
-  assert.strictEqual(cbResStatus, 200, 'Callback query must be acknowledged with 200 immediately');
+    };
+    await handleTelegramWebhook(cbReq, mockCbRes);
+    assert.strictEqual(cbResStatus, 200, 'Callback query must be acknowledged with 200 immediately');
+    assert.strictEqual(cbHandled, true, 'Callback handler must be invoked');
+    assert.strictEqual(typeof passedContextOps?.setConversationContext, 'function');
+  } finally {
+    callbackHandler.handleCallbackQuery = originalHandleCallbackQuery;
+  }
 });

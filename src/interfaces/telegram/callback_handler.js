@@ -153,7 +153,11 @@ async function handleCallbackQuery(callbackQuery, { setConversationContext } = {
         parse_mode: 'HTML',
       });
     } catch (_) {
-      await sendTelegramOutbound(newText, true);
+      if (cbChatId && botToken) {
+        await sendTelegramMessage(newText, cbChatId, botToken, { parse_mode: 'HTML' }).catch(() => {});
+      } else {
+        await sendTelegramOutbound(newText, true).catch(() => {});
+      }
     }
   };
 
