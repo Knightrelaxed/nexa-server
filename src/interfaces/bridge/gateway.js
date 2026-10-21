@@ -104,6 +104,8 @@ function initWebSocket(server) {
 
     // Message routing
     ws.on('message', (data, isBinary) => {
+      ws.isAlive = true; // Mark socket alive on every incoming packet (audio chunk, video frame, or JSON control)
+
       // Direct binary PCM audio stream handling (Live Gemini Multimodal voice session)
       // Only binary WebSocket frames (opcode 2, isBinary === true) are treated as raw audio chunks.
       if (isBinary) {

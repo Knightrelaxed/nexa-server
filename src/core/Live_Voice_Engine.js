@@ -1309,10 +1309,18 @@ class LiveVoiceSession {
         return;
       }
 
-      // Condition B: Total session silence (both Google and client silent > 60s) -> dead connection
+      // Condition B: Total session silence (both Google and client silent > 60s) -> close abandoned session cleanly
+      // (NEVER trigger failover reconnect loop when client is idle or muted)
       if (googleSilentMs > 60000 && clientSilentMs > 60000) {
-        console.warn(`[LIVE-VOICE] Watchdog: Total session silence for >60s - triggering failover.`);
-        this._handleFailover(1006, 'Session dead timeout');
+        console.warn(`[LIVE-VOICE] Watchdog: Total session silence for >60s — closing idle live session cleanly.`);
+        this.close().catch(err => console.warn('[LIVE-VOICE] Error closing idle session:', err.message));
+        return;
+      }
+
+      // Condition C: Client socket is disconnected / not open and silent for > 25s
+      if ((!this.clientWs || this.clientWs.readyState !== WebSocket.OPEN) && clientSilentMs > 25000) {
+        console.warn(`[LIVE-VOICE] Watchdog: Client socket disconnected and silent for >25s — closing live session.`);
+        this.close().catch(err => console.warn('[LIVE-VOICE] Error closing disconnected session:', err.message));
         return;
       }
     }, 15000);

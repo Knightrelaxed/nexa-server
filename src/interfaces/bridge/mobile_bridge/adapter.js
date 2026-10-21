@@ -144,7 +144,8 @@ class NexaBridgeAdapter {
         const sessionId = callEvent.command_id || '';
         if (sessionId) {
           liveVoice.closeLiveSession(sessionId);
-        } else if (clientWs) {
+        }
+        if (clientWs) {
           const session = liveVoice.getActiveSessionForClient(clientWs);
           if (session) session.close();
         }
