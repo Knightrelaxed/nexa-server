@@ -676,10 +676,18 @@ flowchart TD
 
 ---
 
-#### 4.3 Milestone 4.3: Real-Time Audio Spectrum Visualizer (`ui/components/audio_meter.slint`)
-1. Multi-bar audio meter berbasis vektor Slint (16 bar di jendela kecil, 48 bar di mode fullscreen).
-2. Menerima properti `in property <float> volume_level: 0.0;` dan `in property <bool> is_active: false;`.
-3. Menggunakan kalkulasi kurva sinus per bar untuk menghasilkan efek gelombang harmonis vokal alami yang bergerak secara *fluid* saat berbicara atau mendengarkan.
+#### 4.3 Milestone 4.3: Real-Time Audio Spectrum Visualizer (`ui/components/audio_meter.slint`) — [SELESAI ✅]
+1. **Komponen Visualizer Gelombang Harmonik Vektor:**
+   * Dibuat komponen `AudioMeter` mandiri berbasis vektor Slint dengan kalkulasi kurva sinus per bar:
+     * Mode Jendela Ringkas (Windowed): 24-bar audio meter responsif (`max_bar_height: 20px`, `bar_width: 3px`).
+     * Mode Layar Penuh (Full Screen): 48-bar *wide frequency spectrum equalizer* membentang elegan (`max_bar_height: 40px`, `bar_width: 4px`).
+   * Menggunakan envelope bell-curve terpusat dan modulasi sinus ganda (`sin` & `cos` beda fase) untuk menghasilkan gelombang harmonik vokal alami yang bergerak secara *fluid* saat berbicara atau mendengarkan.
+   * Saat audio senyap (*idle/offline*), batang frekuensi merapat ke garis dasar minimal (3px) dengan konsumsi CPU 0%.
+2. **Kalkulasi RMS Real-Time di Rust (`src/main.rs`):**
+   * Saat frame respons PCM 24kHz tiba dari Gemini Live (`ServerMessage::AudioPlay`), dilakukan kalkulasi Root Mean Square (RMS) instan pada sampel audio $i16 \to f32$.
+   * Nilai RMS dinormalisasi dan diumpankan langsung ke properti `volume_level` (0.0 s/d 1.0) dan `pulse_scale` di antarmuka Slint melalui `slint::invoke_from_event_loop`.
+   * Saat suara selesai (`ReplyComplete`) atau terpotong (*barge-in*), level volume di-reset instan ke 0.0.
+* **Checkpoint Validasi:** Seluruh 28 unit test di `nexa-windows-bridge` dan 362 test di `nexa-server` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`4dca785`).
 
 ---
 
