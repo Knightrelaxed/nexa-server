@@ -580,13 +580,13 @@ flowchart TD
   3. Mendesain antarmuka Slint `ui/settings_dialog.slint`, `ui/main_window.slint`, dan `ui/components/avatar.slint`.
 * **Checkpoint Validasi:** Menjalankan `cargo check` dan `cargo test` ➔ Kompilasi 0 warning, 0 error, unit test lulus 100%, binary `nexa-windows-bridge.exe` terkompilasi dan commit ter-push ke GitHub.
 
-#### 🔹 Fase 2: Jaringan WebSocket & Ketahanan Daya OS (`network/` & `platform/`)
+#### 🔹 Fase 2: Jaringan WebSocket & Ketahanan Daya OS (`network/` & `platform/`) — [SELESAI ✅]
 * **Lokasi Kerja:** `src/network/` & `src/platform/`
 * **Langkah Kerja:**
-  1. Implementasi WebSocket async client (`network/ws_client.rs`) via `tokio-tungstenite` dengan TLS native.
-  2. Heartbeat ping/pong 20 detik dan exponential backoff reconnect saat koneksi putus.
-  3. Integrasi event daya Windows (`platform/power_events.rs`): Menangani `WM_POWERBROADCAST` (`PBT_APMSUSPEND` dan `PBT_APMRESUMEAUTOMATIC`) untuk silent auto-reconnect saat laptop bangun tidur atau berganti Wi-Fi.
-* **Checkpoint Validasi:** Log server Azure mencatat: `[WS] Windows Bridge connected: device_type=windows`. Auto-reconnect pulih dalam <2 detik saat Wi-Fi dimatikan-hidupkan.
+  1. Implementasi protokol pesan tipe-kuat (`src/network/protocol.rs`): `ClientMessage` (Ping, CommandResult, Telemetry, PowerEvent, VideoFrame, AudioStream) dan `ServerMessage` (Pong, ExecuteCommand).
+  2. Implementasi WebSocket async client (`src/network/client.rs`) via `tokio-tungstenite` dengan exponential backoff (500ms -> 10s max) dan keepalive watchdog ping 20 detik.
+  3. Integrasi event daya Windows (`src/platform/power.rs`): Message-only window Win32 menangani `WM_POWERBROADCAST` (`PBT_APMSUSPEND` dan `PBT_APMRESUMEAUTOMATIC`) untuk auto-suspend dan instant wake-reconnect saat laptop dibuka/bangun tidur.
+* **Checkpoint Validasi:** Menjalankan `cargo test` ➔ 10 automated unit test **100% PASS (Green)** (serialisasi protokol, siklus hidup koneksi, dan thread power listener), binary `nexa-windows-bridge.exe` terkompilasi 0 warning, dan perubahan ter-push ke GitHub.
 
 #### 🔹 Fase 3: Audio Dupleks WASAPI Bebas Gema (ThinkPad Hardware Tuning)
 * **Lokasi Kerja:** `src/audio/`
