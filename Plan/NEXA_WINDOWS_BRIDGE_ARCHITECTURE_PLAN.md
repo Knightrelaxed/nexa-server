@@ -691,22 +691,28 @@ flowchart TD
 
 ---
 
-#### 4.4 Milestone 4.4: Windows Native System Tray & Hotkeys (`src/platform/system_tray.rs` & `src/platform/hotkeys.rs`)
+#### 4.4 Milestone 4.4: Windows Native System Tray & Hotkeys (`src/platform/system_tray.rs` & `src/platform/hotkeys.rs`) — [SELESAI ✅]
 1. **Windows System Tray (`system_tray.rs`):**
    * Menggunakan Win32 API native `Shell_NotifyIconW` untuk konsumsi RAM 0 MB.
    * Ikon resmi N.E.X.A disematkan di tray taskbar Windows (dekat jam).
-   * **Klik Kiri (Single Click):** Toggle *Show/Hide* jendela N.E.X.A instan.
+   * Dilengkapi penanganan `TaskbarCreated` (`RegisterWindowMessageW`) untuk auto-restore tray icon jika proses Windows Explorer di-restart.
+   * Toleran terhadap sesi pengujian / headless session (fallback anggun tanpa panik jika Explorer taskbar belum siap).
+   * **Klik Kiri (Single Click):** Toggle *Show/Hide* jendela N.E.X.A instan (`is_visible() -> hide() / show()`).
    * **Klik Kanan Context Menu:**
-     * `👁️ Buka N.E.X.A`
-     * `🎙️ Mute / Unmute Mikrofon`
-     * `⛶ Layar Penuh / Jendela (F11)`
-     * `⚙ Pengaturan (~/.nexa-bridge.json)`
-     * `❌ Keluar`
+     * `👁️ Buka N.E.X.A` -> Memunculkan jendela pendamping.
+     * `🎙️ Mute / Unmute Mikrofon` -> Toggle state bisu mikrofon WASAPI instan.
+     * `⛶ Layar Penuh / Jendela (F11)` -> Toggle mode Command Center / Floating Window.
+     * `⚙ Pengaturan (~/.nexa-bridge.json)` -> Membuka dialog pengaturan konfigurasi.
+     * `❌ Keluar` -> Shutdown bersih proses aplikasi.
 2. **Global Hotkeys Windows (`hotkeys.rs`):**
    * Terdaftar di tingkat OS via Win32 `RegisterHotKey`:
      * `Win + Alt + N`: Summon / dismiss jendela N.E.X.A dari aplikasi apa pun (Boss key).
      * `Win + Alt + M`: Mute / Unmute mikrofon instan dari mana saja.
      * `F11` atau `Win + Alt + F`: Toggle Mode Layar Penuh vs Jendela secara instan.
+   * Berjalan pada background thread khusus dengan Win32 message loop mandiri tanpa membebani event loop Slint.
+3. **Orkestrasi Rust Main (`src/main.rs`):**
+   * Menghubungkan callback event System Tray dan Global Hotkey langsung ke thread Slint melalui `slint::invoke_from_event_loop`.
+* **Checkpoint Validasi:** Seluruh 30 unit test di `nexa-windows-bridge` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan siap di-push ke remote.
 
 ---
 
