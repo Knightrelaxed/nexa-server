@@ -202,12 +202,16 @@ class LiveVoiceSession {
     this._userTranscriptBuf       = '';
     this._lastTactileInjectionTime = 0;
 
-    // Diagnostic raw PCM audio dump file
+    // Diagnostic raw PCM audio dump file (only active when DEBUG_LIVE_PCM=true)
     this.debugPcmPath = path.join(os.tmpdir(), `nexa_live_${this.sessionId}.pcm`);
     this.debugPcmBytesWritten = 0;
-    try {
-      this.debugPcmStream = fs.createWriteStream(this.debugPcmPath, { flags: 'a' });
-    } catch (_) {
+    if (process.env.DEBUG_LIVE_PCM === 'true') {
+      try {
+        this.debugPcmStream = fs.createWriteStream(this.debugPcmPath, { flags: 'a' });
+      } catch (_) {
+        this.debugPcmStream = null;
+      }
+    } else {
       this.debugPcmStream = null;
     }
   }
@@ -728,6 +732,7 @@ class LiveVoiceSession {
                 console.log(`[LIVE-VOICE] Audio response streaming from Gemini to client.`);
               }
             }
+            const wasAssistantSpeaking = this.isAssistantSpeaking;
             this.isAssistantSpeaking = true;
             if (this._assistantSpeechDecayTimer) clearTimeout(this._assistantSpeechDecayTimer);
             this._assistantSpeechDecayTimer = setTimeout(() => {
@@ -741,11 +746,13 @@ class LiveVoiceSession {
               type: 'CALL_AUDIO_PLAY',
               pcm_chunk: p.inlineData.data
             });
-            // Update HUD to Mentransmisikan..
-            this._sendToClient({
-              type: 'CALL_STATUS_UPDATE',
-              status: 'SPEAKING'
-            });
+            // Update HUD to Mentransmisikan.. only on onset of speaking burst
+            if (!wasAssistantSpeaking) {
+              this._sendToClient({
+                type: 'CALL_STATUS_UPDATE',
+                status: 'SPEAKING'
+              });
+            }
           }
           // Text transcript from model parts (if returned by model)
           if (p.text && !(this.currentTurnAssistantText || '').includes(p.text)) {
