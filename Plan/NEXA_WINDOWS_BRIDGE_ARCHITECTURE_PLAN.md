@@ -760,7 +760,7 @@ flowchart TD
   7. Auto-stop & cleanup otomatis saat koneksi WebSocket terputus atau mode tidur sistem (`WM_POWERBROADCAST`).
 * **Checkpoint Validasi:** Seluruh 37 automated tests di `nexa-windows-bridge` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`88ef07c`).
 
-#### 🔹 Fase 6: Sorotan Layar (DirectComposition) & Otomasi Input (SendInput)
+#### 🔹 Fase 6: Sorotan Layar (DirectComposition) & Otomasi Input (SendInput) — [SELESAI ✅]
 * **Lokasi Kerja:** `src/automation/`, `ui/`, `src/main.rs`
 * **Filosofi & Desain Inti:**
   * Memberikan kemampuan tangan (otomasi input fisik) dan telunjuk (sorotan layar transparan) kepada N.E.X.A.
@@ -869,36 +869,39 @@ flowchart TD
 
 ---
 
-#### 6.4 Milestone 6.4: Dispatcher Perintah & Integrasi Main Loop (`src/automation/mod.rs` & `src/main.rs`)
+#### 6.4 Milestone 6.4: Dispatcher Perintah & Integrasi Main Loop (`src/automation/mod.rs` & `src/main.rs`) — [SELESAI ✅]
 1. **Modul Fasad Otomasi (`src/automation/mod.rs`):**
    - Mengorkestrasi `InputAutomator`, `ElementFinder`, dan `HighlighterController`.
    - Mengekspos method utama:
-     - `handle_execute_command(command_id, action, params) -> ClientMessage::CommandResult`.
+     - `handle_execute_command(command_id, action, params, highlighter, cancellation_token) -> ClientMessage::CommandResult`.
 2. **Penyelarasan 7 Aksi Standar Live Tool Registry:**
-   - `'DESKTOP_CLICK'`: Validasi `(x, y)`, opsi `button`, `double_click`, jalankan click indicator 300ms, panggil `SendInput`.
-   - `'DESKTOP_SCROLL'`: Validasi `direction` (`"UP"`/`"DOWN"`), `amount`, panggil `SendInput` scroll.
-   - `'DESKTOP_TYPE_TEXT'`: Validasi `text`, opsi `press_enter`, ketik teks via Unicode `SendInput`.
-   - `'DESKTOP_PRESS_KEY'`: Validasi `key`, panggil press key via Virtual Key `SendInput`.
-   - `'HIGHLIGHT_ELEMENT'`: Evaluasi `(ymin, xmin, ymax, xmax)`, smart-snap dengan `ElementFinder`, render via `HighlighterController`.
-   - `'POINT_CURSOR'`: Arahkan penunjuk ke `(x, y)` selama `duration_ms`.
-   - `'CLEAR_HIGHLIGHTS'`: Bersihkan semua visual highlight instan.
+   - `'DESKTOP_CLICK'`: Validasi `(x, y)`, opsi `button`, `double_click`, pemicu click indicator ripple 300 ms, panggil Win32 `SendInput`.
+   - `'DESKTOP_SCROLL'`: Validasi `direction` (`"UP"`/`"DOWN"`), `amount`, panggil Win32 `SendInput` mouse wheel.
+   - `'DESKTOP_TYPE_TEXT'`: Validasi `text`, opsi `press_enter`, ketik teks via UTF-16 Unicode `SendInput` (menjaga surrogate pairs).
+   - `'DESKTOP_PRESS_KEY'`: Validasi `key`, panggil press key via Virtual Key Code Win32 `SendInput`.
+   - `'HIGHLIGHT_ELEMENT'`: Evaluasi `(ymin, xmin, ymax, xmax)`, smart-snap dengan `ElementFinder` (UIA), render via `HighlighterController`.
+   - `'POINT_CURSOR'`: Arahkan penunjuk ke `(x, y)` selama `duration_ms` (gaya `POINTER`).
+   - `'CLEAR_HIGHLIGHTS'`: Bersihkan semua visual highlight instan via `highlighter.clear_all()`.
 3. **Koneksi ke Thread Jaringan & UI di `src/main.rs`:**
    - Menyambungkan incoming `ServerMessage::ExecuteCommand` dari WebSocket loop ke `handle_execute_command`.
    - Mengirimkan balik `ClientMessage::CommandResult` ke socket via tokio channel.
    - Thread-safe dispatching ke Slint / Win32 overlay tanpa memblokir audio duplex atau network loop.
-4. **Unit Tests:**
+4. **Unit Tests & Checkpoint Validasi:**
    - Simulasi pesan `ExecuteCommand` untuk setiap aksi dari 7 aksi yang didukung, memastikan format JSON `CommandResult` sesuai kontrak dengan server.
+   - Seluruh 61 automated tests di `nexa-windows-bridge` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`5b8300b`).
 
 ---
 
-#### 6.5 Milestone 6.5: Verifikasi Menyeluruh, Zero-Warning Clippy, & Git Push
+#### 6.5 Milestone 6.5: Verifikasi Menyeluruh, Zero-Warning Clippy, & Git Push — [SELESAI ✅]
 1. **Pengujian Regresi & Suite Test:**
-   - Menjalankan seluruh test suite (`cargo test`) untuk memastikan semua test (audio, capture, ui, network, config, automation) lulus 100% tanpa regresi.
+   - Seluruh test suite (`cargo test`) di `nexa-windows-bridge` (61 automated tests meliputi audio, capture, ui, network, config, automation) lulus **100% PASS (Green)** tanpa regresi.
 2. **Audit Kualitas Kode (Clippy):**
-   - Menjalankan `cargo clippy --all-targets --all-features` dan memastikan 0 warning, 0 error.
-3. **Commit & Push GitHub Remote:**
-   - Push ke `https://github.com/Knightrelaxed/nexa-windows-bridge`.
-   - Update status milestone di `NEXA_WINDOWS_BRIDGE_ARCHITECTURE_PLAN.md`.
+   - Menjalankan `cargo clippy --all-targets --all-features`: **0 error, 0 warning**.
+3. **Kompilasi Standalone Release Binary:**
+   - Menjalankan `cargo build --release`: Berhasil terkompilasi bersih tanpa peringatan compiler.
+4. **Commit & Push GitHub Remote:**
+   - Seluruh kode otomasi, stealth overlay, dan integrasi loop main ter-push ke GitHub Remote: `https://github.com/Knightrelaxed/nexa-windows-bridge`.
+   - **Fase 6 resmi selesai (Sign-off) dan siap berlanjut ke Fase 7: Profiling Memori (<25 MB RAM), Hardening, & Standalone Release .EXE.**
 
 ---
 
