@@ -202,6 +202,7 @@ class LiveVoiceSession {
     this.currentTurnAssistantText = '';
     this._userTranscriptBuf       = '';
     this._lastTactileInjectionTime = 0;
+    this._lastVocalActivityTime    = 0;
 
     // Diagnostic raw PCM audio dump file (only active when DEBUG_LIVE_PCM=true)
     this.debugPcmPath = path.join(os.tmpdir(), `nexa_live_${this.sessionId}.pcm`);
@@ -1356,9 +1357,12 @@ class LiveVoiceSession {
       const googleSilentMs = Date.now() - this.lastActivityTime;
       const clientSilentMs = Date.now() - this.lastClientInputTime;
 
-      // Condition A: Client was recently active (< 20s) but Google silent for > 30s -> stuck generation!
-      if (clientSilentMs < 20000 && googleSilentMs > 30000) {
-        console.warn(`[LIVE-VOICE] Watchdog: Client active recently but Google silent for ${Math.round(googleSilentMs / 1000)}s - triggering failover.`);
+      // Condition A: User vocal activity was recently detected (RMS > 40 speech, not ambient mic stream)
+      // and Google failed to respond for > 30s after the user spoke -> stuck generation!
+      const userSpokeRecently = Boolean(this._lastVocalActivityTime && (Date.now() - this._lastVocalActivityTime < 35000));
+      const userSpokeAfterGoogle = Boolean(this._lastVocalActivityTime && (this._lastVocalActivityTime > this.lastActivityTime));
+      if (userSpokeRecently && userSpokeAfterGoogle && googleSilentMs > 30000) {
+        console.warn(`[LIVE-VOICE] Watchdog: User spoke recently (${Math.round((Date.now() - this._lastVocalActivityTime) / 1000)}s ago) but Google silent for ${Math.round(googleSilentMs / 1000)}s - triggering failover.`);
         this._handleFailover(1006, 'Google silent timeout');
         return;
       }
