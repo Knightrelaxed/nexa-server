@@ -716,12 +716,22 @@ flowchart TD
 
 ---
 
-#### 4.5 Milestone 4.5: Orkestrasi Main Window & Binding Data (`src/main.rs`)
-1. Mengintegrasikan penanganan fullscreen pada jendela Slint:
+#### 4.5 Milestone 4.5: Orkestrasi Main Window & Binding Data (`src/main.rs`) — [SELESAI ✅]
+1. **Penanganan Dual-Mode Windowing (Windowed & Fullscreen):**
    * Mengikat callback `on_toggle_fullscreen` ke event Slint dan memanggil `window.set_fullscreen()`.
-2. Menghubungkan amplitudo audio dari `AudioEngine` ke Slint UI:
-   * Menghitung RMS level dari `audio_engine.is_speaking()` atau mic input untuk menggerakkan `volume_level` dan `pulse_scale` di avatar secara dinamis.
-3. Menghubungkan event klik dari System Tray dan Global Hotkey ke Slint UI Event Loop via `slint::invoke_from_event_loop`.
+   * Sinkronisasi penanganan `F11` (FocusScope lokal & Global Hotkey) serta fallback `Win + Alt + F`.
+2. **Reaktivitas Amplitudo Audio Dua Arah (Bidirectional RMS):**
+   * Output Suara AI (24kHz PCM): Menghitung RMS frame respons Gemini Live untuk memicu denyut pupil dan audio visualizer saat N.E.X.A berbicara (`speaking`).
+   * Input Suara Pengguna (16kHz PCM): Menghitung RMS audio mikrofon ThinkPad saat status `listening` sehingga gelombang vokal pengguna menggerakkan `volume_level` dan `pulse_scale` avatar secara real-time.
+   * Auto-reset ke level 0.0 saat respon selesai (`ReplyComplete`) atau terpotong (*barge-in*).
+3. **Telemetri HUD Real-Time (Win32 Native Zero-RAM):**
+   * Menambahkan modul `src/platform/telemetry.rs` menggunakan `GetSystemTimes` dan `GlobalMemoryStatusEx`.
+   * Mengalirkan metrik CPU%, RAM%, status audio WASAPI, dan estimasi ping latensi WebSocket secara berkala ke antarmuka Layar Penuh.
+4. **Integrasi System Tray, Hotkeys, & Modal Settings:**
+   * Menghubungkan seluruh aksi context menu tray dan hotkey boss key (`Win + Alt + N`) dengan penanganan `is_minimized()`.
+   * Mencegah pemutusan proses saat tombol close `[X]` diklik melalui interceptor `on_close_requested` (`CloseRequestResponse::HideWindow`).
+   * Mengarahkan `TrayEvent::Quit` ke `slint::quit_event_loop()` untuk unwinding proses dan penutupan soket secara teratur (*graceful termination*).
+* **Checkpoint Validasi:** Seluruh 31 unit test di `nexa-windows-bridge` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`5ebcfc4`).
 
 ---
 
