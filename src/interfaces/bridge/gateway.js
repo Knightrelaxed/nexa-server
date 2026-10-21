@@ -109,8 +109,9 @@ function initWebSocket(server) {
         try {
           const liveVoice = require('../../core/Live_Voice_Engine');
           const activeSession = liveVoice.getActiveSessionForClient(ws);
-          if (activeSession && typeof activeSession.sendRealtimeAudioChunk === 'function') {
-            activeSession.sendRealtimeAudioChunk(data);
+          if (activeSession && activeSession.isActive) {
+            const b64 = Buffer.isBuffer(data) ? data.toString('base64') : Buffer.from(data).toString('base64');
+            activeSession.handleIncomingClientAudio(b64);
           }
         } catch (e) {
           console.error('[BRIDGE-GATEWAY] Binary audio dispatch error:', e.message);
