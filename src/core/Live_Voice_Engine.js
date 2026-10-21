@@ -686,6 +686,7 @@ class LiveVoiceSession {
       if (msg.serverContent) {
         if (msg.serverContent.interrupted) {
           console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
+          this._visualTurnInjected = false;
           if (this._toolSafetyTimer) {
             clearTimeout(this._toolSafetyTimer);
             this._toolSafetyTimer = null;
@@ -725,6 +726,18 @@ class LiveVoiceSession {
             type: 'CALL_STATUS_UPDATE',
             user_transcript: this._userTranscriptBuf.trim()
           });
+
+          // Multimodal Vision Injection: If user speech contains visual query keywords
+          // and fresh visual frame (<15s) exists, inject inlineData visual turn context
+          if (this.latestVisualFrame && (Date.now() - (this.latestVisualTimestamp || 0) < 15000) && !this._visualTurnInjected) {
+            const userTextLower = this._userTranscriptBuf.toLowerCase();
+            const visualKeywords = ['lihat', 'layar', 'kamera', 'baca', 'teks', 'tulisan', 'ini apa', 'apa ini', 'warna apa', 'gambar', 'screen', 'depan', 'tampilan'];
+            if (visualKeywords.some(kw => userTextLower.includes(kw))) {
+              this._visualTurnInjected = true;
+              console.log(`[LIVE-VOICE] 👁️ Visual query detected: "${this._userTranscriptBuf.trim()}" -> Injecting turn visual context`);
+              this._injectVisualContext(this.latestVisualFrame, this._userTranscriptBuf.trim());
+            }
+          }
         }
 
         // Accumulate assistant output transcript if provided
@@ -787,6 +800,7 @@ class LiveVoiceSession {
 
         // If turnComplete is reached, finalize assistant turn text and reset to LISTENING
         if (msg.serverContent.turnComplete) {
+          this._visualTurnInjected = false;
           this._flushUserTurn();
           if (this._assistantSpeechDecayTimer) {
             clearTimeout(this._assistantSpeechDecayTimer);
@@ -1128,10 +1142,10 @@ class LiveVoiceSession {
   }
 
   /**
-   * Forward incoming video frame (JPEG base64) from Android camera to Google Live API.
+   * Forward incoming video frame (JPEG base64) from Android camera / screen share to Google Live API.
    * Encapsulated as realtimeInput.video so Gemini processes visual context
    * alongside the ongoing audio stream — enabling true multimodal understanding.
-   * @param {string} jpegBase64 - Base64-encoded JPEG frame captured from Android camera
+   * @param {string} jpegBase64 - Base64-encoded JPEG frame captured from Android camera or screen
    */
   handleIncomingClientVideoFrame(jpegBase64) {
     if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN || !this.isSetupComplete) {
@@ -1139,12 +1153,16 @@ class LiveVoiceSession {
     }
 
     this.lastClientInputTime = Date.now();
-
-    // GATING: Do not forward video frame while assistant is speaking, tool is executing, or greeting is pending
-    if (this.isAssistantSpeaking || this.isExecutingTool || this.isGreetingPending) {
-      return;
-    }
     if (!jpegBase64 || typeof jpegBase64 !== 'string') return;
+
+    // Cache latest visual frame for turn-associated injection and freshness checks
+    this.latestVisualFrame = jpegBase64;
+    this.latestVisualTimestamp = Date.now();
+    this.videoFramesReceived = (this.videoFramesReceived || 0) + 1;
+
+    if (this.videoFramesReceived % 5 === 1) {
+      console.log(`[LIVE-VOICE] 📹 Video frame stream active: #${this.videoFramesReceived} (~${Math.round(jpegBase64.length / 1024)} KB)`);
+    }
 
     // Google Gemini Multimodal Live API format (media_chunks deprecated, video required)
     const frameMsg = {
@@ -1160,6 +1178,33 @@ class LiveVoiceSession {
       this.googleWs.send(JSON.stringify(frameMsg));
     } catch (err) {
       console.error(`[LIVE-VOICE] Failed to forward video frame to Google:`, err.message);
+    }
+  }
+
+  /**
+   * Inject high-priority visual turn context into active session when user verbally queries vision
+   * @param {string} jpegBase64
+   * @param {string} queryText
+   */
+  _injectVisualContext(jpegBase64, queryText) {
+    if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN) return;
+    const payload = {
+      clientContent: {
+        turns: [{
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: jpegBase64 } },
+            { text: `[Konteks Visual Pengguna]: ${queryText}` }
+          ]
+        }],
+        turnComplete: false
+      }
+    };
+    try {
+      this.googleWs.send(JSON.stringify(payload));
+      console.log(`[LIVE-VOICE] ✅ Dispatched visual turn context to Gemini (${Math.round(jpegBase64.length / 1024)} KB)`);
+    } catch (err) {
+      console.warn(`[LIVE-VOICE] Visual context injection warning:`, err.message);
     }
   }
 

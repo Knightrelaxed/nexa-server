@@ -232,6 +232,11 @@ function handleMessage(payload, ws) {
         if (imageChunk) {
           activeSession.handleIncomingClientVideoFrame(imageChunk);
         }
+      } else {
+        if (!ws._lastNoVideoSessionWarn || Date.now() - ws._lastNoVideoSessionWarn > 5000) {
+          ws._lastNoVideoSessionWarn = Date.now();
+          console.warn('[BRIDGE-MOBILE] ⚠️ CALL_VIDEO_FRAME received but no active LiveVoiceSession found for client');
+        }
       }
     } catch (e) {
       console.error('[BRIDGE-MOBILE] Video frame relay error:', e.message);
