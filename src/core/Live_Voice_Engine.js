@@ -577,7 +577,7 @@ class LiveVoiceSession {
         outputAudioTranscription: {},
         realtimeInputConfig: {
           automaticActivityDetection: {
-            startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+            startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
             endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
             prefixPaddingMs: 300,
             silenceDurationMs: 700
