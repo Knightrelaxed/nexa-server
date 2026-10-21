@@ -588,22 +588,137 @@ flowchart TD
   3. Integrasi event daya Windows (`src/platform/power.rs`): Message-only window Win32 menangani `WM_POWERBROADCAST` (`PBT_APMSUSPEND` dan `PBT_APMRESUMEAUTOMATIC`) untuk auto-suspend dan instant wake-reconnect saat laptop dibuka/bangun tidur.
 * **Checkpoint Validasi:** Menjalankan `cargo test` ➔ 10 automated unit test **100% PASS (Green)** (serialisasi protokol, siklus hidup koneksi, dan thread power listener), binary `nexa-windows-bridge.exe` terkompilasi 0 warning, dan perubahan ter-push ke GitHub.
 
-#### 🔹 Fase 3: Audio Dupleks WASAPI Bebas Gema (ThinkPad Hardware Tuning)
+#### 🔹 Fase 3: Audio Dupleks WASAPI Bebas Gema (ThinkPad Hardware Tuning) — [SELESAI ✅]
 * **Lokasi Kerja:** `src/audio/`
 * **Langkah Kerja:**
-  1. `audio/microphone.rs`: WASAPI capture stream role `eCommunications` (16kHz 16-bit Mono PCM) mengaktifkan beamforming Conexant CX11771 hardware bawaan ThinkPad.
-  2. `audio/speaker.rs`: WASAPI render stream (24kHz Mono PCM) untuk vokal respons Gemini.
-  3. `audio/echo_canceller.rs`: Integrasi WebRTC AEC3 (`sonora-aec3`), mengurangkan suara speaker secara adaptif dari sinyal mic.
-  4. `audio/audio_buffer.rs`: SPSC lock-free circular buffer antar audio thread real-time dan async tokio.
-* **Checkpoint Validasi:** Berbicara langsung ke speaker & mic laptop ThinkPad tanpa headset: Vokal N.E.X.A terdengar jelas dan mic menangkap suara Tuan tanpa terjadi distorsi gema atau feedback loop.
+  1. `audio/audio_buffer.rs`: SPSC lock-free circular ring buffer (`ringbuf`) dengan zero-allocation pada callback real-time WASAPI.
+  2. `audio/resampler.rs`: Resampler interpolasi linier presisi tinggi, konversi bolak-balik $f32 \leftrightarrow i16 \leftrightarrow \text{PCM bytes}$, serta generalisasi downmixing multi-channel (`downmix_to_mono`) dan upmixing (`upmix_mono_to_channels`).
+  3. `audio/echo_canceller.rs`: Integrasi WebRTC AEC3 (`sonora`), Noise Suppression (NS), dan AGC2. Pemrosesan real-time independen pada frame render 10 ms (160 sampel), dipadukan dengan *turn-aware dynamic ducking* (-18 dB) dan deteksi *barge-in* suara Tuan.
+  4. `audio/speaker.rs`: Stream output WASAPI via `cpal` (`SendStream` wrapper) untuk vokal Gemini 24 kHz mono $\to$ hardware ThinkPad (misal 48 kHz stereo), dilengkapi mekanisme pembersihan penyangga instan (*flush buffer* <1 ms) saat Tuan memotong pembicaraan.
+  5. `audio/microphone.rs`: Stream capture mikrofon dual-array Conexant ThinkPad X380 Yoga via `cpal`, pemrosesan pembatalan gema AEC3, dan pengemasan frame audio 100 ms (1.600 sampel = 3.200 byte) untuk efisiensi jaringan ke peladen Azure.
+  6. `audio/mod.rs`: Fasad orkestrator `AudioEngine` terhubung ke siklus koneksi `NetworkClient` dan antarmuka Slint.
+* **Checkpoint Validasi:** Seluruh 23 unit test di `nexa-windows-bridge` dan 362 test di `nexa-server` lulus **100% PASS (Green)** tanpa warning. Biner `nexa-windows-bridge.exe` terkompilasi bersih dan di-push ke GitHub (`f960696`).
 
-#### 🔹 Fase 4: Antarmuka Slint & Avatar Desktop (`ui/`)
-* **Lokasi Kerja:** `ui/` & `src/platform/system_tray.rs`
-* **Langkah Kerja:**
-  1. Implementasi indikator status avatar (`ui/components/avatar.slint`): Animasi kedip acak, mata melebar saat mendengarkan, dan berpendar saat berbicara.
-  2. Mini window utama (`ui/main_window.slint`) yang ringkas di pojok layar (*Always on Top*).
-  3. Windows System Tray (`platform/system_tray.rs`) dan global hotkey `Win + Alt + N` untuk memanggil/menyembunyikan window.
-* **Checkpoint Validasi:** Avatar N.E.X.A tampil responsif terhadap audio (Idle, Listening, Speaking), dan bisa diminimalkan ke System Tray.
+---
+
+#### 🔹 Fase 4: Antarmuka Slint & Avatar Cybernetic J.A.R.V.I.S (Dual-Mode & 9 Spektrum Kognitif)
+* **Lokasi Kerja:** `ui/`, `src/platform/system_tray.rs`, `src/platform/hotkeys.rs`, dan `src/main.rs`
+* **Filosofi & Desain Inti:**
+  * Estetika futuristik J.A.R.V.I.S / Arc Reactor dengan **sepasang mata siber ekspresif** yang hidup dan berwibawa.
+  * **Dual-Mode Fleksibel:** Mode No-Fullscreen (Jendela Melayang Pendamping ~360×520px) vs Mode Full Screen (Command Center J.A.R.V.I.S Layar Penuh 16:9 1080p).
+  * **Spektrum 9 Status & Warna Kognitif** yang disinkronkan persis dengan *Mobile Bridge* dan peladen Azure.
+  * Ringan ekstrem: konsumsi memori UI Slint tetap terjaga di **<15 MB RAM**.
+
+---
+
+### 📑 SUBPLAN SUPER RINCI FASE 4
+
+```mermaid
+flowchart TD
+    M4_1["Milestone 4.1: Avatar Sentient Cyber-Eyes (avatar.slint)<br/>• 3 Cincin Orbital Konsentris<br/>• Rotasi 360° Giroskopik saat Thinking<br/>• 9 Spektrum Warna Kognitif"] --> M4_2
+    M4_2["Milestone 4.2: Dual-Mode Window System (main_window.slint)<br/>• Mode 1: No-Fullscreen Floating Companion (~360x520px)<br/>• Mode 2: Full Screen J.A.R.V.I.S Command Center (16:9 1080p)<br/>• Penyelarasan Status Teks Mobile Bridge"] --> M4_3
+    M4_3["Milestone 4.3: Audio Spectrum Visualizer (audio_meter.slint)<br/>• Multi-Bar Reaktif Amplitudo Audio (RMS)<br/>• Mini-Wave di Jendela Kecil & Wide Spectrum di Full Screen"] --> M4_4
+    M4_4["Milestone 4.4: Windows Native System Tray & Hotkeys (platform/)<br/>• Win32 Shell_NotifyIconW Tray Icon & Context Menu<br/>• Global Hotkeys: Win+Alt+N (Toggle Window), Win+Alt+M (Mute), F11 (Fullscreen)"] --> M4_5
+    M4_5["Milestone 4.5: Orkestrasi Event & Binding Rust (src/main.rs)<br/>• Hubungkan Slint Callbacks & Hotkeys<br/>• Sinkronisasi Amplitudo Audio ke pulse_scale Slint<br/>• Zero-Regression & Full Validation Test"]
+```
+
+---
+
+#### 4.1 Milestone 4.1: Avatar Sentient Cyber-Eyes (`ui/components/avatar.slint`) — [SELESAI ✅]
+1. **Anatomi Vektor Mata Siber:**
+   * **Inti Reaktor Tengah (Central Core):** Titik fokus bercahaya cyan spekular (`#00E5FF` & `#E0F7FA`) di antara kedua mata dengan busur transmisi data atas/bawah.
+   * **Outer Orbital Gyroscopic Ring:** Cincin data terluar dengan grid 4 *tick marks* telemetri holografis. Cincin ini menggunakan modern transform `transform-rotation` yang **berputar 360° berlawanan arah secara giroskopik (durasi 2.0s linear loop)** ketika status = `thinking` dan 1.5s ketika `connecting`.
+   * **Middle Telemetry Arc Ring:** Busur cincin tengah yang berdenyut dinamis terhadap `pulse_scale` audio vokal Tuan Faqih.
+   * **Inner Luminous Iris & Pupil:** Inti mata yang membesar saat `listening` (receptive gaze dilation 1.25x), mengunci fokus saat `thinking` (0.85x), dan glint highlight spekular putih.
+   * **Eyelid Slits (Kelopak Siber):** Menggunakan dynamic aperture container (`clip: true`) untuk efek kedipan alami acak setiap 3.5 detik, dan menutup sepenuhnya (menyisakan celah tipis 4px) saat status `offline` / `sleeping`.
+   * **Vision HUD Scan Sweep:** Garis sapuan horizontal pemindai data aktif otomatis saat `screen_sharing`.
+2. **Implementasi Matriks 9 Spektrum Warna Kognitif & Enum Rust (`src/ui/mod.rs`):**
+   * `idle`: Soft Cyan (`#00E5FF`) — Kedip alami, melirik halus ke kursor.
+   * `listening`: Vibrant Cyan-Blue (`#00B4D8`) — Pupil membesar 25%, cincin luar terbuka menyerap vokal.
+   * `thinking`: Cognitive Gold (`#FFB300`) — 🔄 **Cincin giroskop berputar 360° kontinu**, pupil fokus.
+   * `speaking`: Cyber Emerald (`#00FF88`) — Cincin iris berdenyut harmonis mengikuti audio vokal 24kHz.
+   * `barge_in`: Flash White-Cyan (`#E0F7FA`) — Kilatan instan <1 ms saat Tuan memotong pembicaraan.
+   * `screen_sharing`: Holographic Azure (`#00B0FF`) — Retikel bidik sudut HUD (`[ ]`) dan sapuan garis pemindai.
+   * `tool_executing`: Quantum Violet (`#7C4DFF`) — Kilatan pulsa ungu elektrik tanda eksekusi aksi PC/backend.
+   * `connecting`: Amber Warning (`#FF9100`) — Cincin berputar putus-putus mencari jabat tangan jaringan.
+   * `offline`: Deep Slate Gray (`#37474F`) — Kelopak mata terpejam, cincin meredup hening.
+   * **Checkpoint Validasi:** Seluruh 28 unit test di `nexa-windows-bridge` dan 362 test di `nexa-server` lulus **100% PASS (Green)** tanpa warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`cd0f8df`).
+
+---
+
+#### 4.2 Milestone 4.2: Dual-Mode Window System (`ui/main_window.slint`)
+1. **Arsitektur Struktur Dua Tampilan:**
+   * Menambahkan *property* `in-out property <bool> is_fullscreen: false;`.
+   * **Tampilan Mode 1: No-Fullscreen (Jendela Melayang Pendamping ~360×520 px):**
+     * Desain *dark acrylic glassmorphism* (`#0D1117EE` dengan border halus `#30363D`).
+     * Header bar: Judul `"N.E.X.A Bridge"`, badge status koneksi, tombol Pengaturan (`⚙`), tombol Maximize/Fullscreen (`⛶`), dan tombol minimize/close.
+     * Area Pusat: Avatar Mata Siber J.A.R.V.I.S (proporsional 100×100 px), teks status lisan, dan visualizer gelombang suara.
+     * Hardware Pills: Indikator status subsistem (`🎙️ WASAPI Audio`, `🛡️ AEC3 Active`, `👁️ D3D11 Vision`).
+     * Action Bar: Tombol toggle `"Connect / Disconnect"`, tombol `"Mute Mic"`, dan tombol `"👁️ Lihat Layar"`.
+   * **Tampilan Mode 2: Full Screen Mode (Command Center J.A.R.V.I.S 16:9 1080p):**
+     * Memenuhi 100% monitor ThinkPad (borderless fullscreen).
+     * Area Pojok Kiri Atas: Panel Telemetri Lengkap (`CPU: 14% | RAM: 32% | WASAPI Audio: Active | AEC3 Active`).
+     * Area Pojok Kanan Atas: Tombol `"Windowed Mode"` (ikon restore) dan hotkey indicator `[F11]`.
+     * Area Pusat: Avatar Mata Siber J.A.R.V.I.S berskala besar (260×260 px) lengkap dengan inti reaktor tengah.
+     * Area Bawah: Spektrum audio frekuensi lebar membentang horizontal melintasi layar.
+     * Subtitle Bar: Teks dialog lisan real-time dalam tipografi berkelas (*"Mendengarkan Tuan Faqih..."*).
+2. **Penyelarasan Teks Status Lisan (100% Paritas Mobile Bridge):**
+   * `LISTENING` $\to$ `"Mendengarkan Tuan Faqih..."`
+   * `PROCESSING` / `THINKING` $\to$ `"Sedang menalar & memproses..."`
+   * `SPEAKING` $\to$ `"N.E.X.A sedang berbicara..."`
+   * `BARGE_IN` $\to$ `"Mendengarkan interupsi Tuan..."`
+   * `TRANSMITTING_AUDIO` $\to$ `"Mentransmisikan suara (WASAPI 16kHz)..."`
+   * `TRANSMITTING_SCREEN` $\to$ `"Mentransmisikan layar & audio (D3D11 1 FPS)..."`
+   * `RECONNECTING` $\to$ `"Menghubungkan kembali ke server..."`
+   * `DISCONNECTED` $\to$ `"Bridge Terputus (Offline)"`
+
+---
+
+#### 4.3 Milestone 4.3: Real-Time Audio Spectrum Visualizer (`ui/components/audio_meter.slint`)
+1. Multi-bar audio meter berbasis vektor Slint (16 bar di jendela kecil, 48 bar di mode fullscreen).
+2. Menerima properti `in property <float> volume_level: 0.0;` dan `in property <bool> is_active: false;`.
+3. Menggunakan kalkulasi kurva sinus per bar untuk menghasilkan efek gelombang harmonis vokal alami yang bergerak secara *fluid* saat berbicara atau mendengarkan.
+
+---
+
+#### 4.4 Milestone 4.4: Windows Native System Tray & Hotkeys (`src/platform/system_tray.rs` & `src/platform/hotkeys.rs`)
+1. **Windows System Tray (`system_tray.rs`):**
+   * Menggunakan Win32 API native `Shell_NotifyIconW` untuk konsumsi RAM 0 MB.
+   * Ikon resmi N.E.X.A disematkan di tray taskbar Windows (dekat jam).
+   * **Klik Kiri (Single Click):** Toggle *Show/Hide* jendela N.E.X.A instan.
+   * **Klik Kanan Context Menu:**
+     * `👁️ Buka N.E.X.A`
+     * `🎙️ Mute / Unmute Mikrofon`
+     * `⛶ Layar Penuh / Jendela (F11)`
+     * `⚙ Pengaturan (~/.nexa-bridge.json)`
+     * `❌ Keluar`
+2. **Global Hotkeys Windows (`hotkeys.rs`):**
+   * Terdaftar di tingkat OS via Win32 `RegisterHotKey`:
+     * `Win + Alt + N`: Summon / dismiss jendela N.E.X.A dari aplikasi apa pun (Boss key).
+     * `Win + Alt + M`: Mute / Unmute mikrofon instan dari mana saja.
+     * `F11` atau `Win + Alt + F`: Toggle Mode Layar Penuh vs Jendela secara instan.
+
+---
+
+#### 4.5 Milestone 4.5: Orkestrasi Main Window & Binding Data (`src/main.rs`)
+1. Mengintegrasikan penanganan fullscreen pada jendela Slint:
+   * Mengikat callback `on_toggle_fullscreen` ke event Slint dan memanggil `window.set_fullscreen()`.
+2. Menghubungkan amplitudo audio dari `AudioEngine` ke Slint UI:
+   * Menghitung RMS level dari `audio_engine.is_speaking()` atau mic input untuk menggerakkan `volume_level` dan `pulse_scale` di avatar secara dinamis.
+3. Menghubungkan event klik dari System Tray dan Global Hotkey ke Slint UI Event Loop via `slint::invoke_from_event_loop`.
+
+---
+
+#### 4.6 Milestone 4.6: Verifikasi, Profiling Memori & Pengujian Zero-Warning
+1. **Pengujian Unit Otomatis:**
+   * Test kalkulasi sudut rotasi avatar dan pemetaan 9 status.
+   * Test pendaftaran hotkey dan integrasi window state.
+2. **Verifikasi Stabilitas:**
+   * Menjalankan `cargo test` (memastikan minimal 25+ test lulus 100%).
+   * Menjalankan `cargo build` dengan **0 warning dan 0 error**.
+   * Menjalankan `npm test` di `nexa-server` (memastikan 362 test tetap 100% green).
+3. **Commit & Push:**
+   * Menyimpan seluruh perubahan ke GitHub `https://github.com/Knightrelaxed/nexa-windows-bridge`.
 
 #### 🔹 Fase 5: Mata Layar GPU Direct3D 11 (`capture/`)
 * **Lokasi Kerja:** `src/capture/`
