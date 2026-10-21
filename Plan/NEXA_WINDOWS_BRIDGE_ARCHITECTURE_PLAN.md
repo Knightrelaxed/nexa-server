@@ -905,14 +905,93 @@ flowchart TD
 
 ---
 
-#### 🔹 Fase 7: Profiling Memori (<25 MB RAM) & Standalone Release Build
-* **Lokasi Kerja:** Konfigurasi biner akhir
-* **Langkah Kerja:**
-  1. Profiling konsumsi memori di Task Manager: Menjamin RAM stabil di **~15–19 MB** saat audio biasa, dan **<30 MB** saat share screen & overlay aktif.
-  2. Optimasi *Release Profile* di `Cargo.toml` (`opt-level = 3`, `lto = true`, `strip = true`, `panic = "abort"`).
-  3. Kompilasi biner mandiri: Menghasilkan single file `nexa-windows-bridge.exe` (~10 MB) siap pakai.
-  4. Shortcut otomatis ke `shell:startup` agar N.E.X.A otomatis standby saat laptop ThinkPad dinyalakan.
-* **Checkpoint Validasi:** Aplikasi berjalan berjam-jam tanpa kebocoran memori (*zero memory leak*), respons sub-detik, dan siap menjadi pendamping harian Tuan.
+#### 🔹 Fase 7: Profiling Memori (<25 MB RAM), Hardening, & Standalone Release .EXE
+* **Lokasi Kerja:** `Cargo.toml`, `src/platform/`, `ui/settings_dialog.slint`, `src/main.rs`, `src/config.rs`
+* **Filosofi & Desain Inti:**
+  * Menjamin N.E.X.A di laptop ThinkPad X380 Yoga beroperasi secara kontinu dengan kehandalan kelas industri (*rock-solid stability*).
+  * **Ultra-Lean Resource Footprint:** Profiling RAM ketat menjamin konsumsi memori stabil di **< 20 MB** (standby), **< 25 MB** (audio duplex aktif), dan **< 32 MB** (saat share screen GPU & overlay aktif).
+  * **Enterprise Lifecycle Management:** Penjaminan instansiasi tunggal (*Single-Instance Mutex*), *working set memory trimming*, dan *Auto-Start Standby* ke tray sistem Windows.
+
+---
+
+### 📑 SUBPLAN SUPER RINCI FASE 7
+
+```mermaid
+flowchart TD
+    M7_1["Milestone 7.1: Cargo Release Profile, Fat LTO & Binary Stripping<br/>• opt-level = 3, lto = 'fat', codegen-units = 1<br/>• panic = 'abort', strip = true<br/>• Reduksi biner mandiri & zero runtime debug bloat"] --> M7_2
+    M7_2["Milestone 7.2: Windows Auto-Start Standby Integration (platform/autostart.rs)<br/>• Registrasi Startup via Registry HKCU Run / shell:startup<br/>• Opsi UI Pengaturan & CLI flag --autostart<br/>• Standby hening di System Tray saat boot"] --> M7_3
+    M7_3["Milestone 7.3: Memory Trimming & Low-RAM Optimization (platform/memory.rs)<br/>• Win32 SetProcessWorkingSetSize Trimmer<br/>• Auto-trim saat jendela di-minimize ke System Tray<br/>• Audit & Verifikasi Profiling RAM & Zero-Leak"] --> M7_4
+    M7_4["Milestone 7.4: Single-Instance Mutex & Process Lifecycle Hardening (platform/single_instance.rs)<br/>• Named Mutex Global\\NexaWindowsBridge_SingleInstance_Mutex<br/>• Bring existing window to foreground jika diduplikasi<br/>• Graceful session termination (WM_QUERYENDSESSION)"] --> M7_5
+    M7_5["Milestone 7.5: Verifikasi Menyeluruh, Zero-Warning Clippy, & Standalone Release Sign-off<br/>• Full regression test 100% PASS (Green)<br/>• Zero warning cargo clippy audit<br/>• Dokumentasi deployment & commit final ke GitHub remote"]
+```
+
+---
+
+#### 7.1 Milestone 7.1: Cargo Release Profile Optimization, Fat LTO & Binary Stripping
+1. **Konfigurasi `[profile.release]` di `Cargo.toml`:**
+   - `opt-level = 3`: Optimasi performa kompilasi LLVM maksimal untuk prosesor Intel Core ThinkPad.
+   - `lto = "fat"`: *Link-Time Optimization* penuh lintas *crate* untuk *dead-code elimination* dan *inlining* fungsi agresif.
+   - `codegen-units = 1`: Menyatukan seluruh modul dalam satu unit kompilasi release untuk memaksimalkan efisiensi optimasi global.
+   - `panic = "abort"`: Menghilangkan tabel *stack unwinding* yang membebani memori dan biner executable.
+   - `strip = true`: Menghapus seluruh simbol debugging (*debug symbols*) dari file `.exe` akhir.
+2. **Kompilasi Biner & Verifikasi Ukuran:**
+   - Memastikan biner release terkompilasi bersih tanpa *warning*.
+   - Mengukur pengurangan ukuran biner dan verifikasi efisiensi linking.
+
+---
+
+#### 7.2 Milestone 7.2: Windows Auto-Start Standby Integration (`src/platform/autostart.rs`)
+1. **Pustaka Integrasi Auto-Start OS:**
+   - Implementasi modul `src/platform/autostart.rs`:
+     - Membaca dan menulis ke registri Windows `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` dengan *key* `"NexaWindowsBridge"`.
+     - Menyediakan method `is_autostart_enabled() -> bool` dan `set_autostart_enabled(enabled: bool) -> Result<(), String>`.
+     - Mendeteksi jalur biner eksekusi aktif secara dinamis melalui `std::env::current_exe()`.
+2. **Dukungan Mode Hening (*Silent Standby Flag*):**
+   - Mendukung argumen baris perintah `--autostart` / `--minimized`.
+   - Jika aplikasi dijalankan dengan bendera tersebut (misal saat booting laptop), aplikasi langsung standby hening di System Tray tanpa memunculkan jendela utama yang mengganggu Tuan Faqih.
+3. **Integrasi UI Dialog Pengaturan:**
+   - Menghubungkan toggle *"Mulai Otomatis saat Windows Menyala"* di `settings_dialog.slint` ke konfigurasi `BridgeConfig`.
+
+---
+
+#### 7.3 Milestone 7.3: Memory Trimming, Low-RAM Hardening & Process Working Set (`src/platform/memory.rs`)
+1. **Win32 Process Working Set Trimmer:**
+   - Menambahkan modul `src/platform/memory.rs` menggunakan Win32 API `SetProcessWorkingSetSize(GetCurrentProcess(), -1, -1)`.
+   - Menginstruksikan Windows Memory Manager untuk memadatkan halaman memori tak terpakai (*working set paging*).
+2. **Pemicu Trimming Otomatis:**
+   - Dipicu otomatis setiap kali jendela utama disembunyikan/diminimize ke System Tray.
+   - Dipicu otomatis saat sesi *Share Screen* (Direct3D 11) dihentikan untuk langsung mengembalikan alokasi tekstur GPU ke sistem operasi.
+3. **Profiling Memori & Ambang Batas:**
+   - Mode Siaga (Standby di Tray): **~12 – 16 MB RAM**.
+   - Mode Audio Dupleks Aktif (WASAPI + AEC3): **~18 – 22 MB RAM**.
+   - Mode Berbagi Layar & Overlay Aktif: **~25 – 30 MB RAM**.
+
+---
+
+#### 7.4 Milestone 7.4: Single-Instance Mutex & Process Lifecycle Hardening (`src/platform/single_instance.rs`)
+1. **Win32 Named Mutex Guard:**
+   - Menambahkan modul `src/platform/single_instance.rs`.
+   - Membuat kernel mutex `Global\NexaWindowsBridge_SingleInstance_Mutex` via `CreateMutexW`.
+   - Jika proses mendeteksi `ERROR_ALREADY_EXISTS`:
+     - Mencari jendela instance yang sedang berjalan via `FindWindowW`.
+     - Mengangkat jendela ke latar depan via `ShowWindow(hwnd, SW_RESTORE)` dan `SetForegroundWindow(hwnd)`.
+     - Menghentikan instansi baru secara hening (*clean exit code 0*).
+2. **RAII Mutex Guard:**
+   - Menjaga handle mutex tetap terbuka selama proses aktif dan otomatis menutup handle saat aplikasi ditutup normal.
+3. **Session Shutdown Hook:**
+   - Memastikan koneksi WebSocket ditutup rapi (*graceful TCP FIN*) saat Windows shutdown/reboot.
+
+---
+
+#### 7.5 Milestone 7.5: Verifikasi Menyeluruh, Zero-Warning Clippy, & Standalone Release Sign-off
+1. **Pengujian Regresi Menyeluruh:**
+   - Menjalankan seluruh test suite otomatis (`cargo test`) memastikan 100% lulus.
+2. **Audit Kualitas Kode Kompiler:**
+   - Menjalankan `cargo clippy --all-targets --all-features` dengan hasil 0 error, 0 warning.
+3. **Kompilasi Akhir Standalone Executable:**
+   - Menghasilkan biner akhir `target/release/nexa-windows-bridge.exe`.
+4. **Dokumentasi & Commit Remote:**
+   - Sinkronisasi perubahan dan update status Fase 7 ke remote GitHub.
 
 ---
 
