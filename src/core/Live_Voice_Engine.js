@@ -311,7 +311,7 @@ class LiveVoiceSession {
       this.googleWs.on('close', (code, reason) => {
         const rStr = reason ? reason.toString() : '';
         console.log(`[LIVE-VOICE] Google WebSocket Closed: Code ${code} — "${rStr}"`);
-        if (this.isActive && (code === 1008 || code === 1011 || code === 1006)) {
+        if (this.isActive && !this.isEndingCall) {
           this._handleFailover(code, rStr);
         }
       });
@@ -562,7 +562,7 @@ class LiveVoiceSession {
         outputAudioTranscription: {},
         realtimeInputConfig: {
           automaticActivityDetection: {
-            startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+            startOfSpeechSensitivity: 'START_SENSITIVITY_BALANCED',
             endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
             prefixPaddingMs: 300,
             silenceDurationMs: 700
@@ -593,6 +593,12 @@ class LiveVoiceSession {
 
       // BUG 4 FIX: Update activity timestamp on every message from Google
       this.lastActivityTime = Date.now();
+
+      if (msg.goAway) {
+        console.warn(`[LIVE-VOICE] Google Live API sent goAway signal — triggering smooth session failover`);
+        this._handleFailover(1000, 'Google goAway');
+        return;
+      }
 
       const hasToolCall = Boolean(msg.toolCall && Array.isArray(msg.toolCall.functionCalls) && msg.toolCall.functionCalls.length > 0);
       if (hasToolCall) {
@@ -963,6 +969,9 @@ class LiveVoiceSession {
     try {
       if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN) {
         this.googleWs.send(JSON.stringify(realtimeMsg));
+      } else if (this.isActive && !this.isEndingCall && !this.isReconnecting) {
+        console.warn('[LIVE-VOICE] Client audio streaming but Google WebSocket is not OPEN — triggering failover.');
+        this._handleFailover(1006, 'Google WebSocket closed during audio stream');
       }
     } catch (err) {
       console.error('[LIVE-VOICE] Failed to forward audio to Google:', err.message);
