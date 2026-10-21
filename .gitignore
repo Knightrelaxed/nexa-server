@@ -48,3 +48,7 @@ docs/*identity_dump*.json
 # Antigravity agent skills
 .agents/
 skills-lock.json
+
+# Nested Windows Bridge repository (managed independently)
+nexa-windows-bridge/
+

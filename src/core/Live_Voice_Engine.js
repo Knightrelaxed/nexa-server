@@ -45,8 +45,9 @@ const GOOGLE_KEYS = [
 // Dual-Tier Live Models
 // ────────────────────────────────────────────────────────────────────────────
 const LIVE_MODELS = {
-  TIER_1_SPEED:    'models/gemini-3.8-live',              // Flagship Gemini 3.8 Live (high reasoning, sub-second speech)
-  TIER_2_MARATHON: 'models/gemini-3.1-flash-live-preview' // Rock-solid speed failover tier
+  TIER_1_SPEED:    'models/gemini-3.8-live',                   // Flagship Gemini 3.8 Live (sub-second speech)
+  TIER_DEEP_THINK: 'models/gemini-3.8-live-extended-thinking',  // Deep Reasoning & Heavy Cognitive Analysis
+  TIER_2_MARATHON: 'models/gemini-3.1-flash-live-preview'      // Rock-solid speed failover tier
 };
 
 // Configurable barge-in RMS threshold (optimized for normal speech vs ambient noise)
@@ -1630,11 +1631,17 @@ function handleClientDisconnect(clientWs, gracePeriodMs = 15000) {
 function rebindClientWs(newClientWs) {
   for (const session of activeSessions.values()) {
     if (session.isActive) {
+      // Guard: Do not rebind session across different device types (e.g. mobile session hijacked by desktop)
+      if (session.clientWs && session.clientWs.deviceType && newClientWs.deviceType) {
+        if (session.clientWs.deviceType !== newClientWs.deviceType) {
+          continue;
+        }
+      }
       const sid = session.sessionId;
       if (disconnectTimers.has(sid)) {
         clearTimeout(disconnectTimers.get(sid));
         disconnectTimers.delete(sid);
-        console.log(`[LIVE-VOICE] Client reconnected during grace period. Re-bound session [${sid}] to new socket.`);
+        console.log(`[LIVE-VOICE] Client reconnected during grace period. Re-bound session [${sid}] to new ${newClientWs.deviceType || 'client'} socket.`);
       }
       session.clientWs = newClientWs;
     }

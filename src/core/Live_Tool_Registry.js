@@ -14,6 +14,7 @@ const supabaseFinance      = require('../infrastructure/Supabase_Finance');
 const supabaseMemories     = require('../infrastructure/Supabase_Memories');
 const mobileBridgeWs       = require('../interfaces/mobile_bridge/MobileBridge_WS');
 const bridge               = require('../interfaces/mobile_bridge/adapter');
+const windowsBridge        = require('../interfaces/bridge/windows_bridge/client');
 const agendaManager        = require('../domain/Agenda_Manager');
 const taskManager          = require('../domain/Task_Manager');
 const webSearch            = require('../infrastructure/Web_Search');
@@ -486,6 +487,121 @@ const LIVE_TOOL_DECLARATIONS = [
       properties: {
         keyword: { type: 'STRING', description: 'Kata kunci spesifik untuk difilter dari log (opsional).' }
       }
+    }
+  },
+
+  // ── 23. DESKTOP AUTOMATION: CLICK SCREEN ──────────────────────
+  {
+    name: 'desktopClick',
+    description: 'Mengeklik elemen atau titik tertentu di layar laptop/PC desktop Tuan Faqih secara presisi. Panggil saat Tuan secara eksplisit meminta mengeklik tombol, link, atau area di layar.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        x:            { type: 'NUMBER', description: 'Koordinat horizontal x ternormalisasi (0 - 1000). Contoh: 500 untuk tengah layar.' },
+        y:            { type: 'NUMBER', description: 'Koordinat vertikal y ternormalisasi (0 - 1000). Contoh: 500 untuk tengah layar.' },
+        button:       { type: 'STRING', description: 'Tombol mouse: "LEFT" (default), "RIGHT" (klik kanan/menu konteks), atau "MIDDLE".' },
+        double_click: { type: 'BOOLEAN', description: 'True jika ingin melakukan klik ganda (double click).' }
+      },
+      required: ['x', 'y']
+    }
+  },
+
+  // ── 24. DESKTOP AUTOMATION: SCROLL SCREEN ─────────────────────
+  {
+    name: 'desktopScroll',
+    description: 'Menggulir halaman dokumen, web, atau jendela aktif di laptop Tuan ke atas atau ke bawah.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        direction: { type: 'STRING', description: 'Arah gulir: "DOWN" (gulir ke bawah) atau "UP" (gulir ke atas).' },
+        amount:    { type: 'NUMBER', description: 'Jumlah ketukan putaran roda mouse (default: 3).' }
+      },
+      required: ['direction']
+    }
+  },
+
+  // ── 25. DESKTOP AUTOMATION: TYPE TEXT ─────────────────────────
+  {
+    name: 'desktopTypeText',
+    description: 'Mengetikkan teks secara otomatis ke kotak input atau dokumen yang sedang aktif di PC laptop Tuan.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        text:        { type: 'STRING', description: 'Teks yang akan diketikkan.' },
+        press_enter: { type: 'BOOLEAN', description: 'True jika ingin langsung menekan tombol Enter setelah teks diketik.' }
+      },
+      required: ['text']
+    }
+  },
+
+  // ── 26. DESKTOP AUTOMATION: PRESS KEY ─────────────────────────
+  {
+    name: 'desktopPressKey',
+    description: 'Menekan tombol khusus pada keyboard di PC laptop Tuan (seperti Enter, Space, Escape, Tab, Backspace).',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        key: { type: 'STRING', description: 'Nama tombol khusus: "ENTER", "SPACE", "ESCAPE", "TAB", "BACKSPACE", "UP", "DOWN", "LEFT", "RIGHT".' }
+      },
+      required: ['key']
+    }
+  },
+
+  // ── 27. DESKTOP GUIDANCE: HIGHLIGHT ELEMENT ───────────────────
+  {
+    name: 'highlightElement',
+    description: 'Menyorot atau membingkai elemen tertentu di layar laptop Tuan dengan kotak pembatas (bounding box), cincin, atau spotlight tanpa mengekliknya. Sangat cocok saat Tuan meminta ditunjukkan posisi tombol, paragraf, atau menu tertentu.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        ymin:        { type: 'NUMBER', description: 'Batas atas kotak ternormalisasi (0 - 1000).' },
+        xmin:        { type: 'NUMBER', description: 'Batas kiri kotak ternormalisasi (0 - 1000).' },
+        ymax:        { type: 'NUMBER', description: 'Batas bawah kotak ternormalisasi (0 - 1000).' },
+        xmax:        { type: 'NUMBER', description: 'Batas kanan kotak ternormalisasi (0 - 1000).' },
+        style:       { type: 'STRING', description: 'Gaya sorotan: "BOX" (default, membingkai kotak), "RING" (lingkaran), atau "SPOTLIGHT" (lampu sorot fokus).' },
+        label:       { type: 'STRING', description: 'Teks mini melayang di atas kotak (opsional). Contoh: "Tombol Submit".' },
+        duration_ms: { type: 'NUMBER', description: 'Durasi sorotan tampil dalam milidetik (default: 4000).' }
+      },
+      required: ['ymin', 'xmin', 'ymax', 'xmax']
+    }
+  },
+
+  // ── 28. DESKTOP GUIDANCE: POINT CURSOR ────────────────────────
+  {
+    name: 'pointCursor',
+    description: 'Mengarahkan titik laser pointer atau telunjuk kursor visual ke koordinat tertentu di layar laptop Tuan untuk menuntun pandangan.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        x:           { type: 'NUMBER', description: 'Koordinat horizontal x ternormalisasi (0 - 1000).' },
+        y:           { type: 'NUMBER', description: 'Koordinat vertikal y ternormalisasi (0 - 1000).' },
+        duration_ms: { type: 'NUMBER', description: 'Durasi pointer tampil dalam milidetik (default: 3000).' }
+      },
+      required: ['x', 'y']
+    }
+  },
+
+  // ── 29. DESKTOP GUIDANCE: CLEAR HIGHLIGHTS ────────────────────
+  {
+    name: 'clearHighlights',
+    description: 'Menghapus dan membersihkan seluruh sorotan penunjuk visual yang sedang aktif di layar laptop Tuan.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {}
+    }
+  },
+
+  // ── 30. COGNITIVE: ESCALATE TO DEEP THINKING ──────────────────
+  {
+    name: 'escalateToDeepThinking',
+    description: 'Mengaktifkan mode penalaran mendalam (Extended Thinking) untuk pertanyaan atau telaah dokumen kompleks (seperti gramatikal Arab rumit, audit finansial/kontrak detail, atau dialektika esai beasiswa) yang membutuhkan analisis bertingkat.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        reason:  { type: 'STRING', description: 'Alasan eskalasi ke mode penalaran mendalam.' },
+        context: { type: 'STRING', description: 'Rangkuman konteks masalah yang memerlukan pemikiran mendalam.' }
+      },
+      required: ['reason']
     }
   }
 ];
@@ -1515,6 +1631,152 @@ async function executeLiveTool(toolName, args = {}) {
         return {
           status: 'SUCCESS',
           message: 'Panggilan telepon siap diakhiri. Sampaikan salam perpisahan yang ramah dan hangat kepada Tuan Faqih sekarang (contoh: "Baik Tuan Faqih, panggilan saya akhiri. Sampai jumpa!").'
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 23. DESKTOP AUTOMATION: CLICK SCREEN
+      // ─────────────────────────────────────────────────────────────
+      case 'desktopClick': {
+        const x = Number(args.x);
+        const y = Number(args.y);
+        if (isNaN(x) || isNaN(y) || x < 0 || x > 1000 || y < 0 || y > 1000) {
+          return { status: 'ERROR', message: 'Koordinat x dan y harus berada di rentang 0-1000.' };
+        }
+        const res = await windowsBridge.sendCommand('DESKTOP_CLICK', {
+          x,
+          y,
+          button: args.button || 'LEFT',
+          double_click: args.double_click === true
+        }, { timeoutMs: 5000 });
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'desktopClick',
+          result: res.message || (res.success ? `Titik (${x}, ${y}) berhasil diklik di layar desktop.` : 'Gagal mengeklik layar desktop.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 24. DESKTOP AUTOMATION: SCROLL SCREEN
+      // ─────────────────────────────────────────────────────────────
+      case 'desktopScroll': {
+        const direction = String(args.direction || 'DOWN').toUpperCase();
+        const amount = Number(args.amount) || 3;
+        const res = await windowsBridge.sendCommand('DESKTOP_SCROLL', {
+          direction,
+          amount
+        }, { timeoutMs: 5000 });
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'desktopScroll',
+          result: res.message || (res.success ? `Layar desktop berhasil digulir ke ${direction}.` : 'Gagal menggulir layar desktop.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 25. DESKTOP AUTOMATION: TYPE TEXT
+      // ─────────────────────────────────────────────────────────────
+      case 'desktopTypeText': {
+        const text = String(args.text || '');
+        if (!text) return { status: 'ERROR', message: 'Teks yang akan diketik tidak boleh kosong.' };
+        const res = await windowsBridge.sendCommand('DESKTOP_TYPE_TEXT', {
+          text,
+          press_enter: args.press_enter === true
+        }, { timeoutMs: 5000 });
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'desktopTypeText',
+          result: res.message || (res.success ? 'Teks berhasil diketik di desktop.' : 'Gagal mengetik teks di desktop.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 26. DESKTOP AUTOMATION: PRESS KEY
+      // ─────────────────────────────────────────────────────────────
+      case 'desktopPressKey': {
+        const key = String(args.key || '').toUpperCase();
+        if (!key) return { status: 'ERROR', message: 'Nama tombol tidak boleh kosong.' };
+        const res = await windowsBridge.sendCommand('DESKTOP_PRESS_KEY', {
+          key
+        }, { timeoutMs: 5000 });
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'desktopPressKey',
+          result: res.message || (res.success ? `Tombol ${key} berhasil ditekan di desktop.` : 'Gagal menekan tombol di desktop.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 27. DESKTOP GUIDANCE: HIGHLIGHT ELEMENT
+      // ─────────────────────────────────────────────────────────────
+      case 'highlightElement': {
+        const ymin = Number(args.ymin);
+        const xmin = Number(args.xmin);
+        const ymax = Number(args.ymax);
+        const xmax = Number(args.xmax);
+        if ([ymin, xmin, ymax, xmax].some(v => isNaN(v) || v < 0 || v > 1000)) {
+          return { status: 'ERROR', message: 'Koordinat bounding box (ymin, xmin, ymax, xmax) harus berupa angka 0-1000.' };
+        }
+        const res = await windowsBridge.sendCommand('HIGHLIGHT_ELEMENT', {
+          ymin,
+          xmin,
+          ymax,
+          xmax,
+          style: args.style || 'BOX',
+          label: args.label || '',
+          duration_ms: Number(args.duration_ms) || 4000
+        }, { timeoutMs: 5000 });
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'highlightElement',
+          result: res.message || (res.success ? 'Elemen berhasil disorot di layar desktop.' : 'Gagal menyorot elemen di desktop.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 28. DESKTOP GUIDANCE: POINT CURSOR
+      // ─────────────────────────────────────────────────────────────
+      case 'pointCursor': {
+        const x = Number(args.x);
+        const y = Number(args.y);
+        if (isNaN(x) || isNaN(y) || x < 0 || x > 1000 || y < 0 || y > 1000) {
+          return { status: 'ERROR', message: 'Koordinat x dan y harus berada di rentang 0-1000.' };
+        }
+        const res = await windowsBridge.sendCommand('POINT_CURSOR', {
+          x,
+          y,
+          duration_ms: Number(args.duration_ms) || 3000
+        }, { timeoutMs: 5000 });
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'pointCursor',
+          result: res.message || (res.success ? `Kursor penunjuk diarahkan ke (${x}, ${y}) di layar.` : 'Gagal mengarahkan kursor penunjuk.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 29. DESKTOP GUIDANCE: CLEAR HIGHLIGHTS
+      // ─────────────────────────────────────────────────────────────
+      case 'clearHighlights': {
+        const res = await windowsBridge.sendCommand('CLEAR_HIGHLIGHTS', {}, { timeoutMs: 5000 });
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'clearHighlights',
+          result: res.message || (res.success ? 'Semua sorotan layar berhasil dibersihkan.' : 'Gagal membersihkan sorotan layar.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 30. COGNITIVE: ESCALATE TO DEEP THINKING
+      // ─────────────────────────────────────────────────────────────
+      case 'escalateToDeepThinking': {
+        console.log(`[LIVE-TOOL] 🔬 Escalate to Deep Thinking requested: ${args.reason}`);
+        return {
+          status: 'SUCCESS',
+          action: 'escalateToDeepThinking',
+          mode: 'DEEP_THINKING_ACTIVE',
+          model: 'models/gemini-3.8-live-extended-thinking',
+          message: 'Mode penalaran mendalam (Extended Thinking) aktif. Lakukan analisis bertingkat langkah demi langkah sebelum menyimpulkan jawaban.'
         };
       }
 

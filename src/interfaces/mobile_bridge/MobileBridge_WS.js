@@ -1,443 +1,57 @@
 // ============================================================
-// N.E.X.A 3.3 — MOBILE BRIDGE WEBSOCKET SERVER
-// Clean, Production-Grade Realtime Device Gateway for Nexa Bridge Android App.
-// Protocol: Nexa Protocol v3.3 (Strict Zero-Dirty Code Standard)
+// N.E.X.A 3.3 — MOBILE BRIDGE WEBSOCKET (BACKWARD-COMPATIBILITY SHIM)
+// Delegates all calls to the modularized Unified Bridge Gateway:
+//   src/interfaces/bridge/gateway.js
+//   src/interfaces/bridge/mobile_bridge/client.js
+//   src/interfaces/bridge/windows_bridge/client.js
 // ============================================================
 'use strict';
 
-const WebSocket = require('ws');
-const crypto = require('crypto');
-const env = require('../../config/env');
+const bridge = require('../bridge');
+const mobileClient = bridge.mobile.client;
+const windowsClient = bridge.windows.client;
+const gateway = bridge.gateway;
 
-let wss = null;
-let activeClient = null; // Single-device connection (Samsung Galaxy A33 5G)
-let latestTelemetry = null;
-let heartbeatInterval = null;
-
-// Map tracking active async command promises: commandId -> { resolve, timer }
-const pendingCommands = new Map();
-let telemetryListener = null;
-
-/**
- * Initialize WebSocket Server, mounted directly on Express http.Server instance.
- * @param {import('http').Server} server 
- */
-function initWebSocket(server) {
-  const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || '').trim();
-
-  wss = new WebSocket.Server({
-    server,
-    path: '/ws',
-    maxPayload: 1024 * 1024, // 1MB payload ceiling (Security Harden)
-    verifyClient: (info, cb) => {
-      // Handshake Authentication at HTTP Upgrade stage
-      const authHeader = info.req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ') || !configuredSecret) {
-        console.warn('[NEXA-BRIDGE-WS] ⚠️ Unauthorized handshake attempt rejected at HTTP upgrade.');
-        return cb(false, 401, 'Unauthorized');
-      }
-
-      const token = authHeader.slice('Bearer '.length).trim();
-      const aBuf = Buffer.from(token, 'utf8');
-      const bBuf = Buffer.from(configuredSecret, 'utf8');
-      if (aBuf.length !== bBuf.length || !crypto.timingSafeEqual(aBuf, bBuf)) {
-        console.warn('[NEXA-BRIDGE-WS] ⚠️ Forbidden handshake attempt (token mismatch).');
-        return cb(false, 403, 'Forbidden');
-      }
-
-      cb(true);
-    }
-  });
-
-  // Active Keepalive Watchdog (Runs every 25 seconds to prevent NAT / Proxy timeout)
-  if (!heartbeatInterval) {
-    heartbeatInterval = setInterval(() => {
-      if (!wss) return;
-      wss.clients.forEach((ws) => {
-        if (ws.isAlive === false) {
-          console.warn('[NEXA-BRIDGE-WS] ⚠️ Dead socket detected by watchdog (No Pong). Terminating...');
-          return ws.terminate();
-        }
-        ws.isAlive = false;
-        try {
-          ws.ping();
-        } catch (_) {}
-      });
-    }, 25000);
-  }
-
-  wss.on('connection', (ws) => {
-    ws.isAlive = true;
-    ws.on('pong', () => {
-      ws.isAlive = true;
-    });
-
-    console.log('[NEXA-BRIDGE-WS] 📱 Nexa Bridge Android connected successfully (authenticated via verifyClient).');
-
-    // 2. Single-Device Connection Binding (Instantly terminate old socket if reconnected)
-    if (activeClient && activeClient !== ws) {
-      console.log('[NEXA-BRIDGE-WS] Replacing existing client connection (instant termination).');
-      try { activeClient.terminate(); } catch (_) {}
-    }
-    activeClient = ws;
-
-    // Immediately rebind active Live Voice Session to the new socket connection
-    try {
-      const liveVoice = require('../../core/Live_Voice_Engine');
-      liveVoice.rebindClientWs(ws);
-    } catch (_) {}
-
-    // 3. Message Listener (Nexa Protocol 3.3)
-    ws.on('message', (rawMessage) => {
-      try {
-        const payload = JSON.parse(rawMessage);
-
-        // A. Heartbeat Ping / Pong
-        if (payload.type === 'PING' || payload.type === 'ping') {
-          ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
-          return;
-        }
-
-        // B. Telemetry Event Stream
-        const pType = String(payload.type || '').toUpperCase();
-        if (pType === 'TELEMETRY' || pType === 'TELEMETRY_REPORT') {
-          latestTelemetry = {
-            ...payload,
-            received_at: new Date().toISOString()
-          };
-          if (typeof telemetryListener === 'function') {
-            telemetryListener(latestTelemetry);
-          }
-          return;
-        }
-
-        // C. Tool Call Result
-        if (payload.type === 'tool_result' || payload.type === 'COMMAND_RESULT') {
-          const cmdId = payload.id || payload.command_id;
-          const statusIcon = (payload.success || payload.status === 'SUCCESS') ? '✅' : '❌';
-          console.log(`[NEXA-BRIDGE-WS] ${statusIcon} Tool Result [${cmdId}]: ${payload.message || 'Done'}`);
-
-          if (cmdId && pendingCommands.has(cmdId)) {
-            const { resolve, timer } = pendingCommands.get(cmdId);
-            clearTimeout(timer);
-            pendingCommands.delete(cmdId);
-            resolve({
-              success: payload.success ?? payload.status === 'SUCCESS',
-              message: payload.message || '',
-              data: payload.data || payload.result || {}
-            });
-          }
-          return;
-        }
-
-        // D. High-Level Context Update (Sensor / Geofence / Routine Engine)
-        if (payload.type === 'CONTEXT_UPDATE') {
-          try {
-            const adapter = require('./adapter');
-            adapter.handleIncomingContextUpdate(payload);
-          } catch (e) {
-            console.error('[NEXA-BRIDGE-WS] Context routing error:', e.message);
-          }
-          return;
-        }
-
-        // E. Call Interaction Event (FakeCallActivity v2.0 & Live Voice API)
-        if (payload.type === 'CALL_EVENT') {
-          try {
-            const adapter = require('./adapter');
-            adapter.handleIncomingCallEvent(payload, ws);
-          } catch (e) {
-            console.error('[NEXA-BRIDGE-WS] Call event routing error:', e.message);
-          }
-          return;
-        }
-
-        // E.1. Continuous Live Audio Stream (Gemini Multimodal Live API Relay)
-        if (payload.type === 'CALL_AUDIO_STREAM' || payload.type === 'AUDIO_STREAM') {
-          try {
-            const liveVoice = require('../../core/Live_Voice_Engine');
-            const sid = payload.command_id || payload.sessionId;
-            let activeSession = null;
-            if (sid) {
-              activeSession = liveVoice.getLiveSession(sid);
-              if (activeSession && activeSession.clientWs !== ws && activeSession.isActive) {
-                liveVoice.rebindClientWs(ws);
-              }
-            }
-            if (!activeSession) {
-              activeSession = liveVoice.getActiveSessionForClient(ws);
-            }
-            if (activeSession && activeSession.isActive) {
-              const pcmData = payload.pcm_chunk || payload.pcm || payload.data;
-              if (pcmData) {
-                activeSession.handleIncomingClientAudio(pcmData);
-              }
-            } else {
-              if (!ws._lastNoSessionWarn || Date.now() - ws._lastNoSessionWarn > 5000) {
-                ws._lastNoSessionWarn = Date.now();
-                console.warn('[NEXA-BRIDGE-WS] Audio stream received but no active LiveVoiceSession found for client');
-              }
-            }
-          } catch (e) {
-            console.error('[NEXA-BRIDGE-WS] Audio stream relay error:', e.message);
-          }
-          return;
-        }
-
-        // E.2. Continuous Live Video Frame Stream (Camera -> Google Gemini Multimodal)
-        if (payload.type === 'CALL_VIDEO_FRAME' || payload.type === 'VIDEO_STREAM') {
-          try {
-            const liveVoice = require('../../core/Live_Voice_Engine');
-            const sid = payload.command_id || payload.sessionId;
-            let activeSession = null;
-            if (sid) {
-              activeSession = liveVoice.getLiveSession(sid);
-              if (activeSession && activeSession.clientWs !== ws && activeSession.isActive) {
-                liveVoice.rebindClientWs(ws);
-              }
-            }
-            if (!activeSession) {
-              activeSession = liveVoice.getActiveSessionForClient(ws);
-            }
-            if (activeSession && activeSession.isActive) {
-              const imageChunk = payload.image_chunk || payload.data;
-              if (imageChunk) {
-                activeSession.handleIncomingClientVideoFrame(imageChunk);
-              }
-            }
-          } catch (e) {
-            console.error('[NEXA-BRIDGE-WS] Video frame relay error:', e.message);
-          }
-          return;
-        }
-
-        // E.3. Tactile Touch / Eye Tap Event (Somatosensory feedback relay)
-        if (payload.type === 'CALL_TACTILE_EVENT') {
-          try {
-            const liveVoice = require('../../core/Live_Voice_Engine');
-            const sid = payload.command_id || payload.sessionId;
-            let activeSession = sid ? liveVoice.getLiveSession(sid) : null;
-            if (!activeSession) {
-              activeSession = liveVoice.getActiveSessionForClient(ws);
-            }
-            if (activeSession && activeSession.isActive) {
-              activeSession.handleIncomingTactileEvent(payload);
-            }
-          } catch (e) {
-            console.error('[NEXA-BRIDGE-WS] Tactile event routing error:', e.message);
-          }
-          return;
-        }
-
-
-        // F. App Usage Telemetry & Duration Limiting Engine
-        if (payload.type === 'APP_USAGE_TELEMETRY' || payload.type === 'app_usage') {
-          if (latestTelemetry) {
-            latestTelemetry.updated_at = new Date().toISOString();
-          }
-          try {
-            const appDiscipline = require('../../domain/App_Discipline_Engine');
-            appDiscipline.evaluateAppUsage(payload).catch((err) => {
-              console.warn('[NEXA-BRIDGE-WS] App discipline evaluation error:', err.message);
-            });
-          } catch (e) {
-            console.error('[NEXA-BRIDGE-WS] App usage routing error:', e.message);
-          }
-          return;
-        }
-
-        // G. Device Events from Nexa Bridge Android App (Alarm, Screen, Battery, Headset)
-        // Sent directly by the native Nexa Bridge APK running on Tuan Faqih's Android phone.
-        if (pType === 'ALARM_DISMISSED' || pType === 'ALARM_FIRED') {
-          try {
-            const adapter = require('./adapter');
-            adapter.handleIncomingContextUpdate({ event: pType, ...payload });
-          } catch (e) {
-            console.error('[NEXA-BRIDGE-WS] Alarm context routing error:', e.message);
-          }
-          return;
-        }
-
-        if (pType === 'SCREEN_ON' || pType === 'SCREEN_OFF') {
-          const isOn = (pType === 'SCREEN_ON');
-          if (latestTelemetry) {
-            latestTelemetry.screen_on = isOn;
-            latestTelemetry.is_screen_on = isOn;
-            latestTelemetry.screen_state = isOn ? 'ON' : 'OFF';
-            latestTelemetry.updated_at = new Date().toISOString();
-          }
-          try {
-            const presenceModel = require('../../domain/Presence_Model');
-            presenceModel.isScreenOn = isOn;
-            const adapter = require('./adapter');
-            adapter.handleIncomingContextUpdate({ event: pType, screen_on: isOn, ...payload });
-          } catch (e) {
-            console.error('[NEXA-BRIDGE-WS] Screen event routing error:', e.message);
-          }
-          return;
-        }
-
-        const SILENT_ACK_TYPES = new Set([
-          'NOTIFICATION_RECEIVED', 'NOTIFICATION_EVENT',
-          'BATTERY_LOW', 'BATTERY_OK', 'CHARGING', 'UNPLUGGED',
-          'HEADSET_PLUGGED', 'HEADSET_UNPLUGGED'
-        ]);
-        if (SILENT_ACK_TYPES.has(pType)) {
-          // Silently update telemetry state if available, no log spam
-          if (latestTelemetry) {
-            latestTelemetry[`last_${pType.toLowerCase()}`] = new Date().toISOString();
-          }
-          return;
-        }
-
-        console.log('[NEXA-BRIDGE-WS] Unhandled payload type:', payload.type);
-
-      } catch (err) {
-        console.error('[NEXA-BRIDGE-WS] Failed to parse incoming JSON:', err.message);
-      }
-    });
-
-    // 4. Socket Disconnect & Safety Cleanup
-    ws.on('close', (code, reason) => {
-      console.log(`[NEXA-BRIDGE-WS] Client disconnected: ${code} - ${reason}`);
-      const wasCurrent = (activeClient === ws);
-      if (wasCurrent) {
-        activeClient = null;
-
-        // Allow 15-second grace period for Live Voice Session so momentary network drops (code 1006)
-        // do not destroy active calls
-        try {
-          const liveVoice = require('../../core/Live_Voice_Engine');
-          liveVoice.handleClientDisconnect(ws, 15000);
-        } catch (_) {}
-
-        // Purge all pending command promises so event loop never deadlocks
-        if (pendingCommands.size > 0) {
-          console.warn(`[NEXA-BRIDGE-WS] ⚠️ Clearing ${pendingCommands.size} pending command(s) on disconnect.`);
-          for (const [cmdId, { resolve, timer }] of pendingCommands.entries()) {
-            clearTimeout(timer);
-            resolve({ success: false, status: 'DISCONNECTED', message: 'Nexa Bridge disconnected' });
-          }
-          pendingCommands.clear();
-        }
-      } else {
-        console.log('[NEXA-BRIDGE-WS] Superseded socket closed cleanly without disrupting active connection.');
-      }
-    });
-
-    ws.on('error', (err) => {
-      console.error('[NEXA-BRIDGE-WS] Socket error:', err.message);
-    });
-  });
+function isDesktopAction(action) {
+  const act = String(action || '').toUpperCase();
+  return act.startsWith('DESKTOP_') ||
+         act === 'HIGHLIGHT_ELEMENT' ||
+         act === 'POINT_CURSOR' ||
+         act === 'CLEAR_HIGHLIGHTS' ||
+         act === 'CAPTURE_WINDOW' ||
+         act === 'GET_SYSTEM_METRICS';
 }
 
-/**
- * Send a tool call command to the connected Nexa Bridge Android App.
- * Returns a Promise that resolves when Nexa Bridge returns a tool_result or times out.
- * 
- * @param {string} tool - Tool name (e.g. 'flashlight.on', 'volume.set', 'notification.show')
- * @param {object} args - Tool arguments object
- * @param {object} options - Options: { timeoutMs: 5000 }
- * @returns {Promise<{ success: boolean, message: string, data: object }>}
- */
 function sendCommand(action, params = {}, options = {}) {
-  const timeoutMs = options.timeoutMs || 5000;
-
-  return new Promise((resolve) => {
-    if (!activeClient || activeClient.readyState !== WebSocket.OPEN) {
-      console.warn(`[NEXA-BRIDGE-WS] Unable to send action '${action}' — Nexa Bridge OFFLINE.`);
-      return resolve({ success: false, status: 'OFFLINE', message: 'Nexa Bridge is offline' });
-    }
-
-    // CONCURRENCY GUARD: Do not trigger incoming call if a live voice session is already active
-    if (action === 'SIMULATE_INCOMING_CALL' || action === 'incoming_call') {
-      try {
-        const liveVoice = require('../../core/Live_Voice_Engine');
-        const activeSession = liveVoice.getActiveSessionForClient(activeClient);
-        if (activeSession && activeSession.isActive) {
-          console.warn('[NEXA-BRIDGE-WS] ⚠️ Rejecting SIMULATE_INCOMING_CALL: Live Voice session is already active!');
-          return resolve({ success: true, message: 'Call already active, ignored duplicate.' });
-        }
-      } catch (_) {}
-    }
-
-    const timestamp = Date.now();
-    const commandId = `cmd_${timestamp}_${Math.random().toString(36).substring(2, 8)}`;
-
-    // Phonetic Sanitization: Replace N.E.X.A with NEXA so Android TTS speaks "Nexa" naturally (not "en-e-ex-a")
-    if (action === 'SPEAK_TEXT' && params && typeof params.text === 'string') {
-      params = { ...params, text: params.text.replace(/N\.E\.X\.A\.?/gi, 'NEXA') };
-    }
-
-    const payload = {
-      type: 'EXECUTE_COMMAND',
-      command_id: commandId,
-      action: action,
-      params: params,
-      timestamp: timestamp
-    };
-
-    const timer = setTimeout(() => {
-      if (pendingCommands.has(commandId)) {
-        pendingCommands.delete(commandId);
-        resolve({ success: false, status: 'TIMEOUT', message: `Action '${action}' timed out after ${timeoutMs}ms` });
-      }
-    }, timeoutMs);
-
-    pendingCommands.set(commandId, { resolve, timer });
-
-    try {
-      activeClient.send(JSON.stringify(payload));
-      console.log(`[NEXA-BRIDGE-WS] 🚀 Sent EXECUTE_COMMAND '${action}' [${commandId}]`);
-    } catch (err) {
-      clearTimeout(timer);
-      pendingCommands.delete(commandId);
-      console.error(`[NEXA-BRIDGE-WS] Send error:`, err.message);
-      resolve({ success: false, status: 'ERROR', message: err.message });
-    }
-  });
+  const target = options.target || (isDesktopAction(action) ? 'desktop' : 'mobile');
+  if (target === 'desktop') {
+    return windowsClient.sendCommand(action, params, options);
+  }
+  return mobileClient.sendCommand(action, params, options);
 }
 
-/**
- * Register a telemetry update listener callback.
- */
-function setOnTelemetryListener(callback) {
-  telemetryListener = callback;
-}
-
-/**
- * Get the latest telemetry state reported by Nexa Bridge.
- */
-function getLatestTelemetry() {
-  return latestTelemetry;
-}
-
-/**
- * Helper to request a System Overlay Screen or Heads-Up Notification Dialog.
- */
-function requestOverlay(title, message, buttons = [], timeoutMs = 15000) {
-  return sendCommand('notification.show', {
-    title,
-    message,
-    overlay: true,
-    buttons,
-    timeout: timeoutMs
-  }, { timeoutMs });
-}
-
-/**
- * Check if the Android bridge device is actively connected.
- * @returns {boolean}
- */
-function isConnected() {
-  return activeClient !== null && activeClient.readyState === WebSocket.OPEN;
+function isConnected(deviceType = null) {
+  if (deviceType === 'desktop') {
+    return windowsClient.isConnected();
+  }
+  if (deviceType === 'mobile') {
+    return mobileClient.isConnected();
+  }
+  return mobileClient.isConnected() || windowsClient.isConnected();
 }
 
 module.exports = {
-  initWebSocket,
+  initWebSocket: gateway.initWebSocket,
+  closeWebSocket: gateway.closeWebSocket,
   sendCommand,
-  setOnTelemetryListener,
-  getLatestTelemetry,
-  requestOverlay,
-  isConnected
+  setOnTelemetryListener: mobileClient.setOnTelemetryListener,
+  getLatestTelemetry: mobileClient.getLatestTelemetry,
+  requestOverlay: mobileClient.requestOverlay,
+  isConnected,
+  getActiveClient: () => mobileClient.getClient() || windowsClient.getClient() || null,
+  getClient: (deviceType = 'mobile') => deviceType === 'desktop' ? windowsClient.getClient() : mobileClient.getClient(),
+  getActiveClients: () => ({
+    mobile: mobileClient.getClient(),
+    desktop: windowsClient.getClient()
+  })
 };
