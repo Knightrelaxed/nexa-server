@@ -646,22 +646,23 @@ flowchart TD
 
 ---
 
-#### 4.2 Milestone 4.2: Dual-Mode Window System (`ui/main_window.slint`)
+#### 4.2 Milestone 4.2: Dual-Mode Window System (`ui/main_window.slint`) — [SELESAI ✅]
 1. **Arsitektur Struktur Dua Tampilan:**
-   * Menambahkan *property* `in-out property <bool> is_fullscreen: false;`.
+   * Menambahkan *property* `in-out property <bool> is_fullscreen: false;` dan binding deklaratif Slint `full-screen: root.is_fullscreen;`.
    * **Tampilan Mode 1: No-Fullscreen (Jendela Melayang Pendamping ~360×520 px):**
-     * Desain *dark acrylic glassmorphism* (`#0D1117EE` dengan border halus `#30363D`).
-     * Header bar: Judul `"N.E.X.A Bridge"`, badge status koneksi, tombol Pengaturan (`⚙`), tombol Maximize/Fullscreen (`⛶`), dan tombol minimize/close.
-     * Area Pusat: Avatar Mata Siber J.A.R.V.I.S (proporsional 100×100 px), teks status lisan, dan visualizer gelombang suara.
-     * Hardware Pills: Indikator status subsistem (`🎙️ WASAPI Audio`, `🛡️ AEC3 Active`, `👁️ D3D11 Vision`).
-     * Action Bar: Tombol toggle `"Connect / Disconnect"`, tombol `"Mute Mic"`, dan tombol `"👁️ Lihat Layar"`.
+     * Desain *dark acrylic glassmorphism* (`#0D1117` dengan aksen `#58A6FF` dan border halus `#30363D`).
+     * Header bar: Judul `"N.E.X.A Bridge"`, badge status bercahaya (cyan saat terkoneksi), tombol Fullscreen (`⛶`), dan tombol Pengaturan (`⚙`).
+     * Area Pusat: Avatar Mata Siber J.A.R.V.I.S (`eye_size: 72px`), teks status lisan komputasi, dan sub-pesan detail.
+     * Hardware Status Card: Indikator status subsistem aktif (`🎙️ WASAPI Audio` / `Mic Muted`, `🛡️ AEC3 Active`, `👁️ D3D11 Vision`).
+     * Quick Toggles & Action Bar: Tombol Mute Mic (`🎙️ Mute` / `🔇 Unmute`), tombol Vision (`👁️ Berbagi Layar`), dan tombol utama `"Hubungkan ke N.E.X.A"` / `"Putuskan Sambungan"`.
    * **Tampilan Mode 2: Full Screen Mode (Command Center J.A.R.V.I.S 16:9 1080p):**
      * Memenuhi 100% monitor ThinkPad (borderless fullscreen).
-     * Area Pojok Kiri Atas: Panel Telemetri Lengkap (`CPU: 14% | RAM: 32% | WASAPI Audio: Active | AEC3 Active`).
-     * Area Pojok Kanan Atas: Tombol `"Windowed Mode"` (ikon restore) dan hotkey indicator `[F11]`.
-     * Area Pusat: Avatar Mata Siber J.A.R.V.I.S berskala besar (260×260 px) lengkap dengan inti reaktor tengah.
-     * Area Bawah: Spektrum audio frekuensi lebar membentang horizontal melintasi layar.
-     * Subtitle Bar: Teks dialog lisan real-time dalam tipografi berkelas (*"Mendengarkan Tuan Faqih..."*).
+     * Area Pojok Kiri Atas: Panel Telemetri HUD (`💻 CPU`, `🧠 RAM`, `🎙️ WASAPI Audio (16kHz)`, `🛡️ AEC3 Active (-18dB)`, `⚡ Latency`).
+     * Area Pojok Kanan Atas: Tombol `"⤢ Windowed Mode [F11]"` dan tombol `"⚙ Settings"`.
+     * Area Pusat: Avatar Mata Siber J.A.R.V.I.S berskala besar (`eye_size: 130px`, width 380px) di titik tengah layar.
+     * Subtitle Bar: Teks dialog lisan real-time dalam tipografi berkelas besar (26px tebal, bersinar dinamis sesuai status kognitif).
+     * Bottom Action Dock: Baris kontrol mengambang elegan di bagian bawah layar (`Mute Mic`, `Screen Share`, `Putuskan Sambungan`, serta hint hotkey `F11 / Win+Alt+N`).
+   * **Keyboard Event Handler:** `FocusScope` menangani tombol `F11` (toggle fullscreen) dan `Escape` (exit fullscreen) secara instan.
 2. **Penyelarasan Teks Status Lisan (100% Paritas Mobile Bridge):**
    * `LISTENING` $\to$ `"Mendengarkan Tuan Faqih..."`
    * `PROCESSING` / `THINKING` $\to$ `"Sedang menalar & memproses..."`
@@ -671,6 +672,7 @@ flowchart TD
    * `TRANSMITTING_SCREEN` $\to$ `"Mentransmisikan layar & audio (D3D11 1 FPS)..."`
    * `RECONNECTING` $\to$ `"Menghubungkan kembali ke server..."`
    * `DISCONNECTED` $\to$ `"Bridge Terputus (Offline)"`
+* **Checkpoint Validasi:** Seluruh 28 unit test di `nexa-windows-bridge` dan 362 test di `nexa-server` lulus **100% PASS (Green)** tanpa warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`3ec0145`).
 
 ---
 
