@@ -41,6 +41,7 @@ const FINANCE_SPEND_VERB_RE = /\b(beli|belanja|makan\s+(siang|malam|pagi)|jajan)
 const SCHEDULE_STRONG_RE = /\b(jadwal|kalender|deadline|tugas|agenda|meeting|rapat|kelas|matkul|kuis|ujian|reminder|alarm)\b/;
 
 // Rasa, emosi, atau curhat (agar curhat seperti "capek abis kelas" atau "hari ini lelah" tidak tertelan ke SCHEDULING)
+const ACTION_CUE_RE = /\b(cari|cek|baca|buat|bikin|tolong|jadwal|jadwalkan|agenda|alarm|ingatkan|catat|kirim|set|atur|hapus|ubah|deadline|simpan|rencanakan)\b/;
 const FEELINGS_CASUAL_RE = /\b(lelah|capek|ngantuk|pusing|stres|penat|letih|bosan|bosen|jenuh|santai|rebahan|istirahat|tidur|cerita|curhat|senang|bahagia|kecewa|galau|kesal|kesel|kacau|sedih|males|malas|bete|badmood)\b/;
 
 // Kata waktu yang LEMAH (muncul di banyak jenis kalimat)
@@ -81,7 +82,9 @@ function detectTopicContext(text) {
   }
 
   // 7. FEELINGS & CASUAL SHARING (Prioritas sebelum kata benda jadwal, agar "capek abis kelas" atau "pusing tugas" diakui sebagai curhat)
-  if (FEELINGS_CASUAL_RE.test(t)) return 'CASUAL';
+  // Hanya curhat murni: kalau ada penanda perintah/permintaan (cari, jadwal, alarm, ...), kata perasaan di dalamnya
+  // ("jadwal tidur", "cari tips mengatasi pusing") tidak boleh membajak topik.
+  if (FEELINGS_CASUAL_RE.test(t) && !ACTION_CUE_RE.test(t)) return 'CASUAL';
 
   // 8. SCHEDULING (kata benda kuat) — sebelum "cek/baca/cari" generik
   if (SCHEDULE_STRONG_RE.test(t)) return 'SCHEDULING';

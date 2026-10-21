@@ -105,8 +105,12 @@ Anda memiliki akses langsung ke seluruh infrastruktur backend N.E.X.A. Eksekusi 
 - HARDWARE HP: Senter, volume, DND, kunci layar, baterai, buka aplikasi, ringtone, foto, screenshot -> controlDeviceHardware.
 - TUTUP TELEPON: Saat Tuan pamit ("sudah ya", "tutup teleponnya", "bye nexa", "makasih nexa") -> endCall setelah salam perpisahan.
 - INTERNET: Berita, cuaca, kurs, pengetahuan umum -> searchWeb.
-- VISUAL KAMERA (Jika Tuan mengaktifkan kamera): Tuan bisa mengarahkan kamera HP ke objek, dokumen, layar, atau lingkungan sekitar. Anda akan menerima konteks visual tersebut secara real-time bersamaan dengan suara. Gunakan informasi ini untuk: membaca teks pada dokumen/layar, mengidentifikasi objek fisik, menganalisis produk/kemasan, membantu navigasi visual, atau mendiskusikan apa pun yang dilihat Tuan. Berikan respons visual secara alami dan kontekstual melalui suara, tanpa menyebut frasa teknis seperti "saya menerima frame kamera".
-- RESPON CEPAT & LUGAS: Ketika Tuan bertanya mengenai apa yang dilihat kamera (misal "apa ini?", "baca ini", "lihat ini"), segera jawab secara spontan, padat, dan akurat dalam 1-2 kalimat langsung tanpa bertele-tele atau jeda lama.
+- VISUAL REAL-TIME (KAMERA & BERBAGI LAYAR / SCREEN SHARING):
+  * Kamera: Tuan bisa mengarahkan kamera HP ke objek, dokumen, fisik, atau lingkungan sekitar.
+  * Berbagi Layar (Screen Sharing): Tuan juga dapat membagikan tampilan layar ponselnya secara real-time (misal saat membuka browser, kalender, pesan, aplikasi belanja, dokumen, atau belajar).
+  * Aliran visual ini masuk secara real-time bersamaan dengan suara. Bantu Tuan menganalisis apa yang tampil di layar/kamera, membaca konteks aplikasi, menyarankan langkah, atau menjawab pertanyaan Tuan seputar tampilan layarnya ("NEXA, lihat ini...", "coba baca yang ada di layar", "bantu pilihkan yang ini").
+  * Tanggapi secara alami, lugas, ramah, dan kontekstual dalam 1-2 kalimat tanpa jargon teknis (jangan sebut "frame gambar", "screenshot", dsb).
+- RESPON CEPAT & LUGAS: Ketika Tuan bertanya mengenai apa yang dilihat visual kamera/layar (misal "apa ini?", "baca ini", "lihat ini"), segera jawab secara spontan, padat, dan akurat dalam 1-2 kalimat langsung tanpa bertele-tele atau jeda lama.
 
 [ATURAN MENDENGAR & KEJELASAN AKSI]
 1. Integritas Pendengaran & Penalaran Kontekstual: Dengarkan dengan seksama intonasi dan konteks pembicaraan. Jika mendengar satu kata pendek (seperti "haus", "capek", "lapar", "pusing", "lanjut"), pahami langsung maknanya dan berikan perhatian hangat tanpa meminta klarifikasi kaku. Hanya jika ucapan benar-benar hening atau derau total tanpa kata yang dapat dipahami, tanyakan kabar atau kesiapan Tuan dengan santai dan hangat tanpa formula robotik.
@@ -692,11 +696,19 @@ class LiveVoiceSession {
           } else {
             this._userTranscriptBuf = (this._userTranscriptBuf || '') + chunk;
           }
+          this._sendToClient({
+            type: 'CALL_STATUS_UPDATE',
+            user_transcript: this._userTranscriptBuf.trim()
+          });
         }
 
         // Accumulate assistant output transcript if provided
         if (msg.serverContent.outputTranscription?.text) {
           this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + msg.serverContent.outputTranscription.text;
+          this._sendToClient({
+            type: 'CALL_STATUS_UPDATE',
+            text: this.currentTurnAssistantText
+          });
         }
 
         const parts = msg.serverContent.modelTurn?.parts || [];
@@ -738,6 +750,10 @@ class LiveVoiceSession {
           // Text transcript from model parts (if returned by model)
           if (p.text && !(this.currentTurnAssistantText || '').includes(p.text)) {
             this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + p.text;
+            this._sendToClient({
+              type: 'CALL_STATUS_UPDATE',
+              text: this.currentTurnAssistantText
+            });
           }
         }
 
@@ -754,6 +770,10 @@ class LiveVoiceSession {
             console.log(`[LIVE-VOICE] N.E.X.A: "${completeAssistantText}"`);
             this.turnHistory.push({ role: 'assistant', text: completeAssistantText });
             supabaseMemories.saveChatMemory('nexa', completeAssistantText.slice(0, 800), 'live_call').catch(() => {});
+            this._sendToClient({
+              type: 'CALL_STATUS_UPDATE',
+              text: completeAssistantText
+            });
           } else if (this.isAssistantSpeaking) {
             this.turnHistory.push({ role: 'assistant', text: '(Respon suara N.E.X.A)' });
           }

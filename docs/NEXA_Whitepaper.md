@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Executive with Xenial Agent : v3.4 "True Multimodal Duplex, Adaptive Procedural Memory & Closed-Loop Learning")*
+*(Neural Executive with Xenial Agent : v3.4.2 "True Multimodal Duplex, Adaptive Procedural Memory, Dynamic Situational Awareness & Closed-Loop Learning")*
 
 ---
 
@@ -3521,6 +3521,138 @@ Seluruh fakta di atas kini tersimpan permanen di Supabase dan segera memperkaya 
 | **Resiko Halusinasi AI** | Tinggi jika langsung dianalisis fakta | **Nol (Dibatasi 6 Aturan Konservatif Ketat)** |
 | **Deteksi Direktif Identitas** | Hanya membaca turn pengguna mentah | **Membaca turn mentah + transkrip selaras** |
 | **Data Retention Rate** | Rentan hilang total (*Silent Abortion*) | **100% Zero Data Loss** |
+
+---
+
+## BAB 22: ARSITEKTUR v3.4.2 : DYNAMIC SITUATIONAL AWARENESS ENGINE (DSAE), UNIVERSAL DAILY TIMELINE & TEMPORAL MEMORY ISOLATION
+
+### 22.1 Anatomi Masalah: Kerapuhan Nalar Situasional pada Percakapan Normal
+
+Pada pengujian situasional interaktif tanggal 20 Oktober 2026 pukul 15:04–15:06 WIB, Tuan Faqih menguji pemahaman N.E.X.A mengenai konteks situasi nyata hariannya melalui Telegram. Dialog berlangsung dalam 4 giliran:
+
+1. **Tuan:** *"Sekarang aku lagi ngapain"* → **N.E.X.A:** *"baru saja menyelesaikan kelas Bahasa Arab Tulis III sekitar dua puluh menit lalu"* (Benar: kelas selesai 14:40 WIB, waktu saat itu 15:04 WIB).
+2. **Tuan:** *"Hah baru saja? Baru saja menyelesaikan? Woy?"* → **N.E.X.A:** *"Ampun Tuan Faqih... kelasnya selesai jam setengah tiga sore tadi"* (Sycophancy: panik dan mengubah fakta menjadi 14:30).
+3. **Tuan:** *"Kelasnya selesai jam berapa"* → **N.E.X.A:** *"selesai pukul 08.55 pagi tadi, bukan sore"* (Halusinasi fatal: menyerap memori jadwal hari Jumat lama).
+4. **Tuan:** *"Woyyy.. cek jadwal hari ini"* → **N.E.X.A:** Menampilkan dashboard kalender: `[13.00–14.40] Bahasa Arab Tulis III` (Kontradiksi telak).
+
+#### Analisis Empiris Akar Masalah (Root Causes):
+1. **Omission Timestamp pada State GAP (`Situational_Synthesizer.js`):**
+   Pada status jeda antar-jadwal, sistem hanya merangkum string:
+   `"Baru saja selesai 'Bahasa Arab Tulis III' (25 menit lalu)"` tanpa mencantumkan `endHHMM` (`14:40 WIB`). Ketika ditanya jam selesai secara spesifik, LLM kekurangan fakta numerik tersebut.
+2. **Kebutaan Kalender pada Percakapan Normal (`Router_Dispatcher.js`):**
+   Data Google Calendar mentah (`_fetchTodaysRawEvents()`) sebelumnya diproteksi oleh kondisi `_loadCalendarContext` (hanya aktif jika terdeteksi intent kalender eksplisit atau kata kunci tanggal). Pada `NORMAL_CHAT`, kalender tidak dimuat sehingga LLM buta terhadap struktur hari pengguna.
+3. **Pencemaran Memori Masa Lalu (Temporal Date Poisoning):**
+   Pencarian semantik pada `nexa_chat_memories` menarik obrolan lama dari Jumat, 9 Oktober 2026 di mana kelas yang sama diadakan pukul 07.15–08.55 WIB. Karena riwayat obrolan hanya diformat `[09/10 08:55 WIB]` tanpa penanda relasi hari kalender, LLM menganggap jam 08.55 tersebut berlaku untuk hari ini.
+4. **Sycophancy Trap (Mental Rentan Goyah):**
+   Ketika pengguna mengekspresikan keterkejutan atau keraguan, LLM bawaan cenderung meminta ampun dan mengubah fakta benar menjadi keliru.
+
+---
+
+### 22.2 Prinsip Desain: Nalar Alami Grounded Tanpa Logika Kaku
+
+Tuan Faqih menetapkan mandat arsitektur yang tegas:
+* **Menolak Regex Durasi Kaku:** Dilarang membuat pola pencocokan string seperti `durasi`, `berapa menit`, atau template tanggapan HTML statis.
+* **Penyajian World State Absolut:** Jadwal dan posisi temporal hari ini harus selalu dihadirkan di hadapan LLM dalam format ringkas (~40–50 token) sebagai representasi dunia nyata yang tak terbantahkan.
+* **Penalaran Murni LLM:** LLM melakukan sintesis, inferensi durasi, dan penjelasan situasional secara santai, elegan, dan manusiawi berdasarkan fakta yang diberikan.
+
+---
+
+### 22.3 Topologi & Alur Kerja DSAE
+
+```mermaid
+flowchart TD
+    UserInput["Pesan Tuan Faqih (Apapun Topiknya, Termasuk NORMAL_CHAT)"] --> Router["Router Dispatcher (src/core/router/Router_Dispatcher.js)"]
+    
+    subgraph PreflightParallel["Pre-flight Parallel Fetch (0ms Sequential Latency)"]
+        GCal["Google Calendar API (Google_Workspace.getTodaysEvents)"] --> RawEvents["_fetchTodaysRawEvents() (Selalu Aktif)"]
+        MemDB["Supabase nexa_chat_memories"] --> RawMem["getRecentMemories(N)"]
+    end
+    
+    Router --> PreflightParallel
+    
+    subgraph DSAE["Dynamic Situational Awareness Engine (Situational_Synthesizer.js)"]
+        RawEvents --> TimelineEngine["buildDailyTimeline()"]
+        TimelineEngine --> CompactTimeline["[TIMELINE AGENDA TUAN HARI INI]\n• [09:10–10:50 WIB] Sastra Arab — SELESAI\n• [13:00–14:40 WIB] Arab Tulis III — SELESAI (14:40 WIB, ~25m lalu)\n• [18:15–18:30 WIB] Duolingo — MENDATANG (dalam ~3 jam)"]
+        RawEvents --> AgendaPos["evaluateAgendaPosition() (GAP/ONGOING + endHHMM presisi)"]
+        Presence["Presence_Model (Mobilitas Sensor & Decay 20m)"] --> PhysState["evaluatePhysicalState()"]
+        Inertia["Emotional Inertia Tracker (TTL 15m)"] --> EmoState["getActiveEmotionalInertia()"]
+    end
+    
+    subgraph TemporalIsolation["Isolasi Temporal Memori"]
+        RawMem --> DayDiffCalc["Kalkulasi Selisih Hari Kalender WIB"]
+        DayDiffCalc --> LabeledMem["[HARI INI HH:mm] / [KEMARIN] / [MASA LALU — N HARI LALU]"]
+        LabeledMem --> StrictGuard["Aturan: [MASA LALU] adalah arsip, bukan rujukan jadwal hari ini"]
+    end
+    
+    subgraph PersonaConfidence["Grounded Executive Confidence"]
+        PersonaRule["Aturan: Chief of Staff berwibawa, dilarang panik/minta ampun saat diuji"]
+    end
+    
+    CompactTimeline --> PromptAssembly["Perakitan Prompt Master"]
+    AgendaPos --> PromptAssembly
+    PhysState --> PromptAssembly
+    EmoState --> PromptAssembly
+    StrictGuard --> PromptAssembly
+    PersonaRule --> PromptAssembly
+    
+    PromptAssembly --> CognitiveLLM["LLM Router (Gemma / Gemini / Qwen)"]
+    CognitiveLLM --> NaturalResponse["Respons Natural, Santai, Presisi Waktu & Percaya Diri"]
+```
+
+---
+
+### 22.4 Spesifikasi Implementasi Modul
+
+#### 1. Universal Daily Timeline Generator (`Situational_Synthesizer.buildDailyTimeline`)
+Menghasilkan representasi deterministik padat (~40–50 token) dari seluruh agenda kalender hari ini:
+* Memetakan seluruh agenda berwaktu (`timedEvents`) terurut berdasarkan jam mulai.
+* Mengklasifikasikan status secara matematis terhadap `nowMs`:
+  * **Sedang Berlangsung:** `• [start–end WIB] Judul (Lokasi) — SEDANG BERLANGSUNG (tersisa ~X menit)`
+  * **Selesai:** `• [start–end WIB] Judul (Lokasi) — SELESAI pukul end WIB (~Y menit lalu)`
+  * **Mendatang:** `• [start–end WIB] Judul (Lokasi) — MENDATANG pukul start WIB (dalam ~Z menit / jam lagi)`
+  * **Seharian:** `• [SEHARIAN] Judul`
+
+#### 2. Preservasi Timestamp pada Status GAP & ALL_COMPLETED
+Pada `evaluateAgendaPosition()`, field `endHHMM` dimasukkan secara eksplisit ke dalam kalimat deskriptif:
+```javascript
+summaryText = `WAKTU JEDA / TRANSISI. Baru saja selesai '${lastCompletedEvent.summary}' (selesai ${lastCompletedEvent.endHHMM} WIB, ~${lastCompletedEvent.endedAgoMins} menit lalu). Agenda berikutnya '${nextUpcomingEvent.summary}' pukul ${nextUpcomingEvent.startHHMM} WIB (dalam ~${nextUpcomingEvent.startsInMins} menit lagi).`;
+```
+
+#### 3. Injeksi Universal Tanpa Gating di Router
+Pada `Router_Dispatcher.js`:
+* `_fetchTodaysRawEvents()` dieksekusi secara universal pada `Promise.allSettled`.
+* `Situational_Synthesizer.buildSituationalPromptBlock()` diinjeksi ke seluruh giliran percakapan, memastikan kesadaran waktu dan tempat hadir bahkan saat sapaan santai.
+
+#### 4. Isolasi Temporal Riwayat Obrolan
+Helper pemformat waktu menghitung selisih tanggal kalender Jakarta (`Asia/Jakarta`):
+```javascript
+const dayDiff = nowDayNum - msgDayNum;
+if (dayDiff <= 0) return `HARI INI ${HH}:${MIN} WIB`;
+if (dayDiff === 1) return `KEMARIN (${DD}/${MM}) ${HH}:${MIN} WIB`;
+return `MASA LALU — ${dayDiff} HARI LALU (${DD}/${MM}) ${HH}:${MIN} WIB`;
+```
+Disertai direktif pengamanan prompt:
+> *"Rujukan jadwal dan waktu hari ini adalah [TIMELINE AGENDA TUAN HARI INI]. Catatan berlabel [MASA LALU] adalah riwayat obrolan arsip dan dilarang dijadikan rujukan jadwal hari ini."*
+
+#### 5. Protokol Anti-Sycophancy (Grounded Executive Persona)
+Di `Router_Prompts.js` (Rule 17) dan `REFLEX_SYSTEM_PROMPT`:
+> *"Sebagai Chief of Staff berwibawa dan grounded, jika Tuan Faqih meragukan, terkejut, atau menguji ("Hah baru saja?", "Woy?", "Kelasnya selesai jam berapa?"), JANGAN panik, JANGAN minta ampun, dan DILARANG mengubah fakta yang benar. Sampaikan fakta jam mulai dan jam selesai berdasarkan data timeline dengan tenang, santai, dan percaya diri."*
+
+---
+
+### 22.5 Matriks Evaluasi: Sebelum vs Sesudah Arsitektur v3.4.2
+
+| Parameter Metrik | Sebelum Arsitektur v3.4.2 | Setelah Arsitektur v3.4.2 (DSAE Engine) |
+| :--- | :--- | :--- |
+| **Ketersediaan Timeline Hari Ini** | Hanya pada intent kalender eksplisit | **Universal (100% giliran obrolan, termasuk NORMAL_CHAT)** |
+| **Akurasi Timestamp Jam Selesai** | Hilang pada status jeda (`GAP`) | **Presisi eksplisit (`selesai 14:40 WIB, ~25m lalu`)** |
+| **Pembedaan Obrolan Masa Lalu** | Tanggal mentah (`DD/MM`) rentan ambigu | **Isolasi tegas (`[MASA LALU — 11 HARI LALU]`)** |
+| **Stabilitas Karakter saat Diuji** | Sycophancy / Panik minta ampun | **Grounded & Tenang (Berpegang teguh pada data)** |
+| **Beban Prompt & Biaya Komputasi** | Potensi bloat jika teks manual | **Sangat padat (~40–50 token, 0ms latency overhead)** |
+| **Cakupan Pengujian Monorepo** | 335 tests passing | **336 tests passing (100% Pass, 0 Fail)** |
+| **Status Produksi** | v3.4.1 | **v3.4.2 Deployed & Active on Azure VPS** |
+
+---
 
 ---
 
