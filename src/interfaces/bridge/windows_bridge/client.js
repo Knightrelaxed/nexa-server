@@ -212,6 +212,14 @@ function handleMessage(payload, ws) {
  * @param {WebSocket} ws 
  */
 function handleDisconnect(ws) {
+  // Grace-period handling: allow transient disconnects without destroying active live session
+  try {
+    const liveVoice = require('../../../core/Live_Voice_Engine');
+    liveVoice.handleClientDisconnect(ws, 15000);
+  } catch (err) {
+    console.warn('[BRIDGE-WINDOWS] Live voice disconnect handler warning:', err.message);
+  }
+
   if (activeClient === ws) {
     activeClient = null;
     console.log('[BRIDGE-WINDOWS] Active Windows desktop client unregistered.');

@@ -155,3 +155,75 @@ test('Mobile Adapter: methods are exposed and functional', () => {
   assert.equal(typeof adapter.isScreenActive, 'function');
   assert.equal(typeof adapter.getSnapshot, 'function');
 });
+
+test('Bridge Gateway: Real WebSocket text JSON frame routing (Regression Test for buffer/text misclassification)', async () => {
+  const http = require('http');
+  const WebSocket = require('ws');
+  const env = require('../src/config/env');
+
+  const secret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || 'test-secret').trim();
+  env.NEXA_DEVICE_SECRET = secret;
+
+  // Create temporary HTTP server
+  const server = http.createServer();
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+
+  bridge.gateway.initWebSocket(server);
+
+  try {
+    // 1. Verify unauthorized connection rejected
+    const unauthWs = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const unauthRejected = await new Promise(resolve => {
+      unauthWs.on('error', () => resolve(true));
+      unauthWs.on('unexpected-response', (req, res) => {
+        resolve(res.statusCode === 401);
+      });
+      setTimeout(() => resolve(false), 2000);
+    });
+    assert.equal(unauthRejected, true, 'Unauthenticated connection must be rejected with 401');
+
+    // 2. Connect authorized client
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?device=android`, {
+      headers: {
+        Authorization: `Bearer ${secret}`
+      }
+    });
+
+    await new Promise((resolve, reject) => {
+      ws.on('open', resolve);
+      ws.on('error', reject);
+    });
+
+    assert.equal(bridge.mobile.client.isConnected(), true, 'Mobile client should be connected');
+
+    // 3. Send text JSON frame: PING -> Expect PONG (Must NOT be swallowed as binary audio!)
+    const pongPromise = new Promise(resolve => {
+      ws.on('message', (data, isBinary) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === 'PONG') {
+            resolve(msg);
+          }
+        } catch (_) {}
+      });
+    });
+
+    ws.send(JSON.stringify({ type: 'PING' }));
+
+    const pong = await Promise.race([
+      pongPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('PING timed out - text frame swallowed as audio!')), 3000))
+    ]);
+
+    assert.ok(pong, 'Should receive PONG response');
+    assert.equal(pong.type, 'PONG');
+
+    // Clean up client
+    ws.close();
+    await new Promise(r => setTimeout(r, 100));
+  } finally {
+    bridge.gateway.closeWebSocket();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

@@ -105,13 +105,17 @@ function initWebSocket(server) {
     // Message routing
     ws.on('message', (data, isBinary) => {
       // Direct binary PCM audio stream handling (Live Gemini Multimodal voice session)
-      if (isBinary || Buffer.isBuffer(data)) {
+      // Only binary WebSocket frames (opcode 2, isBinary === true) are treated as raw audio chunks.
+      if (isBinary) {
         try {
+          const buf = Buffer.isBuffer(data) ? data
+                    : Array.isArray(data) ? Buffer.concat(data)
+                    : Buffer.from(data);
+          if (buf.length < 2) return;
           const liveVoice = require('../../core/Live_Voice_Engine');
           const activeSession = liveVoice.getActiveSessionForClient(ws);
           if (activeSession && activeSession.isActive) {
-            const b64 = Buffer.isBuffer(data) ? data.toString('base64') : Buffer.from(data).toString('base64');
-            activeSession.handleIncomingClientAudio(b64);
+            activeSession.handleIncomingClientAudio(buf.toString('base64'));
           }
         } catch (e) {
           console.error('[BRIDGE-GATEWAY] Binary audio dispatch error:', e.message);
@@ -119,7 +123,7 @@ function initWebSocket(server) {
         return;
       }
 
-      // JSON Control & Telemetry Payload handling
+      // JSON Control & Telemetry Payload handling (Text frames, isBinary === false)
       let payload;
       try {
         payload = JSON.parse(data.toString());

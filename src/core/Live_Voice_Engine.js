@@ -244,10 +244,10 @@ class LiveVoiceSession {
   async start() {
     this.isActive = true;
     console.log(`[LIVE-VOICE] Starting Live Session [${this.sessionId}] | Model: ${this.currentModel}`);
-    // Keep HUD on standard symmetrical round cyan LISTENING eyes
+    // Keep HUD on CONNECTING while Google handshake and setup payload initialize
     this._sendToClient({
       type: 'CALL_STATUS_UPDATE',
-      status: 'LISTENING'
+      status: 'CONNECTING'
     });
     await this._connectGoogleWs();
   }
@@ -258,6 +258,15 @@ class LiveVoiceSession {
   }
 
   async _connectGoogleWs() {
+    // Terminate existing socket if any before creating a new connection to avoid socket leaks
+    if (this.googleWs) {
+      try {
+        this.googleWs.removeAllListeners();
+        this.googleWs.terminate();
+      } catch (_) {}
+      this.googleWs = null;
+    }
+
     // Reset setup and state flags so audio is never sent before setup completes on reconnect
     this.isSetupComplete     = false;
     this.isExecutingTool     = false;
@@ -294,22 +303,27 @@ class LiveVoiceSession {
     }
 
     try {
-      this.googleWs = new WebSocket(url, wsOptions);
+      const socket = new WebSocket(url, wsOptions);
+      this.googleWs = socket;
 
-      this.googleWs.on('open', async () => {
+      socket.on('open', async () => {
+        if (this.googleWs !== socket) return;
         console.log(`[LIVE-VOICE] Connected to Google WSS. Sending setup payload...`);
         await this._sendSetupPayload();
       });
 
-      this.googleWs.on('message', async (data) => {
+      socket.on('message', async (data) => {
+        if (this.googleWs !== socket) return;
         await this._handleGoogleMessage(data);
       });
 
-      this.googleWs.on('error', (err) => {
+      socket.on('error', (err) => {
+        if (this.googleWs !== socket) return;
         console.error(`[LIVE-VOICE] Google WebSocket Error:`, err.message);
       });
 
-      this.googleWs.on('close', (code, reason) => {
+      socket.on('close', (code, reason) => {
+        if (this.googleWs !== socket) return;
         const rStr = reason ? reason.toString() : '';
         console.log(`[LIVE-VOICE] Google WebSocket Closed: Code ${code} — "${rStr}"`);
         if (this.isActive && !this.isEndingCall) {
@@ -851,7 +865,11 @@ class LiveVoiceSession {
             console.log(`[LIVE-VOICE] Executing: ${funcName} [${callId}]`);
 
             try {
-              const toolResult = await executeLiveTool(funcName, funcArgs);
+              // Wrap with 8000ms safety timeout to prevent hanging tool from locking session
+              const toolResult = await Promise.race([
+                executeLiveTool(funcName, funcArgs),
+                new Promise((_, reject) => setTimeout(() => reject(new Error(`Tool '${funcName}' timed out after 8s`)), 8000))
+              ]);
 
               return {
                 id: callId,
@@ -921,6 +939,10 @@ class LiveVoiceSession {
    */
   handleIncomingClientAudio(pcmBase64) {
     if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN || !this.isSetupComplete) {
+      this._droppedAudioCount = (this._droppedAudioCount || 0) + 1;
+      if (this._droppedAudioCount === 1 || this._droppedAudioCount % 50 === 0) {
+        console.warn(`[LIVE-VOICE] Audio chunk dropped (setupComplete=${this.isSetupComplete}, readyState=${this.googleWs ? this.googleWs.readyState : 'null'}, totalDropped=${this._droppedAudioCount})`);
+      }
       return;
     }
 
