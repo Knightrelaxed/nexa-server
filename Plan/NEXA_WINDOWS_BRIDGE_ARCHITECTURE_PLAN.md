@@ -783,7 +783,7 @@ flowchart TD
 
 ---
 
-#### 6.1 Milestone 6.1: Desktop Input Automation (`src/automation/input.rs`)
+#### 6.1 Milestone 6.1: Desktop Input Automation (`src/automation/input.rs`) — [SELESAI ✅]
 1. **Denormalisasi Koordinat (0–1000) Skala Layar:**
    - Masukan dari Gemini Live berupa koordinat ternormalisasi `x: [0..1000]`, `y: [0..1000]`.
    - Mengambil resolusi layar aktif melalui Win32 `GetSystemMetrics(SM_CXSCREEN)` dan `GetSystemMetrics(SM_CYSCREEN)` (atau `SM_CXVIRTUALSCREEN` / `SM_CYVIRTUALSCREEN` untuk skenario multi-monitor).
@@ -813,10 +813,11 @@ flowchart TD
 4. **Safety & Bounds Guard:**
    - Validasi ketat koordinat `0 <= x <= 1000` dan `0 <= y <= 1000`.
    - Pencegahan loop macet (*runaway automation*).
-5. **Unit Tests:**
+5. **Unit Tests & Checkpoint Validasi:**
    - Pengujian fungsi denormalisasi koordinat ke nilai piksel dan skala `0..65535`.
    - Pengujian pemetaan nama tombol ke Virtual Key Code Win32.
    - Pengujian kalkulasi arah & nilai wheel delta pada scroll.
+   - Seluruh 44 automated tests di `nexa-windows-bridge` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`fc0bfb9`).
 
 ---
 
