@@ -31,6 +31,38 @@ const CONTEXTUAL_REF_WORDS = [
   'tadi bilang', 'hapus yang', 'yang itu', 'edit itu', 'hapus itu',
 ];
 
+/**
+ * Label waktu relatif WIB untuk riwayat obrolan (isolasi temporal: HARI INI / KEMARIN / MASA LALU).
+ * Level MODUL agar dipakai bersama oleh jalur reflex (_handleReflexRouting) dan routeUserMessage.
+ * (Sebelumnya const lokal di routeUserMessage sehingga jalur reflex melempar ReferenceError yang ditelan try/catch
+ *  dan riwayat obrolan hilang diam-diam.)
+ */
+function formatMemoryTime(isoStr) {
+  if (!isoStr) return 'Unknown Time';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return 'Unknown Time';
+    const tzDate = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+    const DD = String(tzDate.getUTCDate()).padStart(2, '0');
+    const MM = String(tzDate.getUTCMonth() + 1).padStart(2, '0');
+    const HH = String(tzDate.getUTCHours()).padStart(2, '0');
+    const MIN = String(tzDate.getUTCMinutes()).padStart(2, '0');
+    const nowJkt = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const nowDayNum = Math.floor(nowJkt.getTime() / 86400000);
+    const msgDayNum = Math.floor(tzDate.getTime() / 86400000);
+    const dayDiff = nowDayNum - msgDayNum;
+    if (dayDiff <= 0) {
+      return `HARI INI ${HH}:${MIN} WIB`;
+    } else if (dayDiff === 1) {
+      return `KEMARIN (${DD}/${MM}) ${HH}:${MIN} WIB`;
+    } else {
+      return `MASA LALU — ${dayDiff} HARI LALU (${DD}/${MM}) ${HH}:${MIN} WIB`;
+    }
+  } catch (_) {
+    return 'Unknown Time';
+  }
+}
+
 async function _handleReflexRouting(textInput, runtimeHints = {}) {
   let contextStr = '[Tidak ada riwayat obrolan sebelumnya]';
   try {
@@ -106,10 +138,11 @@ async function _fetchRecentFinanceSummary(limit) {
   }
 }
 
-async function _fetchUpcomingEventsSummary(limit = 3) {
+async function _fetchUpcomingEventsSummary(limit = 3, prefetched) {
   try {
     const googleWorkspace = require('../../infrastructure/Google_Workspace');
-    const items = await googleWorkspace.getTodaysEvents();
+    // Pakai hasil fetch yang sudah ada (satu panggilan Calendar API per pesan, bukan dua)
+    const items = prefetched !== undefined ? await prefetched : await googleWorkspace.getTodaysEvents();
     if (!Array.isArray(items) || items.length === 0) return null;
 
     const nowMs = Date.now();
@@ -133,7 +166,7 @@ async function _fetchTodaysRawEvents() {
     const items = await googleWorkspace.getTodaysEvents();
     return Array.isArray(items) ? items : [];
   } catch (_) {
-    return [];
+    return null; // null = kalender TIDAK dapat dimuat (berbeda dari [] = memang tidak ada agenda)
   }
 }
 
@@ -259,32 +292,6 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     console.log(`[ROUTER] History trimmed by char cap: ${_rawMemories.length}msg/${_totalHistChars}ch → ${_memories.length}msg/${_chars}ch`);
   }
 
-  // Helper untuk formatting waktu WIB dan isolasi temporal riwayat obrolan
-  const formatMemoryTime = (isoStr) => {
-    if (!isoStr) return 'Unknown Time';
-    try {
-      const d = new Date(isoStr);
-      if (isNaN(d.getTime())) return 'Unknown Time';
-      const tzDate = new Date(d.getTime() + 7 * 60 * 60 * 1000);
-      const DD = String(tzDate.getUTCDate()).padStart(2, '0');
-      const MM = String(tzDate.getUTCMonth() + 1).padStart(2, '0');
-      const HH = String(tzDate.getUTCHours()).padStart(2, '0');
-      const MIN = String(tzDate.getUTCMinutes()).padStart(2, '0');
-      const nowJkt = new Date(Date.now() + 7 * 60 * 60 * 1000);
-      const nowDayNum = Math.floor(nowJkt.getTime() / 86400000);
-      const msgDayNum = Math.floor(tzDate.getTime() / 86400000);
-      const dayDiff = nowDayNum - msgDayNum;
-      if (dayDiff <= 0) {
-        return `HARI INI ${HH}:${MIN} WIB`;
-      } else if (dayDiff === 1) {
-        return `KEMARIN (${DD}/${MM}) ${HH}:${MIN} WIB`;
-      } else {
-        return `MASA LALU — ${dayDiff} HARI LALU (${DD}/${MM}) ${HH}:${MIN} WIB`;
-      }
-    } catch (_) {
-      return 'Unknown Time';
-    }
-  };
 
   const contextStr = _memories.length > 0
     ? _memories.map(m => {
@@ -419,11 +426,12 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   let activeAccountsBlock = '';
   let activeCategoriesBlock = '';
   let rawEventsResult = null;
+  const _todaysEventsPromise = _fetchTodaysRawEvents();   // satu fetch dipakai bersama
   try {
     const results = await Promise.allSettled([
       _fetchRecentFinanceSummary(3),
-      _fetchUpcomingEventsSummary(3),
-      _fetchTodaysRawEvents(),
+      _fetchUpcomingEventsSummary(3, _todaysEventsPromise),
+      _todaysEventsPromise,
       // Load daftar akun aktif dari Supabase Finance (hanya jika domain finance aktif)
       _loadFinanceContext ? (async () => {
         try {
@@ -534,9 +542,10 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   // ── Compile Selective System Prompt based on Candidate Domains ──────────
   const routerSystemPrompt = buildRouterSystemPrompt(_candidateDomains);
   let situationalBlock = '';
+  // null = kalender gagal dimuat; JANGAN dilaporkan ke LLM sebagai "tidak ada agenda"
   const rawEvents = rawEventsResult && rawEventsResult.status === 'fulfilled' && Array.isArray(rawEventsResult.value)
     ? rawEventsResult.value
-    : [];
+    : null;
 
   try {
     situationalBlock = situationalSynthesizer.buildSituationalPromptBlock({
@@ -644,6 +653,7 @@ Tentukan intent dan ekstrak data!
 }
 
 module.exports = {
+  formatMemoryTime,
   CONTEXTUAL_REF_WORDS,
   _handleReflexRouting,
   _fetchRecentFinanceSummary,

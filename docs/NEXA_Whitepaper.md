@@ -3638,6 +3638,25 @@ Disertai direktif pengamanan prompt:
 Di `Router_Prompts.js` (Rule 17) dan `REFLEX_SYSTEM_PROMPT`:
 > *"Sebagai Chief of Staff berwibawa dan grounded, jika Tuan Faqih meragukan, terkejut, atau menguji ("Hah baru saja?", "Woy?", "Kelasnya selesai jam berapa?"), JANGAN panik, JANGAN minta ampun, dan DILARANG mengubah fakta yang benar. Sampaikan fakta jam mulai dan jam selesai berdasarkan data timeline dengan tenang, santai, dan percaya diri."*
 
+#### 6. Single Shared Promise & Penanganan Kegagalan Kalender (`null` vs `[]`)
+Untuk mengeliminasi panggilan redundan ke Google Calendar API (yang sebelumnya terpanggil 2x per pesan dalam `Promise.allSettled`), dibuat shared promise tunggal `_todaysEventsPromise`. Selain itu, penanganan kegagalan fetch diubah secara semantik:
+* `null`: Kalender gagal dimuat (network error / quota limit). Synthesizer mengembalikan status `UNAVAILABLE` dan pesan peringatan: *"Data kalender tidak dapat dimuat sekarang. JANGAN menyimpulkan ada atau tidaknya agenda"*.
+* `[]`: Kalender berhasil dimuat dan memang tidak ada jadwal (`NO_EVENTS`).
+
+#### 7. Module-Level Scope untuk `formatMemoryTime` (Eliminasi Silent Bug pada Reflex)
+Fungsi `formatMemoryTime` diangkat dari scope lokal `routeUserMessage` ke level modul `Router_Dispatcher.js` dan diekspor. Ini menyelesaikan bug kritis di mana jalur `_handleReflexRouting` sebelumnya memicu `ReferenceError` yang tertelan oleh `try/catch` sehingga riwayat obrolan hilang tanpa jejak pada sapaan santai.
+
+#### 8. Action-Cue Guarding pada `Topic_Classifier.js`
+Menambahkan filter regex `ACTION_CUE_RE` (`cari|cek|baca|buat|jadwal|alarm|...`) pada deteksi perasaan:
+```javascript
+if (FEELINGS_CASUAL_RE.test(t) && !ACTION_CUE_RE.test(t)) return 'CASUAL';
+```
+Aturan ini mencegah perintah aksi yang memuat kata perasaan (seperti *"cari tips mengatasi pusing"* atau *"jadwal tidur siang besok"*) terkooptasi secara keliru menjadi intent `CASUAL`.
+
+#### 9. Anti-Verbalisasi Deteksi Suasana Hati
+Menyisipkan instruksi operasional laten pada blok inersia emosional:
+> *(Panduan: pakai hanya untuk menyetel nada. Jangan menyebut bahwa suasana hati "terdeteksi" dan jangan mengutip pesan lama itu.)*
+
 ---
 
 ### 22.5 Matriks Evaluasi: Sebelum vs Sesudah Arsitektur v3.4.2
@@ -3645,11 +3664,15 @@ Di `Router_Prompts.js` (Rule 17) dan `REFLEX_SYSTEM_PROMPT`:
 | Parameter Metrik | Sebelum Arsitektur v3.4.2 | Setelah Arsitektur v3.4.2 (DSAE Engine) |
 | :--- | :--- | :--- |
 | **Ketersediaan Timeline Hari Ini** | Hanya pada intent kalender eksplisit | **Universal (100% giliran obrolan, termasuk NORMAL_CHAT)** |
+| **Panggilan Google Calendar API** | 2x panggilan paralel per pesan | **1x Shared Promise (`_todaysEventsPromise`)** |
+| **Ketahanan Kegagalan Kalender** | Error dianggap jadwal kosong (`[]`) | **Distingsi tegas (`null` = UNAVAILABLE vs `[]` = NO_EVENTS)** |
 | **Akurasi Timestamp Jam Selesai** | Hilang pada status jeda (`GAP`) | **Presisi eksplisit (`selesai 14:40 WIB, ~25m lalu`)** |
 | **Pembedaan Obrolan Masa Lalu** | Tanggal mentah (`DD/MM`) rentan ambigu | **Isolasi tegas (`[MASA LALU — 11 HARI LALU]`)** |
+| **Integritas Riwayat Jalur Reflex** | Hilang diam-diam (`ReferenceError`) | **100% Utuh dengan label waktu relatif aktif** |
+| **Presisi Klasifikasi Topik Perasaan** | Membajak perintah aksi (`cari`, `jadwal`) | **Guarded via `ACTION_CUE_RE` (Zero False-Casual)** |
 | **Stabilitas Karakter saat Diuji** | Sycophancy / Panik minta ampun | **Grounded & Tenang (Berpegang teguh pada data)** |
 | **Beban Prompt & Biaya Komputasi** | Potensi bloat jika teks manual | **Sangat padat (~40–50 token, 0ms latency overhead)** |
-| **Cakupan Pengujian Monorepo** | 335 tests passing | **336 tests passing (100% Pass, 0 Fail)** |
+| **Cakupan Pengujian Monorepo** | 335 tests passing | **352 tests passing (Termasuk 16 invariant regression tests)** |
 | **Status Produksi** | v3.4.1 | **v3.4.2 Deployed & Active on Azure VPS** |
 
 ---

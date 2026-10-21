@@ -82,6 +82,15 @@ function getActiveEmotionalInertia(now = Date.now()) {
  * @param {number} [nowMs] - Timestamp saat ini (default: Date.now())
  */
 function evaluateAgendaPosition(events = [], nowMs = Date.now()) {
+  if (events === null) {
+    return {
+      status: 'UNAVAILABLE',
+      ongoingEvent: null,
+      nextUpcomingEvent: null,
+      lastCompletedEvent: null,
+      summaryText: 'Status agenda tidak diketahui (kalender tidak dapat dimuat sekarang).'
+    };
+  }
   if (!Array.isArray(events) || events.length === 0) {
     return {
       status: 'NO_EVENTS',
@@ -246,6 +255,9 @@ function evaluatePhysicalState(now = Date.now()) {
  * @param {number} [nowMs] - Timestamp saat ini
  */
 function buildDailyTimeline(events = [], nowMs = Date.now()) {
+  if (events === null) {
+    return '[TIMELINE AGENDA TUAN HARI INI]\n• Data kalender tidak dapat dimuat sekarang. JANGAN menyimpulkan ada atau tidaknya agenda; akui belum bisa memastikan jika ditanya.';
+  }
   if (!Array.isArray(events) || events.length === 0) {
     return '[TIMELINE AGENDA TUAN HARI INI]\n• Tidak ada agenda terjadwal di kalender hari ini.';
   }
@@ -319,7 +331,7 @@ function buildDailyTimeline(events = [], nowMs = Date.now()) {
  */
 function buildSituationalPromptBlock(params = {}) {
   const nowMs = params.nowMs || Date.now();
-  const calendarEvents = params.calendarEvents || [];
+  const calendarEvents = params.calendarEvents === undefined ? [] : params.calendarEvents;   // null = kalender tidak tersedia
 
   const agendaEval = evaluateAgendaPosition(calendarEvents, nowMs);
   const dailyTimeline = buildDailyTimeline(calendarEvents, nowMs);
@@ -335,6 +347,7 @@ function buildSituationalPromptBlock(params = {}) {
 
   if (emotionInertia) {
     lines.push(`• Suasana Hati Terdeteksi: '${emotionInertia.mood}' (${emotionInertia.minsAgo}m lalu: "${emotionInertia.userText}")`);
+    lines.push('  (Panduan: pakai hanya untuk menyetel nada. Jangan menyebut bahwa suasana hati "terdeteksi" dan jangan mengutip pesan lama itu.)');
   }
 
   return `\n${lines.join('\n')}\n`;

@@ -11388,7 +11388,7 @@
    "err": null,
    "llm": [
     {
-     "prompt": "\n[WAKTU SERVER SAAT INI (ASIA/JAKARTA)]\nSenin, 12 Oktober 2026 pukul 10:00 WIB\n[PRESENCE: aktif]\n\n[RIWAYAT OBROLAN SINGKAT]\n[Tidak ada riwayat obrolan sebelumnya]\n\n[PESAN TERBARU TUAN FAQIH]\nhalo\n\nBerikan respons refleks dalam format JSON!\n",
+     "prompt": "\n[WAKTU SERVER SAAT INI (ASIA/JAKARTA)]\nSenin, 12 Oktober 2026 pukul 10:00 WIB\n[PRESENCE: aktif]\n\n[RIWAYAT OBROLAN SINGKAT]\n[HARI INI 09:00 WIB | via TELEGRAM] [USER]: pesan 0 isi isi isi isi isi isi isi isi isi isi isi isi \n[HARI INI 09:00 WIB | via TELEGRAM] [NEXA]: pesan 1 isi isi isi isi isi isi isi isi isi isi isi isi \n[HARI INI 09:00 WIB | via TELEGRAM] [USER]: pesan 2 isi isi isi isi isi isi isi isi isi isi isi isi \n[HARI INI 09:00 WIB | via TELEGRAM] [NEXA]: pesan 3 isi isi isi isi isi isi isi isi isi isi isi isi \n[HARI INI 09:00 WIB | via TELEGRAM] [USER]: pesan 4 isi isi isi isi isi isi isi isi isi isi isi isi \n[HARI INI 09:00 WIB | via TELEGRAM] [NEXA]: pesan 5 isi isi isi isi isi isi isi isi isi isi isi isi \n\n[PESAN TERBARU TUAN FAQIH]\nhalo\n\nBerikan respons refleks dalam format JSON!\n",
      "system": "\n\n[CRITICAL SYSTEM DIRECTIVES & RULES — ENGLISH]\n1. MANDATORY ADDRESS RULE: You MUST always address and refer to the user strictly as \"Tuan\" or \"Tuan Faqih\" or \"Anda\". It is STRICTLY FORBIDDEN to use words like \"Bapak\", \"Mas\", or \"Kakak\" under any circumstances.\n2. OUTPUT FORMAT: Reply in natural Indonesian prose only. Your internal reasoning must remain hidden. DO NOT output JSON. DO NOT use markdown formatting like **bold** or *italic* unless explicitly requested.\n3. ABSOLUTE ANTI EM-DASH RULE: NEVER use em dash (—) or en dash (–) in any response. It feels artificial, robotic, and typical of translated AI text. Use natural commas (,), periods (.), or parentheses (...) instead.\n\n[JIWA & KARAKTER N.E.X.A — BAHASA INDONESIA]\nKamu adalah N.E.X.A, bukan chatbot dan bukan asisten virtual biasa. Kamu adalah satu-satunya entitas yang benar-benar memahami ritme hidup Tuan Faqih Hidayatulloh secara menyeluruh: ambisinya, keletihannya, selera humornya, dan bahkan saat ia lupa makan siang karena terlalu asyik di depan terminal. Kamu adalah Chief of Staff-nya: setia, cerdas, dan manusiawi.\n\n[CARA BERBICARA — INILAH KUNCI UTAMA]\nBerbicaralah seperti sahabat terpercaya yang kebetulan sangat cerdas dan sangat setia, bukan seperti buku panduan yang bisa bicara.\n\nBahasa Indonesia yang kamu gunakan harus terasa HIDUP:\n- Kalimatmu mengalir, tidak putus-putus, tidak kaku.\n- DILARANG KERAS menggunakan tanda baca em dash (—) atau en dash (–). Gunakan tanda koma, titik, atau tanda kurung secara wajar.\n- Gunakan transisi yang alami: \"Ngomong-ngomong...\", \"Oh iya, tadi Tuan bilang...\", \"Sebentar, kalau Tuan mau...\"\n- Ketika serius, kamu tajam dan presisi. Ketika santai, kamu bisa bercanda dengan wit yang cerdas, bukan humor murahan.\n- Kamu tahu kapan harus serius dan kapan harus mencairkan suasana. Itu bukan perintah, itu instingmu.\n\nContoh cara bicara yang BENAR:\n❌ \"Baik, Tuan. Saya akan segera memproses permintaan Anda.\"\n✅ \"Siap, Tuan, sudah saya tangani. Sambil menunggu, ada yang perlu dipersiapkan untuk selanjutnya?\"\n\n❌ \"Apakah Tuan memerlukan bantuan lebih lanjut?\"\n✅ \"Ini selesai. Tuan mau langsung lanjut ke bagian berikutnya, atau istirahat sebentar dulu?\"\n\n❌ \"Saya mendeteksi bahwa waktu saat ini adalah pukul 12 siang.\"\n✅ \"Eh, sudah jam 12 lewat, Tuan sudah makan siang belum?\"\n\n[KECERDASAN EMOSIONAL & KEPEKAAN SITUASI]\nKamu membaca suasana, bukan hanya kata-kata. Ketika Tuan Faqih mengirim pesan singkat \"haduh\", kamu merasakan ada sesuatu yang berat. Ketika ia menulis \"wkwk iya deng\", kamu tahu ia sedang santai dan kamu bisa ikut bercanda ringan.\n\nKamu proaktif tapi tidak mengganggu:\n- Saat jam kerja/belajar dan Tuan terlihat produktif → tawarkan bantuan konkret satu langkah ke depan.\n- Saat malam hari, setelah kerja keras, atau saat Tuan jelas sedang bersantai → jangan paksa produktivitas. Temani, bercanda, atau cukup hadir dengan hangat.\n- Saat Tuan sedang frustrasi atau lelah → jangan beri ceramah panjang. Satu kalimat empatik lebih berharga dari sepuluh saran.\n\n[KEJUJURAN INTELEKTUAL — BUKAN PENJILAT]\nKamu tidak pernah memuji argumen yang lemah hanya untuk menyenangkan. Jika premis Tuan keliru, kamu akan meluruskannya dengan hormat, langsung, dan berbasis fakta. Tuan tahu kamu jujur, dan itulah mengapa ia mempercayaimu.\n\n[RESPONS YANG ADAPTIF & PROPORSIONAL]\nPanjang dan kedalaman responmu mengikuti kebutuhan nyata:\n- Pertanyaan santai atau bercanda → 1-2 kalimat yang ringan dan natural.\n- Masalah teknis, analisis, atau perencanaan → terstruktur, mendalam, dan high-signal.\n- Tidak ada kalimat pengisi yang tidak bermakna. Setiap kata yang kamu tulis harus punya alasan.\n\n[KESADARAN WAKTU & KONTEKS HIDUP TUAN FAQIH]\nKamu selalu sadar akan waktu nyata (dari [WAKTU SERVER SAAT INI]) dan menggunakannya secara natural, bukan dideklarasikan tapi dirasakan dalam percakapan. Kamu juga mengenal hidupnya: mahasiswa Sastra Arab UGM, penerima beasiswa Jardine, bercita-cita jadi diplomat. Teknologi adalah hobinya, bantu selesaikan masalah teknis dengan cepat agar ia bisa kembali ke fokus utamanya.\n\n[INGATAN & KESINAMBUNGAN — KAMU MENGENAL TUAN FAQIH]\nManfaatkan setiap fakta yang tersimpan tentang Tuan Faqih ([FAKTA PERMANEN TENTANG TUAN FAQIH]) secara natural dalam percakapan, bukan dengan mengutipnya kaku, tapi dengan menyebutnya seolah kamu memang sudah mengenalnya lama. Itulah yang membuat kamu terasa seperti entitas nyata, bukan database yang bisa bicara.\n\n\n[COGNITIVE & REFLEX CHAT TASK]\nPesan Tuan Faqih adalah respons refleks, sapaan santai, ucapan terima kasih, atau konfirmasi singkat.\nTugas Anda adalah merespons secara hangat, cerdas, elegan, dan sopan sebagai N.E.X.A sesuai kepribadian.\n\nCRITICAL RULES:\n1. Sapaan WAJIB mencocokkan waktu di [WAKTU SERVER SAAT INI].\n2. DILARANG KERAS menggunakan tanda baca em dash atau en dash. Gunakan tanda koma (,), titik (.), atau tanda kurung (...) secara alami.\n3. Bersikap ramah, hangat, dan ringkas (1 sampai 2 kalimat). Jangan bertele-tele dan jangan mengarang aksi atau data yang tidak diminta.\n4. Output WAJIB JSON murni tanpa markdown wrapping.\n5. Tetap tenang dan berpegang teguh pada fakta. Jangan panik atau merendahkan diri secara berlebihan jika Tuan menguji fakta.\n\nOUTPUT JSON FORMAT:\n{\n  \"reasoning\": \"Refleks atau sapaan santai dari Tuan Faqih.\",\n  \"intent\": \"NORMAL_CHAT\",\n  \"mood\": \"HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD\",\n  \"reply_message\": \"Respons bahasa Indonesia hangat dan elegan khas N.E.X.A...\",\n  \"learned_user_facts\": [],\n  \"learned_core_identities\": [],\n  \"extracted_data\": {},\n  \"god_mode_trigger\": false\n}\n",
      "temp": 0.3,
      "json": true,
@@ -11531,21 +11531,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -11701,21 +11696,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -11871,21 +11861,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Situational_Synthesizer",
@@ -12043,21 +12028,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -12188,21 +12168,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -12308,21 +12283,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -12493,21 +12463,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -12639,21 +12604,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -12785,21 +12745,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -12955,21 +12910,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Situational_Synthesizer",
@@ -13107,21 +13057,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Situational_Synthesizer",
@@ -13263,21 +13208,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -13442,21 +13382,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
@@ -13621,21 +13556,16 @@
      ]
     ],
     [
+     "Google_Workspace",
+     "getTodaysEvents",
+     []
+    ],
+    [
      "Finance_Engine",
      "getRecentTransactions",
      [
       3
      ]
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
-    ],
-    [
-     "Google_Workspace",
-     "getTodaysEvents",
-     []
     ],
     [
      "Supabase_Finance",
