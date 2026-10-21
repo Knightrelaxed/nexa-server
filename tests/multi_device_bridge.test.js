@@ -219,9 +219,51 @@ test('Bridge Gateway: Real WebSocket text JSON frame routing (Regression Test fo
     assert.ok(pong, 'Should receive PONG response');
     assert.equal(pong.type, 'PONG');
 
+    // 4. Send CALL_EVENT text frame — must reach mobileClient.handleMessage, not be swallowed as audio
+    //    We verify routing by checking that adapter.handleIncomingCallEvent gets triggered
+    //    by sending a CALL_EVENT and watching for the CALL_LIVE_READY or log from startLiveSession
+    const callEventPromise = new Promise(resolve => {
+      const onMsg = (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          // The adapter triggers startLiveSession which sends CALL_STATUS_UPDATE then CALL_LIVE_READY
+          if (msg.type === 'CALL_STATUS_UPDATE' || msg.type === 'CALL_LIVE_READY') {
+            ws.removeListener('message', onMsg);
+            resolve(msg);
+          }
+        } catch (_) {}
+      };
+      ws.on('message', onMsg);
+    });
+
+    ws.send(JSON.stringify({
+      type: 'CALL_EVENT',
+      event: 'CALL_ACCEPTED',
+      command_id: `TEST_CALL_${Date.now()}`
+    }));
+
+    const callResponse = await Promise.race([
+      callEventPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(
+        'CALL_EVENT swallowed as audio! startLiveSession never triggered. This is the root cause of NEXA not speaking.'
+      )), 5000))
+    ]);
+
+    assert.ok(callResponse, 'Should receive CALL_STATUS_UPDATE or CALL_LIVE_READY after CALL_ACCEPTED');
+    assert.ok(
+      callResponse.type === 'CALL_STATUS_UPDATE' || callResponse.type === 'CALL_LIVE_READY',
+      `Expected CALL_STATUS_UPDATE or CALL_LIVE_READY, got: ${callResponse.type}`
+    );
+
+    // Clean up: close live session
+    try {
+      const liveVoice = require('../src/core/Live_Voice_Engine');
+      liveVoice.closeAllLiveSessions();
+    } catch (_) {}
+
     // Clean up client
     ws.close();
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 200));
   } finally {
     bridge.gateway.closeWebSocket();
     await new Promise(resolve => server.close(resolve));
