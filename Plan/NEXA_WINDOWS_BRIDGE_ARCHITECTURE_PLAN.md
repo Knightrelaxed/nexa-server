@@ -843,9 +843,9 @@ flowchart TD
 
 ---
 
-#### 6.3 Milestone 6.3: Stealth Overlay & Click Ripple (`src/automation/highlighter.rs` & `ui/click_indicator.slint`)
+#### 6.3 Milestone 6.3: Stealth Overlay & Click Ripple (`src/automation/highlighter.rs` & `ui/overlay_window.slint`) — [SELESAI ✅]
 1. **Arsitektur Jendela Siluman (*Stealth Overlay Window*):**
-   - Window transparan seluas seluruh layar monitor dengan konfigurasi Win32 API khusus:
+   - Window transparan seluas seluruh layar monitor dengan konfigurasi Win32 API khusus (`apply_stealth_window_styles`):
      - `WS_EX_TOPMOST`: Selalu di lapisan visual teratas di atas jendela aplikasi mana pun.
      - `WS_EX_TRANSPARENT`: Seluruh event mouse lolos tembus 100% (*click-through*), Tuan Faqih bisa mengklik tombol di bawah sorotan tanpa halangan.
      - `WS_EX_NOACTIVATE`: Kemunculan sorotan tidak pernah mencuri fokus keyboard/jendela Tuan.
@@ -858,13 +858,14 @@ flowchart TD
 3. **Efek Riak Klik (*Click Indicator Ripple*):**
    - Saat `desktopClick` dieksekusi, memunculkan riak lingkaran ekspansif berdurasi 300 ms di koordinat klik, memberikan konfirmasi visual bahwa klik telah dilakukan N.E.X.A.
 4. **Siklus Hidup & Auto-Dissolve:**
-   - Parameter `duration_ms` (default 4000 ms).
-   - Timer auto-dismiss yang memudarkan (*fade-out*) sorotan secara halus setelah durasi berakhir.
+   - Parameter `duration_ms` (default 4000 ms, dibatasi 500 ms – 15000 ms).
+   - Timer auto-dismiss berbasis *epoch atomic token* yang memudarkan (*fade-out*) sorotan secara halus setelah durasi berakhir tanpa konflik antar-sorotan berturut-turut.
    - API pembersihan manual `clear_all()` untuk aksi `CLEAR_HIGHLIGHTS`.
-5. **Unit Tests:**
+5. **Unit Tests & Checkpoint Validasi:**
    - Pengujian parsing opsi styling highlight (`HighlightRequest`).
    - Pengujian clamping durasi highlight (minimum 500 ms, maksimum 15000 ms).
-   - Pengujian pembersihan state saat clear dipanggil.
+   - Pengujian siklus hidup controller dalam mode headless / test.
+   - Seluruh 53 automated tests di `nexa-windows-bridge` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`0dafc0b`).
 
 ---
 
