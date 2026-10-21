@@ -748,13 +748,17 @@ flowchart TD
    * Seluruh kode pengujian dan verifikasi berhasil di-push ke GitHub remote: `https://github.com/Knightrelaxed/nexa-windows-bridge` (Commit: `3d96289`).
    * **Fase 4 resmi selesai (Sign-off) dan siap berlanjut ke Fase 5: Mata Layar GPU Direct3D 11.**
 
-#### 🔹 Fase 5: Mata Layar GPU Direct3D 11 (`capture/`)
-* **Lokasi Kerja:** `src/capture/`
+#### 🔹 Fase 5: Mata Layar GPU Direct3D 11 (`capture/`) — [SELESAI ✅]
+* **Lokasi Kerja:** `src/capture/`, `src/platform/hotkeys.rs`, `src/platform/system_tray.rs`, `ui/main_window.slint`, `src/main.rs`
 * **Langkah Kerja:**
-  1. Loop penangkap layar `capture/screen_capture.rs` menggunakan `windows-capture` (Windows.Graphics.Capture API) langsung dari tekstur GPU D3D11.
-  2. Pembatasan frame clamp di **1 FPS** dan kompresi TurboJPEG hardware.
-  3. Tombol toggle *"Lihat Layar"* di window utama dan hotkey `Win + Alt + S`.
-* **Checkpoint Validasi:** Aliran `CALL_VIDEO_FRAME` terkirim ke Gemini Live, N.E.X.A langsung bisa membaca dan mendiskusikan konten di layar ThinkPad Tuan.
+  1. Integrasi GPU Direct3D 11 Screen Capture via `windows-capture` (Windows.Graphics.Capture API) tanpa batas kuning (`DrawBorderSettings::WithoutBorder`) dan menyertakan kursor mouse (`CursorCaptureSettings::WithCursor`).
+  2. Pembatasan ketat laju tangkapan di **1 FPS** (`FrameRateLimiter`) untuk efisiensi komputasi dan bandwidth jaringan.
+  3. Konversi format buffer GPU RGBA8 $\to$ RGB8 dan kompresi JPEG (`FrameEncoder`) menghasilkan string Base64 (`image/jpeg`) dengan zero-allocation buffer reuse pada hot path.
+  4. Pengendali tangkapan mandiri (`ScreenCaptureController`) dengan graceful stop, RAII drop guard, dan decoupling multithreaded via unbuffered mpsc channel.
+  5. Pemicu multi-jalur: Tombol HUD UI ("👁️ Berbagi Layar"), Global Hotkey OS (`Win + Alt + S`), dan menu klik kanan System Tray Windows.
+  6. Transmisi frame tangkapan berkala dikemas sebagai `ClientMessage::VideoFrame` dialirkan ke WebSocket Azure Gemini Live.
+  7. Auto-stop & cleanup otomatis saat koneksi WebSocket terputus atau mode tidur sistem (`WM_POWERBROADCAST`).
+* **Checkpoint Validasi:** Seluruh 37 automated tests di `nexa-windows-bridge` lulus **100% PASS (Green)**. `cargo clippy --all-targets --all-features` lulus 0 warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`88ef07c`).
 
 #### 🔹 Fase 6: Sorotan Layar (DirectComposition) & Otomasi Input (SendInput)
 * **Lokasi Kerja:** `src/automation/`
