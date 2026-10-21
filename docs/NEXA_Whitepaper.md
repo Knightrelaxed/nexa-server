@@ -1785,7 +1785,7 @@ Semua lalu lintas HTTP masuk dijaga oleh *middleware* keamanan sebelum mencapai 
 
 1. **Telegram Identity Lock**: N.E.X.A membedah struktur Webhook Telegram (*message*, *callback_query*, *channel_post*). Jika *Chat ID* pengirim tidak sama persis dengan `TELEGRAM_CHAT_ID` Tuan Faqih, koneksi seketika digugurkan dengan respons *403 Forbidden*.
 2. **Anti-Spoofing Webhook**: Mencegah *hacker* mengirim *request* palsu ke *endpoint* N.E.X.A. Sistem memverifikasi *Header* `X-Telegram-Bot-Api-Secret-Token` murni dari *server* Telegram.
-3. **Mobile Bridge WebSocket Handshake Authentication**: Sambungan WebSocket dari ponsel Android Samsung Galaxy A33 5G (`wss://.../ws`) dijaga dengan verifikasi `Authorization: Bearer <NEXA_DEVICE_SECRET>` pada saat handshake koneksi awal tanpa fallback diam-diam ke God Mode.
+3. **Mobile & Windows Bridge WebSocket Handshake Authentication**: Sambungan WebSocket dari ponsel Android Samsung Galaxy A33 5G maupun laptop Windows (N.E.X.A Windows Bridge Desktop Companion) (`wss://.../ws`) dijaga dengan verifikasi `Authorization: Bearer <NEXA_DEVICE_SECRET>` pada saat handshake koneksi awal. Kunci rahasia resmi terdaftar di `.env` adalah `NEXA_DEVICE_SECRET=nexa_device_sec_998234_a335g`, dengan dukungan validasi multi-secret terpadu terhadap `NEXA_BRIDGE_SECRET` dan `NEXA_CLI_SECRET` (`cLiNeXa17`) pada gerbang handshake tanpa fallback diam-diam ke God Mode.
 4. **Timing Attack Immunity**: Seluruh pencocokan *password/secret* di N.E.X.A menggunakan `crypto.timingSafeEqual()`, memastikan peretas tidak bisa menebak *password* berdasarkan waktu respons CPU.
 5. **Karantina Konfirmasi Aksi Hardware Sensitif & Memori Permanen (`_validateActionConfirmation`)**: Aksi hardware berdampak privasi (`TAKE_PHOTO`, `TAKE_SCREENSHOT`, `GET_LOCATION`, `LOCK_SCREEN`, `END_CALL`) serta penyimpan memori profil (`savePersonalFact`, `saveCoreIdentityFact`) wajib meminta persetujuan verbal eksplisit dari Tuan Faqih sebelum dieksekusi oleh AI.
 6. **Hardware Action Allowlist pada REST `/bridge/command`**: Endpoint HTTP dibatasi oleh daftar izin ketat (`ALLOWED_BRIDGE_ACTIONS`), menolak perintah di luar allowlist dengan status HTTP 403 Forbidden.
@@ -1797,7 +1797,7 @@ Modul `env.js` mengelola lebih dari 30 *credential* rahasia untuk mengeksekusi i
 
 - **LLM Key Rotation & Multi-Modal Inference**: N.E.X.A siap menghadapi *Rate Limit* gratisan dengan menyiapkan slot rotasi untuk 4 Kunci Gemini (`GEMINI_API_KEY_1-4`), 4 Kunci Groq, Cerebras, Mistral, **Hugging Face Inference API** (`HF_TOKEN` untuk Vision OCR, Whisper Voice, dan model fallback), hingga *fallback* premium via OpenRouter.
 - **Unified Master Google OAuth 2.0**: Mengonsolidasikan seluruh 16 izin resmi Google API (Calendar, Tasks, Gmail, Drive Vault, Docs 2nd Brain, Sheets, Meet) di bawah satu klien Master OAuth 2.0 terpadu (`Google_Master_Client.js`), meniadakan sepenuhnya ketergantungan pada Service Account lama.
-- **Node Fisik & Integrasi Eksternal**: Kunci akses untuk Supabase (Memori Permanen), Notion (Task Sync), Serper.dev (Pencarian Web), dan Nexa Mobile Bridge Secret (`NEXA_DEVICE_SECRET` untuk Eksekutor God Mode Android).
+- **Node Fisik & Integrasi Eksternal**: Kunci akses untuk Supabase (Memori Permanen), Notion (Task Sync), Serper.dev (Pencarian Web), Nexa Bridge Secret (`NEXA_DEVICE_SECRET=nexa_device_sec_998234_a335g` untuk Eksekutor God Mode Android & N.E.X.A Windows Bridge Desktop Companion), serta CLI Secret (`NEXA_CLI_SECRET=cLiNeXa17` untuk Remote Terminal Console).
 
 ## BAB 9: PETA KODE (*CODEBASE MAPPING*) & PANDUAN PENGEMBANGAN
 
@@ -1996,8 +1996,26 @@ N.E.X.A memecahkan dilema ini dengan arsitektur **Neural-Peripheral Separation**
 
 Komunikasi antara Cloud Core dan HP menggunakan protokol **Nexa Bi-directional WebSocket (WSS)** yang beroperasi di atas `/ws` dengan standar keamanan perbankan:
 
-1. **Timing-Safe Constant-Time Token Handshake**:
-   Setiap koneksi WebSocket dari Android wajib menyertakan header otorisasi `Authorization: Bearer <CONFIGURED_SECRET>`. Di sisi server (`MobileBridge_WS.js`), verifikasi token menggunakan `crypto.timingSafeEqual` pada *raw byte buffer*. Ini mencegah serangan *timing attack* secara matematis. Percobaan koneksi tanpa token langsung diputus dengan kode `4001 Unauthorized`.
+1. **Timing-Safe Constant-Time Token Handshake (Unified Bridge Gateway)**:
+   Setiap koneksi WebSocket dari Android (Mobile Bridge) maupun PC/Laptop Windows (Windows Bridge Desktop Companion) wajib menyertakan header otorisasi HTTP saat handshake koneksi awal:
+   ```http
+   Authorization: Bearer <TOKEN_SECRET>
+   ```
+   - **Kunci Rahasia Resmi (Official Production Secret)**: `nexa_device_sec_998234_a335g` (dikonfigurasi pada *environment variable* `NEXA_DEVICE_SECRET` atau `NEXA_BRIDGE_SECRET`).
+   - **Verifikasi Kriptografis Konstan**: Di sisi server (`src/interfaces/bridge/gateway.js` & `MobileBridge_WS.js`), verifikasi token menggunakan `crypto.timingSafeEqual` pada *raw byte buffer* yang telah dipadankan panjangnya, memvalidasi terhadap `NEXA_DEVICE_SECRET`, `NEXA_BRIDGE_SECRET`, atau `NEXA_CLI_SECRET` (`cLiNeXa17`). Ini mencegah serangan *timing attack* secara matematis. Percobaan koneksi tanpa token atau dengan kunci yang tidak valid langsung ditolak dengan kode status HTTP `403 Forbidden` / WS Code `4001 Unauthorized`.
+   - **Konfigurasi Klien Windows Bridge (`~/.nexa-bridge.json`)**:
+     Pada laptop Windows Tuan Faqih, aplikasi N.E.X.A Windows Bridge membaca konfigurasi saat startup dari home directory:
+     ```json
+     {
+       "server_url": "wss://nexa-server.indonesiacentral.cloudapp.azure.com/ws",
+       "auth_token": "nexa_device_sec_998234_a335g",
+       "device_id": "windows_companion_thinkpad",
+       "heartbeat_interval_secs": 30,
+       "auto_reconnect": true,
+       "reconnect_base_delay_ms": 1000,
+       "reconnect_max_delay_ms": 30000
+     }
+     ```
 2. **Single-Device Instant Termination**:
    Untuk mencegah konflik *split-brain* atau koneksi ganda akibat pergantian jaringan (Wi-Fi ke 4G), server secara instan mematikan (*terminate*) soket lama saat soket baru tersambung.
 3. **Anti-Ghost Promise Cleanup & Fail-Safe Memory Purge**:
@@ -2199,6 +2217,90 @@ Untuk menjaga daya baterai HP Samsung Galaxy A33 5G tetap awet 24/7 dan mengelim
 
 4. **Sinkronisasi Status Otomatis (*State Auto-Sync Gateway*):**
    - Di sisi server (`src/interfaces/mobile_bridge/adapter.js`), fungsi `adapter.execute()` secara otomatis menyelaraskan hasil query `GET_SCREEN_STATUS`, `GET_LIGHT_STATUS`, dan `GET_BATTERY_STATUS` ke dalam `Presence_Model` dan snapshot `/health` tanpa latensi.
+
+---
+
+### 11.10 Arsitektur N.E.X.A Windows Bridge Desktop Companion (Rust Native Node)
+
+Seiring dengan meningkatnya kebutuhan kerja strategis dan pemrograman intensif Tuan Faqih di depan laptop utama (ThinkPad Windows 11), N.E.X.A v3.4.2 memperluas arsitektur Neural-Peripheral ke lingkungan desktop melalui **N.E.X.A Windows Bridge Desktop Companion**. Berbeda dengan implementasi umum yang menggunakan Electron atau Node.js yang memboroskan memori (>500 MB RAM), modul desktop ini dibangun 100% menggunakan bahasa pemrograman **Rust Native** dengan performa *bare-metal*, keamanan memori tanpa *garbage collector*, dan *runtime memory footprint* yang sangat kecil (~12–25 MB RAM).
+
+```
+ ┌─────────────────────────────────────────────────────────────┐
+ │               N.E.X.A CLOUD CORE (Azure VPS)                │
+ │    AI Router • Multi-Tier LLM • Voice/Vision Duplex Core    │
+ └──────────────┬──────────────────────────────┬───────────────┘
+                │                              │
+     Encrypted Duplex WSS            Encrypted Duplex WSS
+  (Authorization: Bearer <SEC>)   (Authorization: Bearer <SEC>)
+  nexa_device_sec_998234_a335g    nexa_device_sec_998234_a335g
+                │                              │
+ ┌──────────────▼──────────────┐ ┌─────────────▼───────────────┐
+ │   N.E.X.A MOBILE BRIDGE     │ │ N.E.X.A WINDOWS BRIDGE      │
+ │  (Samsung Galaxy A33 5G)    │ │ (ThinkPad Windows 11)       │
+ │ • Kamera & Mikrofon Lapangan│ │ • Audio WASAPI + WebRTC AEC3│
+ │ • Android Accessibility     │ │ • DirectX 11 DXGI 1 FPS Vision│
+ │ • Sensor Cahaya & Gerak     │ │ • Cyberpunk Sentient Eyes HUD│
+ │ • Pelacak Lokasi Dual-GPS   │ │ • Dual Windowed/Fullscreen  │
+ └─────────────────────────────┘ └─────────────────────────────┘
+```
+
+#### 1. Topologi Protokol & Handshake Autentikasi
+Klien Windows Bridge terhubung secara langsung ke gerbang WebSocket server (`wss://nexa-server.indonesiacentral.cloudapp.azure.com/ws`) menggunakan crate `tokio-tungstenite`.
+- **Bearer Token Handshake**: Klien menyertakan header HTTP:
+  ```http
+  Authorization: Bearer nexa_device_sec_998234_a335g
+  ```
+  Token divalidasi secara kriptografis oleh server dengan `crypto.timingSafeEqual` terhadap variabel `NEXA_DEVICE_SECRET` atau `NEXA_BRIDGE_SECRET`.
+- **Auto-Reconnect & Backoff Adaptif**: Mengimplementasikan algoritma rekoneksi otomatis dengan *exponential backoff* (basis 1.000 ms hingga batas maksimal 30.000 ms) disertai *jitter* acak, menjamin koneksi pulih secara instan dan tangguh saat terjadi gangguan jaringan Wi-Fi laptop.
+- **Protokol Framing Pesan Terpadu**: Komunikasi data dua arah dibungkus dalam serialisasi JSON deterministik `BridgeMessage` yang mencakup paket audio Opus, frame tangkapan visual JPEG, sinyal telemetri sistem (CPU, RAM, baterai laptop), detak jantung *heartbeat* (setiap 30 detik), dan kendali interupsi suara.
+
+#### 2. Sub-Sistem Audio Duplex Berlatensi Rendah (WASAPI, Opus & WebRTC AEC3)
+- **Windows Audio Session API (WASAPI)**: Mengakses subsistem audio tingkat rendah Windows secara *native* (`wasapi` crate). Mengelola *shared mode* stream untuk menangkap input mikrofon laptop secara jernih dan melakukan *loopback capture* audio speaker.
+- **Acoustic Echo Cancellation (WebRTC AEC3)**: Mengintegrasikan engine pemrosesan sinyal audio canggih WebRTC AEC3. Algoritma ini membandingkan sinyal audio yang keluar dari speaker laptop dengan sinyal yang ditangkap oleh mikrofon, lalu secara cerdas mengeliminasi gema suara asisten N.E.X.A sehingga suara balasan AI tidak memantul kembali ke input mikrofon saat percakapan interaktif duplex berlangsung.
+- **Real-Time Opus Compression**: Sinyal suara mentah (PCM 16-bit 48 kHz / 16 kHz) dikompresi menggunakan codec Opus dengan *bitrate* adaptif sebelum dikirim ke Cloud Core, meminimalkan latensi percakapan hingga tingkat percakapan manusia alami.
+
+#### 3. Sub-Sistem Penglihatan Optik (DirectX 11 / DXGI Desktop Duplication API)
+- **Direct3D 11 & DXGI Output Duplication**: Menangkap bingkai layar desktop laptop secara langsung dari buffer VRAM kartu grafis (*hardware-accelerated screen capture*).
+- **Frekuensi Terukur 1 FPS**: Pengambilan frame layar dikunci secara ketat pada frekuensi **1 frame per detik (1 FPS)**. Frekuensi ini memberikan representasi visual *real-time* yang ideal bagi model AI kognitif multimodal tanpa membebani GPU laptop maupun *bandwidth* jaringan.
+- **JPEG Stream**: Frame layar dikonversi dan dikompresi secara efisien menjadi JPEG untuk dianalisis oleh `Vision_Engine` N.E.X.A (memeriksa kode pemrograman yang sedang diketik Tuan, membaca pesan error terminal, atau memandu dokumen kerja).
+
+#### 4. Antarmuka Sentient Cybernetic Eyes & Cyberpunk Holographic HUD
+- **Rendering GUI Berbasis `egui` / `eframe`**: Antarmuka grafis asisten desktop dibangun dengan pustaka antarmuka *immediate mode* Rust (`egui`), menawarkan performa rendering grafis 60 FPS mulus dengan konsumsi CPU nyaris nol.
+- **Sentient Holographic Eyes Avatar**: Dua mata siber futuristik bercahaya neon cyan (`#00E5FF`) dan biru laut (`#0B0F19`) dengan estetika J.A.R.V.I.S / Tony Stark:
+  - **State IDLE**: Cincin data holografik berotasi tenang dan bernapas perlahan.
+  - **State LISTENING**: Pupil membuka dan menyelaraskan penerimaan sinyal suara Tuan Faqih.
+  - **State THINKING**: Cincin orbital konsentris berputar cepat disertai *optical tick marks* holografik saat AI sedang merumuskan jawaban.
+  - **State SPEAKING**: Iris mata siber dan aksen visualizer gelombang audio berdenyut dinamis mengikuti amplitudo frekuensi suara N.E.X.A.
+  - **State VISION**: Mata siber beralih ke mode pemindai optik dengan garis bidik penargetan (*targeting reticle*) saat berbagi layar aktif.
+- **Mode Tampilan Ganda (Dual Display Mode)**:
+  - **Windowed Companion Mode**: Jendela mengambang ringkas berukuran ~360×520 piksel yang dapat diletakkan di sudut layar kerja tanpa menghalangi IDE atau browser Tuan.
+  - **Full Screen Command Center**: Layar penuh 1080p yang mengubah seluruh monitor laptop menjadi pusat komando holografik eksekutif.
+
+#### 5. Format File Konfigurasi Lokal (`~/.nexa-bridge.json`)
+Klien Windows Bridge memuat konfigurasi dari path `C:\Users\<Username>\.nexa-bridge.json`:
+```json
+{
+  "server_url": "wss://nexa-server.indonesiacentral.cloudapp.azure.com/ws",
+  "auth_token": "nexa_device_sec_998234_a335g",
+  "device_id": "thinkpad_windows_bridge",
+  "heartbeat_interval_secs": 30,
+  "auto_reconnect": true,
+  "reconnect_base_delay_ms": 1000,
+  "reconnect_max_delay_ms": 30000,
+  "audio_sample_rate": 48000,
+  "aec_enabled": true,
+  "vision_fps": 1,
+  "display_mode": "windowed"
+}
+```
+
+#### 6. Distribusi Biner Mandiri (*Zero External Dependencies*)
+Proyek Windows Bridge dikompilasi ke dalam satu biner eksekusi mandiri:
+- **File Biner**: `nexa-windows-bridge.exe`
+- **Ukuran File**: ~13 MB
+- **Dependensi Eksternal**: Nol (tidak memerlukan instalasi Node.js, Python, Visual C++ Redistributable terpisah, maupun Chromium). Dapat langsung dijalankan secara portabel pada Windows 10/11 64-bit.
+
+---
 
 ---
 

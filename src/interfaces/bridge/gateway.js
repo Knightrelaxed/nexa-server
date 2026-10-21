@@ -124,7 +124,12 @@ function initWebSocket(server) {
                     : Buffer.from(data);
           if (buf.length < 2) return;
           const liveVoice = require('../../core/Live_Voice_Engine');
-          const activeSession = liveVoice.getActiveSessionForClient(ws);
+          let activeSession = liveVoice.getActiveSessionForClient(ws);
+          if (!activeSession && ws.deviceType === 'desktop') {
+            const sid = `DESKTOP_LAZY_${Date.now()}`;
+            console.log(`[BRIDGE-GATEWAY] ⚡ Auto-starting Gemini Live Voice Session on binary audio for desktop [${sid}]`);
+            activeSession = liveVoice.startLiveSession(sid, ws);
+          }
           if (activeSession && activeSession.isActive) {
             activeSession.handleIncomingClientAudio(buf.toString('base64'));
           }

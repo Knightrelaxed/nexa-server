@@ -971,6 +971,31 @@ class LiveVoiceSession {
   }
 
   /**
+   * Handle explicit barge-in or interrupt from client (Android or Windows Bridge).
+   */
+  handleClientInterrupt() {
+    if (!this.isActive) return;
+    if (this._toolSafetyTimer) {
+      clearTimeout(this._toolSafetyTimer);
+      this._toolSafetyTimer = null;
+    }
+    this.isAssistantSpeaking = false;
+    this.isExecutingTool = false;
+    this.isWaitingToolReply = false;
+    this._flushUserTurn();
+    if (this.currentTurnAssistantText && this.currentTurnAssistantText.trim()) {
+      const interruptedText = this.currentTurnAssistantText.trim() + ' (terpotong ucapan Tuan)';
+      this.turnHistory.push({ role: 'assistant', text: interruptedText });
+    }
+    this.currentTurnAssistantText = '';
+    this._sendToClient({ type: 'CALL_AUDIO_INTERRUPTED' });
+    this._sendToClient({
+      type: 'CALL_STATUS_UPDATE',
+      status: 'LISTENING'
+    });
+  }
+
+  /**
    * Forward incoming audio chunk from Android mic directly to Google Live API
    * Google Gemini Multimodal Live API features native server-side neural VAD
    * for sub-second, full-duplex speech-to-speech interaction without artificial latency.
@@ -1697,11 +1722,17 @@ function getActiveSessionForClient(clientWs) {
       return session;
     }
   }
-  // Single active session fallback: If mobile bridge socket reference changed or reconnected
+  // Single active session fallback: If bridge socket reference changed or reconnected
   if (activeSessions.size === 1) {
     const onlySession = activeSessions.values().next().value;
     if (onlySession && onlySession.isActive) {
       if (clientWs && onlySession.clientWs !== clientWs) {
+        // Prevent cross-device hijacking (e.g. mobile session hijacked by desktop or vice-versa)
+        if (onlySession.clientWs && onlySession.clientWs.deviceType && clientWs.deviceType) {
+          if (onlySession.clientWs.deviceType !== clientWs.deviceType) {
+            return null;
+          }
+        }
         console.log(`[LIVE-VOICE] Updating clientWs reference for active session [${onlySession.sessionId}]`);
         rebindClientWs(clientWs);
       }

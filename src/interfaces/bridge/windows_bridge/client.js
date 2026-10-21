@@ -27,7 +27,17 @@ function setClient(ws) {
   try {
     const liveVoice = require('../../../core/Live_Voice_Engine');
     liveVoice.rebindClientWs(ws);
-  } catch (_) {}
+
+    // If there is no active live session for this desktop socket, start a new Live Voice Session!
+    let activeSession = liveVoice.getActiveSessionForClient(ws);
+    if (!activeSession || !activeSession.isActive) {
+      const sessionId = `DESKTOP_${Date.now()}`;
+      console.log(`[BRIDGE-WINDOWS] ⚡ Auto-starting Gemini Live Voice Session for Windows Bridge [${sessionId}]`);
+      liveVoice.startLiveSession(sessionId, ws);
+    }
+  } catch (err) {
+    console.error('[BRIDGE-WINDOWS] Live voice initialization error:', err.message);
+  }
 }
 
 /**
@@ -129,6 +139,48 @@ function handleMessage(payload, ws) {
     return;
   }
 
+  // 1.5 Call Event Handling (CALL_ACCEPTED / CALL_FINISHED / START_SESSION / END_SESSION)
+  if (pType === 'CALL_EVENT') {
+    try {
+      const liveVoice = require('../../../core/Live_Voice_Engine');
+      const eventName = String(payload.event || '').toUpperCase();
+      if (eventName === 'CALL_ACCEPTED' || eventName === 'START_SESSION') {
+        let activeSession = liveVoice.getActiveSessionForClient(ws);
+        if (!activeSession || !activeSession.isActive) {
+          const sessionId = payload.command_id || `DESKTOP_${Date.now()}`;
+          console.log(`[BRIDGE-WINDOWS] ⚡ Starting Gemini Live Voice Session on CALL_ACCEPTED [${sessionId}]`);
+          liveVoice.startLiveSession(sessionId, ws);
+        }
+      } else if (eventName === 'CALL_FINISHED' || eventName === 'CALL_REJECTED' || eventName === 'END_SESSION') {
+        const sid = payload.command_id || '';
+        if (sid) {
+          liveVoice.closeLiveSession(sid);
+        }
+        const session = liveVoice.getActiveSessionForClient(ws);
+        if (session) session.close();
+      }
+    } catch (e) {
+      console.error('[BRIDGE-WINDOWS] Call event processing error:', e.message);
+    }
+    return;
+  }
+
+  // 1.6 User Barge-In / Interruption Signal from Desktop
+  if (pType === 'CALL_AUDIO_INTERRUPTED' || pType === 'INTERRUPT') {
+    try {
+      const liveVoice = require('../../../core/Live_Voice_Engine');
+      const activeSession = liveVoice.getActiveSessionForClient(ws);
+      if (activeSession && activeSession.isActive) {
+        if (typeof activeSession.handleClientInterrupt === 'function') {
+          activeSession.handleClientInterrupt();
+        }
+      }
+    } catch (e) {
+      console.error('[BRIDGE-WINDOWS] Barge-in dispatch error:', e.message);
+    }
+    return;
+  }
+
   // 2. Realtime Continuous Audio Stream (WASAPI Duplex Audio -> Gemini Live API)
   if (payload.type === 'CALL_AUDIO_STREAM' || payload.type === 'AUDIO_STREAM') {
     try {
@@ -143,6 +195,11 @@ function handleMessage(payload, ws) {
       }
       if (!activeSession) {
         activeSession = liveVoice.getActiveSessionForClient(ws);
+      }
+      if (!activeSession) {
+        const autoSid = sid || `DESKTOP_LAZY_${Date.now()}`;
+        console.log(`[BRIDGE-WINDOWS] ⚡ Auto-starting Gemini Live Voice Session on audio stream [${autoSid}]`);
+        activeSession = liveVoice.startLiveSession(autoSid, ws);
       }
       if (activeSession && activeSession.isActive) {
         const pcmData = payload.pcm_chunk || payload.pcm || payload.data;
