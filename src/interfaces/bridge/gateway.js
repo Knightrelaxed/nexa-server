@@ -39,7 +39,11 @@ function resolveDeviceType(req) {
  * @param {import('http').Server} server 
  */
 function initWebSocket(server) {
-  const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || '').trim();
+  const validSecrets = [
+    env.NEXA_DEVICE_SECRET,
+    env.NEXA_BRIDGE_SECRET,
+    env.NEXA_CLI_SECRET,
+  ].filter(Boolean).map(s => String(s).trim());
 
   wss = new WebSocket.Server({
     server,
@@ -48,15 +52,20 @@ function initWebSocket(server) {
     verifyClient: (info, cb) => {
       // Handshake Authentication at HTTP Upgrade stage
       const authHeader = info.req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ') || !configuredSecret) {
+      if (!authHeader || !authHeader.startsWith('Bearer ') || validSecrets.length === 0) {
         console.warn('[BRIDGE-GATEWAY] ⚠️ Unauthorized handshake attempt rejected at HTTP upgrade.');
         return cb(false, 401, 'Unauthorized');
       }
 
       const token = authHeader.slice('Bearer '.length).trim();
       const aBuf = Buffer.from(token, 'utf8');
-      const bBuf = Buffer.from(configuredSecret, 'utf8');
-      if (aBuf.length !== bBuf.length || !crypto.timingSafeEqual(aBuf, bBuf)) {
+
+      const isAuthorized = validSecrets.some(secret => {
+        const bBuf = Buffer.from(secret, 'utf8');
+        return aBuf.length === bBuf.length && crypto.timingSafeEqual(aBuf, bBuf);
+      });
+
+      if (!isAuthorized) {
         console.warn('[BRIDGE-GATEWAY] ⚠️ Forbidden handshake attempt (token mismatch).');
         return cb(false, 403, 'Forbidden');
       }
