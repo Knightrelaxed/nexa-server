@@ -663,15 +663,17 @@ flowchart TD
      * Subtitle Bar: Teks dialog lisan real-time dalam tipografi berkelas besar (26px tebal, bersinar dinamis sesuai status kognitif).
      * Bottom Action Dock: Baris kontrol mengambang elegan di bagian bawah layar (`Mute Mic`, `Screen Share`, `Putuskan Sambungan`, serta hint hotkey `F11 / Win+Alt+N`).
    * **Keyboard Event Handler:** `FocusScope` menangani tombol `F11` (toggle fullscreen) dan `Escape` (exit fullscreen) secara instan.
-2. **Penyelarasan Teks Status Lisan (100% Paritas Mobile Bridge):**
-   * `LISTENING` $\to$ `"Mendengarkan Tuan Faqih..."`
-   * `PROCESSING` / `THINKING` $\to$ `"Sedang menalar & memproses..."`
-   * `SPEAKING` $\to$ `"N.E.X.A sedang berbicara..."`
-   * `BARGE_IN` $\to$ `"Mendengarkan interupsi Tuan..."`
-   * `TRANSMITTING_AUDIO` $\to$ `"Mentransmisikan suara (WASAPI 16kHz)..."`
-   * `TRANSMITTING_SCREEN` $\to$ `"Mentransmisikan layar & audio (D3D11 1 FPS)..."`
-   * `RECONNECTING` $\to$ `"Menghubungkan kembali ke server..."`
-   * `DISCONNECTED` $\to$ `"Bridge Terputus (Offline)"`
+2. **Penyelarasan Teks Status Lisan (Original Clean AI State - English):**
+   * `LISTENING` $\to$ `"Listening..."`
+   * `PROCESSING` / `THINKING` $\to$ `"Processing..."`
+   * `SPEAKING` $\to$ `"Speaking..."`
+   * `BARGE_IN` $\to$ `"Barge-in..."`
+   * `TRANSMITTING_AUDIO` $\to$ `"Transmitting audio..."`
+   * `TRANSMITTING_SCREEN` $\to$ `"Transmitting screen..."`
+   * `RECONNECTING` / `CONNECTING` $\to$ `"Connecting..."`
+   * `DISCONNECTED` / `OFFLINE` $\to$ `"Offline"`
+   * `IDLE` $\to$ `"Ready"`
+   * `TOOL_EXECUTING` $\to$ `"Executing command..."`
 * **Checkpoint Validasi:** Seluruh 28 unit test di `nexa-windows-bridge` dan 362 test di `nexa-server` lulus **100% PASS (Green)** tanpa warning, 0 error. Kompilasi binary bersih dan commit ter-push ke GitHub (`3ec0145`).
 
 ---
