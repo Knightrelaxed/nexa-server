@@ -534,7 +534,7 @@ async function callGoogleGemma(apiKey, prompt, systemInstruction = '', temperatu
   if (jsonMode) {
     optimizedSys += '\n[IMPORTANT: Output ONLY pure raw JSON starting with { and ending with }. Absolutely NO thinking notes, no markdown codeblocks, no thought analysis.]';
   } else {
-    optimizedSys += '\n[CRITICAL: Speak directly as N.E.X.A in natural Indonesian. Output ONLY the final conversational message. DO NOT output drafts, internal thoughts, bulleted analysis, notes, or English meta-commentary.]';
+    optimizedSys += '\n[CRITICAL: Speak directly as Nexa in natural Indonesian (address user primarily as Tuan). Output ONLY the final conversational message. DO NOT output drafts, internal thoughts, bulleted analysis, notes, or English meta-commentary.]';
   }
 
   const userPayload = jsonMode 

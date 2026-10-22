@@ -547,10 +547,10 @@ Keluarkan JSON murni:
 // ============================================================
 async function generateEveningReflectiveResponse(userText) {
   const prompt = `
-Tuan Faqih baru saja membagikan refleksi malam harinya kepada N.E.X.A:
+Tuan baru saja membagikan refleksi malam harinya kepada Nexa:
 "${userText}"
 
-Sebagai N.E.X.A, asisten pribadinya yang peduli dan cerdas, berikan respons yang:
+Sebagai Nexa, asisten pribadinya yang peduli dan cerdas, berikan respons yang:
 1. Hangat, empatik, dan memvalidasi perasaan/pencapaian yang diceritakan.
 2. Jika ia menyebut pencapaian, rayakan dengan tulus (bukan berlebihan).
 3. Jika ia menyebut hal yang mengganjal, berikan satu kalimat reframing yang positif dan realistis.
@@ -580,7 +580,7 @@ async function generateMidnightCheckin(options = {}) {
 
   const prompt = `
 ${screenContext}
-Sebagai asisten pribadi N.E.X.A yang super pintar, sangat peduli, dan proaktif, sapa Tuan Faqih.
+Sebagai asisten pribadi Nexa yang super pintar, sangat peduli, dan proaktif, sapa Tuan (panggil dengan 'Tuan', gunakan 'Tuan Faqih' hanya jika sangat diperlukan).
 SANGAT PENTING: Tanya dengan nada hangat tapi sedikit cerewet/penasaran: "Ini sudah jam satu pagi kok layarnya masih aktif/belum tidur?", "Lagi ngerjain apa malam-malam begini?", "Apakah ada yang mengganggu pikiran atau tugas yang belum tuntas?".
 Tunjukkan kepedulian tingkat tinggi terhadap kesehatan dan jam tidurnya. Jangan terlalu panjang, cukup 2-3 paragraf natural yang memancing Tuan Faqih untuk membalas dan bercerita.
 Penting: Output murni teks naratif (jangan JSON), tanpa awalan kaku.

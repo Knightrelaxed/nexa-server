@@ -77,9 +77,9 @@ function sendCommand(action, params = {}, options = {}) {
     const timestamp = Date.now();
     const commandId = `cmd_${timestamp}_${Math.random().toString(36).substring(2, 8)}`;
 
-    // Phonetic Sanitization: Replace N.E.X.A with NEXA for Android TTS
+    // Phonetic Sanitization: Replace N.E.X.A or all-caps NEXA with Title Case 'Nexa' for natural Android TTS
     if (action === 'SPEAK_TEXT' && params && typeof params.text === 'string') {
-      params = { ...params, text: params.text.replace(/N\.E\.X\.A\.?/gi, 'NEXA') };
+      params = { ...params, text: params.text.replace(/N\.?E\.?X\.?A\.?/gi, 'Nexa') };
     }
 
     const payload = {
