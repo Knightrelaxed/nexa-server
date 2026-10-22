@@ -545,12 +545,13 @@ class LiveVoiceSession {
     // ── Language Lock Directive & Anti-Hallucination Guard ───────────────
     const languageLockPrefix =
       `[BAHASA: INDONESIA - ATURAN MUTLAK PERCAKAPAN]\n` +
-      `Percakapan telepon suara ini berlangsung SEPENUHNYA dalam Bahasa Indonesia kasual/santai antara Tuan dan Nexa.\n` +
-      `Tuan terkadang berbicara dari jarak agak jauh dari mikrofon ponsel (handsfree/speaker). Dengarkan dengan seksama.\n` +
-      `PENTING TENTANG AKUSTIK & HALUSINASI:\n` +
-      `1. JANGAN PERNAH merespons, memvalidasi, atau mengeluarkan kata bahasa Spanyol/asing seperti "¿Qué?" atau "de" saat jeda hening.\n` +
-      `2. Jika mendengar desis hening atau audio tidak jelas, TETAPLAH DIAM dan dengarkan terus tanpa memotong giliran bicara.\n` +
-      `3. Pahami ucapan kasual, santai, dan potongan kata dengan penalaran kontekstual, lalu tanggapi secara alami dalam Bahasa Indonesia.\n\n`;
+      `Percakapan suara ini berlangsung 100% EKSKLUSIF dalam Bahasa Indonesia santai dan mengalir antara Tuan Faqih dan Nexa.\n` +
+      `DILARANG KERAS merespons dalam Bahasa Inggris, Spanyol, atau bahasa asing lainnya kecuali jika Tuan secara eksplisit meminta ("Nexa, jawab dalam bahasa Inggris").\n` +
+      `Jika ada fonem atau potongan suku kata yang terdengar ambigu, SELALU tafsirkan dan jawab sebagai kalimat dalam Bahasa Indonesia.\n` +
+      `PENTING TENTANG AKUSTIK & ANTI-DISTRAKSI:\n` +
+      `1. DILARANG MERESPONS suara desis kipas laptop, hembusan nafas, ketukan meja/keyboard, atau jeda hening.\n` +
+      `2. Jika mendengar desis latar belakang atau audio belum selesai diucapkan, TETAPLAH DIAM dan dengarkan terus tanpa memotong giliran bicara.\n` +
+      `3. Pahami ucapan kasual, santai, dan potongan kata dengan deduksi konteks percakapan secara cerdas dan berwibawa.\n\n`;
 
     // ── Assemble Full System Prompt ──────────────────────────────────────
     const fullSystemPrompt =
@@ -595,10 +596,10 @@ class LiveVoiceSession {
         outputAudioTranscription: {},
         realtimeInputConfig: {
           automaticActivityDetection: {
-            startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
-            endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+            startOfSpeechSensitivity: 'START_SENSITIVITY_DEFAULT',
+            endOfSpeechSensitivity: 'END_SENSITIVITY_DEFAULT',
             prefixPaddingMs: 300,
-            silenceDurationMs: 700
+            silenceDurationMs: 800
           }
         }
       }
