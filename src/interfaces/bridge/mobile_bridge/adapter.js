@@ -155,6 +155,22 @@ class NexaBridgeAdapter {
       return;
     }
 
+    // 2.5 Screen Share / Video Stopped Event
+    if (callEvent.event === 'SCREEN_SHARE_STOPPED' || callEvent.event === 'VIDEO_STOPPED' || callEvent.event === 'STOP_SCREEN_SHARE') {
+      try {
+        const liveVoice = require('../../../core/Live_Voice_Engine');
+        if (clientWs) {
+          const session = liveVoice.getActiveSessionForClient(clientWs);
+          if (session && typeof session.handleClientVideoStop === 'function') {
+            session.handleClientVideoStop();
+          }
+        }
+      } catch (err) {
+        console.error('[NEXA-ADAPTER-MOBILE] Failed to handle video stop event:', err.message);
+      }
+      return;
+    }
+
     // 3. Audio Reply Processing (Legacy Turn-Based Fallback)
     if (callEvent.event === 'CALL_AUDIO_REPLY' && callEvent.audio_base64) {
       try {

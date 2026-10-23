@@ -158,6 +158,11 @@ function handleMessage(payload, ws) {
         }
         const session = liveVoice.getActiveSessionForClient(ws);
         if (session) session.close();
+      } else if (eventName === 'SCREEN_SHARE_STOPPED' || eventName === 'VIDEO_STOPPED' || eventName === 'STOP_SCREEN_SHARE') {
+        const session = liveVoice.getActiveSessionForClient(ws);
+        if (session && typeof session.handleClientVideoStop === 'function') {
+          session.handleClientVideoStop();
+        }
       }
     } catch (e) {
       console.error('[BRIDGE-WINDOWS] Call event processing error:', e.message);

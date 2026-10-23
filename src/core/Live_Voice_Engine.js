@@ -209,6 +209,9 @@ class LiveVoiceSession {
     this._userTranscriptBuf       = '';
     this._lastTactileInjectionTime = 0;
     this._lastVocalActivityTime    = 0;
+    this.isScreenSharingActive     = false;
+    this.latestVisualFrame         = null;
+    this.latestVisualTimestamp     = 0;
 
     // Diagnostic raw PCM audio dump file (only active when DEBUG_LIVE_PCM=true)
     this.debugPcmPath = path.join(os.tmpdir(), `nexa_live_${this.sessionId}.pcm`);
@@ -763,15 +766,25 @@ class LiveVoiceSession {
             });
           }
 
-          // Multimodal Vision Injection: If user speech contains visual query keywords
-          // and fresh visual frame (<15s) exists, inject inlineData visual turn context
-          if (this.latestVisualFrame && (Date.now() - (this.latestVisualTimestamp || 0) < 15000) && !this._visualTurnInjected) {
+          // Multimodal Vision Injection: Only if screen sharing is actively enabled,
+          // fresh frame (<4s) exists, and user query is genuinely positive (not a negation or shutdown notice)
+          const isFresh = this.isScreenSharingActive && this.latestVisualFrame && (Date.now() - (this.latestVisualTimestamp || 0) < 4000);
+          if (isFresh && !this._visualTurnInjected) {
             const userTextLower = this._userTranscriptBuf.toLowerCase();
-            const visualKeywords = ['lihat', 'layar', 'kamera', 'baca', 'teks', 'tulisan', 'ini apa', 'apa ini', 'warna apa', 'gambar', 'screen', 'depan', 'tampilan'];
-            if (visualKeywords.some(kw => userTextLower.includes(kw))) {
-              this._visualTurnInjected = true;
-              console.log(`[LIVE-VOICE] 👁️ Visual query detected: "${this._userTranscriptBuf.trim()}" -> Injecting turn visual context`);
-              this._injectVisualContext(this.latestVisualFrame, this._userTranscriptBuf.trim());
+            const negationKeywords = [
+              'enggak bisa', 'tidak bisa', 'udah mati', 'sudah mati', 'mematikan',
+              'bukan layar', 'jangan lihat', 'tutup layar', 'stop', 'matikan',
+              'kok bisa lihat', 'enggak boleh lihat'
+            ];
+            const hasNegation = negationKeywords.some(kw => userTextLower.includes(kw));
+
+            if (!hasNegation) {
+              const visualKeywords = ['lihat', 'layar', 'kamera', 'baca', 'teks', 'tulisan', 'ini apa', 'apa ini', 'warna apa', 'gambar', 'screen', 'depan', 'tampilan'];
+              if (visualKeywords.some(kw => userTextLower.includes(kw))) {
+                this._visualTurnInjected = true;
+                console.log(`[LIVE-VOICE] 👁️ Visual query detected: "${this._userTranscriptBuf.trim()}" -> Injecting turn visual context`);
+                this._injectVisualContext(this.latestVisualFrame, this._userTranscriptBuf.trim());
+              }
             }
           }
         }
@@ -1221,6 +1234,7 @@ class LiveVoiceSession {
     if (!jpegBase64 || typeof jpegBase64 !== 'string') return;
 
     // Cache latest visual frame for turn-associated injection and freshness checks
+    this.isScreenSharingActive = true;
     this.latestVisualFrame = jpegBase64;
     this.latestVisualTimestamp = Date.now();
     this.videoFramesReceived = (this.videoFramesReceived || 0) + 1;
@@ -1243,6 +1257,39 @@ class LiveVoiceSession {
       this.googleWs.send(JSON.stringify(frameMsg));
     } catch (err) {
       console.error(`[LIVE-VOICE] Failed to forward video frame to Google:`, err.message);
+    }
+  }
+
+  /**
+   * Handle explicit screen share / video stop event from client.
+   * Completely purges cached visual frame and notifies Gemini that vision is no longer active.
+   */
+  handleClientVideoStop() {
+    console.log(`[LIVE-VOICE] 🛑 Screen sharing stopped by client for session [${this.sessionId}]`);
+    this.isScreenSharingActive = false;
+    this.latestVisualFrame = null;
+    this.latestVisualTimestamp = 0;
+    this._visualTurnInjected = false;
+
+    // Explicitly notify Gemini Live session that visual feed is now inactive
+    if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN && this.isSetupComplete) {
+      const payload = {
+        clientContent: {
+          turns: [{
+            role: 'user',
+            parts: [
+              { text: '[Status Sistem]: Fitur berbagi layar telah dimatikan oleh Tuan. Anda saat ini TIDAK dapat melihat layar atau kamera Tuan. Jika Tuan bertanya seputar tampilan layar, beri tahu secara jujur dan lugas bahwa berbagi layar sudah tidak aktif.' }
+            ]
+          }],
+          turnComplete: false
+        }
+      };
+      try {
+        this.googleWs.send(JSON.stringify(payload));
+        console.log('[LIVE-VOICE] 📢 Dispatched screen share stopped notice to Gemini.');
+      } catch (err) {
+        console.warn('[LIVE-VOICE] Failed to dispatch video stop notice to Gemini:', err.message);
+      }
     }
   }
 
