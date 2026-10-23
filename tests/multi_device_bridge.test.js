@@ -145,6 +145,35 @@ test('Windows Bridge Adapter: high-level methods return clean offline status', a
   assert.equal(adapter.isOnline(), false);
   const snap = adapter.getSnapshot();
   assert.equal(snap.is_online, false);
+
+  // New Desktop Intent Helpers
+  const resLaunch = await adapter.launchApp('chrome');
+  assert.equal(resLaunch.success, false);
+  assert.equal(resLaunch.status, 'OFFLINE');
+
+  const resVol = await adapter.setVolume(70);
+  assert.equal(resVol.success, false);
+  assert.equal(resVol.status, 'OFFLINE');
+
+  const resMute = await adapter.mute();
+  assert.equal(resMute.success, false);
+  assert.equal(resMute.status, 'OFFLINE');
+
+  const resLock = await adapter.lockScreen();
+  assert.equal(resLock.success, false);
+  assert.equal(resLock.status, 'OFFLINE');
+
+  const resBat = await adapter.getBatteryStatus();
+  assert.equal(resBat.success, false);
+  assert.equal(resBat.status, 'OFFLINE');
+
+  const resDesk = await adapter.showDesktop();
+  assert.equal(resDesk.success, false);
+  assert.equal(resDesk.status, 'OFFLINE');
+
+  const resShot = await adapter.takeScreenshot();
+  assert.equal(resShot.success, false);
+  assert.equal(resShot.status, 'OFFLINE');
 });
 
 test('Mobile Adapter: methods are exposed and functional', () => {
@@ -154,6 +183,25 @@ test('Mobile Adapter: methods are exposed and functional', () => {
   assert.equal(typeof adapter.simulateIncomingCall, 'function');
   assert.equal(typeof adapter.isScreenActive, 'function');
   assert.equal(typeof adapter.getSnapshot, 'function');
+});
+
+test('Desktop Hardware Intent Routing: controlDeviceHardware routes to Windows Bridge on desktop calls', async () => {
+  // Launch app routing
+  const resApp = await executeLiveTool('controlDeviceHardware', { action: 'LAUNCH_APP', appName: 'Chrome' }, { deviceType: 'desktop' });
+  assert.equal(resApp.status, 'FAILED');
+  assert.match(resApp.message, /offline|gagal/i);
+
+  // Volume control routing
+  const resVol = await executeLiveTool('controlDeviceHardware', { action: 'SET_VOLUME', volumeLevel: 75 }, { deviceType: 'desktop' });
+  assert.equal(resVol.status, 'FAILED');
+
+  // Mute control routing
+  const resMute = await executeLiveTool('controlDeviceHardware', { action: 'MUTE' }, { deviceType: 'desktop' });
+  assert.equal(resMute.status, 'FAILED');
+
+  // System metrics routing
+  const resMetrics = await executeLiveTool('controlDeviceHardware', { action: 'SYSTEM_METRICS' }, { deviceType: 'desktop' });
+  assert.equal(resMetrics.status, 'FAILED');
 });
 
 test('Bridge Gateway: Real WebSocket text JSON frame routing (Regression Test for buffer/text misclassification)', async () => {

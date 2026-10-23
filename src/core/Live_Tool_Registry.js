@@ -438,15 +438,17 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 20. HARDWARE: CONTROL DEVICE ─────────────────────────────
   {
     name: 'controlDeviceHardware',
-    description: 'Mengontrol perangkat keras HP Samsung Tuan Faqih (senter, volume, DND, kunci layar, baterai, GPS, buka app, cari HP, foto, screenshot).',
+    description: 'Mengontrol perangkat keras dan sistem pada perangkat aktif (Laptop Windows Desktop maupun HP Samsung Tuan Faqih). Pada Windows: membuka aplikasi (Chrome, Notepad, VS Code, Spotify, Kalkulator, Explorer, Terminal, Settings), mengatur volume, mute, mengunci laptop, screenshot, dan cek baterai/sistem. Pada HP: senter, volume, DND, kunci layar, baterai, GPS, buka app, ringtone, foto, screenshot.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        action:      { type: 'STRING', description: '"TOGGLE_FLASHLIGHT", "SET_VOLUME", "FORCE_DND", "LOCK_SCREEN", "GET_BATTERY_STATUS", "GET_LOCATION", "LAUNCH_APP", "PLAY_RINGTONE", "STOP_MEDIA", "TAKE_PHOTO", "TAKE_SCREENSHOT", "GO_HOME_SCREEN", "SHOW_RECENTS".' },
+        action:      { type: 'STRING', description: '"TOGGLE_FLASHLIGHT", "SET_VOLUME", "MUTE", "FORCE_DND", "LOCK_SCREEN", "GET_BATTERY_STATUS", "SYSTEM_METRICS", "GET_LOCATION", "LAUNCH_APP", "OPEN_APP", "PLAY_RINGTONE", "STOP_MEDIA", "TAKE_PHOTO", "TAKE_SCREENSHOT", "GO_HOME_SCREEN", "SHOW_DESKTOP", "SHOW_RECENTS".' },
         enabled:     { type: 'BOOLEAN', description: 'true/false untuk senter atau DND.' },
         volumeLevel: { type: 'NUMBER', description: 'Tingkat volume 0–100.' },
-        packageName: { type: 'STRING', description: 'Package name aplikasi untuk LAUNCH_APP.' },
-        appName:     { type: 'STRING', description: 'Nama aplikasi yang ingin dibuka (contoh: "YouTube", "WhatsApp", "Chrome").' },
+        packageName: { type: 'STRING', description: 'Package name aplikasi untuk LAUNCH_APP di HP.' },
+        appName:     { type: 'STRING', description: 'Nama aplikasi yang ingin dibuka (contoh: "Chrome", "Notepad", "VS Code", "Spotify", "Kalkulator", "File Explorer", "Terminal", "YouTube", "WhatsApp").' },
+        url:         { type: 'STRING', description: 'URL web yang ingin dibuka langsung di browser (contoh: "https://google.com").' },
+        path:        { type: 'STRING', description: 'Jalur direktori atau berkas yang ingin dibuka.' },
         confirmed:   { type: 'BOOLEAN', description: 'Konfirmasi eksplisit dari Tuan Faqih untuk aksi sensitif privasi (foto/lokasi/kunci).' }
       },
       required: ['action']
@@ -664,7 +666,7 @@ function _validateActionConfirmation(toolName, key, previewText, confirmed) {
 // ────────────────────────────────────────────────────────────────────────────
 // MASTER TOOL EXECUTOR
 // ────────────────────────────────────────────────────────────────────────────
-async function executeLiveTool(toolName, args = {}) {
+async function executeLiveTool(toolName, args = {}, context = {}) {
   console.log(`[LIVE-TOOL] 🛠️ Executing: ${toolName}(${JSON.stringify(args)})`);
   const startTime = Date.now();
 
@@ -1319,6 +1321,120 @@ async function executeLiveTool(toolName, args = {}) {
           if (confirmCheck) return confirmCheck;
         }
 
+        // Active Device Awareness: Route to Windows Bridge when call originates from desktop
+        const isDesktop = context.deviceType === 'desktop' ||
+          (typeof context.deviceType === 'undefined' && windowsBridge.isConnected() && !mobileBridgeWs.isConnected());
+
+        if (isDesktop) {
+          if (action === 'LAUNCH_APP' || action === 'OPEN_APP' || action === 'OPEN_APPLICATION') {
+            const appName = args.appName || args.packageName || args.target;
+            if (!appName) {
+              return { status: 'FAILED', message: 'Sebutkan nama aplikasi yang ingin dibuka di laptop.' };
+            }
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('LAUNCH_APP', { app_name: appName, path: args.path, url: args.url }, { timeoutMs: 5000 }),
+              6000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              message: bridgeRes.message || (bridgeRes.success ? `Aplikasi ${appName} berhasil dibuka di desktop.` : `Gagal membuka aplikasi ${appName} di desktop.`)
+            };
+          }
+
+          if (action === 'SET_VOLUME') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('SET_VOLUME', { volume_level: args.volumeLevel }, { timeoutMs: 4000 }),
+              5000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              message: bridgeRes.message || (bridgeRes.success ? 'Volume laptop berhasil disesuaikan.' : 'Gagal mengatur volume laptop.')
+            };
+          }
+
+          if (action === 'MUTE' || action === 'UNMUTE' || action === 'TOGGLE_MUTE') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('MUTE', {}, { timeoutMs: 4000 }),
+              5000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              message: bridgeRes.message || (bridgeRes.success ? 'Status audio laptop berhasil diubah.' : 'Gagal mengubah status audio laptop.')
+            };
+          }
+
+          if (action === 'LOCK_SCREEN') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('LOCK_SCREEN', {}, { timeoutMs: 4000 }),
+              5000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              message: bridgeRes.success ? 'Layar laptop Windows berhasil dikunci.' : 'Gagal mengunci layar laptop.'
+            };
+          }
+
+          if (action === 'GET_BATTERY_STATUS') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('GET_BATTERY_STATUS', {}, { timeoutMs: 4000 }),
+              5000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              battery_level: bridgeRes?.data?.level_percent ?? null,
+              is_charging: bridgeRes?.data?.is_charging ?? null,
+              message: bridgeRes.message || (bridgeRes.success ? `Baterai laptop saat ini ${bridgeRes?.data?.level_percent ?? '?'}%.` : 'Gagal membaca baterai laptop.')
+            };
+          }
+
+          if (action === 'SYSTEM_METRICS' || action === 'GET_SYSTEM_METRICS') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('SYSTEM_METRICS', {}, { timeoutMs: 4000 }),
+              5000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              cpu_percent: bridgeRes?.data?.cpu_percent ?? null,
+              ram_percent: bridgeRes?.data?.ram_percent ?? null,
+              message: bridgeRes.message || 'Status sistem laptop terbaca.'
+            };
+          }
+
+          if (action === 'TAKE_SCREENSHOT') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('TAKE_SCREENSHOT', {}, { timeoutMs: 4000 }),
+              5000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              message: bridgeRes.message || (bridgeRes.success ? 'Tangkapan layar laptop berhasil diambil.' : 'Gagal mengambil screenshot laptop.')
+            };
+          }
+
+          if (action === 'GO_HOME_SCREEN' || action === 'SHOW_DESKTOP' || action === 'MINIMIZE_ALL') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('SHOW_DESKTOP', {}, { timeoutMs: 4000 }),
+              5000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              message: bridgeRes.message || (bridgeRes.success ? 'Tampilan desktop laptop berhasil dibuka.' : 'Gagal membuka desktop laptop.')
+            };
+          }
+
+          if (action === 'END_CALL' || action === 'HANGUP') {
+            return await executeLiveTool('endCall', args, context);
+          }
+        }
+
         if (action === 'TOGGLE_FLASHLIGHT' || action === 'FLASHLIGHT') {
           const enabled = args.enabled !== undefined ? args.enabled : true;
           const bridgeRes = await _withToolTimeout(
@@ -1479,17 +1595,18 @@ async function executeLiveTool(toolName, args = {}) {
           'FORCE_DND',
           'LOCK_SCREEN',
           'GET_BATTERY_STATUS',
+          'SYSTEM_METRICS', 'GET_SYSTEM_METRICS',
           'GET_SCREEN_STATUS',
           'GET_LIGHT_STATUS',
           'GET_LOCATION',
-          'LAUNCH_APP',
+          'LAUNCH_APP', 'OPEN_APP', 'OPEN_APPLICATION',
           'END_CALL', 'HANGUP',
           'PLAY_RINGTONE',
           'TAKE_PHOTO',
           'TAKE_SCREENSHOT',
-          'GO_HOME_SCREEN',
+          'GO_HOME_SCREEN', 'SHOW_DESKTOP', 'MINIMIZE_ALL',
           'VIBRATE',
-          'MUTE'
+          'MUTE', 'UNMUTE', 'TOGGLE_MUTE'
         ]);
 
         if (!ALLOWED_HARDWARE_ACTIONS.has(action)) {
@@ -1621,6 +1738,9 @@ async function executeLiveTool(toolName, args = {}) {
           cancelEndCallSafetyTimer();
           _endCallSafetyTimer = setTimeout(() => {
             mobileBridgeWs.sendCommand('END_CALL', { reason: args.reason || 'User requested hangup' }, { timeoutMs: 3000 }).catch(() => {});
+            if (windowsBridge && windowsBridge.isConnected()) {
+              windowsBridge.sendCommand('END_CALL', { reason: args.reason || 'User requested hangup' }, { timeoutMs: 3000 }).catch(() => {});
+            }
             liveVoice.closeAllLiveSessions();
             _endCallSafetyTimer = null;
           }, 8000);

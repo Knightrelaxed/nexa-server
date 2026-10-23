@@ -48,6 +48,34 @@ class WindowsBridgeAdapter {
     return this.execute('DESKTOP_PRESS_KEY', { key, modifiers });
   }
 
+  async launchApp(appName, path = null, url = null) {
+    return this.execute('LAUNCH_APP', { app_name: appName, path, url });
+  }
+
+  async setVolume(volumeLevel) {
+    return this.execute('SET_VOLUME', { volume_level: volumeLevel });
+  }
+
+  async mute() {
+    return this.execute('MUTE');
+  }
+
+  async lockScreen() {
+    return this.execute('LOCK_SCREEN');
+  }
+
+  async getBatteryStatus() {
+    return this.execute('GET_BATTERY_STATUS');
+  }
+
+  async showDesktop() {
+    return this.execute('SHOW_DESKTOP');
+  }
+
+  async takeScreenshot() {
+    return this.execute('TAKE_SCREENSHOT');
+  }
+
   // ── AR Visual Guidance & Highlighting ─────────────────────────
 
   async highlightElement(selector, durationMs = 4000, style = {}) {

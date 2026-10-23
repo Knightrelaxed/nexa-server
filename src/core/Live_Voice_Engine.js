@@ -556,9 +556,33 @@ class LiveVoiceSession {
       `2. Jika mendengar desis latar belakang atau audio belum selesai diucapkan, TETAPLAH DIAM dan dengarkan terus tanpa memotong giliran bicara.\n` +
       `3. Pahami ucapan kasual, santai, dan potongan kata dengan deduksi konteks percakapan secara cerdas dan berwibawa.\n\n`;
 
+    // ── Active Device Context (Desktop / Mobile Awareness) ───────────────
+    const isDesktopClient = Boolean(!this.clientWs?.deviceType || this.clientWs?.deviceType === 'desktop');
+    const deviceContextBlock = isDesktopClient
+      ? `\n\n[PERANGKAT AKTIF: LAPTOP WINDOWS DESKTOP (LENOVO THINKPAD X380 YOGA)]\n` +
+        `Tuan Faqih saat ini terhubung langsung melalui Nexa Windows Bridge di laptop ThinkPad Windows miliknya.\n` +
+        `Anda memiliki akses dan otoritas penuh untuk mengendalikan sistem Windows desktop secara otonom:\n` +
+        `1. OTOMATISASI DESKTOP & NAVIGASI LAYAR (PANGGIL SEGERA SAAT TUAN MEMINTA):\n` +
+        `   - Klik mouse presisi pada tombol, link, atau elemen layar -> desktopClick(x, y, button: "LEFT"|"RIGHT", double_click: false/true) dengan koordinat 0-1000.\n` +
+        `   - Gulir dokumen, web, atau jendela aktif -> desktopScroll(direction: "UP"|"DOWN", amount: 3).\n` +
+        `   - Ketik teks atau pencarian -> desktopTypeText(text: "...", press_enter: true/false).\n` +
+        `   - Tekan tombol keyboard atau shortcut khusus -> desktopPressKey(key: "ENTER"|"SPACE"|"ESCAPE"|"TAB"|"BACKSPACE"|"CTRL+C"|"CTRL+V"|"ALT+TAB"|"VOLUME_UP"|"VOLUME_DOWN"|"VOLUME_MUTE").\n` +
+        `   - Sorot elemen/tombol visual untuk menuntun pandangan Tuan -> highlightElement(ymin, xmin, ymax, xmax, style: "BOX"|"RING"|"SPOTLIGHT", label: "...").\n` +
+        `   - Arahkan laser pointer kursor -> pointCursor(x, y).\n` +
+        `   - Hapus sorotan visual -> clearHighlights().\n` +
+        `2. KONTROL HARDWARE & APLIKASI DESKTOP:\n` +
+        `   - Buka aplikasi Windows (Chrome, Notepad, Spotify, VS Code, Calculator, File Explorer, Terminal, Settings, dll) atau URL web -> controlDeviceHardware(action: "LAUNCH_APP", appName: "...").\n` +
+        `   - Atur volume speaker laptop -> controlDeviceHardware(action: "SET_VOLUME", volumeLevel: ...).\n` +
+        `   - Mute / Unmute suara laptop -> controlDeviceHardware(action: "MUTE").\n` +
+        `   - Kunci laptop Windows -> controlDeviceHardware(action: "LOCK_SCREEN").\n` +
+        `   - Ambil tangkapan layar laptop -> controlDeviceHardware(action: "TAKE_SCREENSHOT").\n` +
+        `   - Cek baterai atau status sistem laptop -> controlDeviceHardware(action: "GET_BATTERY_STATUS").\n`
+      : '';
+
     // ── Assemble Full System Prompt ──────────────────────────────────────
     const fullSystemPrompt =
       languageLockPrefix +
+      deviceContextBlock +
       NEXA_LIVE_SYSTEM_PROMPT +
       temporalContext +
       presenceModelBlock +
@@ -930,7 +954,11 @@ class LiveVoiceSession {
             try {
               // Wrap with 8000ms safety timeout to prevent hanging tool from locking session
               const toolResult = await Promise.race([
-                executeLiveTool(funcName, funcArgs),
+                executeLiveTool(funcName, funcArgs, {
+                  session: this,
+                  deviceType: this.clientWs?.deviceType || 'desktop',
+                  clientWs: this.clientWs
+                }),
                 new Promise((_, reject) => setTimeout(() => reject(new Error(`Tool '${funcName}' timed out after 8s`)), 8000))
               ]);
 
@@ -1878,9 +1906,26 @@ function closeAllLiveSessions() {
   activeSessions.clear();
 }
 
+function getActiveSession() {
+  for (const session of activeSessions.values()) {
+    if (session.isActive) return session;
+  }
+  return null;
+}
+
+function getActiveDeviceType() {
+  const session = getActiveSession();
+  if (session && session.clientWs && session.clientWs.deviceType) {
+    return session.clientWs.deviceType;
+  }
+  return 'desktop';
+}
+
 module.exports = {
   startLiveSession,
   getLiveSession,
+  getActiveSession,
+  getActiveDeviceType,
   getActiveSessionForClient,
   closeLiveSession,
   closeAllLiveSessions,
