@@ -583,7 +583,8 @@ class LiveVoiceSession {
               prebuiltVoiceConfig: {
                 voiceName: env.GEMINI_LIVE_VOICE || 'Lyra'
               }
-            }
+            },
+            languageCode: 'id-ID'
           }
         },
         systemInstruction: {
@@ -592,12 +593,14 @@ class LiveVoiceSession {
         tools: [
           { functionDeclarations: LIVE_TOOL_DECLARATIONS }
         ],
-        inputAudioTranscription: {},
+        inputAudioTranscription: {
+          languageCodes: ['id-ID']
+        },
         outputAudioTranscription: {},
         realtimeInputConfig: {
           automaticActivityDetection: {
-            startOfSpeechSensitivity: 'START_SENSITIVITY_DEFAULT',
-            endOfSpeechSensitivity: 'END_SENSITIVITY_DEFAULT',
+            startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+            endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
             prefixPaddingMs: 300,
             silenceDurationMs: 800
           }
