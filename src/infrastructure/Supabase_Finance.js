@@ -16,14 +16,8 @@
  *   ├── analytics.js        (Metrik, perbandingan periode, tren & paginasi transaksi)
  *   ├── budgets.js          (Kelompok anggaran & akumulasi expense per kategori)
  *   ├── recurring.js        (Aturan & kandidat pengeluaran rutin/langganan)
- *   └── index.js            (Ekspor agregat publik)
+ *   └── index.js            (Ekspor agregat publik & helper _getClient)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const financeDb = require('./finance_db');
-
-module.exports = {
-  ...financeDb,
-  // Helper khusus Split_Engine
-  _getClient: () => financeDb.supabaseFinance,
-};
+module.exports = require('./finance_db');
