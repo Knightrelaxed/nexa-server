@@ -89,7 +89,7 @@ nexa-server/
 │       ├── split_supabase_memories.js    # AST-based non-destructive module splitter for Supabase Memories
 │       └── verify_finance_split.js       # Static scope & cyclic dependency validator
 │
-├── tests/                                # Automated Unit Test Suites & Active Diagnostics (317 Tests)
+├── tests/                                # Automated Unit Test Suites & Active Diagnostics (371 Tests)
 │   ├── cli_adapter.test.js               # Unit tests: CLI ingress adapter & multi-turn prompts
 │   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers (15 bank cases, escaping)
 │   ├── day_simulation.test.js            # Unit tests: Full 24-hour simulation (Briefing to Midnight)
@@ -103,6 +103,7 @@ nexa-server/
 │   ├── reviewer_resilience.test.js       # Unit tests: Reviewer engine fallback & fault tolerance
 │   ├── router_characterization.test.js   # Golden master: Invariance test suite for modular AI Router (48 cases)
 │   ├── signal_detector.test.js           # Unit tests: Real-time behavioral signal detector
+│   ├── supabase_finance_characterization.test.js # Characterization: Invariance test suite for modular Finance DB (25 APIs)
 │   ├── telegram_adapter.test.js          # Unit tests: Telegram adapter, action builders & callbacks
 │   ├── test_all_crons.js                 # Diagnostic: Autonomous runner for all scheduled crons
 │   ├── test_cf_relay_live.js             # Diagnostic: Cloudflare Edge relay live connectivity tester
@@ -201,7 +202,15 @@ nexa-server/
     │   ├── Google_Workspace.js           # Google Calendar & Workspace integration
     │   ├── Location_Engine.js            # Reverse geocoding & coordinates resolver
     │   ├── Notion_Client.js              # Notion workspace sync (notes & database)
-    │   ├── Supabase_Finance.js           # Supabase PostgreSQL financial ledger client
+    │   ├── Supabase_Finance.js           # Public Facade (30 lines, re-exporting 25 finance DB APIs)
+    │   ├── finance_db/                   # Modular Financial Database Subsystem (6 Modules)
+    │   │   ├── client.js                 # Supabase client init & connection configuration
+    │   │   ├── reference_data.js         # In-memory accounts/categories cache (30m TTL) & fuzzy resolvers
+    │   │   ├── transactions.js           # Dual-write CRUD transactions & split group tracking
+    │   │   ├── analytics.js              # Financial metrics, savings rate, periods, trends & full pagination
+    │   │   ├── budgets.js                # Budget groups, active limits & category expense summation
+    │   │   ├── recurring.js              # Recurring expenses, subscription detection rules & status updates
+    │   │   └── index.js                  # Public API aggregator & facade export
     │   ├── Supabase_Memories.js          # Public Facade (90 lines, re-exporting 69 memory APIs)
     │   ├── memories/                     # Modular Memory & Living Persistence Subsystem (10 Modules)
     │   │   ├── Memory_Client.js          # Supabase client init, table allowlist & ID matching helpers
