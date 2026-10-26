@@ -1,8 +1,8 @@
 # N.E.X.A Ecosystem — Complete Architecture & File Tree
 
 > **Document:** `docs/NEXA_FOLDER_ARCHITECTURE.md`  
-> **Ecosystem:** N.E.X.A 3.4 (Sovereign Cloud Core, Finance Web Portal, Mobile Hardware Bridge, US Gemini Proxy & Universal CLI)  
-> **Last Updated:** 2026-10-20  
+> **Ecosystem:** N.E.X.A 3.4.5 (Sovereign Cloud Core, Finance Web Portal, Mobile Hardware Bridge, Native Windows Bridge, US Gemini Proxy & Universal CLI)  
+> **Last Updated:** 2026-10-26  
 > **Format:** Comprehensive Plain-Text ASCII Tree with Deep Functional Annotations  
 
 ---
@@ -568,7 +568,108 @@ nexa-mobile-bridge/
 
 ---
 
-## 4. N.E.X.A GEMINI PROXY ARCHITECTURE (Vercel Serverless US Edge Gateway)
+## 4. N.E.X.A WINDOWS BRIDGE ARCHITECTURE (Rust / Slint / Win32 / WASAPI / Direct3D 11)
+* **Local Path:** `C:\workspace\nexa-windows-bridge`
+* **Target Hardware:** Lenovo ThinkPad X380 Yoga (Intel Core i5-8350U, UHD Graphics 620, Realtek HD Audio, Touchscreen / Stylus)
+* **Tech Stack:** Rust 2021 Edition, Slint GUI Framework 1.9, Tokio Multi-threaded Async Runtime, Windows-Capture Direct3D 11, CPAL WASAPI, Sonora DSP WebRTC AEC3, Windows-Sys Win32 API
+* **Binary Outputs:** `target/release/Nexa Bridge.exe`, `dist/Nexa Bridge.exe` (alias: `nexa-bridge.exe`)
+* **Role:** Sovereign Native Desktop Companion, Hardware Audio Duplex (WASAPI + AEC3 DAC Tap), Direct3D 11 GPU Screen Capture, Native Desktop Automation (SendInput, UIA Magnetic Snap), Transparent AR Overlays & Multi-Tier OS Security Isolation (Armed Guard, 15-Min Lease, Terminal Shield)
+* **Current Version:** v0.2.0 (`Cargo.toml`)
+
+```text
+nexa-windows-bridge/
+├── Cargo.toml                            # Package manifest, dependencies & release profile optimizations
+├── Cargo.lock                            # Deterministic dependency version lockfile
+├── build.rs                              # Slint markup compiler & Windows resource embedder (winres icon.ico)
+├── README.md                             # Repository overview, quick start guide & test commands (90 tests)
+├── .gitignore                            # Git repository ignore rules (target/, dist/, etc.)
+│
+├── .github/workflows/                    # CI/CD Automation
+│   └── rust.yml                          # GitHub Actions continuous integration & cargo test workflow
+│
+├── assets/                               # Application Branding & Visual Assets
+│   ├── icon.ico                          # Multi-resolution native Windows application icon (16x16 - 256x256)
+│   └── icon.png                          # High-resolution PNG logo & marketing asset
+│
+├── dist/                                 # Production Binary Releases & Portable Standalones
+│   ├── Nexa Bridge.exe                   # Audited production release executable with icon metadata
+│   └── nexa-bridge.exe                   # Canonical release binary (synchronized SHA256)
+│
+├── docs/                                 # Deep Technical Subsystem Specifications
+│   ├── ARCHITECTURE.md                   # System architecture, multi-thread concurrency & data channels
+│   ├── AUDIO_SUBSYSTEM.md                # WASAPI duplex audio, Sonora AEC3 DSP & lock-free ring buffer
+│   ├── AUTOMATION_SUBSYSTEM.md           # SendInput automation, UIA magnetic snap & stealth overlays
+│   ├── CAPTURE_SUBSYSTEM.md              # Direct3D 11 GPU screen capture & JPEG frame streaming
+│   ├── COMPONENTS_AND_FILES.md           # Complete module catalog & file responsibility reference
+│   ├── CONFIGURATION.md                  # JSON config schema, atomic saving & strict TLS validation
+│   ├── POWER_MANAGEMENT.md               # Win32 WM_POWERBROADCAST sleep/resume lifecycle handling
+│   ├── PROTOCOL.md                       # WebSocket message schemas, action catalog & dedicated audio channel
+│   ├── SECURITY.md                       # Comprehensive security policy, armed guard lease & terminal shield
+│   ├── SYSTEM_TRAY_AND_HOTKEYS.md        # Notification area tray icon, emergency hotkeys & zero-alloc telemetry
+│   └── UI_COMPONENTS_AND_SPECIFICATION.md # Slint UI specifications, dual-mode views & design system
+│
+├── src/                                  # Rust Native Source Code
+│   ├── main.rs                           # Application entry point, single-instance mutex, Tokio lifecycle & tray/hotkey wiring
+│   ├── config.rs                         # BridgeConfig model, atomic save (.tmp -> rename), .bak recovery & TLS validation
+│   │
+│   ├── audio/                            # Real-Time Duplex Audio Subsystem (WASAPI + WebRTC AEC3)
+│   │   ├── mod.rs                        # AudioEngine facade, duplex orchestrator & barge-in notifier
+│   │   ├── audio_buffer.rs               # Lock-free SPSC circular ring buffer for zero-alloc sample passing
+│   │   ├── echo_canceller.rs             # Sonora WebRTC AEC3 acoustic echo cancellation & noise suppression
+│   │   ├── microphone.rs                 # WASAPI microphone capture worker (16 kHz mono clean stream)
+│   │   ├── resampler.rs                  # Low-latency multi-rate audio resampler (16k / 24k / 48k)
+│   │   └── speaker.rs                    # WASAPI speaker playback engine with real-time RMS metering & DAC tap
+│   │
+│   ├── automation/                       # Desktop Automation, Input Emulation & Security Enforcement
+│   │   ├── mod.rs                        # Central command dispatcher, safe app whitelist & parameter redaction
+│   │   ├── element_finder.rs             # Windows UI Automation (COM) magnetic smart-snap with 150ms timeout guard
+│   │   ├── highlighter.rs                # DirectComposition transparent overlay manager, ripple effect & auto-dissolve
+│   │   ├── input.rs                      # SendInput mouse/keyboard, Win+D desktop, and active terminal console shield
+│   │   └── policy.rs                     # Canonical action normalizer, armed guard requirements & fast-path abort detector
+│   │
+│   ├── capture/                          # Direct3D 11 GPU Screen Capture & Vision Subsystem
+│   │   ├── mod.rs                        # ScreenCaptureController facade & frame pipeline coordinator
+│   │   ├── encoder.rs                    # Multi-threaded RGBA-to-JPEG encoder & 1 FPS frame rate limiter
+│   │   └── screen_capture.rs             # Windows.Graphics.Capture API wrapper via direct GPU texture mapping
+│   │
+│   ├── network/                          # High-Resilience WebSocket Client Subsystem
+│   │   ├── mod.rs                        # Network module entry, public types re-export
+│   │   ├── client.rs                     # NetworkClient with exponential backoff, keepalive watchdog & dedicated audio stream
+│   │   └── protocol.rs                   # Strong-typed JSON serialization/deserialization for ClientMessage & ServerMessage
+│   │
+│   └── platform/                         # Win32 OS Integration & Hardware Peripherals
+│       ├── mod.rs                        # Platform module exports
+│       ├── autostart.rs                  # Windows Startup Registry management (HKCU Run)
+│       ├── hotkeys.rs                    # Win32 RegisterHotKey listener (Emergency Stop Win+Alt+X, Boss Key Win+Alt+N)
+│       ├── memory.rs                     # Low RAM mode working set trimming (EmptyWorkingSet)
+│       ├── power.rs                      # WM_POWERBROADCAST listener for ThinkPad lid close/open transitions
+│       ├── single_instance.rs            # Named Win32 Mutex single-instance arbiter with focus signal
+│       ├── system_tray.rs                # Shell_NotifyIconW tray icon with 15-minute armed toggle & context menu
+│       └── telemetry.rs                  # Zero-allocation CPU (GetSystemTimes) & RAM (GlobalMemoryStatusEx) sampler
+│
+└── ui/                                   # Native Slint User Interface Markup & Styling
+    ├── main_window.slint                 # Root dual-mode window (Dynamic Capsule Pill & Fullscreen Command Center)
+    ├── overlay_window.slint              # Topmost click-through transparent canvas for AR visual guidance
+    ├── settings_dialog.slint             # Server endpoint, token, HUD card toggles & live connection testing dialog
+    │
+    └── components/                       # Atomic Slint UI Components & HUD Cards
+        ├── arc_reactor.slint             # Cybernetic spinning reactor core animation
+        ├── audio_meter.slint             # Real-time multi-band audio spectrum frequency visualizer
+        ├── automation_card.slint         # Win32 native desktop automation activity terminal log
+        ├── avatar.slint                  # Dual-ocular cybernetic avatar supporting 10 cognitive states
+        ├── floating_pill.slint           # Ultra-sleek executive dynamic companion pill (440x48px stadium capsule)
+        ├── hotkeys_card.slint            # Global hotkey reference HUD card
+        ├── pill_icons.slint              # Vector SVG icon buttons with hover & active animations
+        ├── quantum_core.slint            # Compact pulsating glowing core avatar for pill mode
+        ├── splitter.slint                # Interactive column & row draggable splitters for HUD layout
+        ├── telemetry_card.slint          # Real-time hardware telemetry gauges (CPU %, RAM %, connection latency)
+        ├── transcript_card.slint         # Dual-speaker real-time dialogue transcript feed
+        └── vision_card.slint             # Live screen share preview card with resolution & streaming controls
+```
+
+---
+
+## 5. N.E.X.A GEMINI PROXY ARCHITECTURE (Vercel Serverless US Edge Gateway)
 * **Local Path:** `C:\workspace\nexa-gemini-proxy`
 * **Production Host:** Vercel Serverless Edge Functions (`iad1` — Washington D.C., USA)
 * **Target Endpoint:** `https://generativelanguage.googleapis.com`
@@ -592,7 +693,7 @@ nexa-gemini-proxy/
 
 ---
 
-## 5. N.E.X.A UNIVERSAL CLI ARCHITECTURE (Node.js Standalone Console)
+## 6. N.E.X.A UNIVERSAL CLI ARCHITECTURE (Node.js Standalone Console)
 * **Local Path:** `C:\workspace\nexa-cli`
 * **NPM Package:** `nexa-assistant-console` (alias: `nexa-cli`)
 * **Distribution:** NPM Registry (`npx nexa-assistant-console`) & GitHub (`npx github:Knightrelaxed/nexa-cli`)
@@ -615,17 +716,24 @@ nexa-cli/
 
 ---
 
-## 6. DATA BINDING & INTERACTION MATRIX
+## 7. DATA BINDING & INTERACTION MATRIX
 
 | Jalur Aliran Data | Protokol / Saluran | Komponen Asal | Komponen Tujuan | Deskripsi / Fungsi |
 |---|---|---|---|---|
 | **Modular Intent Ingress** | Inter-process / Pipeline | Adapter Kanal (`telegram/`, `cli/`) | Common Dispatcher (`common/`) | Normalisasi payload intent lintas-kanal ke 7 handler domain bersama dengan platform-aware escaping & state retention. |
 | **Cognitive AI Routing** | Pipeline / Fallback Engine | Server (`AI_Router.js` Facade & `router/`) | Fallback Engine & LLM Providers | Klasifikasi 13 domain intent, gating dinamis skema tool, injeksi persona, RAM cache TTL, dan eksekusi multi-provider dengan Token Budget Guard. |
-| **Hardware Commands** | WebSocket (`EXECUTE_COMMAND`) | Server (`MobileBridge_WS.js`) | Android (`DeviceCommandDispatcher.kt`) | Eksekusi 28 aksi fisik (kamera, screenshot, klik layar, volume, senter, dll.). |
-| **Command Results** | WebSocket (`COMMAND_RESULT`) | Android (`DeviceCommandDispatcher.kt`) | Server (`MobileBridge_WS.js`) | Pengembalian data eksekusi (Base64 foto, hierarki UI, status). |
-| **Situational Context** | WebSocket (`CONTEXT_UPDATE`) | Android (`ContextEngine.kt`) | Server (`adapter.js`) | Laporan sensor real-time (`ROOM_DARK_NIGHT`, `PHONE_PICKUP_MORNING`, dll.). |
-| **Live Call & Video** | WebSocket (`CALL_AUDIO_STREAM`) | Android (`VoiceStreamHandler.kt`) | Server (`Live_Voice_Engine.js`) | Streaming audio PCM & frame video ke Google Gemini Live API. |
-| **Audio Output** | WebSocket (`CALL_REPLY_PCM`) | Server (`Live_Voice_Engine.js`) | Android (`AudioPlayerHandler.kt`) | Pemutaran respon suara instan (*sub-second TTFA*) ke speaker HP. |
+| **Mobile Hardware Commands** | WebSocket (`EXECUTE_COMMAND`) | Server (`MobileBridge_WS.js`) | Android (`DeviceCommandDispatcher.kt`) | Eksekusi 28 aksi fisik HP (kamera, screenshot, klik layar, volume, senter, dll.). |
+| **Mobile Command Results** | WebSocket (`COMMAND_RESULT`) | Android (`DeviceCommandDispatcher.kt`) | Server (`MobileBridge_WS.js`) | Pengembalian data eksekusi HP (Base64 foto, hierarki UI, status). |
+| **Mobile Situational Context** | WebSocket (`CONTEXT_UPDATE`) | Android (`ContextEngine.kt`) | Server (`adapter.js`) | Laporan sensor real-time (`ROOM_DARK_NIGHT`, `PHONE_PICKUP_MORNING`, dll.). |
+| **Mobile Live Call & Video** | WebSocket (`CALL_AUDIO_STREAM`) | Android (`VoiceStreamHandler.kt`) | Server (`Live_Voice_Engine.js`) | Streaming audio PCM & frame video kamera HP ke Google Gemini Live API. |
+| **Mobile Audio Output** | WebSocket (`CALL_REPLY_PCM`) | Server (`Live_Voice_Engine.js`) | Android (`AudioPlayerHandler.kt`) | Pemutaran respon suara instan (*sub-second TTFA*) ke speaker HP. |
+| **Windows Desktop Automation** | WebSocket (`EXECUTE_COMMAND`) | Server (`Live_Tool_Registry.js` / `MobileBridge_WS.js`) | Windows (`automation/mod.rs`) | Eksekusi 16 aksi native Windows (klik mouse, ketik Unicode, scroll, peluncuran aplikasi whitelist, lock screen, volume, dsb.) dengan perlindungan Armed Guard 15-menit dan perisai terminal aktif. |
+| **Windows Command Results** | WebSocket (`COMMAND_RESULT`) | Windows (`automation/mod.rs`) | Server (`MobileBridge_WS.js`) | Pengembalian status eksekusi perintah desktop ber-epoch generasi sesi. |
+| **Windows Desktop Vision** | WebSocket (`CALL_VIDEO_FRAME`) | Windows (`capture/screen_capture.rs`) | Server (`Live_Voice_Engine.js`) | Streaming cuplikan layar desktop Direct3D 11 GPU (1 FPS JPEG) untuk kapabilitas AI Multimodal Vision Gemini. |
+| **Windows Duplex Voice Stream** | WebSocket (`CALL_AUDIO_STREAM`) | Windows (`audio/microphone.rs`) | Server (`Live_Voice_Engine.js`) | Streaming audio mikrofon 16 kHz mono terfilter WebRTC AEC3 (DSP Sonora) tanpa gema speaker. |
+| **Windows Voice Output** | WebSocket (`CALL_AUDIO_PLAY` / Binary) | Server (`Live_Voice_Engine.js`) | Windows (`audio/speaker.rs`) | Pemutaran suara respons AI instan via WASAPI output stream terisolasi dari antrean kendali. |
+| **Windows Desktop Telemetry** | WebSocket (`DESKTOP_TELEMETRY`) | Windows (`platform/telemetry.rs`) | Server (`Device_Control_Engine.js`) | Pelaporan beban CPU, utilisasi RAM fisik, dan nama aplikasi aktif ke peladen. |
+| **Windows Power & Lifecycle** | WebSocket (`POWER_EVENT`) | Windows (`platform/power.rs`) | Server (`adapter.js`) | Notifikasi penutupan engsel laptop (`PBT_APMSUSPEND`) dan pembukaan kembali (`PBT_APMRESUME`). |
 | **Financial Ledger** | REST / Realtime Database | Server (`Finance_Engine.js`) | Supabase PostgreSQL (`Supabase_Finance.js`) | Buku besar kas, sinkronisasi Bank Mandiri & pelacakan pengeluaran. |
 | **User Memory RAG** | Vector Similarity (pgvector) | Server (`Episodic_Recall.js`) | Supabase PostgreSQL (`Supabase_Memories.js`) | Penarikan memori percakapan jangka panjang & fakta kepribadian Tuan. |
 | **Financial Web Portal** | HTTPS / Server-Side Rendering | Web Browser (`nexa-finance-web`) | Supabase PostgreSQL & Server API | Dashboard visual analitik keuangan, grafik pengeluaran & anggaran realtime PWA. |
