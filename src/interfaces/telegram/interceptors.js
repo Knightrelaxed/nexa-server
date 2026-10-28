@@ -17,7 +17,7 @@ const financeEngine = require('../../domain/Finance_Engine');
 const taskManager = require('../../domain/Task_Manager');
 const supabaseMemories = require('../../infrastructure/Supabase_Memories');
 const googleWorkspace = require('../../infrastructure/Google_Workspace');
-const { sendTelegramOutbound, stripSurroundingQuotes } = require('./actions');
+const telegramActions = require('./actions');
 
 const escapeHtml = (str) => String(str || '')
   .replace(/&/g, '&amp;')
@@ -25,11 +25,54 @@ const escapeHtml = (str) => String(str || '')
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;');
 
+let _chatTurnCounter = new Map();
+
+function _normalizeChatKey(chatId) {
+  if (!chatId) return 'default';
+  return String(chatId).replace(/^tg:/, '').trim();
+}
+
+function recordChatActivity(chatId = 'default') {
+  const key = _normalizeChatKey(chatId);
+  const nextTurn = (_chatTurnCounter.get(key) || 0) + 1;
+  _chatTurnCounter.set(key, nextTurn);
+  return nextTurn;
+}
+
 function triggerConversationalSynthesis(textInput, resultMessage, action, sessionId = null, situationalSummary = null) {
-  // [DISABLED] Conversational synthesis was generating delayed secondary messages (30s+ late),
-  // causing out-of-order race conditions with the user's subsequent turns and persona hallucinations.
-  // The primary domain reply already conveys all relevant details cleanly in a single outbound message.
-  return;
+  const chatIdKey = _normalizeChatKey(sessionId);
+  let currentTurn = _chatTurnCounter.get(chatIdKey);
+  if (currentTurn === undefined) {
+    currentTurn = 1;
+    _chatTurnCounter.set(chatIdKey, currentTurn);
+  }
+  const turnId = currentTurn;
+
+  setTimeout(async () => {
+    try {
+      const { executeWithFallback } = require('../../core/Fallback_Engine');
+      const { NEXA_PERSONALITY } = require('../../config/personality');
+      
+      const situationalLine = situationalSummary ? `\nKonteks Situasi Waktu Nyata: ${situationalSummary}\n` : '';
+      const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"${situationalLine}\n\nDashboard / Result:\n${resultMessage}\n\nTask: Write a 1-2 sentence friendly, caring response IN INDONESIAN analyzing the operation or schedule above. Act as a dedicated, elegant personal assistant. Provide a brief relevant suggestion, encouragement, prep tip, priority guidance, or warm appreciation. If the user asks about their ongoing activity, schedule, or remaining time, use the Konteks Situasi Waktu Nyata to respond accurately and naturally. DO NOT repeat the items, events, or confirmation text. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
+      
+      const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
+
+      // Guard: Discard stale synthesis if user has already sent a newer message in this chat
+      const activeTurn = _chatTurnCounter.get(chatIdKey) || 0;
+      if (activeTurn !== turnId) {
+        console.log(`[CONVERSATIONAL SYNTHESIS] Discarding stale advice for turn ${turnId} — chat is now at turn ${activeTurn}.`);
+        return;
+      }
+
+      if (advice && !advice.includes('DUMB_MODE')) {
+        const cleanAdvice = telegramActions.stripSurroundingQuotes(advice);
+        await telegramActions.sendTelegramOutbound(cleanAdvice);
+      }
+    } catch (err) {
+      console.error('[CONVERSATIONAL SYNTHESIS] Failed:', err.message);
+    }
+  }, 1500);
 }
 
 // ── 1. Awaiting Identity Rejection Reason ─────────────────────
@@ -397,7 +440,7 @@ async function handlePendingTasks(chatId, textInput, { respondToTelegram }) {
       }, null);
       if (floatResult && floatResult.message) {
         await respondToTelegram(floatResult.message);
-        triggerConversationalSynthesis(textInput, floatResult.message, 'CREATE');
+        triggerConversationalSynthesis(textInput, floatResult.message, 'CREATE', chatIdStr);
       }
       return true;
     }
@@ -443,7 +486,7 @@ async function handlePendingTasks(chatId, textInput, { respondToTelegram }) {
       }, null);
       if (syncResult && syncResult.message) {
         await respondToTelegram(syncResult.message);
-        triggerConversationalSynthesis(textInput, syncResult.message, 'CREATE');
+        triggerConversationalSynthesis(textInput, syncResult.message, 'CREATE', chatIdStr);
       }
       return true;
     }
@@ -486,7 +529,7 @@ async function handlePendingTasks(chatId, textInput, { respondToTelegram }) {
     const resTask = await taskManager.executePendingTask(chatIdStr, pendingTask.listName);
     if (resTask && resTask.message) {
       await respondToTelegram(resTask.message);
-      triggerConversationalSynthesis(textInput, resTask.message, 'CREATE');
+      triggerConversationalSynthesis(textInput, resTask.message, 'CREATE', chatIdStr);
       return true;
     }
   } else {
@@ -510,7 +553,7 @@ async function handlePendingTasks(chatId, textInput, { respondToTelegram }) {
     const resTask = await taskManager.executePendingTask(chatIdStr, overrideList);
     if (resTask && resTask.message) {
       await respondToTelegram(resTask.message);
-      triggerConversationalSynthesis(textInput, resTask.message, 'CREATE');
+      triggerConversationalSynthesis(textInput, resTask.message, 'CREATE', chatIdStr);
       return true;
     }
   }
@@ -585,7 +628,7 @@ async function handlePendingProactiveTasks(textInput, pendingProactiveTasks, cha
         }
         const successText = `✅ Berhasil membuat <b>${createdCount} tugas persiapan</b> untuk agenda '<b>${escapeHtml(pTasks.summary)}</b>':\n${createdNames.join('\n')}`;
         await respondToTelegram(successText);
-        triggerConversationalSynthesis(textInput, successText, 'CREATE');
+        triggerConversationalSynthesis(textInput, successText, 'CREATE', String(chatId));
       } catch (e) {
         await respondToTelegram(`❌ Gagal membuat tugas persiapan: ${e.message}`);
       }
@@ -599,6 +642,7 @@ async function handlePendingProactiveTasks(textInput, pendingProactiveTasks, cha
 }
 
 module.exports = {
+  recordChatActivity,
   triggerConversationalSynthesis,
   handleAwaitingIdentityReason,
   handleMorningCheckIn,

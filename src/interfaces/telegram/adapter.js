@@ -296,6 +296,9 @@ async function handleTelegramWebhook(req, res) {
       }
 
       console.log('[TELEGRAM] Received message:', textInput.substring(0, 100));
+      if (typeof interceptors.recordChatActivity === 'function') {
+        interceptors.recordChatActivity(message.chat?.id || 'default');
+      }
 
       // ── Step 7: Pending Calendar Duration Interceptor ──────────
       const calPendingRes = await interceptors.handlePendingCalendar(textInput, pendingCalendarContext, { respondToTelegram });

@@ -13,6 +13,7 @@ const anticipatoryEngine    = require('../../domain/Anticipatory_Engine');
 const {
   stripHtml,
   runPendingInterceptors,
+  recordCliActivity,
   cliPendingCalendar,
   cliPendingConflict,
   cliPendingEmail,
@@ -124,6 +125,9 @@ async function handleCliWebhook(req, res) {
   }
 
   console.log(`[CLI] Received message: ${textInput}`);
+  if (typeof recordCliActivity === 'function') {
+    recordCliActivity(session_id);
+  }
 
   // ── Persist User Message ─────────────────────────────────
   await supabaseMemories.saveChatMemory('user', textInput, 'cli').catch(err => {

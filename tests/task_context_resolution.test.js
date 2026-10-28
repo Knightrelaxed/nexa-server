@@ -112,11 +112,43 @@ test('Task_Manager: Contextual & Temporal Task Resolution', async (t) => {
   });
 });
 
-test('Telegram Interceptors: Conversational Synthesis is disabled', () => {
-  const { triggerConversationalSynthesis } = require('../src/interfaces/telegram/interceptors');
-  assert.strictEqual(typeof triggerConversationalSynthesis, 'function');
-  // Must execute safely and return immediately without throwing or triggering async timers
-  assert.doesNotThrow(() => {
-    triggerConversationalSynthesis('halo', 'result', 'READ', 'session-1');
-  });
+test('Telegram Interceptors: Conversational Synthesis is active with stale cancellation guard', async (t) => {
+  const interceptors = require('../src/interfaces/telegram/interceptors');
+  const fallbackEngine = require('../src/core/Fallback_Engine');
+  const actions = require('../src/interfaces/telegram/actions');
+
+  assert.strictEqual(typeof interceptors.triggerConversationalSynthesis, 'function');
+  assert.strictEqual(typeof interceptors.recordChatActivity, 'function');
+
+  // Test 1: recordChatActivity normalization
+  const t1 = interceptors.recordChatActivity('tg:12345');
+  assert.ok(typeof t1 === 'number' && t1 > 0);
+  const t2 = interceptors.recordChatActivity('12345');
+  assert.ok(t2 >= t1);
+
+  // Test 2: stale cancellation guard when a newer message arrives
+  const origFallback = fallbackEngine.executeWithFallback;
+  const origSend = actions.sendTelegramOutbound;
+  let outboundCount = 0;
+
+  fallbackEngine.executeWithFallback = async () => 'Saran penyemangat dari Nexa';
+  actions.sendTelegramOutbound = async () => { outboundCount++; };
+
+  try {
+    // 2a. Trigger synthesis for chat-stale, then simulate new user activity immediately
+    interceptors.triggerConversationalSynthesis('selesaikan tugas', 'berhasil', 'COMPLETE', 'tg:chat-stale');
+    interceptors.recordChatActivity('tg:chat-stale'); // Newer message arrives!
+
+    // 2b. Trigger synthesis for chat-active, without any newer activity
+    interceptors.triggerConversationalSynthesis('tampilkan tugas', 'berikut tugas', 'READ', 'tg:chat-active');
+
+    // Wait 1.6s for setTimeout (1500ms) to fire
+    await new Promise((resolve) => setTimeout(resolve, 1650));
+
+    // Stale turn should have been cancelled, active turn should have sent outbound message
+    assert.strictEqual(outboundCount, 1, 'Expected exactly 1 outbound message (active turn sent, stale turn discarded)');
+  } finally {
+    fallbackEngine.executeWithFallback = origFallback;
+    actions.sendTelegramOutbound = origSend;
+  }
 });
