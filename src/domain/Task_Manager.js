@@ -130,6 +130,89 @@ async function _resolveSingleTargetTask(searchKeyword = '') {
   return { id: null, title: searchKeyword };
 }
 
+const WORD_TO_NUM = {
+  'satu': 1, 'pertama': 1, 'ke-1': 1, 'ke1': 1,
+  'dua': 2, 'kedua': 2, 'ke-2': 2, 'ke2': 2, 'keduanya': 2,
+  'tiga': 3, 'ketiga': 3, 'ke-3': 3, 'ke3': 3,
+  'empat': 4, 'keempat': 4, 'ke-4': 4, 'ke4': 4,
+  'lima': 5, 'kelima': 5, 'ke-5': 5, 'ke5': 5,
+  'semua': 'ALL', 'semuanya': 'ALL', 'seluruh': 'ALL', 'seluruhnya': 'ALL'
+};
+
+/**
+ * Resolve target tasks based on contextual, temporal, and quantifier references
+ * e.g. "dua tugas tadi", "yang deadline hari ini", "tugas hari ini", "semua tugas"
+ */
+async function _resolveContextualTasks(searchKeyword = '') {
+  const s = String(searchKeyword || '').toLowerCase().trim();
+  if (!s || s === 'undefined') return null;
+
+  await _ensureWorkingMemoryTasks();
+  if (!_lastRenderedTasks || _lastRenderedTasks.length === 0) return null;
+
+  const todayWIB = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  const tasksDueToday = _lastRenderedTasks.filter(t => t.due && t.due.startsWith(todayWIB));
+  const overdueTasks = _lastRenderedTasks.filter(t => t.due && t.due.split('T')[0] < todayWIB);
+
+  // Check quantifier / count word (e.g. "dua", "keduanya", "semua", "2")
+  let requestedCount = null;
+  const countMatch = s.match(/\b(satu|dua|tiga|empat|lima|keduanya|semua|semuanya|seluruh|seluruhnya|\d+)\b/i);
+  if (countMatch) {
+    const raw = countMatch[1].toLowerCase();
+    requestedCount = WORD_TO_NUM[raw] !== undefined ? WORD_TO_NUM[raw] : parseInt(raw, 10);
+  }
+
+  // 1. Explicit mention of "hari ini" / "today" / "deadline hari ini"
+  if (/\b(hari\s*ini|today)\b/i.test(s)) {
+    if (tasksDueToday.length > 0) {
+      if (requestedCount === 'ALL' || !requestedCount) return tasksDueToday;
+      if (typeof requestedCount === 'number' && requestedCount > 0) {
+        return tasksDueToday.slice(0, requestedCount);
+      }
+    }
+  }
+
+  // 2. Mention of "terlambat" / "telat" / "overdue"
+  if (/\b(terlambat|telat|overdue|lewat\s*deadline)\b/i.test(s)) {
+    if (overdueTasks.length > 0) {
+      if (requestedCount === 'ALL' || !requestedCount) return overdueTasks;
+      if (typeof requestedCount === 'number' && requestedCount > 0) {
+        return overdueTasks.slice(0, requestedCount);
+      }
+    }
+  }
+
+  // 3. Mention of "tadi" / "barusan" / "keduanya" (referential context)
+  if (/\b(tadi|barusan|keduanya)\b/i.test(s)) {
+    // Priority A: tasks due today if count matches or exists
+    if (tasksDueToday.length > 0) {
+      if (typeof requestedCount === 'number' && tasksDueToday.length === requestedCount) {
+        return tasksDueToday;
+      }
+      if (requestedCount === 'ALL' || !requestedCount) {
+        return tasksDueToday;
+      }
+      if (typeof requestedCount === 'number' && requestedCount > 0) {
+        return tasksDueToday.slice(0, requestedCount);
+      }
+    }
+    // Priority B: first N active tasks in working memory
+    if (typeof requestedCount === 'number' && requestedCount > 0 && requestedCount <= _lastRenderedTasks.length) {
+      return _lastRenderedTasks.slice(0, requestedCount);
+    }
+    if (_lastActionTask) {
+      return [_lastActionTask];
+    }
+  }
+
+  // 4. Mention of "semua" / "semuanya" / "seluruhnya"
+  if (requestedCount === 'ALL' || /\b(semua|semuanya|seluruh|seluruhnya)\b/i.test(s)) {
+    return tasksDueToday.length > 0 ? tasksDueToday : _lastRenderedTasks;
+  }
+
+  return null;
+}
+
 /**
  * Resolve multiple target tasks from array, object, or comma/number list
  */
@@ -151,9 +234,15 @@ async function _resolveTargetTasks(input) {
   }
 
   const s = String(input).trim();
-  if (!s) return [];
+  if (!s || s === 'undefined') return [];
 
   await _ensureWorkingMemoryTasks();
+
+  // 1. Contextual, temporal, and quantifier resolution (e.g. "dua tugas tadi", "yang deadline hari ini", "semua tugas")
+  const contextual = await _resolveContextualTasks(s);
+  if (contextual && contextual.length > 0) {
+    return contextual;
+  }
 
   // Check if multiple digits separated by comma, space, or 'dan' (e.g. "1,2,4", "1, 2, 4", "1 dan 3", "tugad1,2,4")
   if (/\d+[\s,dan&]+\d+/i.test(s) || /^\d+(?:,\d+)+$/.test(s) || /(?:tugas|tugad)?\s*\d+(?:\s*,\s*\d+)+/i.test(s)) {
@@ -370,7 +459,8 @@ async function handleTaskIntent(extractedData, chatId = null) {
     // 4. ACTION: COMPLETE (With Multi-Index & Ordinal Support)
     // ════════════════════════════════════════════════════════════════
     if (action === 'COMPLETE') {
-      const inputTargets = tasks || search_keyword || title;
+      const rawTarget = tasks || search_keyword || title;
+      const inputTargets = (rawTarget === 'undefined') ? null : rawTarget;
       if (!inputTargets || (Array.isArray(inputTargets) && inputTargets.length === 0)) {
         return { status: 'FAILED', message: '❌ Sebutkan nama atau nomor tugas yang ingin ditandai selesai.' };
       }
@@ -431,7 +521,8 @@ async function handleTaskIntent(extractedData, chatId = null) {
     // 5. ACTION: DELETE (With Multi-Index & Ordinal Support)
     // ════════════════════════════════════════════════════════════════
     if (action === 'DELETE') {
-      const inputTargets = tasks || search_keyword || title;
+      const rawTarget = tasks || search_keyword || title;
+      const inputTargets = (rawTarget === 'undefined') ? null : rawTarget;
       if (!inputTargets || (Array.isArray(inputTargets) && inputTargets.length === 0)) {
         return { status: 'FAILED', message: '❌ Sebutkan nama atau nomor tugas yang ingin dihapus.' };
       }
@@ -707,6 +798,9 @@ function suggestList(title = '') {
 module.exports = {
   handleTaskIntent,
   getLastRenderedTasks: () => _lastRenderedTasks,
+  setLastRenderedTasks: (tasks) => { _lastRenderedTasks = tasks || []; },
+  _resolveContextualTasks,
+  _resolveTargetTasks,
   pendingTaskCategories,
   cancelPendingTask,
   executePendingTask,

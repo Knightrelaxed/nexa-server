@@ -11,6 +11,18 @@ async function handleTaskIntent(routingData, context = {}) {
   const sessionKey = context.sessionKey || context.chatId;
   const textInput = context.textInput || '';
 
+  // Defensive contextual fallback: if COMPLETE or DELETE has missing or undefined targets,
+  // feed the raw user textInput into search_keyword so contextual resolver can inspect phrases
+  // like "dua tugas tadi" or "yang deadline hari ini"
+  if (['COMPLETE', 'DELETE'].includes(ed.action)) {
+    const hasValidTarget = (ed.title && ed.title !== 'undefined') ||
+                           (ed.search_keyword && ed.search_keyword !== 'undefined') ||
+                           (Array.isArray(ed.tasks) && ed.tasks.length > 0);
+    if (!hasValidTarget && textInput) {
+      ed.search_keyword = textInput;
+    }
+  }
+
   const taskResult = await taskManager.handleTaskIntent(ed, sessionKey);
   const notify = typeof context.notifyClient === 'function' ? context.notifyClient : () => {};
 

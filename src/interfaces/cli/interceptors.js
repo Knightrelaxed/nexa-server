@@ -28,19 +28,8 @@ function stripHtml(str) {
 
 // ── Conversational Synthesis (ringkasan AI setelah aksi domain) ─
 function triggerConversationalSynthesis(textInput, resultMessage, _action, sessionId, situationalSummary = null) {
-  setTimeout(async () => {
-    try {
-      const { executeWithFallback } = require('../../core/Fallback_Engine');
-      const { NEXA_PERSONALITY } = require('../../config/personality');
-      const { pushToCli } = require('./adapter');
-      const situationalLine = situationalSummary ? `\nKonteks Situasi Waktu Nyata: ${situationalSummary}\n` : '';
-      const prompt = `System Time (Asia/Jakarta): ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}\nUser Asked: "${textInput}"${situationalLine}\n\nDashboard / Result:\n${resultMessage}\n\nTask: Write a 1-2 sentence friendly, caring response IN INDONESIAN analyzing the operation or schedule above. Act as a dedicated, elegant personal assistant. Provide a brief relevant suggestion, encouragement, prep tip, priority guidance, or warm appreciation. If the user asks about their ongoing activity, schedule, or remaining time, use the Konteks Situasi Waktu Nyata to respond accurately and naturally. DO NOT repeat the items, events, or confirmation text. Keep it concise, warm, and natural. DO NOT wrap your response in quotation marks or speech marks. Answer directly without quotes.`;
-      const advice = await executeWithFallback(prompt, NEXA_PERSONALITY, 0.7, false);
-      if (advice && !advice.includes('DUMB_MODE')) {
-        pushToCli(advice.replace(/^["']|["']$/g, ''));
-      }
-    } catch (_) {}
-  }, 1500);
+  // [DISABLED] Conversational synthesis was generating delayed secondary messages, causing out-of-order race conditions.
+  return;
 }
 
 // ── 1. Pending Deletion Interceptor ──────────────────────────
