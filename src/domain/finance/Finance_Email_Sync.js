@@ -61,9 +61,13 @@ function _parseMandiriTransaction(blob, email) {
   }
 
   const isFailed = blob.toLowerCase().includes('tidak berhasil') || blob.toLowerCase().includes('gagal');
+  const isIncome = /transfer masuk|dana masuk|penerimaan transfer/i.test(blob) ||
+                   /dana masuk|transfer masuk/i.test(email?.subject || '');
+  const type = isIncome ? 'INCOME' : 'EXPENSE';
 
   let destination = 'Auto-Sync Transaction';
-  const merchantMatch = blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
+  const merchantMatch = blob.match(/penerima\s+([\s\S]*?)(?=(?:\s+(?:Tanggal|Jam|Nominal|Total|Biaya|No\. Referensi|No\. Ref)\b|[\r\n]|$))/i) ||
+                        blob.match(/penerima\s+([a-z0-9\s\&\.\-]+)/i);
   if (merchantMatch?.[1]) {
     let rawDest = merchantMatch[1].trim().split(/[\r\n]+/)[0];
     rawDest = rawDest.replace(/&nbsp;?/ig, ' ');
@@ -78,6 +82,7 @@ function _parseMandiriTransaction(blob, email) {
   return {
     provider: 'MANDIRI',
     account: 'Bank Mandiri',
+    type,
     nominal,
     destination,
     paymentMethod,
@@ -122,17 +127,31 @@ function _parseJagoTransaction(blob, email) {
                    blob.toLowerCase().includes('status transaksi gagal') ||
                    blob.toLowerCase().includes('transaksi tidak berhasil');
 
+  const isIncome = /kamu baru saja menerima uang|kamu telah menerima uang|transfer masuk|dana masuk|penerimaan uang/i.test(blob) ||
+                   /kamu baru saja menerima uang|dana masuk|transfer masuk/i.test(email?.subject || '');
+  const type = isIncome ? 'INCOME' : 'EXPENSE';
+
   // Extract Destination / Merchant
   let rawDest = '';
-  // 1. From "Ke <Merchant>"
-  const keMatch = blob.match(/\bKe\s+([^\r\n]+)/i);
+  // 1. From "Ke <Merchant>" (bounded by 8+ digits, next headers, or newline)
+  const keMatch = blob.match(/\bKe\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Jumlah|Total|Nominal|Tanggal|Status|Nama Acquirer|Lokasi Merchant)\b|[\r\n]|$))/i);
   if (keMatch?.[1]) {
     rawDest = keMatch[1].trim();
   } else {
     // Fallback: "Penerima <Nama>"
-    const penerimaMatch = blob.match(/\bPenerima\s+([^\r\n]+)/i);
+    const penerimaMatch = blob.match(/\bPenerima\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Jumlah|Total|Nominal|Tanggal|Status|Bank Penerima)\b|[\r\n]|$))/i);
     if (penerimaMatch?.[1]) {
       rawDest = penerimaMatch[1].trim();
+    }
+  }
+
+  // If income, check "Dari <Pengirim>" after "Ringkasan transaksi"
+  if (isIncome && !rawDest) {
+    const summaryIndex = blob.toLowerCase().indexOf('ringkasan transaksi');
+    const searchBlob = summaryIndex !== -1 ? blob.substring(summaryIndex) : blob;
+    const dariMatch = searchBlob.match(/\bDari\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Ke|Jumlah|Total|Nominal|Tanggal|Status)\b|[\r\n]|$))/i);
+    if (dariMatch?.[1]) {
+      rawDest = dariMatch[1].trim();
     }
   }
 
@@ -144,14 +163,14 @@ function _parseJagoTransaction(blob, email) {
     }
   }
 
-  if (!rawDest) rawDest = 'Auto-Sync Jago';
+  if (!rawDest) rawDest = isIncome ? 'Dana Masuk Jago' : 'Auto-Sync Jago';
 
   // Sanitize
   rawDest = rawDest.replace(/&nbsp;?/ig, ' ').replace(/&\w+;?/g, ' ');
   rawDest = rawDest.replace(/[\r\n].*$/s, '').trim();
 
   // Extract Merchant Location (e.g. "Lokasi Merchant Jakarta" or "Jakarta Selatan")
-  const locMatch = blob.match(/lokasi merchant\s+([^\r\n]+)/i);
+  const locMatch = blob.match(/lokasi merchant\s+([\s\S]*?)(?=(?:\s+(?:ID Terminal|PAN Nasabah|Jumlah Tip|Tip|Status|Tanggal|Dana telah)\b|[\r\n]|$))/i);
   if (locMatch?.[1]) {
     const locClean = locMatch[1].trim().replace(/&nbsp;?/ig, ' ').replace(/&\w+;?/g, ' ').trim();
     if (locClean && !rawDest.toLowerCase().includes(locClean.toLowerCase())) {
@@ -170,6 +189,7 @@ function _parseJagoTransaction(blob, email) {
   return {
     provider: 'JAGO',
     account: 'Bank Jago',
+    type,
     nominal,
     destination,
     paymentMethod,
@@ -257,7 +277,7 @@ async function pollFinanceEmails() {
 
       const tx = {
         nominal,
-        type: 'EXPENSE',
+        type: parsed.type || 'EXPENSE',
         destination,
         category: guessedCategory,
         description: '[Menunggu Detail User]',

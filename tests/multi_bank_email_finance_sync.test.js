@@ -125,6 +125,43 @@ Jumlah Tip Rp 0`;
     assert.strictEqual(parsed.nominal, 6500);
     assert.strictEqual(parsed.destination, 'GRAB TRANSPORT Jakarta');
     assert.strictEqual(parsed.paymentMethod, 'QRIS');
+    assert.strictEqual(parsed.type, 'EXPENSE');
+    assert.strictEqual(parsed.isFailed, false);
+  });
+
+  await t.test('parses flattened single-line HTML email with bounded lookaheads', () => {
+    const email = {
+      from: 'Jago <noreply@jago.com>',
+      subject: 'Kamu telah membayar ke GRAB TRANSPORT💸'
+    };
+    // Simulates Gmail API HTML text stripping where newlines are collapsed into spaces
+    const flatBlob = 'Halo FAQIH HIDAYATULLOH, Terima kasih sudah bertransaksi dengan Jago! Kamu baru saja mengirimkan uang, berikut rinciannya: Ringkasan transaksi Dari 101182943827 Ke GRAB TRANSPORT 9360091200022479237 Jumlah Rp 6.500 Tanggal Transaksi 30 October 2026, 10:15 WIB Status Transaksi Berhasil Nama Acquirer OVO Lokasi Merchant Jakarta Selatan ID Terminal 19yyqlRsp7Gn8E55 PAN Nasabah 9360054211182943826 Jumlah Tip Rp 0';
+
+    const parsed = _parseJagoTransaction(flatBlob, email);
+    assert.strictEqual(parsed.nominal, 6500);
+    assert.strictEqual(parsed.destination, 'GRAB TRANSPORT Jakarta Selatan');
+    assert.strictEqual(parsed.paymentMethod, 'QRIS');
+    assert.strictEqual(parsed.account, 'Bank Jago');
+    assert.strictEqual(parsed.isFailed, false);
+  });
+
+  await t.test('parses Jago incoming transfer (Dana Masuk / Income)', () => {
+    const email = {
+      from: 'Jago <noreply@jago.com>',
+      subject: 'Kamu baru saja menerima uang'
+    };
+    const blob = `Halo FAQIH,
+Kamu baru saja menerima uang dari transfer!
+Ringkasan transaksi
+Dari FAZHIA AULIA
+Jumlah Rp 250.000
+Status Transaksi Berhasil`;
+
+    const parsed = _parseJagoTransaction(blob, email);
+    assert.strictEqual(parsed.nominal, 250000);
+    assert.strictEqual(parsed.destination, 'FAZHIA AULIA');
+    assert.strictEqual(parsed.type, 'INCOME');
+    assert.strictEqual(parsed.account, 'Bank Jago');
     assert.strictEqual(parsed.isFailed, false);
   });
 
