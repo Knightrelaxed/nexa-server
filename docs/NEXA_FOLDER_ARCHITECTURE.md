@@ -11,7 +11,7 @@
 * **Local Path:** `C:\workspace\nexa-server`
 * **Production Host:** Azure Central Indonesia VPS (`/home/nexa/nexa-server`)
 * **Role:** Sovereign Cognitive Core, Multi-Model Router, Database Ledger, Realtime Relays & Background Services
-* **Current Version:** v3.4.0 (`src/config/version.js`)
+* **Current Version:** v3.4.3 (`src/config/version.js`)
 
 ```text
 nexa-server/
@@ -19,7 +19,7 @@ nexa-server/
 ├── .dockerignore                         # Docker build artifact exclusion rules
 ├── .gitignore                            # Git repository ignore rules
 ├── ecosystem.config.js                   # PM2 process manager configuration (VPS deployment)
-├── package.json                          # Main project manifest & production dependencies (v3.4.0)
+├── package.json                          # Main project manifest & production dependencies (v3.4.3)
 ├── package-lock.json                     # Deterministic dependency lockfile
 ├── README.md                             # Repository overview & quick start guide
 ├── .env.example                          # Blueprint environment variable template
@@ -57,8 +57,8 @@ nexa-server/
 │   ├── NEXA_MOBILE_BRIDGE_DOCUMENTATION.md # Complete Android bridge technical documentation
 │   ├── NEXA_ORACLE_CLOUD_MIGRATION_PLAN.md # Secondary cloud disaster recovery plan
 │   ├── NEXA_SECURITY_ARCHITECTURE_AND_HARDENING.md # Comprehensive security hardening guide
-│   ├── NEXA_VERSION_EVOLUTION_ROADMAP.md # Version evolution & release milestone roadmap (v1.0 - v3.4.0)
-│   ├── NEXA_Whitepaper.md                # General N.E.X.A architecture whitepaper (v3.4.0)
+│   ├── NEXA_VERSION_EVOLUTION_ROADMAP.md # Version evolution & release milestone roadmap (v1.0 - v3.4.3)
+│   ├── NEXA_Whitepaper.md                # General N.E.X.A architecture whitepaper (v3.4.3)
 │   ├── PHASE6_DUAL_MEMORY_SYSTEM.md      # Dual-memory (Episodic + Semantic) architectural design
 │   ├── PHASE_4_ADVANCED_WORKFLOW.md      # Autonomous background workflows & task chains
 │   ├── PHASE_5_NEXA_V3_WEB_UI.md         # Web portal frontend specifications
@@ -141,7 +141,7 @@ nexa-server/
     │   ├── env.js                        # Validated environment variable loader
     │   ├── model_backup_plan.json        # Dynamic fallback parameters & retry quotas
     │   ├── personality.js                # Master executive identity prompt & behavior boundaries
-    │   └── version.js                    # Centralized version definition (v3.4.0) & Git SHA resolver
+    │   └── version.js                    # Centralized version definition (v3.4.3) & Git SHA resolver
     │
     ├── core/                             # Core Cognitive & Inference Engines (9 Subsystems)
     │   ├── AI_Router.js                  # Public Facade (37 lines, re-exporting 18 cognitive routing APIs)
@@ -225,7 +225,7 @@ nexa-server/
     │   │   └── Memory_Db_Browser.js      # Generic database schema overview, table inspection & CRUD operations
     │   └── Web_Search.js                 # Real-time web search crawler
     │
-    ├── interfaces/                       # Ingress & Egress Channels (Modular Ingress Architecture v3.4.0)
+    ├── interfaces/                       # Ingress & Egress Channels (Modular Ingress Architecture v3.4.3)
     │   ├── cron.js                       # Autonomous cron scheduler (Briefings, Night check-ins, Habits)
     │   ├── webhook.js                    # Inbound webhook router & Telegram dispatcher
     │   │

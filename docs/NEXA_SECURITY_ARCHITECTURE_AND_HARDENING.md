@@ -224,10 +224,10 @@ Berikut bukti pengujian penetrasi aktif langsung pada server Azure:
 
 ## 🛡️ 9. Kesimpulan & Status Kepatuhan Keamanan
 
-Sistem keamanan N.E.X.A v3.0.0 memenuhi standar industri:
+Sistem keamanan N.E.X.A v3.4.3 memenuhi standar industri:
 * **Kerahasiaan (*Confidentiality*):** 100% Terenkripsi (TLS 1.3 + Ed25519 + Supabase RLS).
 * **Integritas (*Integrity*):** Terlindungi dari modifikasi (Timing-Safe Equal + HMAC SHA-256 Signature).
 * **Ketersediaan (*Availability*):** Dilindungi dari DoS (UFW Firewall + PM2 Auto-Restart + 1MB Limit).
 
 ---
-*Dokumen Resmi Keamanan Siber N.E.X.A v3.0.0. Diverifikasi dan disinkronkan di Azure Production Cloud.*
+*Dokumen Resmi Keamanan Siber N.E.X.A v3.4.3. Diverifikasi dan disinkronkan di Azure Production Cloud.*

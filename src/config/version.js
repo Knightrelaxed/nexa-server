@@ -23,12 +23,12 @@ const [MAJOR = '0', MINOR = '0', PATCH = '0'] = VERSION.split('.');
 const MAJOR_MINOR = `${MAJOR}.${MINOR}`;
 
 module.exports = {
-  VERSION,                                        // Full Semantic Version (e.g. "3.4.0")
+  VERSION,                                        // Full Semantic Version (e.g. "3.4.3")
   MAJOR,                                          // Angka Major (e.g. "3")
   MINOR,                                          // Angka Minor (e.g. "4")
   PATCH,                                          // Angka Patch (e.g. "0")
   MAJOR_MINOR,                                    // Generasi Fase / Series (e.g. "3.4")
   SYSTEM_TAG: `[N.E.X.A ${MAJOR_MINOR}]`,         // Tag Log Sistem (e.g. "[N.E.X.A 3.4]")
-  SYSTEM_NAME: `N.E.X.A Cloud Core v${VERSION}`,  // Nama Lengkap Sistem (e.g. "N.E.X.A Cloud Core v3.4.0")
+  SYSTEM_NAME: `N.E.X.A Cloud Core v${VERSION}`,  // Nama Lengkap Sistem (e.g. "N.E.X.A Cloud Core v3.4.3")
   USER_AGENT: `NexaAssistant/${MAJOR_MINOR}`      // HTTP User-Agent Header (e.g. "NexaAssistant/3.4")
 };

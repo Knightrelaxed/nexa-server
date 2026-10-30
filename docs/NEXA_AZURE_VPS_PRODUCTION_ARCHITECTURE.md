@@ -240,7 +240,7 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://nexa-ser
   {
     "status": "ALIVE",
     "service": "N.E.X.A Cloud Core",
-    "version": "3.0.0",
+    "version": "3.4.3",
     "uptime_human": "1h 8m",
     "timestamp_jakarta": "16/8/2026, 11.32.58",
     "memory_mb": 157,

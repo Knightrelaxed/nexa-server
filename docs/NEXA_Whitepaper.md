@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Executive with Xenial Agent : v3.4.2 "True Multimodal Duplex, Adaptive Procedural Memory, Dynamic Situational Awareness & Closed-Loop Learning")*
+*(Neural Executive with Xenial Agent : v3.4.3 "True Multimodal Duplex, Adaptive Procedural Memory, Dynamic Situational Awareness, Multi-Bank Auto-Sync & Closed-Loop Learning")*
 
 ---
 
@@ -388,7 +388,7 @@ Setiap kali Tuan Faqih melakukan perbaikan kode atau penambahan fitur pada CLI d
 
 ---
 
-#### 2.6 Struktur Arsitektur Monorepo Codebase & Peta Modul Komprehensif (v3.4.0)
+#### 2.6 Struktur Arsitektur Monorepo Codebase & Peta Modul Komprehensif (v3.4.3)
 
 Arsitektur codebase N.E.X.A mengadopsi pola **Modular Hexagonal / Layered Architecture** yang memisahkan secara ketat antara antarmuka (*Interfaces/Adapters*), orkestrasi kognitif (*Core Brain*), logika domain otonom (*Domain Engines & Subsystems*), dan lapisan infrastruktur/database (*Infrastructure & Data*).
 
@@ -452,7 +452,7 @@ nexa-server/
 ├── .dockerignore                       # Docker build artifact exclusion rules
 ├── .gitignore                          # Git repository ignore rules
 ├── ecosystem.config.js                 # PM2 process manager configuration (VPS deployment)
-├── package.json                        # Main project manifest & production dependencies (v3.4.0)
+├── package.json                        # Main project manifest & production dependencies (v3.4.3)
 ├── package-lock.json                   # Deterministic dependency lockfile
 ├── README.md                           # Repository overview & quick start guide
 ├── .env.example                        # Blueprint environment variable template
@@ -463,7 +463,7 @@ nexa-server/
 │   │   ├── env.js                      # Environment variable loader & validator
 │   │   ├── personality.js              # Persona, System Prompts, dan aturan karakter N.E.X.A
 │   │   ├── model_backup_plan.json      # Model fallback configuration matrix
-│   │   └── version.js                  # Centralized version definition (v3.4.0) & Git SHA resolver
+│   │   └── version.js                  # Centralized version definition (v3.4.3) & Git SHA resolver
 │   ├── core/                           # Cognitive Brain & Orchestration Layer (9 Subsystems)
 │   │   ├── AI_Router.js                # Public Facade (37 lines, re-exporting 18 cognitive routing APIs)
 │   │   ├── router/                     # Modular Cognitive Router Subsystem (7 Modules)
@@ -2222,7 +2222,7 @@ Untuk menjaga daya baterai HP Samsung Galaxy A33 5G tetap awet 24/7 dan mengelim
 
 ### 11.10 Arsitektur N.E.X.A Windows Bridge Desktop Companion (Rust Native Node)
 
-Seiring dengan meningkatnya kebutuhan kerja strategis dan pemrograman intensif Tuan Faqih di depan laptop utama (ThinkPad Windows 11), N.E.X.A v3.4.2 memperluas arsitektur Neural-Peripheral ke lingkungan desktop melalui **N.E.X.A Windows Bridge Desktop Companion**. Berbeda dengan implementasi umum yang menggunakan Electron atau Node.js yang memboroskan memori (>500 MB RAM), modul desktop ini dibangun 100% menggunakan bahasa pemrograman **Rust Native** dengan performa *bare-metal*, keamanan memori tanpa *garbage collector*, dan *runtime memory footprint* yang sangat kecil (~12–25 MB RAM).
+Seiring dengan meningkatnya kebutuhan kerja strategis dan pemrograman intensif Tuan Faqih di depan laptop utama (ThinkPad Windows 11), N.E.X.A v3.4.3 memperluas arsitektur Neural-Peripheral ke lingkungan desktop melalui **N.E.X.A Windows Bridge Desktop Companion**. Berbeda dengan implementasi umum yang menggunakan Electron atau Node.js yang memboroskan memori (>500 MB RAM), modul desktop ini dibangun 100% menggunakan bahasa pemrograman **Rust Native** dengan performa *bare-metal*, keamanan memori tanpa *garbage collector*, dan *runtime memory footprint* yang sangat kecil (~12–25 MB RAM).
 
 ```
  ┌─────────────────────────────────────────────────────────────┐
