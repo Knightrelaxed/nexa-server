@@ -9,7 +9,7 @@ import {
   ComposedChart, Bar, Line, Legend, LineChart
 } from "recharts"
 import {
-  Trash2, Plus, PiggyBank,
+  Trash2, Plus, PiggyBank, WalletCards, Eye, EyeOff,
   Utensils, Bus, ShoppingBag, Film, Receipt, HeartPulse, Book,
   Briefcase, TrendingUp, Wifi, Wallet, MoreHorizontal, CreditCard,
   Wine, Coffee, Cake, Percent, Lock, Unlock, type LucideIcon,
@@ -151,6 +151,31 @@ export function DashboardView() {
     cashFlow, recentTransactions, expenseByCategory, dailyCategoryExpenses, dailyNeedsWants, loading: dashLoading,
   } = useDashboardData(period)
   const { data: comparisonData, loading: comparisonLoading } = usePeriodComparison(period, compTab, accounts[0]?.id)
+
+  const [showBalance, setShowBalance] = useState<boolean>(true)
+
+  useEffect(() => {
+    const saved = localStorage.getItem("nexa_show_balance")
+    if (saved !== null) {
+      setShowBalance(saved === "true")
+    }
+  }, [])
+
+  const toggleShowBalance = () => {
+    setShowBalance((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem("nexa_show_balance", String(next))
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }
+
+  const totalAllBalance = useMemo(() => {
+    return accounts.reduce((sum, acc) => sum + (acc.is_archived ? 0 : acc.balance), 0)
+  }, [accounts])
 
   const trendData = balanceTrend.map((b) => ({
     name: new Date(b.day).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
@@ -611,15 +636,46 @@ export function DashboardView() {
 
       {/* ── Accounts Row ── */}
       <div className="flex items-stretch gap-3 overflow-x-auto pb-3 pt-1 -mx-3 px-3 sm:mx-0 sm:px-0 no-scrollbar">
+        {/* Total Saldo Card (Client-side Aggregate) */}
+        <div className="relative flex min-w-[240px] sm:min-w-[260px] items-center justify-between gap-3 rounded-2xl px-5 py-4 text-white shadow-lg shrink-0 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 border border-slate-700/60 transition-all hover:shadow-xl group">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-emerald-400 backdrop-blur-md border border-white/10 group-hover:scale-105 transition-transform">
+              <WalletCards className="h-6 w-6" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-300">Total Saldo</p>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  {accounts.filter(a => !a.is_archived).length} Akun
+                </span>
+              </div>
+              <p className="text-base sm:text-lg font-black tracking-tight truncate text-white mt-0.5">
+                {showBalance ? formatIDR(totalAllBalance) : "Rp ••••••••"}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggleShowBalance}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors"
+            title={showBalance ? "Sembunyikan Saldo" : "Tampilkan Saldo"}
+          >
+            {showBalance ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+
+        {/* Individual Account Cards */}
         {accounts.map((acc, i) => (
           <div key={acc.id} className={cn(
-            "flex min-w-[220px] items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-md shrink-0",
+            "flex min-w-[220px] items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-md shrink-0 transition-transform hover:-translate-y-0.5",
             i % 2 === 0 ? "bg-gradient-to-r from-[#22d3ee] to-[#3b82f6]" : "bg-gradient-to-r from-[#10b981] to-[#059669]"
           )}>
             <PiggyBank className="h-7 w-7 shrink-0" />
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold truncate">{acc.name}</p>
-              <p className="text-base font-bold truncate">{formatIDR(acc.balance)}</p>
+              <p className="text-[13px] font-semibold truncate opacity-90">{acc.name}</p>
+              <p className="text-base font-bold truncate">
+                {showBalance ? formatIDR(acc.balance) : "Rp ••••••••"}
+              </p>
             </div>
           </div>
         ))}
