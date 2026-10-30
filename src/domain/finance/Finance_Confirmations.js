@@ -508,11 +508,13 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
     return null;
   }
 
-  // 1. Auto-assign akun tunggal jika belum diisi dan hanya ada 1 akun aktif
+  // 1. Auto-assign akun jika belum diisi
   if (!tx.account) {
     try {
       const accounts = await supabaseFinance.getAccountsList();
-      if (accounts && accounts.length === 1) {
+      if (tx.suggestedAccount) {
+        tx.account = tx.suggestedAccount;
+      } else if (accounts && accounts.length === 1) {
         tx.account = accounts[0].name;
         console.log(`[FINANCE] Auto-assigned sole account: ${tx.account}`);
       }

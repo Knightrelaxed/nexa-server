@@ -221,11 +221,54 @@ function invalidateCache() {
   console.log('[SUPABASE_FINANCE] Cache di-invalidate. Akan re-fetch pada transaksi berikutnya.');
 }
 
+/**
+ * Memastikan sebuah akun ada di tabel `accounts` Supabase Finance.
+ * Jika belum ada, otomatis membuat baris baru secara idempotent.
+ *
+ * @param {string} accountName - Contoh: "Bank Jago", "Bank Mandiri"
+ * @param {object} [metadata] - Opsional { type: 'bank', color: '#f59e0b', icon_key: 'landmark' }
+ * @returns {Promise<string|null>} UUID akun
+ */
+async function ensureAccountExists(accountName, metadata = {}) {
+  if (!accountName || !supabaseFinance) return null;
+  const accounts = await _loadAccounts();
+  const existing = accounts.find(a => _normalize(a.name) === _normalize(accountName));
+  if (existing) {
+    return existing.id;
+  }
+
+  const payload = {
+    name: accountName.trim(),
+    type: metadata.type || 'bank',
+    currency: metadata.currency || 'IDR',
+    initial_balance: metadata.initial_balance || 0,
+    color: metadata.color || '#f59e0b',
+    icon_key: metadata.icon_key || 'landmark',
+    is_archived: false,
+    exclude_from_stats: false
+  };
+
+  const { data, error } = await supabaseFinance
+    .from('accounts')
+    .insert([payload])
+    .select('id, name, type, color')
+    .single();
+
+  if (error) {
+    console.error(`[SUPABASE_FINANCE] Gagal auto-provision akun "${accountName}":`, error.message);
+    return null;
+  }
+
+  invalidateCache();
+  return data?.id || null;
+}
+
 module.exports = {
   _loadCategories,
   getCategoriesList,
   _loadAccounts,
   getAccountsList,
+  ensureAccountExists,
   _normalize,
   _fuzzyScore,
   resolveAccountId,

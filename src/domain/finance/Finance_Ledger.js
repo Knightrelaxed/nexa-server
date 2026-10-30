@@ -72,8 +72,8 @@ async function processTransaction(data, source) {
     const combinedContext = [dest, desc].filter(Boolean).join(' - ') || 'Unknown';
     const smartCategory = await _autoCategorizeMerchant(combinedContext, data.category);
 
-    // Nama akun: gunakan data.account jika ada (dari Telegram manual/AI Router).
-    // Jika otomatis dari email Auto-Sync, paksa 'Bank Mandiri'.
+    // Nama akun: gunakan data.account jika ada (dari Telegram manual/AI Router/Email Sync).
+    // Jika otomatis dari email Auto-Sync dan tidak ada account spesifik, fallback ke 'Bank Mandiri'.
     // Jika manual dan kosong, ambil akun aktif pertama dari database.
     let akunName = data.account && String(data.account).trim() ? String(data.account).trim() : null;
     if (!akunName) {
