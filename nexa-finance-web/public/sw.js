@@ -2,7 +2,7 @@
 // Strategi: Cache-first untuk aset statis, Network-only untuk Supabase
 
 // Versi cache otomatis berdasarkan tanggal deploy agar mudah di-invalidate
-const CACHE_VERSION = 'nexa-finance-v2'
+const CACHE_VERSION = 'nexa-finance-v3'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 

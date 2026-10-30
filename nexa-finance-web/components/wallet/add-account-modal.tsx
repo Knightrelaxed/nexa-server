@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createAccount, updateAccount } from "@/lib/supabase/mutations"
+import { useRouter } from "next/navigation"
+import { createAccount, updateAccount, notifyFinanceChanged } from "@/lib/supabase/mutations"
 import { useAuth } from "@/components/providers/supabase-provider"
 import { X, Wallet, Banknote, CreditCard, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -37,6 +38,7 @@ const CURRENCIES = [
 ]
 
 export function AddAccountModal({ open, onClose, onSuccess, initialData }: AddAccountModalProps) {
+  const router = useRouter()
   const { userId } = useAuth()
   const [name, setName]               = useState("")
   const [type, setType]               = useState<"bank" | "cash" | "e-wallet">("cash")

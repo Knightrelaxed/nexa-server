@@ -2,17 +2,36 @@ import { supabase } from './client';
 import type { DbAccount, DbTransaction, PaymentMethod } from './types';
 
 // ----------------------------------------------------------------
-// Cross-Component & Realtime Sync Event Dispatcher
+// Cross-Component, Cross-Tab & Realtime Sync Event Dispatcher
 // ----------------------------------------------------------------
+
+let financeBroadcast: BroadcastChannel | null = null;
+if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+  try {
+    financeBroadcast = new BroadcastChannel("nexa-finance-sync");
+    financeBroadcast.onmessage = (event) => {
+      if (event.data?.type === "nexa-finance-changed") {
+        window.dispatchEvent(new CustomEvent("nexa-finance-changed"));
+      }
+    };
+  } catch {
+    // BroadcastChannel restricted or unsupported
+  }
+}
 
 /**
  * Notifies all active hooks (useTransactions, useAccounts, useDashboardData, etc.)
- * across the application that finance data has changed, triggering instant auto-refresh
- * without requiring the user to reload the browser.
+ * across the application and across browser tabs/PWA windows that finance data has changed,
+ * triggering instant auto-refresh without requiring manual reload.
  */
 export function notifyFinanceChanged(): void {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('nexa-finance-changed'));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("nexa-finance-changed"));
+    try {
+      financeBroadcast?.postMessage({ type: "nexa-finance-changed" });
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -52,6 +71,7 @@ export async function createAccount(
     .single();
 
   if (error) throw error;
+  notifyFinanceChanged();
   return result as DbAccount;
 }
 
@@ -70,6 +90,7 @@ export async function updateAccount(
     .single();
 
   if (error) throw error;
+  notifyFinanceChanged();
   return result as DbAccount;
 }
 
@@ -83,6 +104,7 @@ export async function deleteAccount(accountId: string): Promise<void> {
     .eq('id', accountId);
 
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 // ----------------------------------------------------------------
@@ -122,6 +144,7 @@ export async function createTransaction(
     .single();
 
   if (error) throw error;
+  notifyFinanceChanged();
   return result as DbTransaction;
 }
 
@@ -225,6 +248,7 @@ export async function updateTransferPair(
 
   if (r1.error) throw r1.error;
   if (r2.error) throw r2.error;
+  notifyFinanceChanged();
 }
 
 // ----------------------------------------------------------------
@@ -246,6 +270,7 @@ export async function updateTransaction(
     .single();
 
   if (error) throw error;
+  notifyFinanceChanged();
   return result as DbTransaction;
 }
 
@@ -259,6 +284,7 @@ export async function deleteTransaction(txId: string): Promise<void> {
     .eq('id', txId);
 
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 /**
@@ -273,6 +299,7 @@ export async function deleteTransactions(txIds: string[]): Promise<void> {
     .in('id', txIds);
 
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 /**
@@ -285,4 +312,5 @@ export async function deleteTransferPair(pairGroupId: string): Promise<void> {
     .eq('split_group_id', pairGroupId);
 
   if (error) throw error;
+  notifyFinanceChanged();
 }

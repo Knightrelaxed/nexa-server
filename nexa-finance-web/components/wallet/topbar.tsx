@@ -3,10 +3,11 @@
 import { useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Plus, Settings, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AddTransactionModal } from "./add-transaction-modal"
+import { notifyFinanceChanged } from "@/lib/supabase/mutations"
 import { useAuth } from "@/components/providers/supabase-provider"
 import { cn } from "@/lib/utils"
 
@@ -21,6 +22,7 @@ const tabs = [
 
 export function Topbar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { signOut } = useAuth()
   const [modalOpen, setModalOpen] = useState(false)
 
@@ -120,7 +122,11 @@ export function Topbar() {
       <AddTransactionModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSuccess={() => setModalOpen(false)}
+        onSuccess={() => {
+          setModalOpen(false)
+          notifyFinanceChanged()
+          router.refresh()
+        }}
       />
     </>
   )

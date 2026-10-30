@@ -1,8 +1,9 @@
 "use client"
 
 import React, { useState, useEffect, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import { useCategories, useAccounts } from "@/hooks/use-finance-data"
-import { createTransaction, updateTransaction, createTransferPair, updateTransferPair } from "@/lib/supabase/mutations"
+import { createTransaction, updateTransaction, createTransferPair, updateTransferPair, notifyFinanceChanged } from "@/lib/supabase/mutations"
 import { useAuth } from "@/components/providers/supabase-provider"
 import { X, Plus } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -32,6 +33,7 @@ const PAYMENT_METHODS = ["QRIS", "Transfer bank", "Kartu Kredit", "Tunai"]
 const PAYMENT_METHODS_WITH_EMPTY = ["", ...PAYMENT_METHODS]
 
 export function AddTransactionModal({ open, onClose, onSuccess, initialData }: AddTransactionModalProps) {
+  const router = useRouter()
   const { userId } = useAuth()
   const { categories } = useCategories()
   const { accounts, refetch: refetchAccounts } = useAccounts()
@@ -205,7 +207,9 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         }
       }
 
+      notifyFinanceChanged()
       await refetchAccounts()
+      router.refresh()
       onSuccess?.()
       onClose()
       setAmount("")
@@ -261,7 +265,9 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
         })
         toast.success("Catatan tersimpan! Siap menambah lagi.")
       }
+      notifyFinanceChanged()
       await refetchAccounts()
+      router.refresh()
       onSuccess?.()
       setAmount("")
       setDescription("")
