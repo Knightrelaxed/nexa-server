@@ -61,8 +61,8 @@ function _parseMandiriTransaction(blob, email) {
   }
 
   const isFailed = blob.toLowerCase().includes('tidak berhasil') || blob.toLowerCase().includes('gagal');
-  const isIncome = /transfer masuk|dana masuk|penerimaan transfer/i.test(blob) ||
-                   /dana masuk|transfer masuk/i.test(email?.subject || '');
+  const isIncome = /transfer masuk|dana masuk|penerimaan transfer|uang telah dikembalikan|pengembalian dana|refund/i.test(blob) ||
+                   /dana masuk|transfer masuk|uang telah dikembalikan|pengembalian dana/i.test(email?.subject || '');
   const type = isIncome ? 'INCOME' : 'EXPENSE';
 
   let destination = 'Auto-Sync Transaction';
@@ -95,8 +95,8 @@ function _parseMandiriTransaction(blob, email) {
  */
 function _parseJagoTransaction(blob, email) {
   let nominal = 0;
-  // Match "Jumlah Rp 6.500" or "Total Rp ..." or "Nominal Rp ..."
-  const jumlahMatch = blob.match(/(?:jumlah|total|nominal)\s*rp\.?\s*([0-9][0-9\.\,]+)/i);
+  // Match "Jumlah Rp 6.500" or "Total Rp ..." or "Nominal Rp ..." or "Sebesar Rp Rp20.338"
+  const jumlahMatch = blob.match(/(?:jumlah|total|nominal|sebesar)\s*rp\.?\s*(?:rp\.?\s*)?([0-9][0-9\.\,]+)/i);
   if (jumlahMatch) {
     nominal = _parseFlexibleCurrency(jumlahMatch[1]);
   }
@@ -127,8 +127,8 @@ function _parseJagoTransaction(blob, email) {
                    blob.toLowerCase().includes('status transaksi gagal') ||
                    blob.toLowerCase().includes('transaksi tidak berhasil');
 
-  const isIncome = /kamu baru saja menerima uang|kamu telah menerima uang|transfer masuk|dana masuk|penerimaan uang/i.test(blob) ||
-                   /kamu baru saja menerima uang|dana masuk|transfer masuk/i.test(email?.subject || '');
+  const isIncome = /kamu baru saja menerima uang|kamu telah menerima uang|transfer masuk|dana masuk|penerimaan uang|uang telah dikembalikan|pengembalian dana|refund/i.test(blob) ||
+                   /kamu baru saja menerima uang|dana masuk|transfer masuk|uang telah dikembalikan|pengembalian dana/i.test(email?.subject || '');
   const type = isIncome ? 'INCOME' : 'EXPENSE';
 
   // Extract Destination / Merchant
@@ -183,8 +183,8 @@ function _parseJagoTransaction(blob, email) {
 
   // Payment Method:
   // Jago email with "Nama Acquirer", "ID Terminal", "PAN Nasabah", or subject "Kamu telah membayar ke" is QRIS
-  const isQRIS = /nama acquirer|id terminal|pan nasabah/i.test(blob) ||
-                 /kamu telah membayar ke/i.test(email?.subject || '');
+  const isQRIS = !isIncome && (/nama acquirer|id terminal|pan nasabah/i.test(blob) ||
+                 /kamu telah membayar ke/i.test(email?.subject || ''));
   const paymentMethod = isQRIS ? 'QRIS' : 'Transfer bank';
 
   return {

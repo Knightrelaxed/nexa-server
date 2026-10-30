@@ -101,12 +101,19 @@ async function processTransaction(data, source) {
       hour12: false
     });
 
+    let finalDesc = data.description;
+    if (!finalDesc || finalDesc === '[Menunggu Detail User]' || finalDesc === '-') {
+      const tipe = isIncome ? 'Pemasukan' : 'Pengeluaran';
+      const prep = isIncome ? 'dari' : 'ke';
+      finalDesc = dest ? `${tipe} ${prep} ${dest}` : '-';
+    }
+
     const sfResult = await supabaseFinance.writeTransaction({
       txType:        isIncome ? 'INCOME' : 'EXPENSE',
       nominal,
       categoryName:  smartCategory,
       accountName:   akunName,
-      description:   data.description || data.destination || '-',
+      description:   finalDesc,
       dateISO:       txDateISO,
       timeHHMM:      txTimeHHMM,
       paymentMethod: paymentMethod,

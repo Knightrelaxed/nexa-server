@@ -349,6 +349,7 @@ test('Telegram Confirmation Card Multi-Bank Format & Proactive Prompts', async (
     assert.ok(card.includes('<b>Tipe:</b> Pemasukan'));
     assert.ok(card.includes('<b>Akun:</b> Bank Jago'));
     assert.ok(card.includes('<b>Nominal (Rp):</b> Rp500.000'));
+    assert.ok(card.includes('<b>Deskripsi:</b> [KOSONG - Sumber: FAZHIA AULIA]'), 'Income card should display [KOSONG - Sumber: ...] instead of Tujuan:');
     assert.ok(card.includes('❓ <b>Terdapat dana masuk dari FAZHIA AULIA.</b>'));
   });
 });
@@ -404,4 +405,92 @@ test('Interactive Account Updates on Pending Transactions', async (t) => {
     clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
     pendingConfirmations.delete(testKey);
   }
+});
+
+test('Deep Audit: Edge Cases & Semantic Consistency', async (t) => {
+  const { _parseJagoTransaction } = require('../src/domain/finance/Finance_Email_Sync');
+  const { pendingConfirmations } = require('../src/domain/finance/Finance_State');
+  const { _resolveTargetKeyFromSnippet, confirmPendingTransactions } = require('../src/domain/finance/Finance_Confirmations');
+  const supabaseFinance = require('../src/infrastructure/finance_db');
+
+  await t.test('parses Jago refund / pengembalian dana as INCOME and Transfer bank', () => {
+    const email = {
+      from: 'Jago <noreply@jago.com>',
+      subject: 'Uang telah dikembalikan'
+    };
+    const blob = 'Halo FAQIH HIDAYATULLOH, Pengiriman uangmu sebesar Rp Rp20.338 ke ORACLE SINGAPORE telah dikembalikan ke Kantong Utama kamu.';
+    const parsed = _parseJagoTransaction(blob, email);
+
+    assert.strictEqual(parsed.provider, 'JAGO');
+    assert.strictEqual(parsed.account, 'Bank Jago');
+    assert.strictEqual(parsed.nominal, 20338);
+    assert.strictEqual(parsed.type, 'INCOME', 'Refund must be parsed as INCOME');
+    assert.strictEqual(parsed.paymentMethod, 'Transfer bank', 'Refund must be Transfer bank, not QRIS');
+    assert.strictEqual(parsed.isFailed, false);
+  });
+
+  await t.test('resolves target key disambiguation when multiple pending share identical nominal', () => {
+    const key1 = '25000_kopikenangan';
+    const key2 = '25000_indomaret';
+
+    pendingConfirmations.set(key1, {
+      tx: { nominal: 25000, destination: 'KOPI KENANGAN', description: '[Menunggu Detail User]' }
+    });
+    pendingConfirmations.set(key2, {
+      tx: { nominal: 25000, destination: 'INDOMARET', description: '[Menunggu Detail User]' }
+    });
+
+    try {
+      // Snippet mentions indomaret
+      const resolvedKeyIndo = _resolveTargetKeyFromSnippet('25000 indomaret tadi beli sabun');
+      assert.strictEqual(resolvedKeyIndo, key2, 'Should pick INDOMARET based on destination in snippet');
+
+      // Snippet mentions kopi
+      const resolvedKeyKopi = _resolveTargetKeyFromSnippet('25.000 buat kopi kenangan');
+      assert.strictEqual(resolvedKeyKopi, key1, 'Should pick KOPI KENANGAN based on destination in snippet');
+    } finally {
+      pendingConfirmations.delete(key1);
+      pendingConfirmations.delete(key2);
+    }
+  });
+
+  await t.test('confirmPendingTransactions ensures placeholder description never persists', async () => {
+    const testKey = 'audit_test_placeholder_key';
+    let capturedTx = null;
+
+    // Intercept writeTransaction temporarily
+    const originalWrite = supabaseFinance.writeTransaction;
+    supabaseFinance.writeTransaction = async (data) => {
+      capturedTx = data;
+      return { status: 'SUCCESS', id: 'mock-tx-123' };
+    };
+
+    try {
+      pendingConfirmations.set(testKey, {
+        tx: {
+          nominal: 35000,
+          type: 'EXPENSE',
+          destination: 'CHATIME',
+          category: 'Jajan / Minuman',
+          description: '[Menunggu Detail User]',
+          account: 'Bank Jago',
+          payment_method: 'QRIS',
+          time: '2026-10-30T11:00:00Z'
+        },
+        timeoutId: setTimeout(() => {}, 100000)
+      });
+
+      // User confirms with "ya" without new description
+      await confirmPendingTransactions(true, null, null, null, null, testKey);
+
+      assert.ok(capturedTx, 'Expected writeTransaction to be called');
+      assert.notStrictEqual(capturedTx.description, '[Menunggu Detail User]', 'Description must not be placeholder');
+      assert.strictEqual(capturedTx.description, 'pengeluaran ke CHATIME', 'Default description should be semantic');
+      assert.strictEqual(capturedTx.accountName, 'Bank Jago');
+    } finally {
+      supabaseFinance.writeTransaction = originalWrite;
+      clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
+      pendingConfirmations.delete(testKey);
+    }
+  });
 });

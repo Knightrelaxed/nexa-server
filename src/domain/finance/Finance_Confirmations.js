@@ -42,11 +42,12 @@ async function recoverPendingTransactions() {
           }
 
           const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
+          const prep = tx.type === 'INCOME' ? 'dari' : 'ke';
           const _recDest = tx.destination && tx.destination !== 'Unknown' ? tx.destination : '';
           const _recDesc = tx.description && tx.description !== '[Menunggu Detail User]' && tx.description !== '-' ? tx.description : '';
           const _recContext = [_recDest, _recDesc].filter(Boolean).join(' - ') || 'Unknown';
           tx.category = await _autoCategorizeMerchant(_recContext, tx.category);
-          if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
+          if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ${prep} ${tx.destination}`;
           await processTransaction(tx, 'GMAIL_POLLING');
           // processTransaction already calls logTransactionKey, but we
           // delete the pending record immediately after to signal to the
@@ -129,14 +130,31 @@ function _resolveTargetKeyFromSnippet(replySnippet) {
 
   if (candidates.length === 0) return null;
 
-  // Find a pending key whose nominal matches one of the extracted amounts
+  // Find pending keys whose nominal matches one of the extracted amounts
+  const matchingKeys = [];
   for (const [key, pending] of pendingConfirmations.entries()) {
     const txNominal = typeof pending.tx.nominal === 'number'
       ? pending.tx.nominal
       : _parseFlexibleCurrency(String(pending.tx.nominal));
     if (candidates.some(c => Math.abs(c - txNominal) < 1)) {
-      return key;
+      matchingKeys.push({ key, pending });
     }
+  }
+
+  if (matchingKeys.length === 1) {
+    return matchingKeys[0].key;
+  }
+
+  // If multiple pending transactions have the same nominal, disambiguate using destination/merchant name
+  if (matchingKeys.length > 1) {
+    const snippetLower = replySnippet.toLowerCase();
+    for (const { key, pending } of matchingKeys) {
+      const dest = String(pending.tx.destination || '').toLowerCase().trim();
+      if (dest && snippetLower.includes(dest)) {
+        return key;
+      }
+    }
+    return matchingKeys[0].key;
   }
   return null;
 }
@@ -174,6 +192,14 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
           pending.tx.category = await _autoCategorizeMerchant(
             combinedContext, pending.tx.category
           );
+        }
+
+        if (!pending.tx.description || pending.tx.description === '[Menunggu Detail User]' || pending.tx.description === '-') {
+          const tipe = pending.tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
+          const prep = pending.tx.type === 'INCOME' ? 'dari' : 'ke';
+          pending.tx.description = pending.tx.destination && pending.tx.destination !== 'Unknown'
+            ? `${tipe} ${prep} ${pending.tx.destination}`
+            : `${tipe} otomatis`;
         }
 
         // Use TELEGRAM_MANUAL for non-email transactions to avoid strict email dedup
@@ -363,7 +389,8 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
   const nominalFmt = isNaN(nominalNum) ? String(tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
   const tipeStr = tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran';
   const isMissingDesc = tx.description === '[Menunggu Detail User]';
-  const displayDesc = isMissingDesc ? `[KOSONG - Tujuan: ${tx.destination}]` : tx.description;
+  const descLabel = tx.type === 'INCOME' ? 'Sumber' : 'Tujuan';
+  const displayDesc = isMissingDesc ? `[KOSONG - ${descLabel}: ${tx.destination}]` : tx.description;
 
   let currentSaldo = '-';
   try {
@@ -439,12 +466,13 @@ async function _autoSavePending(compositeKey, tx) {
     }
 
     const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
+    const prep = tx.type === 'INCOME' ? 'dari' : 'ke';
     // Use lightweight AI categorizer with combined destination+description for maximum context
     const _saveDest = tx.destination && tx.destination !== 'Unknown' ? tx.destination : '';
     const _saveDesc = tx.description && tx.description !== '[Menunggu Detail User]' && tx.description !== '-' ? tx.description : '';
     const _saveContext = [_saveDest, _saveDesc].filter(Boolean).join(' - ') || 'Unknown';
     tx.category = await _autoCategorizeMerchant(_saveContext, tx.category);
-    if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ke ${tx.destination}`;
+    if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ${prep} ${tx.destination}`;
     try {
       // Use 'TELEGRAM_MANUAL' to bypass strict email duplicate checks for user-initiated saves
       const source = tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL';
