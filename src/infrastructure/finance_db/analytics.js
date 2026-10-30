@@ -27,7 +27,13 @@ const { _loadAccounts } = require('./reference_data');
  * @param {Date} endDate 
  */
 async function getFinanceAnalytics(startDate, endDate) {
-  if (!supabaseFinance) return { totalIncome: 0, totalExpense: 0, balance: 0, savingsRate: 0, avgDailyExpense: 0, daysPassed: 1, totalTransactions: 0 };
+  // === Rumus IDENTIK dengan analytics-view.tsx baris 102-106 ===
+  // daysInPeriod = Math.ceil((period.end - period.start) / (1000*60*60*24)) + 1
+  const daysPassed = (startDate && endDate)
+    ? Math.max(Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1, 1)
+    : 1;
+
+  if (!supabaseFinance) return { totalIncome: 0, totalExpense: 0, balance: 0, savingsRate: 0, avgDailyExpense: 0, daysPassed, totalTransactions: 0 };
   
   const startStr = startDate.toISOString().split('T')[0];
   const endStr = endDate.toISOString().split('T')[0];
@@ -40,7 +46,7 @@ async function getFinanceAnalytics(startDate, endDate) {
 
   if (error) {
     console.error('[SUPABASE_FINANCE] getFinanceAnalytics error:', error.message);
-    return { totalIncome: 0, totalExpense: 0, balance: 0, savingsRate: 0, avgDailyExpense: 0, daysPassed: 1, totalTransactions: 0 };
+    return { totalIncome: 0, totalExpense: 0, balance: 0, savingsRate: 0, avgDailyExpense: 0, daysPassed, totalTransactions: 0 };
   }
 
   let totalIncome = 0;
@@ -50,10 +56,6 @@ async function getFinanceAnalytics(startDate, endDate) {
     if (tx.type === 'income') totalIncome += tx.amount;
     else if (tx.type === 'expense') totalExpense += tx.amount;
   }
-
-  // === Rumus IDENTIK dengan analytics-view.tsx baris 102-106 ===
-  // daysInPeriod = Math.ceil((period.end - period.start) / (1000*60*60*24)) + 1
-  const daysPassed = Math.max(Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1, 1);
 
   // savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0
   const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;

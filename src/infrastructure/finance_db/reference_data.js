@@ -23,6 +23,12 @@ let _categoryFetchedAt = 0;
 let _accountCache = null;
 let _accountFetchedAt = 0;
 
+// Default in-memory accounts fallback saat Supabase offline / null client (CI/local fallback)
+const DEFAULT_FALLBACK_ACCOUNTS = [
+  { id: '00000000-0000-0000-0000-000000000001', name: 'Bank Mandiri', type: 'bank', color: '#0047cc' },
+  { id: '00000000-0000-0000-0000-000000000002', name: 'Bank Jago', type: 'bank', color: '#f59e0b' }
+];
+
 // ── Private: Load & Cache Categories ─────────────────────────────────────────
 async function _loadCategories() {
   const now = Date.now();
@@ -61,7 +67,13 @@ async function _loadAccounts() {
   if (_accountCache && (now - _accountFetchedAt) < CACHE_TTL_MS) {
     return _accountCache;
   }
-  if (!supabaseFinance) return [];
+  if (!supabaseFinance) {
+    if (!_accountCache) {
+      _accountCache = [...DEFAULT_FALLBACK_ACCOUNTS];
+      _accountFetchedAt = now;
+    }
+    return _accountCache;
+  }
 
   const { data, error } = await supabaseFinance
     .from('accounts')
@@ -71,7 +83,7 @@ async function _loadAccounts() {
 
   if (error) {
     console.error('[SUPABASE_FINANCE] Gagal load accounts:', error.message);
-    return _accountCache || [];
+    return _accountCache || [...DEFAULT_FALLBACK_ACCOUNTS];
   }
 
   _accountCache = data || [];
@@ -230,11 +242,24 @@ function invalidateCache() {
  * @returns {Promise<string|null>} UUID akun
  */
 async function ensureAccountExists(accountName, metadata = {}) {
-  if (!accountName || !supabaseFinance) return null;
+  if (!accountName) return null;
   const accounts = await _loadAccounts();
   const existing = accounts.find(a => _normalize(a.name) === _normalize(accountName));
   if (existing) {
     return existing.id;
+  }
+
+  if (!supabaseFinance) {
+    const mockId = `mock-acc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newAcc = {
+      id: mockId,
+      name: accountName.trim(),
+      type: metadata.type || 'bank',
+      color: metadata.color || '#f59e0b'
+    };
+    if (!_accountCache) _accountCache = [];
+    _accountCache.push(newAcc);
+    return mockId;
   }
 
   const payload = {
