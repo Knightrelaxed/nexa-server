@@ -1916,5 +1916,6 @@ module.exports = {
   executeLiveTool,
   noteUserTurn,
   getLastUserTurnText,
-  cancelEndCallSafetyTimer
+  cancelEndCallSafetyTimer,
+  _normalizeAccountName
 };

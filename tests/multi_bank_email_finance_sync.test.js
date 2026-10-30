@@ -286,3 +286,122 @@ test('Multi-Bank Common Helpers & Intent Integration', async (t) => {
     assert.strictEqual(results[1].type, 'EXPENSE');
   });
 });
+
+test('Telegram Confirmation Card Multi-Bank Format & Proactive Prompts', async (t) => {
+  const { _buildConfirmationMessage } = require('../src/domain/finance/Finance_Confirmations');
+
+  await t.test('renders Bank Jago confirmation card with dynamic account and proactive question', async () => {
+    const tx = {
+      nominal: 6500,
+      type: 'EXPENSE',
+      destination: 'GRAB TRANSPORT Jakarta',
+      category: 'Ojek / Taksi Online',
+      description: '[Menunggu Detail User]',
+      time: '2026-10-30T10:15:00Z',
+      account: 'Bank Jago',
+      payment_method: 'QRIS'
+    };
+
+    const card = await _buildConfirmationMessage(tx, 'SINKRONISASI KEUANGAN TERBARU');
+    assert.ok(card.includes('💸 <b>SINKRONISASI KEUANGAN TERBARU</b>'));
+    assert.ok(card.includes('<b>Tipe:</b> Pengeluaran'));
+    assert.ok(card.includes('<b>Kategori:</b> Ojek / Taksi Online [Auto-AI]'));
+    assert.ok(card.includes('<b>Akun:</b> Bank Jago'));
+    assert.ok(card.includes('<b>Metode:</b> QRIS'));
+    assert.ok(card.includes('<b>Deskripsi:</b> [KOSONG - Tujuan: GRAB TRANSPORT Jakarta]'));
+    assert.ok(card.includes('<b>Nominal (Rp):</b> Rp6.500'));
+    assert.ok(card.includes('❓ <b>N.E.X.A mencatat pengeluaran ke GRAB TRANSPORT Jakarta.</b>'));
+    assert.ok(card.includes('Tuan, uang ini digunakan untuk keperluan apa ya?'));
+  });
+
+  await t.test('renders Bank Mandiri confirmation card with dynamic account', async () => {
+    const tx = {
+      nominal: 25000,
+      type: 'EXPENSE',
+      destination: 'KOPI KENANGAN',
+      category: 'Jajan / Ngopi / Kafe',
+      description: '[Menunggu Detail User]',
+      time: '2026-10-30T09:00:00Z',
+      account: 'Bank Mandiri',
+      payment_method: 'QRIS'
+    };
+
+    const card = await _buildConfirmationMessage(tx, 'SINKRONISASI KEUANGAN TERBARU');
+    assert.ok(card.includes('<b>Akun:</b> Bank Mandiri'));
+    assert.ok(card.includes('<b>Nominal (Rp):</b> Rp25.000'));
+    assert.ok(card.includes('<b>Deskripsi:</b> [KOSONG - Tujuan: KOPI KENANGAN]'));
+    assert.ok(card.includes('❓ <b>N.E.X.A mencatat pengeluaran ke KOPI KENANGAN.</b>'));
+  });
+
+  await t.test('renders Income confirmation card for Bank Jago transfer', async () => {
+    const tx = {
+      nominal: 500000,
+      type: 'INCOME',
+      destination: 'FAZHIA AULIA',
+      category: 'Pemasukan',
+      description: '[Menunggu Detail User]',
+      time: '2026-10-30T08:00:00Z',
+      account: 'Bank Jago',
+      payment_method: 'Transfer bank'
+    };
+
+    const card = await _buildConfirmationMessage(tx, 'SINKRONISASI KEUANGAN TERBARU');
+    assert.ok(card.includes('<b>Tipe:</b> Pemasukan'));
+    assert.ok(card.includes('<b>Akun:</b> Bank Jago'));
+    assert.ok(card.includes('<b>Nominal (Rp):</b> Rp500.000'));
+    assert.ok(card.includes('❓ <b>Terdapat dana masuk dari FAZHIA AULIA.</b>'));
+  });
+});
+
+test('Live Tool & Voice Normalization Multi-Bank Support', async (t) => {
+  const liveTools = require('../src/core/Live_Tool_Registry');
+
+  await t.test('normalizes voice variations of Bank Jago', () => {
+    assert.strictEqual(liveTools._normalizeAccountName('pake bank jago'), 'Bank Jago');
+    assert.strictEqual(liveTools._normalizeAccountName('kantong jago'), 'Bank Jago');
+    assert.strictEqual(liveTools._normalizeAccountName('jago'), 'Bank Jago');
+  });
+
+  await t.test('normalizes voice variations of Bank Mandiri', () => {
+    assert.strictEqual(liveTools._normalizeAccountName('mandiri'), 'Bank Mandiri');
+    assert.strictEqual(liveTools._normalizeAccountName('livin'), 'Bank Mandiri');
+    assert.strictEqual(liveTools._normalizeAccountName('livin by mandiri'), 'Bank Mandiri');
+  });
+});
+
+test('Interactive Account Updates on Pending Transactions', async (t) => {
+  const { pendingConfirmations } = require('../src/domain/finance/Finance_State');
+  const { updatePendingTransaction } = require('../src/domain/finance/Finance_Confirmations');
+
+  const testKey = 'test_multi_bank_key_001';
+  pendingConfirmations.set(testKey, {
+    tx: {
+      nominal: 15000,
+      type: 'EXPENSE',
+      destination: 'INDOMARET',
+      account: 'Bank Mandiri',
+      category: 'Belanja',
+      description: 'Camilan sore'
+    },
+    timeoutId: setTimeout(() => {}, 100000)
+  });
+
+  try {
+    // 1. User updates account to Jago
+    await updatePendingTransaction(null, null, null, 'jago', null, testKey);
+    const updated = pendingConfirmations.get(testKey);
+    assert.strictEqual(updated.tx.account, 'Bank Jago', 'Account should be updated to Bank Jago');
+
+    // 2. User updates account back to Mandiri
+    await updatePendingTransaction(null, null, null, 'mandiri', null, testKey);
+    assert.strictEqual(updated.tx.account, 'Bank Mandiri', 'Account should be updated to Bank Mandiri');
+
+    // 3. User provides unknown account (e.g. PayPal) -> should return warning and keep existing account
+    const resUnknown = await updatePendingTransaction(null, null, null, 'paypal', null, testKey);
+    assert.ok(resUnknown.includes('tidak ditemukan'), 'Should notify user of unknown account');
+    assert.strictEqual(updated.tx.account, 'Bank Mandiri', 'Account should not be overwritten by unknown account');
+  } finally {
+    clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
+    pendingConfirmations.delete(testKey);
+  }
+});
