@@ -59,6 +59,9 @@ export function useAccounts(): UseAccountsReturn {
 
   useEffect(() => {
     load();
+    const handleSync = () => { load(); };
+    window.addEventListener('nexa-finance-changed', handleSync);
+    return () => { window.removeEventListener('nexa-finance-changed', handleSync); };
   }, [load]);
 
   const createAccount = useCallback(
@@ -161,7 +164,12 @@ export function useCategories(): UseCategoriesReturn {
         }
       })
 
-    return () => { cancelled = true }
+    const handleSync = () => { _categoriesCache = null; load(); };
+    window.addEventListener('nexa-finance-changed', handleSync);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('nexa-finance-changed', handleSync);
+    };
   }, []);
 
   return { categories, loading, error, refetch: load };
@@ -219,6 +227,9 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
 
   useEffect(() => {
     load();
+    const handleSync = () => { load(); };
+    window.addEventListener('nexa-finance-changed', handleSync);
+    return () => { window.removeEventListener('nexa-finance-changed', handleSync); };
   }, [load]);
 
   // Group by date
@@ -446,6 +457,9 @@ export function useDashboardData(period: { start: Date; end: Date }): UseDashboa
 
   useEffect(() => {
     load();
+    const handleSync = () => { load(); };
+    window.addEventListener('nexa-finance-changed', handleSync);
+    return () => { window.removeEventListener('nexa-finance-changed', handleSync); };
   }, [load]);
 
   const cashFlow = totalIncome - totalExpense;
@@ -569,7 +583,12 @@ export function usePeriodComparison(period: { start: Date; end: Date }, tab: "ar
     }
   }, [period.start, period.end, tab, accountId]);
 
-  useEffect(() => { load() }, [load]);
+  useEffect(() => {
+    load();
+    const handleSync = () => { load(); };
+    window.addEventListener('nexa-finance-changed', handleSync);
+    return () => { window.removeEventListener('nexa-finance-changed', handleSync); };
+  }, [load]);
 
   return { data, loading };
 }

@@ -1,4 +1,5 @@
 import { supabase } from './client';
+import { notifyFinanceChanged } from './mutations';
 import type {
   AccountWithBalance,
   DbCategory,
@@ -76,16 +77,19 @@ export async function fetchAccounts(): Promise<AccountWithBalance[]> {
 export async function createAccount(data: { name: string; type: string; initial_balance: number }) {
   const { error } = await supabase.from('accounts').insert([data]);
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 export async function updateAccount(id: string, data: { name?: string; type?: string; initial_balance?: number }) {
   const { error } = await supabase.from('accounts').update(data).eq('id', id);
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 export async function archiveAccount(id: string) {
   const { error } = await supabase.from('accounts').update({ is_archived: true }).eq('id', id);
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 // ----------------------------------------------------------------
@@ -114,16 +118,19 @@ export async function fetchCategories(): Promise<DbCategory[]> {
 export async function createCategory(data: { name: string; type: string; icon_key?: string; icon_bg?: string; icon_color?: string; group_name?: string }) {
   const { error } = await supabase.from('categories').insert([data]);
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 export async function updateCategory(id: string, data: Partial<{ name: string; type: string; icon_key: string; icon_bg: string; icon_color: string; group_name: string }>) {
   const { error } = await supabase.from('categories').update(data).eq('id', id);
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 export async function archiveCategory(id: string) {
   const { error } = await supabase.from('categories').update({ is_archived: true }).eq('id', id);
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 export async function fetchArchivedCategories(): Promise<DbCategory[]> {
@@ -141,6 +148,7 @@ export async function fetchArchivedCategories(): Promise<DbCategory[]> {
 export async function unarchiveCategory(id: string) {
   const { error } = await supabase.from('categories').update({ is_archived: false }).eq('id', id);
   if (error) throw error;
+  notifyFinanceChanged();
 }
 
 // ----------------------------------------------------------------

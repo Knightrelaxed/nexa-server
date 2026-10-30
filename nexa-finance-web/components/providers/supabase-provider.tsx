@@ -69,8 +69,24 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       setIsLoading(false)
     })
 
+    // 3. Realtime Postgres changes subscription for live synchronization across devices & background syncs
+    const channel = supabase
+      .channel('nexa-realtime-finance')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('nexa-finance-changed'))
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, () => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('nexa-finance-changed'))
+        }
+      })
+      .subscribe()
+
     return () => {
       subscription.unsubscribe()
+      supabase.removeChannel(channel)
     }
   }, [])
 

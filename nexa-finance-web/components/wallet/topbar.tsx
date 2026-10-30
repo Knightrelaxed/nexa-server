@@ -120,6 +120,7 @@ export function Topbar() {
       <AddTransactionModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        onSuccess={() => setModalOpen(false)}
       />
     </>
   )

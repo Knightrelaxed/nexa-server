@@ -2,6 +2,22 @@ import { supabase } from './client';
 import type { DbAccount, DbTransaction, PaymentMethod } from './types';
 
 // ----------------------------------------------------------------
+// Cross-Component & Realtime Sync Event Dispatcher
+// ----------------------------------------------------------------
+
+/**
+ * Notifies all active hooks (useTransactions, useAccounts, useDashboardData, etc.)
+ * across the application that finance data has changed, triggering instant auto-refresh
+ * without requiring the user to reload the browser.
+ */
+export function notifyFinanceChanged(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('nexa-finance-changed'));
+  }
+}
+
+
+// ----------------------------------------------------------------
 // Account mutations
 // ----------------------------------------------------------------
 
@@ -161,6 +177,7 @@ export async function createTransferPair(
 
   const outRow = (rows as any[]).find((r) => r.split_label === 'transfer_out') as DbTransaction;
   const inRow  = (rows as any[]).find((r) => r.split_label === 'transfer_in')  as DbTransaction;
+  notifyFinanceChanged();
   return { from: outRow, to: inRow };
 }
 
