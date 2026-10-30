@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react"
 import { useCategories, useAccounts } from "@/hooks/use-finance-data"
-import { createTransaction, updateTransaction } from "@/lib/supabase/mutations"
+import { createTransaction, updateTransaction, createTransferPair, updateTransferPair } from "@/lib/supabase/mutations"
 import { useAuth } from "@/components/providers/supabase-provider"
 import { X, Plus } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -46,7 +46,13 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
   const [description, setDescription] = useState(() => initialData?.description || "")
   const [categoryId, setCategoryId] = useState(() => initialData?.category_id || "")
   const [accountId, setAccountId] = useState(() => initialData?.account_id || "")
-  const [toAccountId, setToAccountId] = useState("")
+
+  // ── FIX BUG #3: Restore toAccountId from initialData for transfer edits ──
+  // When editing a transfer pair, the sibling (transfer_in) has the same
+  // split_group_id. We derive toAccountId from initialData.transfer_to_account_id
+  // which we pass when opening the edit modal for a transfer pair.
+  const [toAccountId, setToAccountId] = useState(() => initialData?.transfer_to_account_id || "")
+
   const [paymentMethod, setPaymentMethod] = useState(() => {
     const pm = initialData?.payment_method?.trim()
     return pm ? (PAYMENT_METHODS.find(m => m.toLowerCase() === pm.toLowerCase()) || pm) : "none"
@@ -132,35 +138,73 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
 
   if (!open) return null
 
+  // ── FIX BUG #1 & #2: Correct transfer submit logic ─────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!userId) { toast.error("Silakan login terlebih dahulu"); return }
     const numAmount = parseFloat(amount.replace(/\./g, "").replace(",", "."))
     if (isNaN(numAmount) || numAmount <= 0) { toast.error("Jumlah tidak valid"); return }
-    if (!categoryId) { toast.error("Pilih kategori"); return }
     if (!accountId) { toast.error("Pilih akun"); return }
+
+    // Transfer mode requires a destination account; income/expense require a category
+    if (type === "transfer") {
+      if (!toAccountId) { toast.error("Pilih akun tujuan transfer"); return }
+      if (toAccountId === accountId) { toast.error("Akun asal dan tujuan tidak boleh sama"); return }
+    } else {
+      if (!categoryId) { toast.error("Pilih kategori"); return }
+    }
 
     setLoading(true)
     try {
-      const payload = {
-        account_id: accountId,
-        category_id: categoryId,
-        amount: numAmount,
-        type: type === "transfer" ? "expense" : type,
-        transaction_date: date,
-        transaction_time: time,
-        description: description || undefined,
-        payment_method: type === "transfer" ? null : (paymentMethod === "none" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod)),
+      if (type === "transfer") {
+        // ── BUG FIX: Transfer creates/updates TWO rows (expense + income) ──
+        if (initialData && initialData.id && initialData.split_group_id) {
+          // Edit mode: update both legs of the existing transfer pair
+          await updateTransferPair(initialData.split_group_id, {
+            from_account_id:  accountId,
+            to_account_id:    toAccountId,
+            amount:           numAmount,
+            transaction_date: date,
+            transaction_time: time,
+            description:      description || undefined,
+            category_id:      categoryId || undefined,
+          })
+          toast.success("Transfer berhasil diperbarui! ✓")
+        } else {
+          // Create mode: insert both legs atomically
+          await createTransferPair({
+            from_account_id:  accountId,
+            to_account_id:    toAccountId,
+            category_id:      categoryId || categories.find(c => c.name === "Transfer")?.id || categories[0]?.id || "",
+            amount:           numAmount,
+            transaction_date: date,
+            transaction_time: time,
+            description:      description || undefined,
+          })
+          toast.success("Transfer berhasil dicatat! ✓")
+        }
+      } else {
+        // Non-transfer: single row, type saved as-is ("income" or "expense")
+        const payload = {
+          account_id:       accountId,
+          category_id:      categoryId,
+          amount:           numAmount,
+          type:             type,  // ← FIX: NO LONGER converts "transfer" to "expense" here
+          transaction_date: date,
+          transaction_time: time,
+          description:      description || undefined,
+          payment_method:   paymentMethod === "none" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod),
+        }
+
+        if (initialData && initialData.id) {
+          await updateTransaction(initialData.id, payload)
+          toast.success("Catatan berhasil diperbarui! ✓")
+        } else {
+          await createTransaction(payload)
+          toast.success("Catatan berhasil ditambahkan! ✓")
+        }
       }
 
-      if (initialData && initialData.id) {
-        await updateTransaction(initialData.id, payload)
-        toast.success("Catatan berhasil diperbarui! ✓")
-      } else {
-        await createTransaction(payload)
-        toast.success("Catatan berhasil ditambahkan! ✓")
-      }
-      
       await refetchAccounts()
       onSuccess?.()
       onClose()
@@ -182,22 +226,41 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
     if (!userId) { toast.error("Silakan login terlebih dahulu"); return }
     const numAmount = parseFloat(amount.replace(/\./g, "").replace(",", "."))
     if (isNaN(numAmount) || numAmount <= 0) { toast.error("Jumlah tidak valid"); return }
-    if (!categoryId) { toast.error("Pilih kategori"); return }
     if (!accountId) { toast.error("Pilih akun"); return }
+
+    if (type === "transfer") {
+      if (!toAccountId) { toast.error("Pilih akun tujuan transfer"); return }
+      if (toAccountId === accountId) { toast.error("Akun asal dan tujuan tidak boleh sama"); return }
+    } else {
+      if (!categoryId) { toast.error("Pilih kategori"); return }
+    }
 
     setLoading(true)
     try {
-      await createTransaction({
-        account_id: accountId,
-        category_id: categoryId,
-        amount: numAmount,
-        type: type === "transfer" ? "expense" : type,
-        transaction_date: date,
-        transaction_time: time,
-        description: description || undefined,
-        payment_method: type === "transfer" ? null : (paymentMethod === "none" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod)),
-      })
-      toast.success("Catatan tersimpan! Siap menambah lagi.")
+      if (type === "transfer") {
+        await createTransferPair({
+          from_account_id:  accountId,
+          to_account_id:    toAccountId,
+          category_id:      categoryId || categories.find(c => c.name === "Transfer")?.id || categories[0]?.id || "",
+          amount:           numAmount,
+          transaction_date: date,
+          transaction_time: time,
+          description:      description || undefined,
+        })
+        toast.success("Transfer tersimpan! Siap menambah lagi.")
+      } else {
+        await createTransaction({
+          account_id:       accountId,
+          category_id:      categoryId,
+          amount:           numAmount,
+          type:             type,
+          transaction_date: date,
+          transaction_time: time,
+          description:      description || undefined,
+          payment_method:   paymentMethod === "none" ? null : (paymentMethod as import('@/lib/supabase/types').PaymentMethod),
+        })
+        toast.success("Catatan tersimpan! Siap menambah lagi.")
+      }
       await refetchAccounts()
       onSuccess?.()
       setAmount("")
@@ -329,34 +392,23 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
                     </div>
                   </div>
 
-                  {/* Dual Amount */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Jumlah <span className="text-red-500">*</span>
-                      </label>
-                      <div className="flex gap-1.5">
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="0"
-                          value={amount}
-                          onChange={(e) => setAmount(formatAmount(e.target.value))}
-                          required
-                          className="flex-1 h-10 text-sm font-semibold tabular-nums rounded-xl border-slate-200"
-                        />
-                        <div className="flex items-center justify-center px-2.5 h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-500 shrink-0">
-                          IDR
-                        </div>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-400 mb-1.5">Jumlah</label>
-                      <div className="flex gap-1.5">
-                        <div className="flex-1 h-10 rounded-xl border border-slate-100 bg-slate-50/80" />
-                        <div className="flex items-center justify-center px-2.5 h-10 rounded-xl border border-slate-100 bg-slate-50 text-xs font-medium text-slate-300 shrink-0">
-                          IDR
-                        </div>
+                  {/* Amount */}
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                      Jumlah <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex gap-1.5">
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="0"
+                        value={amount}
+                        onChange={(e) => setAmount(formatAmount(e.target.value))}
+                        required
+                        className="flex-1 h-10 text-sm font-semibold tabular-nums rounded-xl border-slate-200"
+                      />
+                      <div className="flex items-center justify-center px-2.5 h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-500 shrink-0">
+                        IDR
                       </div>
                     </div>
                   </div>
@@ -502,24 +554,34 @@ export function AddTransactionModal({ open, onClose, onSuccess, initialData }: A
                 />
               </div>
 
-              {/* Payment method */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Metode Pembayaran</label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Tidak ada / Kosong" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[999]">
-                    <SelectItem value="none"><span className="text-muted-foreground italic">Tidak ada</span></SelectItem>
-                    {PAYMENT_METHODS.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                    {paymentMethod && paymentMethod !== "none" && !PAYMENT_METHODS.includes(paymentMethod) && (
-                      <SelectItem key={paymentMethod} value={paymentMethod}>{paymentMethod}</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Payment method — hidden for transfers */}
+              {type !== "transfer" && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Metode Pembayaran</label>
+                  <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Tidak ada / Kosong" />
+                    </SelectTrigger>
+                    <SelectContent className="z-[999]">
+                      <SelectItem value="none"><span className="text-muted-foreground italic">Tidak ada</span></SelectItem>
+                      {PAYMENT_METHODS.map((m) => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                      {paymentMethod && paymentMethod !== "none" && !PAYMENT_METHODS.includes(paymentMethod) && (
+                        <SelectItem key={paymentMethod} value={paymentMethod}>{paymentMethod}</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Transfer info banner */}
+              {type === "transfer" && (
+                <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700 leading-relaxed">
+                  <p className="font-semibold mb-1">ℹ️ Cara kerja Transfer</p>
+                  <p>Saldo akun asal akan <strong>berkurang</strong>, saldo akun tujuan akan <strong>bertambah</strong> secara otomatis.</p>
+                </div>
+              )}
             </div>
           </div>
 

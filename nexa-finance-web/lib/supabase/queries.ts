@@ -14,7 +14,11 @@ import type {
 
 /**
  * Fetch all accounts for a user and compute their running balance.
- * balance = initial_balance + Σ income – Σ expense
+ * balance = initial_balance + Σ income + Σ transfer_in – Σ expense – Σ transfer_out
+ *
+ * Transfer pairs are stored as:
+ *   split_label="transfer_out" (type="transfer") → deducts from source account
+ *   split_label="transfer_in"  (type="transfer") → adds to destination account
  */
 export async function fetchAccounts(): Promise<AccountWithBalance[]> {
   const { data: accounts, error: accErr } = await supabase
@@ -26,10 +30,10 @@ export async function fetchAccounts(): Promise<AccountWithBalance[]> {
   if (accErr) throw accErr;
   if (!accounts || accounts.length === 0) return [];
 
-  // Fetch income/expense aggregates grouped by account
+  // Fetch all transactions with split_label so we can handle transfers correctly
   const { data: txAgg, error: txErr } = await supabase
     .from('transactions')
-    .select('account_id, type, amount');
+    .select('account_id, type, amount, split_label');
 
   if (txErr) throw txErr;
 
@@ -43,6 +47,15 @@ export async function fetchAccounts(): Promise<AccountWithBalance[]> {
       balanceMap[row.account_id].income += Number(row.amount);
     } else if (row.type === 'expense') {
       balanceMap[row.account_id].expense += Number(row.amount);
+    } else if (row.type === 'transfer') {
+      // transfer_out: money leaves this account → treated as expense
+      // transfer_in:  money enters this account → treated as income
+      // Rows without split_label (legacy/manual transfer rows) are ignored
+      if (row.split_label === 'transfer_out') {
+        balanceMap[row.account_id].expense += Number(row.amount);
+      } else if (row.split_label === 'transfer_in') {
+        balanceMap[row.account_id].income += Number(row.amount);
+      }
     }
   }
 

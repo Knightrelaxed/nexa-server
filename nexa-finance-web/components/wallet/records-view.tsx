@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { formatIDR, ICON_MAP } from "@/lib/wallet-data"
 import { useTransactions } from "@/hooks/use-finance-data"
 import { deleteTransactions } from "@/lib/supabase/mutations"
+import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { PeriodSelector, defaultPeriod, type PeriodValue } from "./period-selector"
 import type { PaymentMethod } from "@/lib/supabase/types"
@@ -152,14 +153,30 @@ export function RecordsView() {
     setConfirmState({ isOpen: true, title, message, onConfirm, confirmText })
   }
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
     if (selectedIds.size !== 1) return
     const id = Array.from(selectedIds)[0]
     const tx = Object.values(grouped).flat().find(t => t.id === id)
-    if (tx) {
+    if (!tx) return
+
+    // For transfer pairs, enrich with the sibling's account_id (to_account_id)
+    if (tx.type === 'transfer' && tx.split_group_id) {
+      const siblingLabel = tx.split_label === 'transfer_out' ? 'transfer_in' : 'transfer_out'
+      const { data: sibling } = await supabase
+        .from('transactions')
+        .select('account_id, split_label')
+        .eq('split_group_id', tx.split_group_id)
+        .eq('split_label', siblingLabel)
+        .single()
+
+      const outAccountId  = tx.split_label === 'transfer_out' ? tx.account_id : (sibling?.account_id ?? tx.account_id)
+      const inAccId = tx.split_label === 'transfer_out' ? (sibling?.account_id ?? '') : tx.account_id
+
+      setEditTx({ ...tx, account_id: outAccountId, transfer_to_account_id: inAccId })
+    } else {
       setEditTx(tx)
-      setEditModalOpen(true)
     }
+    setEditModalOpen(true)
   }
 
   const handleDelete = async () => {
@@ -375,7 +392,12 @@ export function RecordsView() {
               <div>
                 {sortedGrouped.map(([date, items]) => {
                   const dayTotal = items.reduce((s, t) => {
-                    if (t.type === "transfer") return s;
+                    if (t.type === "transfer") {
+                      if (filters?.accountId) {
+                        return s + (t.split_label === "transfer_in" ? t.amount : -t.amount);
+                      }
+                      return s;
+                    }
                     return s + (t.type === "income" ? t.amount : -t.amount);
                   }, 0)
                   const [y, m, d] = date.split('-');
@@ -401,7 +423,7 @@ export function RecordsView() {
                         const processedGroupIds = new Set<string>()
 
                         for (const t of items) {
-                          if (t.split_group_id) {
+                          if (t.split_group_id && t.type !== 'transfer') {
                             if (!processedGroupIds.has(t.split_group_id)) {
                               processedGroupIds.add(t.split_group_id)
                               const groupItems = items.filter(x => x.split_group_id === t.split_group_id)
@@ -422,7 +444,8 @@ export function RecordsView() {
                         return displayRows.map((row) => {
                           if (row.kind === 'single') {
                             const t = row.tx
-                            const isExpense = t.type === "expense"
+                            const isOutflow = t.type === "expense" || (t.type === "transfer" && t.split_label !== "transfer_in")
+                            const isTransfer = t.type === "transfer"
                             const Icon = ICON_MAP[t.category_icon_key || "more-horizontal"] ?? Search
 
                             return (
@@ -444,8 +467,8 @@ export function RecordsView() {
                                 {/* Icon */}
                                 <div className={cn(
                                   "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-                                  t.category_icon_bg || (isExpense ? "bg-red-50" : "bg-green-50"),
-                                  t.category_icon_color || (isExpense ? "text-red-500" : "text-[#10b981]")
+                                  t.category_icon_bg || (isTransfer ? "bg-blue-50" : isOutflow ? "bg-red-50" : "bg-green-50"),
+                                  t.category_icon_color || (isTransfer ? "text-blue-500" : isOutflow ? "text-red-500" : "text-[#10b981]")
                                 )}>
                                   <Icon className="h-4 w-4" />
                                 </div>
@@ -471,8 +494,8 @@ export function RecordsView() {
                                 {/* Amount + Time */}
                                 <div className="ml-auto flex items-center gap-2 shrink-0">
                                   <div className="text-right">
-                                    <p className={cn("text-[13px] font-bold tabular-nums", isExpense ? "text-[#ef4444]" : "text-[#10b981]")}>
-                                      {isExpense ? "-" : "+"}Rp {t.amount.toLocaleString("id-ID")},00
+                                    <p className={cn("text-[13px] font-bold tabular-nums", isOutflow ? "text-[#ef4444]" : "text-[#10b981]")}>
+                                      {isOutflow ? "-" : "+"}Rp {t.amount.toLocaleString("id-ID")},00
                                     </p>
                                     <p className="text-[11px] text-muted-foreground flex items-center justify-end gap-0.5 mt-0.5">
                                       {t.transaction_time ? t.transaction_time.slice(0,5) : "12:00"} <span className="text-amber-400">⧖</span>

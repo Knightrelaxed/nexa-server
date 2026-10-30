@@ -38,12 +38,13 @@ function getTailwindHex(twClass: string | null): string | null {
 export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete }: TransactionDetailModalProps) {
   if (!transaction) return null
 
-  const isExpense = transaction.type === "expense"
+  const isOutflow = transaction.type === "expense" || (transaction.type === "transfer" && transaction.split_label === "transfer_out")
   const isTransfer = transaction.type === "transfer"
+  const isTransferIn = transaction.type === "transfer" && transaction.split_label === "transfer_in"
   const Icon = ICON_MAP[transaction.category_icon_key || "more-horizontal"] ?? Search
 
   // Use category hex color for header; fallback to parsing tailwind color, then type-based color
-  const fallbackColor = isTransfer ? "#3b82f6" : isExpense ? "#ef4444" : "#10b981"
+  const fallbackColor = isTransfer ? "#3b82f6" : isOutflow ? "#ef4444" : "#10b981"
   const headerColor = transaction.category_color_hex || getTailwindHex(transaction.category_icon_color) || fallbackColor
 
   // transaction_date is "YYYY-MM-DD", add T00:00:00 to avoid UTC offset shifting the day
@@ -84,7 +85,7 @@ export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete 
           
           <h2 className="text-white/90 text-xs sm:text-sm font-medium mb-0.5 sm:mb-1">{transaction.category_name}</h2>
           <p className="text-white text-2xl sm:text-3xl font-bold tracking-tight">
-            {isExpense ? "-" : isTransfer ? "" : "+"}{formatIDR(transaction.amount)}
+            {isOutflow ? "-" : isTransferIn ? "+" : isTransfer ? "" : "+"}{formatIDR(transaction.amount)}
           </p>
         </div>
 

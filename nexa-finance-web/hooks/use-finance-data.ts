@@ -234,7 +234,12 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
       return transactions.reduce((sum, tx) => sum + tx.amount, 0);
     }
     return transactions.reduce((sum, tx) => {
-      if (tx.type === 'transfer') return sum;
+      if (tx.type === 'transfer') {
+        if (filters?.accountId) {
+          return tx.split_label === 'transfer_in' ? sum + tx.amount : sum - tx.amount;
+        }
+        return sum;
+      }
       return tx.type === 'income' ? sum + tx.amount : sum - tx.amount;
     }, 0);
   }, [transactions, filters]);
@@ -244,7 +249,7 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
     const seenGroups = new Set<string>();
     let count = 0;
     for (const tx of transactions) {
-      if (tx.split_group_id) {
+      if (tx.split_group_id && tx.type !== 'transfer') {
         if (!seenGroups.has(tx.split_group_id)) {
           seenGroups.add(tx.split_group_id);
           count++;

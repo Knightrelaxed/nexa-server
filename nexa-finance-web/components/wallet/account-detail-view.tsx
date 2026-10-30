@@ -7,6 +7,7 @@ import { useAccounts, useTransactions } from "@/hooks/use-finance-data"
 import { formatIDR, ICON_MAP } from "@/lib/wallet-data"
 import { fetchDailyBalanceTrend } from "@/lib/supabase/queries"
 import { deleteTransactions } from "@/lib/supabase/mutations"
+import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { AddTransactionModal } from "./add-transaction-modal"
 import { AddAccountModal } from "./add-account-modal"
@@ -149,14 +150,28 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [confirmDuplicateOpen, setConfirmDuplicateOpen] = useState(false)
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
     if (selectedIds.size !== 1) return
     const id = Array.from(selectedIds)[0]
     const tx = Object.values(grouped).flat().find(t => t.id === id)
-    if (tx) {
+    if (!tx) return
+
+    if (tx.type === 'transfer' && tx.split_group_id) {
+      const siblingLabel = tx.split_label === 'transfer_out' ? 'transfer_in' : 'transfer_out'
+      const { data: sibling } = await supabase
+        .from('transactions')
+        .select('account_id, split_label')
+        .eq('split_group_id', tx.split_group_id)
+        .eq('split_label', siblingLabel)
+        .single()
+
+      const outAccountId = tx.split_label === 'transfer_out' ? tx.account_id : (sibling?.account_id ?? tx.account_id)
+      const inAccId = tx.split_label === 'transfer_out' ? (sibling?.account_id ?? '') : tx.account_id
+      setEditTx({ ...tx, account_id: outAccountId, transfer_to_account_id: inAccId })
+    } else {
       setEditTx(tx)
-      setEditModalOpen(true)
     }
+    setEditModalOpen(true)
   }
 
   const handleDeleteClick = () => {
@@ -452,7 +467,12 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
           ) : (
             <div>
               {sortedGrouped.map(([date, items]) => {
-                const dayTotal = items.reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0)
+                const dayTotal = items.reduce((s, t) => {
+                  if (t.type === "transfer") {
+                    return s + (t.split_label === "transfer_in" ? t.amount : -t.amount);
+                  }
+                  return s + (t.type === "income" ? t.amount : -t.amount);
+                }, 0)
                 const dateLabel = new Date(date).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })
 
                 return (
@@ -474,7 +494,7 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                       const processedGroupIds = new Set<string>()
 
                       for (const t of items) {
-                        if (t.split_group_id) {
+                        if (t.split_group_id && t.type !== 'transfer') {
                           if (!processedGroupIds.has(t.split_group_id)) {
                             processedGroupIds.add(t.split_group_id)
                             const grpItems = items.filter(x => x.split_group_id === t.split_group_id)
@@ -489,12 +509,13 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                       return displayRows.map((row) => {
                         if (row.kind === 'single') {
                           const t = row.tx
-                          const isExpense = t.type === "expense"
+                          const isOutflow = t.type === "expense" || (t.type === "transfer" && t.split_label !== "transfer_in")
+                          const isTransfer = t.type === "transfer"
                           const TxIcon = ICON_MAP[t.category_icon_key || "more-horizontal"] ?? Search
                           return (
                             <div key={t.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors group border-b border-border/20 last:border-0">
                               <input type="checkbox" checked={selectedIds.has(t.id)} onChange={() => toggleSelect(t.id)} className="rounded border-gray-300 w-4 h-4 accent-[#10b981] shrink-0" />
-                              <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", t.category_icon_bg || (isExpense ? "bg-red-50" : "bg-green-50"), t.category_icon_color || (isExpense ? "text-red-500" : "text-[#10b981]"))}>
+                              <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", t.category_icon_bg || (isTransfer ? "bg-blue-50" : isOutflow ? "bg-red-50" : "bg-green-50"), t.category_icon_color || (isTransfer ? "text-blue-500" : isOutflow ? "text-red-500" : "text-[#10b981]"))}>
                                 <TxIcon className="h-4 w-4" />
                               </div>
                               <div className="w-[110px] sm:w-[130px] shrink-0 min-w-0">
@@ -510,8 +531,8 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                               </div>
                               <div className="ml-auto flex items-center gap-2 shrink-0">
                                 <div className="text-right">
-                                  <p className={cn("text-[13px] font-bold tabular-nums", isExpense ? "text-[#ef4444]" : "text-[#10b981]")}>
-                                    {isExpense ? "-" : "+"}Rp {t.amount.toLocaleString("id-ID")},00
+                                  <p className={cn("text-[13px] font-bold tabular-nums", isOutflow ? "text-[#ef4444]" : "text-[#10b981]")}>
+                                    {isOutflow ? "-" : "+"}Rp {t.amount.toLocaleString("id-ID")},00
                                   </p>
                                   <p className="text-[11px] text-muted-foreground flex items-center justify-end gap-0.5 mt-0.5">
                                     {t.transaction_time ? t.transaction_time.slice(0,5) : "12:00"} <span className="text-amber-400">⧖</span>
