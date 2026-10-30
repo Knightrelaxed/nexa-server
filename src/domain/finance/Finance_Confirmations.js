@@ -455,8 +455,14 @@ async function _autoSavePending(compositeKey, tx) {
   processingKeys.add(compositeKey);
   
   try {
-    pendingConfirmations.delete(compositeKey);
+        pendingConfirmations.delete(compositeKey);
     try { await supabase.deletePendingTransaction(compositeKey); } catch (_) {}
+
+    const sKey = String(compositeKey || '').toLowerCase();
+    if (process.env.NODE_ENV === 'test' || sKey.startsWith('test_') || sKey.startsWith('mock_') || sKey.startsWith('audit_test_')) {
+      console.warn(`[FINANCE] _autoSavePending blocked synthetic test key: ${compositeKey}`);
+      return;
+    }
 
     const txTime = new Date(tx.time || Date.now());
     const alreadySaved = await supabase.isDuplicateTransaction(compositeKey, txTime, false);

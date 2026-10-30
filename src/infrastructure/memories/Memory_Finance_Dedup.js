@@ -70,8 +70,15 @@ async function isDuplicateTransaction(compositeKey, transactionTime, checkPendin
 /**
  * Log a new transaction key to prevent future duplicates
  */
+function _isSyntheticTestKey(key) {
+  if (!key) return false;
+  const s = String(key).toLowerCase();
+  return s.startsWith('test_') || s.startsWith('mock_') || s.startsWith('audit_test_');
+}
+
 async function logTransactionKey(compositeKey, transactionTime, source) {
   if (!supabase) return;
+  if (process.env.NODE_ENV === 'test' || _isSyntheticTestKey(compositeKey)) return;
   const { error } = await supabase
     .from('nexa_finance_dedup')
     .insert([{ 
@@ -122,6 +129,7 @@ async function cleanupOldFinanceDedup(daysOld = 7) {
  */
 async function savePendingTransaction(compositeKey, txData, telegramSent = false) {
   if (!supabase) return;
+  if (process.env.NODE_ENV === 'test' || _isSyntheticTestKey(compositeKey)) return;
   const { error } = await supabase
     .from('nexa_pending_transactions')
     .upsert([{

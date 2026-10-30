@@ -373,8 +373,17 @@ test('Live Tool & Voice Normalization Multi-Bank Support', async (t) => {
 test('Interactive Account Updates on Pending Transactions', async (t) => {
   const { pendingConfirmations } = require('../src/domain/finance/Finance_State');
   const { updatePendingTransaction } = require('../src/domain/finance/Finance_Confirmations');
+  const supabase = require('../src/infrastructure/Supabase_Memories');
 
   const testKey = 'test_multi_bank_key_001';
+  const savedPendingCalls = [];
+  const origSave = supabase.savePendingTransaction;
+  const origDelete = supabase.deletePendingTransaction;
+  supabase.savePendingTransaction = async (k, tx, sent) => {
+    savedPendingCalls.push({ k, tx, sent });
+  };
+  supabase.deletePendingTransaction = async (k) => {};
+
   pendingConfirmations.set(testKey, {
     tx: {
       nominal: 15000,
@@ -392,6 +401,7 @@ test('Interactive Account Updates on Pending Transactions', async (t) => {
     await updatePendingTransaction(null, null, null, 'jago', null, testKey);
     const updated = pendingConfirmations.get(testKey);
     assert.strictEqual(updated.tx.account, 'Bank Jago', 'Account should be updated to Bank Jago');
+    assert.ok(savedPendingCalls.length > 0, 'Should have invoked savePendingTransaction mock');
 
     // 2. User updates account back to Mandiri
     await updatePendingTransaction(null, null, null, 'mandiri', null, testKey);
@@ -402,6 +412,8 @@ test('Interactive Account Updates on Pending Transactions', async (t) => {
     assert.ok(resUnknown.includes('tidak ditemukan'), 'Should notify user of unknown account');
     assert.strictEqual(updated.tx.account, 'Bank Mandiri', 'Account should not be overwritten by unknown account');
   } finally {
+    supabase.savePendingTransaction = origSave;
+    supabase.deletePendingTransaction = origDelete;
     clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
     pendingConfirmations.delete(testKey);
   }
@@ -465,6 +477,19 @@ test('Deep Audit: Edge Cases & Semantic Consistency', async (t) => {
       return { status: 'SUCCESS', id: 'mock-tx-123' };
     };
 
+    const webhook = require('../src/interfaces/webhook');
+    const actions = require('../src/interfaces/telegram/actions');
+    const origWebhookOutbound = webhook.sendTelegramOutbound;
+    const origActionsOutbound = actions.sendTelegramOutbound;
+    webhook.sendTelegramOutbound = async () => ({ ok: true });
+    actions.sendTelegramOutbound = async () => ({ ok: true });
+
+    const supabase = require('../src/infrastructure/Supabase_Memories');
+    const origLogKey = supabase.logTransactionKey;
+    const origDeletePending = supabase.deletePendingTransaction;
+    supabase.logTransactionKey = async () => {};
+    supabase.deletePendingTransaction = async () => {};
+
     try {
       pendingConfirmations.set(testKey, {
         tx: {
@@ -489,6 +514,10 @@ test('Deep Audit: Edge Cases & Semantic Consistency', async (t) => {
       assert.strictEqual(capturedTx.accountName, 'Bank Jago');
     } finally {
       supabaseFinance.writeTransaction = originalWrite;
+      webhook.sendTelegramOutbound = origWebhookOutbound;
+      actions.sendTelegramOutbound = origActionsOutbound;
+      supabase.logTransactionKey = origLogKey;
+      supabase.deletePendingTransaction = origDeletePending;
       clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
       pendingConfirmations.delete(testKey);
     }

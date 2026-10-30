@@ -546,10 +546,16 @@ function initCronJobs() {
       const rows = await supabase.getPendingTransactions();
       if (!rows || rows.length === 0) { watchdogRunning = false; return; }
 
-      for (const row of rows) {
+            for (const row of rows) {
         try {
           const tx = row.tx_data;
           const compositeKey = row.composite_key;
+          const sKey = String(compositeKey || '').toLowerCase();
+          if (sKey.startsWith('test_') || sKey.startsWith('mock_') || sKey.startsWith('audit_test_')) {
+            console.warn(`[WATCHDOG] Purging synthetic/test pending row: ${compositeKey}`);
+            await supabase.deletePendingTransaction(compositeKey);
+            continue;
+          }
           const ageMs = Date.now() - new Date(row.created_at).getTime();
 
           if (ageMs >= 5 * 60 * 1000) {

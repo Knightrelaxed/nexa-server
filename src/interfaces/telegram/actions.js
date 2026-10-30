@@ -35,6 +35,9 @@ const CORRUPTED_CONTENT_REGEX = /\[object Object\]|\bNaN\b|(?:\b(?:[Rr]p|[Ss]ald
 // ============================================================
 async function sendTelegramOutbound(text, skipMemory = false, platform = 'telegram') {
   try {
+    if (process.env.NODE_ENV === 'test') {
+      return { ok: true, skipped: 'NODE_ENV=test' };
+    }
     const rawStr = String(text || '');
     if (CORRUPTED_CONTENT_REGEX.test(rawStr)) {
       console.error(`[TELEGRAM-OUTBOUND] ⚠️ Corrupted text blocked from outbound delivery: "${rawStr.slice(0, 100)}"`);
