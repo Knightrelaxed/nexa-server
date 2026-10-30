@@ -155,7 +155,7 @@ function parseEmailDateSafe(dateStr) {
 }
 
 /**
- * Extracts structured finance transactions from Mandiri/Livin emails
+ * Extracts structured finance transactions from Mandiri/Livin and Bank Jago emails
  */
 function extractFinanceTransactionsFromEmails(emails) {
   const results = [];
@@ -164,9 +164,15 @@ function extractFinanceTransactionsFromEmails(emails) {
     const nominal = extractNominalFromEmail(e);
     if (!nominal || nominal < 100) continue;
 
+    const isJago = /jago\.com|bank jago|bertransaksi dengan jago/i.test(text) ||
+                   /jago/i.test(e.from || '');
+    const defaultAccount = isJago ? 'Bank Jago' : 'Bank Mandiri';
+    const defaultDesc = isJago ? 'Notifikasi Bank Jago' : 'Notifikasi Livin Mandiri';
+    const defaultDest = isJago ? 'Transaksi Jago' : 'Transaksi Mandiri';
+
     const merchantMatch = text.match(/(?:penerima|ke|di|merchant|tujuan|dari)\s+([A-Za-z0-9\s._-]{2,60})/i);
-    const destination = merchantMatch?.[1] ? merchantMatch[1].trim() : 'Transaksi Mandiri';
-    const isExpense = !/(masuk|inflow|cr|kredit|setoran)/i.test(text);
+    const destination = merchantMatch?.[1] ? merchantMatch[1].trim() : defaultDest;
+    const isExpense = !/(masuk|inflow|cr|kredit|setoran|menerima uang)/i.test(text);
 
     let isoDate = null;
     const emailDate = parseEmailDateSafe(e.date);
@@ -174,15 +180,17 @@ function extractFinanceTransactionsFromEmails(emails) {
       isoDate = emailDate.toISOString();
     }
 
+    const isQRIS = /(?:dengan qr|qris|nama acquirer|id terminal)/i.test(text);
+
     results.push({
       nominal,
       type: isExpense ? 'EXPENSE' : 'INCOME',
       destination,
       category: isExpense ? 'Belanja' : 'Pendapatan',
-      description: (e.subject || 'Notifikasi Livin Mandiri').substring(0, 80),
+      description: (e.subject || defaultDesc).substring(0, 80),
       time: isoDate || new Date().toISOString(),
-      account: 'Mandiri',
-      payment_method: 'Debit'
+      account: defaultAccount,
+      payment_method: isQRIS ? 'QRIS' : 'Transfer bank'
     });
   }
   return results;

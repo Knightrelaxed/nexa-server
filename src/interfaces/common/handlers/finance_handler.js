@@ -36,7 +36,7 @@ async function handleFinanceIntent(routingData, context = {}) {
     const pendingEmail = _getPendingEmail(context);
     const candidateEmails = pendingEmail?.lastBatch?.length
       ? pendingEmail.lastBatch
-      : await gmailClient.getLatestEmails('livin OR from:noreply.livin@bankmandiri.co.id', 30);
+      : await gmailClient.getLatestEmails('(from:noreply.livin@bankmandiri.co.id OR from:noreply@jago.com OR livin) newer_than:7d', 30);
 
     const temporalHint = helpers.getEmailTemporalFilterFromText(textInput);
     const dayHint = helpers.parseDayOfMonthHint(textInput);

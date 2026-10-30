@@ -45,8 +45,9 @@ function _normalizeAccountName(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const s = raw.toLowerCase().trim();
 
+  if (/\bjago\b|bank\s*jago|kantong\s*jago/.test(s)) return 'Bank Jago';
   if (/\bbca\b|mobile\s*banking\s*bca|m-?banking\s*bca|debit\s*bca|transfer\s*bca/.test(s)) return 'BCA';
-  if (/\bmandiri\b|livin|livin'\s*by\s*mandiri|mandiri\s*mobile/.test(s)) return 'Mandiri';
+  if (/\bmandiri\b|livin|livin'\s*by\s*mandiri|mandiri\s*mobile/.test(s)) return 'Bank Mandiri';
   if (/\bgopay\b|go\s*pay/.test(s)) return 'GoPay';
   if (/\bshopeepay\b|shopee\s*pay/.test(s)) return 'ShopeePay';
   if (/\bovo\b/.test(s)) return 'OVO';
@@ -169,7 +170,7 @@ const LIVE_TOOL_DECLARATIONS = [
         amount:        { type: 'NUMBER', description: 'Jumlah nominal uang dalam Rupiah. Contoh: 25000 untuk 25 ribu.' },
         category:      { type: 'STRING', description: 'Kategori pengeluaran. Contoh: "Makan Berat / Makan Luar", "Jajan / Ngopi / Kafe", "Transportasi", "Bahan Makanan / Groceries", "Tagihan", "Kesehatan", "Hiburan", "Pendidikan", "Jasa Laundry", "Lainnya".' },
         description:   { type: 'STRING', description: 'Keterangan atau nama barang/jasa. Contoh: "nasi ayam bakar", "bensin pertalite", "kopi americano".' },
-        paymentMethod: { type: 'STRING', description: 'Metode pembayaran yang disebutkan Tuan. Contoh: "BCA", "Cash", "QRIS", "GoPay", "ShopeePay", "Mandiri", "Transfer".' },
+        paymentMethod: { type: 'STRING', description: 'Metode pembayaran yang disebutkan Tuan. Contoh: "Bank Jago", "Bank Mandiri", "BCA", "Cash", "QRIS", "GoPay", "ShopeePay", "Transfer".' },
         date:          { type: 'STRING', description: 'Tanggal transaksi jika disebutkan secara khusus. Contoh: "today", "yesterday", "kemarin", "2026-08-19".' }
       },
       required: ['amount', 'description']
@@ -185,7 +186,7 @@ const LIVE_TOOL_DECLARATIONS = [
       properties: {
         amount:             { type: 'NUMBER', description: 'Jumlah nominal uang yang diterima dalam Rupiah.' },
         description:        { type: 'STRING', description: 'Sumber atau keterangan pemasukan. Contoh: "Gaji", "Transfer dari Ayah", "Beasiswa", "Bayaran proyek".' },
-        destinationAccount: { type: 'STRING', description: 'Rekening tujuan penerimaan. Contoh: "BCA", "Mandiri", "Cash", "GoPay".' }
+        destinationAccount: { type: 'STRING', description: 'Rekening tujuan penerimaan. Contoh: "Bank Jago", "Bank Mandiri", "BCA", "Cash", "GoPay".' }
       },
       required: ['amount', 'description']
     }

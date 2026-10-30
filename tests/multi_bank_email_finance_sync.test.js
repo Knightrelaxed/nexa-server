@@ -254,3 +254,35 @@ test('Supabase Finance Account Provisioning & Resolution', async (t) => {
     assert.ok(names.includes('Bank Jago'), 'Expected Bank Jago in accounts list');
   });
 });
+
+test('Multi-Bank Common Helpers & Intent Integration', async (t) => {
+  const helpers = require('../src/interfaces/common/helpers');
+
+  await t.test('extractFinanceTransactionsFromEmails extracts Bank Jago vs Bank Mandiri', () => {
+    const jagoEmail = {
+      from: 'noreply@jago.com',
+      subject: 'Kamu telah membayar ke GRAB TRANSPORT💸',
+      snippet: 'Ringkasan transaksi Dari 101182943827 Ke GRAB TRANSPORT Jumlah Rp 6.500 Tanggal Transaksi 30 October 2026',
+      date: '2026-10-30T10:15:00Z'
+    };
+    const mandiriEmail = {
+      from: 'noreply.livin@bankmandiri.co.id',
+      subject: 'Pembayaran Berhasil',
+      snippet: 'Pembayaran Berhasil Penerima KOPI KENANGAN Nominal Transaksi Rp 25.000',
+      date: '2026-10-30T09:00:00Z'
+    };
+
+    const results = helpers.extractFinanceTransactionsFromEmails([jagoEmail, mandiriEmail]);
+    assert.strictEqual(results.length, 2);
+
+    // Jago assertions
+    assert.strictEqual(results[0].account, 'Bank Jago');
+    assert.strictEqual(results[0].nominal, 6500);
+    assert.strictEqual(results[0].type, 'EXPENSE');
+
+    // Mandiri assertions
+    assert.strictEqual(results[1].account, 'Bank Mandiri');
+    assert.strictEqual(results[1].nominal, 25000);
+    assert.strictEqual(results[1].type, 'EXPENSE');
+  });
+});

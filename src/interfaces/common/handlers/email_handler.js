@@ -36,7 +36,7 @@ async function handleEmailIntent(routingData, context = {}) {
     const searchKeyword = ed.search_keyword || '';
     const defaultQuery = context.emailDefaults?.defaultQuery !== undefined
       ? context.emailDefaults.defaultQuery
-      : (isTelegram ? '' : 'livin OR from:noreply.livin@bankmandiri.co.id');
+      : (isTelegram ? '' : '(from:noreply.livin@bankmandiri.co.id OR from:noreply@jago.com OR livin)');
     const defaultFetch = context.emailDefaults?.defaultFetch || (isTelegram ? 30 : 20);
     const baseQuery = searchKeyword || defaultQuery;
     const requestedLimit = Math.min(parseInt(ed.max_results, 10) || 5, 10);

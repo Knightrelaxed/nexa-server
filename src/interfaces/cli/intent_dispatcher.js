@@ -44,7 +44,7 @@ async function dispatchCliIntent(intent, routingData, textInput, sessionId) {
     notifyClient: pushToCli,
     triggerSynthesis: triggerConversationalSynthesis,
     emailDefaults: {
-      defaultQuery: 'livin OR from:noreply.livin@bankmandiri.co.id',
+      defaultQuery: '(from:noreply.livin@bankmandiri.co.id OR from:noreply@jago.com OR livin)',
       defaultFetch: 20
     }
   };
