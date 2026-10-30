@@ -80,6 +80,7 @@ nexa-server/
 │   ├── generate_google_master_token.js   # OAuth2 refresh token generator for Google APIs
 │   ├── generate_vector_snapshot.js       # Disk-to-Supabase vector embedding synchronizer
 │   ├── trigger_weekly.js                 # Manual runner for weekly cognitive synthesis
+│   ├── verify_google_master_client.js    # Diagnostic: Google OAuth2 master client validator
 │   └── refactor/                         # AST Automated Refactoring & Validation Tooling
 │       ├── README.md                     # Refactoring runbook & safety architecture
 │       ├── capture_memories_golden.js    # Golden fixture capture utility for Supabase Memories
@@ -89,26 +90,28 @@ nexa-server/
 │       ├── split_supabase_memories.js    # AST-based non-destructive module splitter for Supabase Memories
 │       └── verify_finance_split.js       # Static scope & cyclic dependency validator
 │
-├── tests/                                # Automated Unit Test Suites & Active Diagnostics (371 Tests)
+├── tests/                                # Automated Unit Test Suites & Hermetic Fixtures (416 Tests)
 │   ├── cli_adapter.test.js               # Unit tests: CLI ingress adapter & multi-turn prompts
 │   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers (15 bank cases, escaping)
+│   ├── context_regressions.test.js       # Historical regression suites across context pipelines
 │   ├── day_simulation.test.js            # Unit tests: Full 24-hour simulation (Briefing to Midnight)
 │   ├── directive_utils.test.js           # Unit tests: Behavioral directive parsing & counter increments
 │   ├── finance_characterization.test.js  # Golden master: Invariance test suite for modular Finance Engine (75 cases)
 │   ├── identity_directive_flow.test.js   # Unit tests: Dynamic persona directives & alignment flow
 │   ├── memories_characterization.test.js # Golden master: Invariance test suite for modular Supabase Memories (69 cases)
 │   ├── micro_reviewer.test.js            # Unit tests: Micro-reviewer cognitive reflection & feedback loops
+│   ├── multi_bank_email_finance_sync.test.js # Multi-bank auto-sync: Mandiri & Jago email parser
+│   ├── multi_device_bridge.test.js       # Multi-device bridge: Mobile ADB, screen trigger & relay
 │   ├── playbook_counters.test.js         # Unit tests: Behavioral playbook counters & limits
 │   ├── playbook_engine.test.js           # Unit tests: Playbook engine rules & conditional SOPs
 │   ├── reviewer_resilience.test.js       # Unit tests: Reviewer engine fallback & fault tolerance
 │   ├── router_characterization.test.js   # Golden master: Invariance test suite for modular AI Router (48 cases)
 │   ├── signal_detector.test.js           # Unit tests: Real-time behavioral signal detector
+│   ├── situational_synthesizer.test.js   # Dynamic context synthesis & cognitive tone modulation
 │   ├── supabase_finance_characterization.test.js # Characterization: Invariance test suite for modular Finance DB (25 APIs)
+│   ├── task_context_resolution.test.js   # Contextual ambiguity resolution & state tracking
 │   ├── telegram_adapter.test.js          # Unit tests: Telegram adapter, action builders & callbacks
-│   ├── test_all_crons.js                 # Diagnostic: Autonomous runner for all scheduled crons
-│   ├── test_cf_relay_live.js             # Diagnostic: Cloudflare Edge relay live connectivity tester
-│   ├── test_google_master_client.js      # Diagnostic: Google OAuth2 master client validator
-│   ├── test_midnight_screen_trigger.js   # Evaluation: Midnight screen time trigger test
+│   ├── test_isolation_regression.test.js # Test isolation defense-in-depth & synthetic guard
 │   ├── topic_classifier.test.js          # Classification: Topic classification & fast prompt router
 │   ├── upgrade.test.js                   # Migration: Schema upgrade & database integrity validator
 │   ├── version.test.js                   # Verification: Centralized version resolver & git SHA tests

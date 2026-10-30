@@ -280,7 +280,7 @@ Untuk menjamin proses migrasi berjalan mulus tanpa downtime, eksekusi dibagi men
 * **Langkah 2.3:** Terapkan helper factory `_createServiceClient()` untuk instansiasi lazy-loading:
   * `getGmail()`, `getTasks()`, `getCalendar()`, `getDrive()`, `getDocs()`, `getSheets()`, `getSlides()`, `getPeople()`, `getYouTube()`.
 * **Langkah 2.4:** Terapkan Circuit Breaker `handleAuthError()` untuk mendeteksi `invalid_grant` dan mengirim peringatan instan ke Telegram tanpa loop spamming.
-* **Langkah 2.5:** Tambahkan unit test verifikasi inisialisasi client di `tests/test_google_master_client.js`.
+* **Langkah 2.5:** Tambahkan unit test verifikasi inisialisasi client di `scripts/verify_google_master_client.js`.
 * **Output Deliverable:** Modul `Google_Master_Client.js` selesai, lulus uji otentikasi lokal, dan siap dipakai modul lain.
 
 ---
