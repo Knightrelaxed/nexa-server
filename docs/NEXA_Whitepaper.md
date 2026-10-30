@@ -197,7 +197,7 @@ Sejak v3.1, N.E.X.A mengonsolidasikan seluruh autentikasi Google API yang sebelu
 #### Node 4: Gmail : Finance Auto-Sync Engine (24/7 di Azure VPS)
 
 `Gmail_Client.js` mendelegasikan autentikasi ke `Google_Master_Client.getGmail()`. Fitur kritis yang berjalan otomatis:
-- **Continuous Polling 3 Menit:** `pollFinanceEmails()` berjalan tanpa henti via *cron cycle* di Azure VPS, mendeteksi mutasi Bank Mandiri (Livin') dan BCA, mengekstrak data nominal, dan mencatat transaksi ke database tanpa campur tangan Tuan.
+- **Continuous Polling 3 Menit:** `pollFinanceEmails()` berjalan tanpa henti via *cron cycle* di Azure VPS, mendeteksi mutasi Bank Mandiri (Livin') dan Bank Jago, mengekstrak data nominal, dan mencatat transaksi ke database tanpa campur tangan Tuan (lihat BAB 23 untuk arsitektur multi-bank).
 - **Idempotensi Mutlak Berbasis Pesan Gmail (`e.id`):** Deduplikasi transaksi kini menggunakan kunci komposit permanen `gmail_${e.id}`. Hal ini mengeliminasi masalah transaksi berulang sah yang tertelan karena memiliki nominal dan nama merchant yang sama di menit berdekatan.
 - **Pembaruan Otomatis Push Watch Mailbox:** Cron mingguan (Minggu 02:00 WIB) otomatis memperbarui masa aktif `watchMailbox` Google Pub/Sub sebelum batas kedaluwarsa 7 hari berakhir.
 - **Zero-Interruption Token Handling:** Menggunakan Master Refresh Token yang tidak pernah kadaluarsa selama aplikasi berstatus *Production Ready* di Google Cloud Console.
@@ -1127,7 +1127,7 @@ Tidak ada satu jalur tunggal untuk mencatat transaksi. N.E.X.A menerima data keu
 Tuan Faqih mengetik pesan seperti *"beli kopi 25rb di starbucks"* atau mengirim voice note. AI Router mengekstrak `{ nominal, type, destination, category, description, account, payment_method }` lalu memanggil `processTransaction(data, 'TELEGRAM_MANUAL')`. Jalur ini **tidak melewati deduplication check** : asumsinya setiap input manual adalah unik dan disengaja.
 
 #### Jalur 2 : `GMAIL_POLLING` (Finance Auto-Sync)
-Setiap 3 menit, `pollFinanceEmails()` memindai kotak masuk Gmail mencari notifikasi mutasi bank (Mandiri, BCA, dll.). Email yang ditemukan diparsing untuk mengekstrak nominal, tipe transaksi, dan nama merchant. Jalur ini **wajib melewati Zero-Duplication Engine** sebelum disimpan. Akun default-nya adalah `'Bank Mandiri'` karena email notifikasi diasumsikan berasal dari rekening bank utama.
+Setiap 3 menit, `pollFinanceEmails()` memindai kotak masuk Gmail mencari notifikasi mutasi multi-bank (Bank Mandiri dan Bank Jago). Email yang ditemukan diparsing untuk mengekstrak nominal, tipe transaksi, nama merchant, biaya admin/tip, dan metode bayar. Jalur ini **wajib melewati Zero-Duplication Engine** sebelum disimpan. Atribusi akun kini bersifat dinamis (`'Bank Mandiri'` atau `'Bank Jago'`) berdasarkan identifikasi penyedia otomatis (lihat rincian arsitektural di BAB 23).
 
 ---
 
@@ -3104,7 +3104,7 @@ flowchart TD
     end
 
     subgraph Subsystems["Modular Subsystems (src/domain/finance/)"]
-        Sync["Finance_Email_Sync.js (160 baris)<br>• Livin' Mandiri Polling & Dedup<br>• Failed Transaction Alert"]
+        Sync["Finance_Email_Sync.js (318 baris)<br>• Multi-Bank Mandiri & Jago Polling<br>• Bounded Lookahead & Dedup"]
         Conf["Finance_Confirmations.js (623 baris)<br>• Multi-turn Confirmation Lifecycle<br>• 5-Min Watchdog Auto-Save & Recovery"]
         Corr["Finance_Corrections.js (307 baris)<br>• Safe Delete Confirmation & Undo<br>• Transaction Edit Engine"]
         Analytics["Finance_Analytics.js (553 baris)<br>• 13 Analytical Reports & KPIs<br>• Saving Rate & Balance Trends"]
@@ -3776,6 +3776,188 @@ Menyisipkan instruksi operasional laten pada blok inersia emosional:
 | **Beban Prompt & Biaya Komputasi** | Potensi bloat jika teks manual | **Sangat padat (~40–50 token, 0ms latency overhead)** |
 | **Cakupan Pengujian Monorepo** | 335 tests passing | **352 tests passing (Termasuk 16 invariant regression tests)** |
 | **Status Produksi** | v3.4.1 | **v3.4.2 Deployed & Active on Azure VPS** |
+
+---
+
+## BAB 23: ARSITEKTUR v3.4.3 : THE MULTI-BANK AUTO-SYNC ENGINE (BANK MANDIRI & BANK JAGO), BOUNDED LOOKAHEAD EMAIL PARSER, & TEST-ISOLATION DEFENSE-IN-DEPTH
+
+### 23.1 Latar Belakang & Motivasi Arsitektur: Evolusi ke Ekosistem Multi-Rekening
+
+Dalam tata kelola keuangan modern Tuan Faqih, pengelolaan arus kas (*cashflow*) tidak lagi terpusat pada satu rekening tunggal (*single-bank monostructure*), melainkan terdistribusi ke dalam arsitektur multi-bank yang memiliki spesialisasi fungsi:
+1. **Bank Mandiri (Livin' by Mandiri)**: Berfungsi sebagai rekening jangkar (*anchor account*), penerimaan beasiswa/payroll, transfer antar-rekening bernominal besar, dan pembayaran tagihan formal.
+2. **Bank Jago (Kantong Utama & Kantong Belanja)**: Berfungsi sebagai rekening operasional taktis, transaksi harian berkecepatan tinggi, QRIS merchant mikro/kafe, serta terhubung langsung sebagai sumber dana pada ekosistem on-demand (Grab Transport & GrabFood).
+
+Sebelum arsitektur v3.4.3, subsistem sinkronisasi email (`Finance_Email_Sync.js`) dirancang secara monokultur hanya untuk mengenali e-statement Bank Mandiri (`noreply.livin@bankmandiri.co.id`). Setiap transaksi di luar Mandiri mengharuskan Tuan Faqih mencatatnya secara manual via Telegram atau Voice Command. Keterbatasan ini memicu fragmentasi pencatatan keuangan: pengeluaran kecil berfrekuensi tinggi dari Bank Jago kerap tertinggal dan menyebabkan disparitas antara saldo riil di aplikasi perbankan dengan neraca kas di portal `nexa-finance-web`.
+
+Untuk mengeliminasi friksi tersebut, N.E.X.A v3.4.3 memperkenalkan **Multi-Bank Auto-Sync Engine**, sebuah arsitektur cerdas yang mampu memindai, mendeteksi penyedia bank (*provider detection*), mengekstrak struktur email mutasi asimetris, dan mengalokasikan rekening secara dinamis dengan nol konfigurasi manual dari pengguna.
+
+---
+
+### 23.2 Arsitektur Aliran Data Pipeline Sinkronisasi Multi-Bank (Multi-Bank Polling Pipeline)
+
+Proses pemantauan email mutasi perbankan dirancang bekerja asinkron melalui siklus cron terisolasi di Azure VPS setiap 3 menit:
+
+```mermaid
+flowchart TD
+    subgraph CronIngress["Ingress Layer (Setiap 3 Menit)"]
+        Gmail["Google Workspace Gmail API<br>(noreply.livin@bankmandiri.co.id OR noreply@jago.com)"]
+        Poller["Finance_Email_Sync.js<br>• Concurrency Mutex (isPollingFinance)<br>• 4-Day Temporal Safety Guard"]
+    end
+
+    subgraph ProviderRouting["Provider Identification & Parsing"]
+        Detector{"_detectProvider()<br>Header & Body Metadata"}
+        MandiriParser["_parseMandiriTransaction()<br>• Total Transaksi Match<br>• Nominal + Biaya Admin<br>• Failed BI-Fast Guard"]
+        JagoParser["_parseJagoTransaction()<br>• Flattened HTML Lookahead<br>• Grab Driver Tip Aggregator<br>• Refund as INCOME & Transfer<br>• Acquirer / QRIS Detection<br>• Emoji & HTML Stripper"]
+    end
+
+    subgraph ZeroDedup["Zero-Duplication Engine"]
+        DedupCheck{"isDuplicateTransaction()<br>• In-memory pendingConfirmations<br>• nexa_finance_dedup (60m window)<br>• Idempotent gmail_{e.id} Key"}
+    end
+
+    subgraph UserInteraction["Omnichannel Interactive Confirmation"]
+        Card["Interactive Telegram Confirmation Card<br>• Dynamic Account Attribution<br>• Proactive Confirmation Prompt<br>• Voice / Chat Normalization"]
+        Watchdog["Telegram Alert Watchdog (90s Interval)<br>• 5-Minute Auto-Save Expired Rows<br>• Auto Re-fetch on TLS Blip<br>• Synthetic Key Purge Filter"]
+        Supabase["PostgreSQL Supabase (Nexa Finance)<br>• transactions Table<br>• Real-time Dashboard Sync"]
+    end
+
+    Gmail --> Poller
+    Poller --> Detector
+    Detector -->|Provider: MANDIRI| MandiriParser
+    Detector -->|Provider: JAGO| JagoParser
+    MandiriParser --> DedupCheck
+    JagoParser --> DedupCheck
+    DedupCheck -->|Baru & Lolos Validasi| Card
+    DedupCheck -->|Duplikat / Gagal| LogDrop["Log Dedup & Drop / Alert Telegram Gagal"]
+    Card -->|Konfirmasi Manual / Timeout 5 Menit| Watchdog
+    Watchdog --> Supabase
+```
+
+---
+
+### 23.3 Anatomi Heuristik & Ekstraksi Data: Disparitas Format Mandiri vs Bank Jago
+
+Perbedaan format teknis email notifikasi antara Bank Mandiri dan Bank Jago menyajikan tantangan rekayasa parser yang signifikan.
+
+#### 1. Bank Mandiri: Struktur Berbasis Tabel & Header Formal
+Email notifikasi Livin' by Mandiri menyajikan data dalam format tabel formal yang terstruktur rapi:
+* **Total Nominal Transaksi**: Ditarik melalui regex `/(?:total transaksi|total pembayaran|total)\s*rp\.?\s*([0-9][0-9\.\,]+)/i`.
+* **Biaya Admin Terpisah**: Jika pola total tidak ditemukan, parser memecah nominal transaksi dan secara otomatis mengagregasikan biaya transfer/admin (`biaya transfer|biaya admin`).
+* **Pendeteksian BI-Fast Gagal**: Pendeteksian kata kunci `tidak berhasil` atau `gagal` secara instan memicu status `isFailed = true`, menghentikan penulisan ke buku besar, dan menembakkan peringatan darurat ke Telegram Tuan Faqih.
+
+#### 2. Bank Jago: Flattened Single-Line HTML & Bounded Lookahead Heuristics
+Berbeda dengan Mandiri, notifikasi transaksi Bank Jago memiliki payload HTML dinamis yang sangat terkompresi. Ketika diubah menjadi teks mentah (*text blob*), struktur email menjadi satu baris panjang (*single-line text*) tanpa batas pemisah paragraf tradisional:
+
+```
+[CONTOH PAYLOAD MENTAH BANK JAGO - TRANSAKSI GRAB DENGAN TIP & LOKASI]
+Kamu telah membayar ke Grab Transport 💸 Detail Transaksi Jumlah Rp 20.000 Ke Grab Transport 93600918001150000000000 Lokasi Merchant Jakarta ID Terminal 12345678 PAN Nasabah **** 1234 Jumlah Tip Rp 2.000 Tanggal 30 Okt 2026, 14:15 Status Transaksi Berhasil
+```
+
+Tantangan rekayasa pada payload ini dipecahkan melalui 5 heuristik deterministik canggih di `_parseJagoTransaction()`:
+
+1. **Agregasi Multi-Komponen (Nominal + Tip + Biaya Transaksi)**:
+   Pada transaksi transportasi Grab, pengguna sering memberikan tip pengemudi yang ditagihkan secara terpisah dalam email yang sama. Parser mendeteksi nominal dasar (`Jumlah Rp 20.000`) dan secara matematis menambahkan nilai dari pola `(?:jumlah tip|tip)\s*rp\.?\s*([0-9][0-9\.\,]+)/i` (Tip: Rp2.000), sehingga nominal total yang dicatat ke buku kas adalah nilai riil mutasi saldo (`Rp 22.000`). Hal serupa diterapkan pada biaya transfer antar-bank.
+2. **Bounded Lookahead Regex untuk Ekstraksi Merchant / Destination**:
+   Penggunaan regex greedy biasa (`Ke\s+(.*)`) akan menelan seluruh teks hingga akhir email. Untuk mengunci nama merchant secara presisi, dirancang **Bounded Lookahead Boundary**:
+   ```javascript
+   const keMatch = blob.match(/\bKe\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Jumlah|Total|Nominal|Tanggal|Status|Nama Acquirer|Lokasi Merchant)\b|[\r\n]|$))/i);
+   ```
+   Pola ini menghentikan pencocokan string begitu bertemu nomor referensi acquirer (8+ digit angka berkelanjutan) atau kata kunci header berikutnya, menghasilkan nama merchant yang bersih: `"Grab Transport"`.
+3. **Ekstraksi & Penyatuan Lokasi Merchant**:
+   Jika terdapat informasi lokasi merchant (misalnya `Lokasi Merchant Jakarta`), parser mengekstrak string tersebut dan menggabungkannya ke nama tujuan (`"Grab Transport Jakarta"`), memberikan konteks spasial yang kaya untuk analitik pengeluaran.
+4. **Pembersihan Ekor Emoji & Karakter Unicode**:
+   Subjek email Bank Jago sering menyertakan emoji visual (misal: `💸`). Karakter ini dibersihkan melalui pemindaian rentang Unicode:
+   ```javascript
+   rawDest = rawDest.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+   ```
+5. **Semantik Pengembalian Dana (*Refund Semantics*)**:
+   Jika pengguna menerima email pembatalan transaksi dengan subjek atau tubuh berisi frasa *"uang telah dikembalikan ke Kantong Utama kamu"*, parser secara otomatis membalikkan polaritas transaksi dari `EXPENSE` menjadi **`INCOME`** dan menyetel metode pembayaran menjadi **`Transfer bank`** (bukan QRIS).
+
+---
+
+### 23.4 Integrasi Omnichannel: Dynamic Provisioning, Voice Normalization & Papan Konfirmasi
+
+Subsistem keuangan N.E.X.A tidak memperlakukan multi-bank sebagai data teks mati, melainkan terintegrasi ke seluruh lapisan antarmuka sistem:
+
+#### 1. Auto-Provisioning Akun di Supabase (`reference_data.js`)
+Ketika N.E.X.A memproses transaksi Bank Jago untuk pertama kalinya, fungsi `ensureAccountExists('Bank Jago', 'BANK')` mengecek tabel `accounts` di PostgreSQL. Jika belum terdaftar, akun dibuat secara otomatis dengan metadata `currency: 'IDR'`, `color: '#F97316'` (oranye khas Jago), dan saldo awal 0 tanpa mengharuskan pengguna membuka dasbor web terlebih dahulu.
+
+#### 2. Resolusi Akun Fuzzy (*Fuzzy Matching*)
+Sistem pencocokan nama akun mendukung toleransi tinggi terhadap variasi penyebutan:
+* `"Bank Jago"` → skor 100
+* `"Jago"` → skor 80 (langsung terpetakan ke `Bank Jago`)
+* `"Kantong Utama"` / `"Kantong Jago"` → terpetakan ke `Bank Jago`
+
+#### 3. Normalisasi Suara & Teks Asisten (`liveTools._normalizeAccountName`)
+Pada interaksi suara Groq Whisper atau chat cepat, variasi ucapan pengguna dipetakan secara deterministik:
+* *"pake bank jago"*, *"kantong jago"*, *"jago"* → dipetakan resmi ke `'Bank Jago'`
+* *"mandiri"*, *"livin"*, *"livin by mandiri"* → dipetakan resmi ke `'Bank Mandiri'`
+
+#### 4. Kartu Konfirmasi Interaktif Telegram yang Sadar Rekening (*Account-Aware Card*)
+Saat transaksi tertunda dikirimkan ke Telegram, N.E.X.A menyematkan atribut `suggestedAccount`:
+> 🔔 **SINKRONISASI KEUANGAN TERBARU**  
+> 💸 Pengeluaran: **Rp 22.000**  
+> 🏷️ Tujuan: **Grab Transport Jakarta**  
+> 📁 Kategori AI: **Transportasi**  
+> 💳 Rekening: **Bank Jago**  
+> 
+> *Apakah pengeluaran ini ingin dicatat ke Bank Jago (atau balas untuk mengganti rekening)?*
+
+Jika Tuan Faqih membalas *"ganti ke mandiri"*, sistem memanggil `updatePendingTransaction()` untuk memindahkan atribusi rekening seketika sebelum transaksi dieksekusi ke database.
+
+---
+
+### 23.5 Audit Forensik & Hardening Isolasi Pengujian (Test-Isolation Defense-in-Depth)
+
+Pembaruan multi-bank ini menyertakan studi kasus forensik penting terkait integritas lingkungan pengujian (*test environment isolation*) yang diselesaikan menggunakan disiplin **/diagnosing-bugs**.
+
+#### Kronologi Masalah: Kasus "Ghost Auto-Save Camilan Sore"
+Tuan Faqih melaporkan anomali di mana Telegram dan dasbor `nexa-finance-web` berulang kali mencatat pengeluaran yang tidak pernah dilakukannya:
+> ⏳ *Waktu habis. Transaksi Rp15.000 telah disimpan otomatis. Kategori AI: Belanja. Catatan: Camilan sore*  
+> (Tercatat di tabel transaksi: `-Rp 15.000,00 | Camilan sore | Lainnya | Bank Mandiri | 15:15`)
+
+#### Akar Masalah (Root Cause Verification)
+1. Pada pengujian unit [`tests/multi_bank_email_finance_sync.test.js`](file:///c:/workspace/nexa-server/tests/multi_bank_email_finance_sync.test.js), skenario `'Interactive Account Updates on Pending Transactions'` menguji pembaruan akun interaktif dengan fixture data `test_multi_bank_key_001` (Nominal Rp15.000, "Camilan sore").
+2. Modul pengujian memanggil `updatePendingTransaction()`. Di dalam fungsi tersebut, terdapat pemanggilan:
+   ```javascript
+   await supabase.savePendingTransaction(key, pending.tx, true);
+   ```
+3. Ketika test dijalankan di laptop lokal atau Azure VPS, file `.env` aktif terhubung ke database PostgreSQL Supabase produksi. Karena fungsi `savePendingTransaction` tidak di-stub (*unmocked*), baris `test_multi_bank_key_001` disuntikkan langsung ke tabel produksi `nexa_pending_transactions`.
+4. Blok `finally` pada test hanya membersihkan Map di RAM lokal, tetapi **tidak pernah menghapus baris di Supabase**.
+5. Di server Azure VPS, proses PM2 menjalankan cron **Telegram Alert Watchdog** setiap 90 detik. Tepat setelah 5 menit berlalu sejak test dijalankan, Watchdog melihat transaksi pending tersebut berusia $\ge 5$ menit. Karena dianggap kedaluwarsa tanpa respon user, Watchdog mengeksekusi `autoSaveFromWatchdog()`: menulis transaksi Rp15.000 ke tabel `transactions`, mengirim notifikasi resmi ke HP Tuan Faqih, lalu menghapusnya dari antrean pending. Setiap kali pengembang menjalankan `npm test`, siklus pencemaran ini berulang.
+
+#### Arsitektur Proteksi Berlapis (5-Layer Defense-in-Depth)
+Untuk menjamin tidak ada lagi data pengujian yang mencemari database riil maupun menembakkan pesan Telegram palsu ke pengguna, dibangun sistem pertahanan 5 lapis:
+
+1. **Storage-Level Key Guard (`Memory_Finance_Dedup.js`)**:
+   Fungsi `savePendingTransaction()` dan `logTransactionKey()` dilengkapi filter `_isSyntheticTestKey(key)`. Jika kunci diawali dengan `test_`, `mock_`, atau `audit_test_`, atau jika `process.env.NODE_ENV === 'test'`, operasi penulisan database **dibatalkan seketika (*silent noop*)**:
+   ```javascript
+   if (process.env.NODE_ENV === 'test' || _isSyntheticTestKey(compositeKey)) return;
+   ```
+2. **Domain-Level Auto-Save Guard (`Finance_Confirmations.js`)**:
+   Fungsi `_autoSavePending()` memblokir eksekusi pembukuan jika mendeteksi kunci sintesis dan langsung membersihkan memori tanpa memanggil `processTransaction` maupun Telegram webhook.
+3. **Server-Level Watchdog Purge Filter (`cron.js`)**:
+   Watchdog cron (interval 90s) di VPS secara eksplisit menyaring baris antrean: jika terdapat kunci sintesis yang tersasar di Supabase, Watchdog langsung menghapusnya (*purge*) tanpa menyimpannya ke tabel keuangan.
+4. **Network Outbound Safety Fuse (`actions.js`)**:
+   `sendTelegramOutbound()` memeriksa environment: saat `NODE_ENV === 'test'`, seluruh transmisi jaringan ke API Telegram dibatalkan (*short-circuited*).
+5. **Strict Test Mocking & Regression Gates**:
+   Seluruh test suite keuangan diisolasi total dengan stubbing wajib pada `savePendingTransaction`, `deletePendingTransaction`, `logTransactionKey`, dan `sendTelegramOutbound`. Ditambahkan test suite regresi khusus [`tests/test_isolation_regression.test.js`](file:///c:/workspace/nexa-server/tests/test_isolation_regression.test.js) untuk memverifikasi kekedapan sistem secara berkala.
+
+---
+
+### 23.6 Matriks Evaluasi & Verifikasi: Sebelum vs Sesudah Arsitektur v3.4.3
+
+| Dimensi Arsitektur | Sebelum v3.4.3 (Single-Bank Monoculture) | Setelah v3.4.3 (Multi-Bank Auto-Sync Engine) |
+| :--- | :--- | :--- |
+| **Cakupan Perbankan Otomatis** | Terbatas pada Bank Mandiri (Livin') | **Dual-Bank Cerdas: Bank Mandiri & Bank Jago** |
+| **Parsing Notifikasi Asimetris** | Hanya tabel formal Mandiri | **Bounded Lookaheads, Flattened HTML & Emoji Stripper** |
+| **Penanganan Biaya Tambahan** | Biaya transfer Mandiri saja | **Agregasi Otomatis Tip Pengemudi (Grab) & Biaya Admin** |
+| **Deteksi Polaritas Transaksi** | Pengeluaran umum | **Deteksi Cerdas Refund ("Uang telah dikembalikan" → INCOME)** |
+| **Atribusi Rekening** | Statis ke Bank Mandiri | **Dinamis (Kartu Interaktif + Pengalihan Rekening Instan)** |
+| **Penyediaan Akun di Database** | Manual oleh pengguna di Web | **Auto-Provisioning Idempoten (`ensureAccountExists`)** |
+| **Normalisasi Suara & Perintah** | Kata kunci kaku | **Pencocokan Fuzzy & Variasi Suara ("kantong jago", "livin")** |
+| **Keamanan Data Pengujian** | Rawan bocor ke tabel transaksi riil | **5-Layer Defense-in-Depth (Nol kebocoran data test)** |
+| **Cakupan Pengujian Monorepo** | 382 assertions passing | **416 assertions passing (100% Green, 0 Fail)** |
+| **Status Produksi** | v3.4.2 | **v3.4.3 Deployed & Active on Azure VPS (PM2 PID 1012762)** |
 
 ---
 
