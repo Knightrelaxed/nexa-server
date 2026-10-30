@@ -498,6 +498,7 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
     time: txData.time || new Date().toISOString(),
     payment_method: txData.payment_method || null,
     account: txData.account || null,
+    suggestedAccount: txData.suggestedAccount || null,
     compositeKey,
     isAutoSyncEmail: !!txData.isAutoSyncEmail
   };

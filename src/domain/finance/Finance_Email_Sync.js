@@ -165,7 +165,8 @@ function _parseJagoTransaction(blob, email) {
 
   if (!rawDest) rawDest = isIncome ? 'Dana Masuk Jago' : 'Auto-Sync Jago';
 
-  // Sanitize
+  // Sanitize and remove emojis (e.g. 💸)
+  rawDest = rawDest.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
   rawDest = rawDest.replace(/&nbsp;?/ig, ' ').replace(/&\w+;?/g, ' ');
   rawDest = rawDest.replace(/[\r\n].*$/s, '').trim();
 
