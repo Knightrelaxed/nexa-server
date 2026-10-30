@@ -12,47 +12,14 @@ const supabaseFinance = require('../../infrastructure/Supabase_Finance');
  */
 async function getFinanceAnalytics(dateText = null) {
   try {
-    let startDate = new Date();
-    let endDate = new Date();
-    let timeLabel = 'Bulan Ini';
-
-    if (dateText) {
-      const lowerDate = dateText.toLowerCase();
-      if (lowerDate.includes('minggu')) {
-        timeLabel = 'Minggu Ini';
-        const day = startDate.getDay();
-        const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
-        startDate.setDate(diff);
-        endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + 6);
-      } else if (lowerDate.includes('tahun')) {
-        timeLabel = 'Tahun Ini';
-        const thisYear = new Date().getFullYear();
-        startDate = new Date(thisYear, 0, 1);
-        endDate = new Date(thisYear, 11, 31);
-      } else if (lowerDate.includes('hari')) {
-        timeLabel = 'Hari Ini';
-      } else if (lowerDate.includes('kemarin') || lowerDate.includes('lalu') || lowerDate.includes('sebelum')) {
-        timeLabel = 'Bulan Kemarin';
-        // Simpan referensi ke now SEBELUM startDate diubah untuk menghindari bug saat Januari
-        const nowRef = new Date();
-        startDate = new Date(nowRef.getFullYear(), nowRef.getMonth() - 1, 1);
-        endDate = new Date(nowRef.getFullYear(), nowRef.getMonth(), 0); // hari terakhir bulan lalu
-      } else {
-        startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-        endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
-      }
-    } else {
-      startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-      endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
-    }
+    const { startDate, endDate, timeLabel } = _parseAnalyticsPeriod(dateText);
 
     const analytics = await supabaseFinance.getFinanceAnalytics(startDate, endDate);
     if (!analytics || (analytics.totalIncome === 0 && analytics.totalExpense === 0)) {
       return `📭 Data analitik belum tersedia untuk ${timeLabel}.`;
     }
 
-    const formatRp = (val) => `Rp${Math.abs(val).toLocaleString('id-ID')}`;
+    const formatRp = (val) => `Rp${Math.round(Math.abs(val)).toLocaleString('id-ID')}`;
 
     // === KPI Cards identik dengan analytics-view.tsx ===
     // Card 1: Savings Rate  — savingsRate = (income - expense) / income * 100

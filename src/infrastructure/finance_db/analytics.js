@@ -138,15 +138,24 @@ async function getAccountBalances() {
   for (const acc of accounts) {
     const { data, error } = await supabaseFinance
       .from('transactions')
-      .select('amount, type')
+      .select('amount, type, split_label')
       .eq('account_id', acc.id);
 
     if (error) continue;
 
     let income = 0, expense = 0;
     for (const tx of (data || [])) {
-      if (tx.type === 'income') income += tx.amount;
-      else expense += tx.amount;
+      if (tx.type === 'income') {
+        income += tx.amount;
+      } else if (tx.type === 'expense') {
+        expense += tx.amount;
+      } else if (tx.type === 'transfer') {
+        if (tx.split_label === 'transfer_out') {
+          expense += tx.amount;
+        } else if (tx.split_label === 'transfer_in') {
+          income += tx.amount;
+        }
+      }
     }
     results.push({
       id: acc.id,
@@ -203,7 +212,7 @@ async function getDailyTrend(startDate, endDate) {
     const d = tx.transaction_date;
     if (!map[d]) map[d] = { date: d, expense: 0, income: 0 };
     if (tx.type === 'expense') map[d].expense += tx.amount;
-    else map[d].income += tx.amount;
+    else if (tx.type === 'income') map[d].income += tx.amount;
   }
 
   // === Algoritma IDENTIK dengan analytics-view.tsx ===
