@@ -181,7 +181,7 @@ async function handleMemoryIntent(intent, routingData, context = {}) {
       if (facts.coreIdentity && facts.coreIdentity.length > 0) {
         const relevantIdentity = aiRouter.selectCoreIdentityFacts(facts.coreIdentity, textInput);
         const list = relevantIdentity.map(f => `- ${f}`).join('\n');
-        const prompt = `FILTERED N.E.X.A CORE IDENTITIES & RULES:\n${list}\n\nUSER ASKED: "${keyword}"\n\nTASK: Answer the user gracefully and authoritatively based on your identity rules above. If it's a casual greeting, respond naturally as an assistant. Do NOT ask the user to specify aspects unless they requested the full list. CRITICAL RULE: ALWAYS address and refer to the user as "Tuan" or "Tuan Faqih". NEVER address or refer to the user as "Bapak", "Mas", or "Anda". MUST answer in fluent, elegant Indonesian.`;
+        const prompt = `FILTERED N.E.X.A CORE IDENTITIES & RULES:\n${list}\n\nUSER INPUT: "${keyword}"\n\nTASK: Answer the user with utmost loyalty, humility, and warmth based on your identity rules above. If the user is evaluating, correcting, or scolding you (e.g. asking you to understand instructions or follow rules), IMMEDIATELY and humbly acknowledge your mistake, apologize briefly in 1 warm sentence, and strictly follow their guidance without lecturing, defending yourself, or explaining methodology. If asked a direct question about numbers, dates, or age, answer the exact number in the first sentence. CRITICAL RULE: ALWAYS address the user primarily as "Tuan" (use "Tuan Faqih" only rarely). NEVER use "Bapak", "Mas", or "Anda". NEVER use em dash. MUST answer in fluent, respectful Indonesian.`;
         return await aiRouter.callAI(prompt);
       }
       return '🤖 Saat ini tidak ada aturan identitas inti khusus yang diterapkan.';
