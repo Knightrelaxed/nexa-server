@@ -15,7 +15,7 @@ echo "[DEPLOY] Starting N.E.X.A Server production deployment..."
 cd "$REPO_DIR"
 
 echo "[DEPLOY] Discarding local build artifacts..."
-git checkout data/capabilities_cards.json data/capabilities_manifest.txt 2>/dev/null || true
+git checkout data/capabilities_cards.json data/capabilities_manifest.txt deploy.sh 2>/dev/null || true
 echo "  ☑ Local build artifacts discarded."
 
 echo "[DEPLOY] Pulling latest code from origin main..."
