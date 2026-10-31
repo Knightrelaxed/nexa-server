@@ -23,7 +23,7 @@
       "src/infrastructure/Supabase_Finance.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "finance_bank_sync",
@@ -47,7 +47,7 @@
       "src/infrastructure/memories/Memory_Finance_Dedup.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "finance_analytics",
@@ -71,7 +71,7 @@
       "src/infrastructure/finance_db/analytics.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "task_google_tasks",
@@ -96,7 +96,7 @@
       "src/interfaces/common/handlers/task_handler.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "calendar_scheduling",
@@ -121,14 +121,14 @@
       "src/infrastructure/Google_Workspace.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "device_android_control",
     "domain": "DEVICE_CONTROL",
-    "title": "Telemetri & Kontrol Perangkat Keras Android (Bridge)",
-    "summary": "Kontrol hardware Android: senter, lock screen, volume, baterai, GPS, foto, screenshot, TTS.",
-    "details": "Komunikasi dua arah via WebSocket Bridge / Termux API ke smartphone Android Tuan Faqih. Mengontrol hardware: toggle senter, kunci layar, atur level volume audio, inspeksi baterai/sinyal, ambil lokasi GPS, capture foto kamera depan/belakang, screenshot layar, TTS suara, dump UI hierarchy, dan gestur klik/input aksesibilitas.",
+    "title": "Telemetri & Kontrol Perangkat Keras Android Mobile Bridge (Samsung A33 5G)",
+    "summary": "Kontrol hardware Android: senter, lock screen, volume, baterai, GPS, kamera, screenshot, gestur UI accessibility.",
+    "details": "Bidirectional WebSocket (/ws, X-Device-Type: mobile) with com.nexa.mobilebridge on Samsung Galaxy A33 5G (Android 16, One UI 8). Dispatches JSON NexaCommand envelopes with HMAC-SHA256 signatures for GodMode >= 3. Controls hardware: camera capture (front/rear), screen lock/wake, audio volume levels, flashlight toggle, battery/signal telemetry, GPS geofencing, accessibility UI click/gesture automation, notification listener interception, and simulated incoming call interruption.",
     "keywords": [
       "android",
       "hp android",
@@ -150,7 +150,35 @@
       "src/interfaces/bridge/mobile_bridge/client.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
+  },
+  {
+    "id": "device_windows_control",
+    "domain": "DEVICE_CONTROL",
+    "title": "Otomasi Desktop, Audio WASAPI, & Vision GPU Windows Bridge (ThinkPad X380 Yoga)",
+    "summary": "Otomasi desktop Windows: UIA click/type/scroll, launch app, WASAPI audio tap, GPU Direct3D 11 capture, telemetri.",
+    "details": "Native Rust + Slint companion on Lenovo ThinkPad X380 Yoga connected via WebSocket (/ws, X-Device-Type: windows). Executes EXECUTE_COMMAND actions (DESKTOP_CLICK, DESKTOP_TYPE_TEXT, DESKTOP_SCROLL, DESKTOP_PRESS_KEY, LAUNCH_APP, SET_VOLUME, MUTE) normalized canonically. Captures desktop via GPU Direct3D 11 screen capture for AI vision, taps loopback audio via WASAPI + WebRTC AEC3, provides desktop AR guidance overlays, and streams system telemetry (CPU, RAM, active window, PBT_APMSUSPEND power events, voice barge-in interruption).",
+    "keywords": [
+      "windows",
+      "laptop",
+      "thinkpad",
+      "komputer",
+      "desktop",
+      "layar laptop",
+      "klik desktop",
+      "wasapi",
+      "buka aplikasi laptop",
+      "windows bridge",
+      "otomasi laptop"
+    ],
+    "status": "ACTIVE",
+    "source_files": [
+      "src/interfaces/bridge/windows_bridge/adapter.js",
+      "src/interfaces/bridge/windows_bridge/client.js",
+      "src/interfaces/bridge/gateway.js"
+    ],
+    "version": "3.4.3",
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "device_discipline",
@@ -172,7 +200,7 @@
       "src/domain/Discipline_GodMode.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "cognitive_identity",
@@ -195,7 +223,7 @@
       "src/infrastructure/memories/Memory_Self_Model.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "memory_dual_store",
@@ -218,7 +246,7 @@
       "src/infrastructure/Supabase_Memories.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "search_research",
@@ -240,7 +268,7 @@
       "src/domain/Intelligence_Brief.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "location_places",
@@ -263,7 +291,7 @@
       "src/domain/Location_Orchestrator.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "channel_telegram",
@@ -287,7 +315,7 @@
       "src/interfaces/telegram/vault_handler.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "channel_whatsapp",
@@ -306,7 +334,7 @@
       "src/interfaces/whatsapp/formatter.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "system_llm_resilience",
@@ -330,7 +358,7 @@
       "src/config/model_backup_plan.json"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "system_proactive_cron",
@@ -352,7 +380,7 @@
       "src/domain/Chrono_Consolidator.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   },
   {
     "id": "system_cloud_security",
@@ -376,6 +404,6 @@
       "src/interfaces/webhook.js"
     ],
     "version": "3.4.3",
-    "updated_at": "2026-10-31T06:13:28.715Z"
+    "updated_at": "2026-10-31T06:32:58.119Z"
   }
 ]

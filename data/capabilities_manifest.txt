@@ -2,7 +2,7 @@
 - FINANCE: Kas & split transaksi, auto-sync email bank (Mandiri/Jago via Gmail), analitik & budget.
 - TASK: Google Tasks CRUD, ordinal ("tugas 1"), subtasks, sinkronisasi kalender kerja.
 - CALENDAR: Google Calendar v3, batch semester, event berulang (RRULE), fuzzy temporal WIB.
-- DEVICE_CONTROL: Android bridge (senter, lock, volume, baterai, GPS, kamera, screenshot, TTS).
+- DEVICE_CONTROL: HP Android (senter, lock, volume, kamera, GPS) & Laptop Windows (ThinkPad X380 UIA otomasi, WASAPI audio tap, GPU D3D11 capture).
 - DISCIPLINE: Limit durasi aplikasi Android, GodMode DND/force-close, wellbeing.
 - IDENTITY & MEMORY: Model kognitif 7-layer, latent directives, dual-store memory (Supabase + Vector).
 - SEARCH & LOCATION: Fast/deep web search, berita terkini, tempat terdekat, estimasi rute.

@@ -91,15 +91,29 @@ const CAPABILITIES_REGISTRY = [
   {
     id: 'device_android_control',
     domain: 'DEVICE_CONTROL',
-    title: 'Telemetri & Kontrol Perangkat Keras Android (Bridge)',
-    summary: 'Kontrol hardware Android: senter, lock screen, volume, baterai, GPS, foto, screenshot, TTS.',
-    details: 'Komunikasi dua arah via WebSocket Bridge / Termux API ke smartphone Android Tuan Faqih. Mengontrol hardware: toggle senter, kunci layar, atur level volume audio, inspeksi baterai/sinyal, ambil lokasi GPS, capture foto kamera depan/belakang, screenshot layar, TTS suara, dump UI hierarchy, dan gestur klik/input aksesibilitas.',
+    title: 'Telemetri & Kontrol Perangkat Keras Android Mobile Bridge (Samsung A33 5G)',
+    summary: 'Kontrol hardware Android: senter, lock screen, volume, baterai, GPS, kamera, screenshot, gestur UI accessibility.',
+    details: 'Bidirectional WebSocket (/ws, X-Device-Type: mobile) with com.nexa.mobilebridge on Samsung Galaxy A33 5G (Android 16, One UI 8). Dispatches JSON NexaCommand envelopes with HMAC-SHA256 signatures for GodMode >= 3. Controls hardware: camera capture (front/rear), screen lock/wake, audio volume levels, flashlight toggle, battery/signal telemetry, GPS geofencing, accessibility UI click/gesture automation, notification listener interception, and simulated incoming call interruption.',
     keywords: ['android', 'hp android', 'kontrol hp', 'senter', 'kunci hp', 'cek baterai', 'volume', 'foto kamera', 'screenshot hp', 'lokasi hp', 'telepon hp', 'cari hp'],
     status: 'ACTIVE',
     source_files: [
       'src/domain/Device_Control_Engine.js',
       'src/interfaces/bridge/mobile_bridge/adapter.js',
       'src/interfaces/bridge/mobile_bridge/client.js'
+    ]
+  },
+  {
+    id: 'device_windows_control',
+    domain: 'DEVICE_CONTROL',
+    title: 'Otomasi Desktop, Audio WASAPI, & Vision GPU Windows Bridge (ThinkPad X380 Yoga)',
+    summary: 'Otomasi desktop Windows: UIA click/type/scroll, launch app, WASAPI audio tap, GPU Direct3D 11 capture, telemetri.',
+    details: 'Native Rust + Slint companion on Lenovo ThinkPad X380 Yoga connected via WebSocket (/ws, X-Device-Type: windows). Executes EXECUTE_COMMAND actions (DESKTOP_CLICK, DESKTOP_TYPE_TEXT, DESKTOP_SCROLL, DESKTOP_PRESS_KEY, LAUNCH_APP, SET_VOLUME, MUTE) normalized canonically. Captures desktop via GPU Direct3D 11 screen capture for AI vision, taps loopback audio via WASAPI + WebRTC AEC3, provides desktop AR guidance overlays, and streams system telemetry (CPU, RAM, active window, PBT_APMSUSPEND power events, voice barge-in interruption).',
+    keywords: ['windows', 'laptop', 'thinkpad', 'komputer', 'desktop', 'layar laptop', 'klik desktop', 'wasapi', 'buka aplikasi laptop', 'windows bridge', 'otomasi laptop'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/interfaces/bridge/windows_bridge/adapter.js',
+      'src/interfaces/bridge/windows_bridge/client.js',
+      'src/interfaces/bridge/gateway.js'
     ]
   },
   {
@@ -249,7 +263,7 @@ function compileManifest(ver = VERSION) {
     `- FINANCE: Kas & split transaksi, auto-sync email bank (Mandiri/Jago via Gmail), analitik & budget.`,
     `- TASK: Google Tasks CRUD, ordinal ("tugas 1"), subtasks, sinkronisasi kalender kerja.`,
     `- CALENDAR: Google Calendar v3, batch semester, event berulang (RRULE), fuzzy temporal WIB.`,
-    `- DEVICE_CONTROL: Android bridge (senter, lock, volume, baterai, GPS, kamera, screenshot, TTS).`,
+    `- DEVICE_CONTROL: HP Android (senter, lock, volume, kamera, GPS) & Laptop Windows (ThinkPad X380 UIA otomasi, WASAPI audio tap, GPU D3D11 capture).`,
     `- DISCIPLINE: Limit durasi aplikasi Android, GodMode DND/force-close, wellbeing.`,
     `- IDENTITY & MEMORY: Model kognitif 7-layer, latent directives, dual-store memory (Supabase + Vector).`,
     `- SEARCH & LOCATION: Fast/deep web search, berita terkini, tempat terdekat, estimasi rute.`,

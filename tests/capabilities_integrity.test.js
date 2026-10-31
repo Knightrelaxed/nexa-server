@@ -111,7 +111,7 @@ test('Vector Cache & Gating (Phase 2): Tier 1 On-Demand Capability Retrieval', a
   geminiVectorCache.loadVectorSnapshot();
 
   const cachedCapabilities = geminiVectorCache.getCachedCapabilityVectors();
-  assert(Array.isArray(cachedCapabilities) && cachedCapabilities.length === 16, 'Must have 16 capabilities loaded in RAM');
+  assert(Array.isArray(cachedCapabilities) && cachedCapabilities.length >= 16, 'Must have at least 16 capabilities loaded in RAM');
 
   // 1. Strict Gating Test: Routine operational chats MUST NOT trigger any capability card
   const casualQueries = [
@@ -140,6 +140,11 @@ test('Vector Cache & Gating (Phase 2): Tier 1 On-Demand Capability Retrieval', a
   assert(resAndroid !== null, 'Query about android capability must return card');
   assert.equal(resAndroid.card.id, 'device_android_control');
   assert.equal(resAndroid.card.domain, 'DEVICE_CONTROL');
+
+  const resWin = geminiVectorCache.getRelevantCapability('gimana cara kerja otomasi desktop windows bridge di laptop?');
+  assert(resWin !== null, 'Query about windows bridge must return card');
+  assert.equal(resWin.card.id, 'device_windows_control');
+  assert.equal(resWin.card.domain, 'DEVICE_CONTROL');
 
   const resDiscipline = geminiVectorCache.getRelevantCapability('apa itu godmode dan bagaimana cara kerjanya?');
   assert(resDiscipline !== null, 'Query about godmode must return discipline card');
