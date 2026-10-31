@@ -1,8 +1,8 @@
-# N.E.X.A Ecosystem — Complete Architecture & File Tree
+# N.E.X.A Ecosystem - Complete Architecture & File Tree
 
 > **Document:** `docs/NEXA_FOLDER_ARCHITECTURE.md`  
-> **Ecosystem:** N.E.X.A 3.4.5 (Sovereign Cloud Core, Finance Web Portal, Mobile Hardware Bridge, Native Windows Bridge, US Gemini Proxy & Universal CLI)  
-> **Last Updated:** 2026-10-26  
+> **Ecosystem:** N.E.X.A 3.4.4 (Sovereign Cloud Core, Finance Web Portal, Mobile Hardware Bridge, Native Windows Bridge, US Gemini Proxy & Universal CLI)  
+> **Last Updated:** 2026-10-31  
 > **Format:** Comprehensive Plain-Text ASCII Tree with Deep Functional Annotations  
 
 ---
@@ -11,15 +11,16 @@
 * **Local Path:** `C:\workspace\nexa-server`
 * **Production Host:** Azure Central Indonesia VPS (`/home/nexa/nexa-server`)
 * **Role:** Sovereign Cognitive Core, Multi-Model Router, Database Ledger, Realtime Relays & Background Services
-* **Current Version:** v3.4.3 (`src/config/version.js`)
+* **Current Version:** v3.4.4 (`src/config/version.js` & `package.json`)
 
 ```text
 nexa-server/
 ├── Dockerfile                            # Production container build specification
 ├── .dockerignore                         # Docker build artifact exclusion rules
 ├── .gitignore                            # Git repository ignore rules
+├── deploy.sh                             # Zero-downtime deployment script for Azure VPS (git pull, pretest, PM2 reload)
 ├── ecosystem.config.js                   # PM2 process manager configuration (VPS deployment)
-├── package.json                          # Main project manifest & production dependencies (v3.4.3)
+├── package.json                          # Main project manifest & production dependencies (v3.4.4)
 ├── package-lock.json                     # Deterministic dependency lockfile
 ├── README.md                             # Repository overview & quick start guide
 ├── .env.example                          # Blueprint environment variable template
@@ -29,22 +30,33 @@ nexa-server/
 │   └── wrangler.toml                     # Cloudflare Worker deployment configuration
 │
 ├── data/                                 # Local Storage & Snapshot Datastore
+│   ├── capabilities_manifest.txt         # Tier 0 compact manifest (~265 tokens) for router prompts & Anti-False-Denial Rule
+│   ├── capabilities_cards.json           # Tier 1 structured capability cards (17 certified modules)
+│   ├── capabilities_vectors.json         # In-memory vector snapshot for Tier 1 capability cards
 │   ├── facts_vectors.json                # In-memory snapshot of pgvector memory embeddings
 │   └── transcripts_dump/                 # Raw conversation transcripts & session archives
 │
 ├── database/                             # Database Migrations & Supabase PostgreSQL Schemas
+│   ├── 001_memory_tiers_migration.sql    # 5-tier memory migration (CORE, PHASE, PREFERENCE, RULE, EPHEMERAL) + lifecycle columns
 │   ├── app_limits_migration.sql          # Screen time & application usage discipline rules
 │   ├── budget_schema.sql                 # Expense categories, balances & budget tracking tables
 │   ├── migration_daily_narratives.sql    # Daily cognitive narrative & identity evolution logs
 │   ├── migration_directives_counters_v3_3_2.sql # Behavioral directives & runtime execution counters
+│   ├── migration_direct_debit_payment_method.sql # Direct debit & multi-bank payment method migration
 │   ├── migration_enable_all_nexa_rls.sql # Comprehensive Row Level Security (RLS) hardening
 │   ├── migration_enable_rls.sql          # Base RLS security policies
 │   ├── migration_learning_loop_v3_3.sql  # Micro-reviewer cognitive reflection & feedback schema
+│   ├── migration_learning_loop_v3_3_1.sql# Learning loop schema refinement
 │   ├── migration_notifier_recurring.sql  # Scheduled notifications & recurring task triggers
+│   ├── migration_settings.sql            # Dynamic user & system runtime settings schema
+│   ├── migration_split_transaction.sql   # Split-bill & shared expense transaction schema
 │   ├── phase6_migration.sql              # Cognitive Identity, Mood Time-Series & Dual Memory tables
 │   ├── phase7_migration.sql              # Causal Knowledge Graph & dynamic self-inference schema
 │   ├── phase8_discipline_state_migration.sql # Screen lock, god-mode & discipline enforcement states
-│   └── schema.sql                        # Base consolidated PostgreSQL schema
+│   ├── schema.sql                        # Base consolidated PostgreSQL schema
+│   ├── seed_phase9_core_identity.sql     # Seed initial core identity directives & traits
+│   ├── seed_phase10_cron_architecture.sql# Seed proactive cron schedules & intervals
+│   └── whatsapp_and_platform_migration.sql# Multi-platform messaging channel schema
 │
 ├── docs/                                 # Architecture Whitepapers & Documentation
 │   ├── CORE_IDENTITY_AUDIT_REPORT.md     # Persona integrity & identity verification report
@@ -57,8 +69,8 @@ nexa-server/
 │   ├── NEXA_MOBILE_BRIDGE_DOCUMENTATION.md # Complete Android bridge technical documentation
 │   ├── NEXA_ORACLE_CLOUD_MIGRATION_PLAN.md # Secondary cloud disaster recovery plan
 │   ├── NEXA_SECURITY_ARCHITECTURE_AND_HARDENING.md # Comprehensive security hardening guide
-│   ├── NEXA_VERSION_EVOLUTION_ROADMAP.md # Version evolution & release milestone roadmap (v1.0 - v3.4.3)
-│   ├── NEXA_Whitepaper.md                # General N.E.X.A architecture whitepaper (v3.4.3)
+│   ├── NEXA_VERSION_EVOLUTION_ROADMAP.md # Version evolution & release milestone roadmap (v1.0 - v3.4.4)
+│   ├── NEXA_Whitepaper.md                # General N.E.X.A architecture whitepaper (v3.4.4 with BAB 24 & BAB 25)
 │   ├── PHASE6_DUAL_MEMORY_SYSTEM.md      # Dual-memory (Episodic + Semantic) architectural design
 │   ├── PHASE_4_ADVANCED_WORKFLOW.md      # Autonomous background workflows & task chains
 │   ├── PHASE_5_NEXA_V3_WEB_UI.md         # Web portal frontend specifications
@@ -77,9 +89,12 @@ nexa-server/
 │   ├── audit_codebase.js                 # AST codebase scanner & dependency auditor
 │   ├── audit_prompt_memory_efficiency.js # Memory token consumption & prompt bloat profiler
 │   ├── backfill_directives.js            # Behavioral directives backfill utility (tested by directive_utils)
+│   ├── build_capabilities.js             # Compiler: capability registry compiler to Tier 0 manifest & Tier 1 cards
 │   ├── clean_bad_memories.js             # Supabase memory hygiene & corrupted fact cleaner
+│   ├── deploy.sh                         # Canonical bash deployment script template
 │   ├── generate_google_master_token.js   # OAuth2 refresh token generator for Google APIs
 │   ├── generate_vector_snapshot.js       # Disk-to-Supabase vector embedding synchronizer
+│   ├── reclassify_core.js                # Cognitive taxonomy audit & reclassifier (nexa_user_profile & nexa_core_identity)
 │   ├── trigger_weekly.js                 # Manual runner for weekly cognitive synthesis
 │   ├── verify_google_master_client.js    # Diagnostic: Google OAuth2 master client validator
 │   └── refactor/                         # AST Automated Refactoring & Validation Tooling
@@ -91,7 +106,9 @@ nexa-server/
 │       ├── split_supabase_memories.js    # AST-based non-destructive module splitter for Supabase Memories
 │       └── verify_finance_split.js       # Static scope & cyclic dependency validator
 │
-├── tests/                                # Automated Unit Test Suites & Hermetic Fixtures (416 Tests)
+├── tests/                                # Automated Unit Test Suites & Hermetic Fixtures (437 Tests Passing 100%)
+│   ├── audit_bugs.test.js                # Regression tests: Income category fallback, godmode candidate domains, callAI JSON
+│   ├── capabilities_integrity.test.js    # 7 unit tests: Tier 0 manifest constraints, Tier 1 cards & anti-drift router representations
 │   ├── cli_adapter.test.js               # Unit tests: CLI ingress adapter & multi-turn prompts
 │   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers (15 bank cases, escaping)
 │   ├── context_regressions.test.js       # Historical regression suites across context pipelines
@@ -100,6 +117,7 @@ nexa-server/
 │   ├── finance_characterization.test.js  # Golden master: Invariance test suite for modular Finance Engine (75 cases)
 │   ├── identity_directive_flow.test.js   # Unit tests: Dynamic persona directives & alignment flow
 │   ├── memories_characterization.test.js # Golden master: Invariance test suite for modular Supabase Memories (69 cases)
+│   ├── memory_classifier_hygiene.test.js # 9 unit tests: 5-tier taxonomy, contingency demotions, completed past, dynamic Ebbinghaus decay
 │   ├── micro_reviewer.test.js            # Unit tests: Micro-reviewer cognitive reflection & feedback loops
 │   ├── multi_bank_email_finance_sync.test.js # Multi-bank auto-sync: Mandiri & Jago email parser
 │   ├── multi_device_bridge.test.js       # Multi-device bridge: Mobile ADB, screen trigger & relay
@@ -141,23 +159,25 @@ nexa-server/
 └── src/                                  # Main Backend Application Source Code
     ├── app.js                            # Express app setup, strict security headers, CORS & loopback
     │
-    ├── config/                           # Environment, Persona & Version Configuration
+    ├── config/                           # Environment, Persona, Registry & Version Configuration
+    │   ├── capabilities_registry.js      # Single source of truth for 17 certified capabilities, keywords & code paths
     │   ├── env.js                        # Validated environment variable loader
     │   ├── model_backup_plan.json        # Dynamic fallback parameters & retry quotas
     │   ├── personality.js                # Master executive identity prompt & behavior boundaries
-    │   └── version.js                    # Centralized version definition (v3.4.3) & Git SHA resolver
+    │   └── version.js                    # Centralized version definition (v3.4.4) & Git SHA resolver
     │
     ├── core/                             # Core Cognitive & Inference Engines (9 Subsystems)
     │   ├── AI_Router.js                  # Public Facade (37 lines, re-exporting 18 cognitive routing APIs)
-    │   ├── router/                       # Modular Cognitive Router Subsystem (7 Modules)
+    │   ├── router/                       # Modular Cognitive Router Subsystem (8 Modules)
+    │   │   ├── Memory_Classifier.js      # 5-tier cognitive memory classifier with contingency reasoning & 4 guardrails
     │   │   ├── Router_Cache.js           # RAM cache & TTL invalidator for personal facts, identity & self-model
     │   │   ├── Router_Classifier.js      # Fast reflex detection, candidate domain gating & topic classifier
     │   │   ├── Router_Dispatcher.js      # Master routeUserMessage orchestration loop & JSON repair
     │   │   ├── Router_Output.js          # Routing output normalization, em-dash cleanup & domain fixers
-    │   │   ├── Router_Prompts.js         # Token Budget Guard, system prompt builder & anti-stalker reframing
+    │   │   ├── Router_Prompts.js         # Token Budget Guard, system prompt builder, Tier 0 Manifest & Anti-False-Denial Rule
     │   │   ├── Router_Selectors.js       # Semantic token extraction, word stemmer & fact relevance scorers
-    │   │   └── Router_Utilities.js       # LLM utilities (callAI, classifyYesNo, classifyPending, dedupFact)
-    │   ├── Fallback_Engine.js            # SACR v2.4 (15-Tier Dual-Mode Dynamic Fallback Router)
+    │   │   └── Router_Utilities.js       # LLM utilities (callAI, classifyYesNo, classifyPending, dedupFact & memory classification)
+    │   ├── Fallback_Engine.js            # SACR v2.4 (15-Tier Dual-Mode Dynamic Fallback Router with forceHeavy support)
     │   ├── Live_Tool_Registry.js         # Function calling & Agent Tool execution catalog
     │   ├── Live_Voice_Engine.js          # Bidirectional real-time Gemini Live WebSocket relay
     │   ├── Notifier.js                   # Cross-channel proactive notification dispatcher & queue manager
@@ -183,7 +203,7 @@ nexa-server/
     │   │   ├── Finance_Analytics.js      # Financial reports, spending velocity, saving rate & balance trends
     │   │   ├── Finance_Confirmations.js  # Multi-turn confirmation lifecycle, auto-save timeout & restart recovery
     │   │   ├── Finance_Corrections.js    # Safe transaction deletions, edit & undo manager
-    │   │   ├── Finance_Email_Sync.js     # Livin' by Mandiri Gmail polling, parsing & transaction dedup
+    │   │   ├── Finance_Email_Sync.js     # Livin' by Mandiri & Bank Jago Gmail polling, parsing & transaction dedup
     │   │   ├── Finance_Helpers.js        # Currency normalizer, date parsers & lightweight AI merchant categorizer
     │   │   ├── Finance_Ledger.js         # Core double-entry ledger, transaction writes & search queries
     │   │   └── Finance_State.js          # Shared in-memory state & lock sets (single source of truth)
@@ -191,7 +211,7 @@ nexa-server/
     │   ├── Intelligence_Brief.js         # Morning Briefing, Midnight & Evening brief synthesizer
     │   ├── Intention_Engine.js           # Short & long-term commitments tracker
     │   ├── Location_Orchestrator.js      # Presence context, spatial reasoning & location queries
-    │   ├── Memory_Hygiene_Engine.js      # Memory deduplication, decay manager & knowledge prune
+    │   ├── Memory_Hygiene_Engine.js      # Step 1 hard expiry for EPHEMERAL, Step 2 Dynamic Ebbinghaus Decay for PHASE, CORE time-immunity
     │   ├── Micro_Reviewer.js             # Micro-reviewer cognitive reflection, output quality critic & guardrails
     │   ├── Playbook_Engine.js            # Behavioral playbooks, conditional execution & contextual SOPs
     │   ├── Presence_Model.js             # User physical presence, device state & focus mode estimator
@@ -200,7 +220,7 @@ nexa-server/
     │   └── Task_Manager.js               # Google Tasks integration, task prioritization & overdue detector
     │
     ├── infrastructure/                   # External Services & Database Adaptations
-    │   ├── Gmail_Client.js               # Gmail auto-sync (Mandiri transaction detection)
+    │   ├── Gmail_Client.js               # Gmail auto-sync (Mandiri & Bank Jago transaction detection)
     │   ├── Google_Master_Client.js       # Centralized Google API OAuth2 client
     │   ├── Google_Tasks.js               # Google Tasks REST API client
     │   ├── Google_Workspace.js           # Google Calendar & Workspace integration
@@ -218,7 +238,7 @@ nexa-server/
     │   ├── Supabase_Memories.js          # Public Facade (90 lines, re-exporting 69 memory APIs)
     │   ├── memories/                     # Modular Memory & Living Persistence Subsystem (10 Modules)
     │   │   ├── Memory_Client.js          # Supabase client init, table allowlist & ID matching helpers
-    │   │   ├── Memory_Living.js          # Living memory metadata, active memory fetch, archiving & pruning
+    │   │   ├── Memory_Living.js          # Living memory metadata, bi-temporal superseding (superseded_by), chapter closing & active fetch
     │   │   ├── Memory_Chat.js            # Chat memory persistence, temporal buffers (today/yesterday) & FTS
     │   │   ├── Memory_Finance_Dedup.js   # Transaction deduplication keys, 7-day hygiene & pending transactions
     │   │   ├── Memory_Vault.js           # 2nd Brain Vault (ideas, thoughts, notes & multi-keyword fuzzy match)
@@ -229,7 +249,7 @@ nexa-server/
     │   │   └── Memory_Db_Browser.js      # Generic database schema overview, table inspection & CRUD operations
     │   └── Web_Search.js                 # Real-time web search crawler
     │
-    ├── interfaces/                       # Ingress & Egress Channels (Modular Ingress Architecture v3.4.3)
+    ├── interfaces/                       # Ingress & Egress Channels (Modular Ingress Architecture v3.4.4)
     │   ├── cron.js                       # Autonomous cron scheduler (Briefings, Night check-ins, Habits)
     │   ├── webhook.js                    # Inbound webhook router & Telegram dispatcher
     │   │
@@ -262,7 +282,7 @@ nexa-server/
     │   │   ├── actions.js                # Interactive keyboard callback actions & safe HTML builders
     │   │   ├── adapter.js                # Core Telegram ingress/egress adapter & formatting
     │   │   ├── callback_handler.js       # Inline keyboard button click router
-    │   │   ├── command_handler.js        # Telegram slash commands handler (/start, /status, /help)
+    │   │   ├── command_handler.js        # Telegram slash commands handler (/start, /status, /help, /capabilities)
     │   │   ├── intent_dispatcher.js      # Telegram intent delegator to common domain dispatcher
     │   │   ├── interceptors.js           # Contextual interceptors (Check-ins, confirmations, database)
     │   │   ├── media_handler.js          # Inbound voice, photo, audio & document processor
@@ -276,7 +296,7 @@ nexa-server/
     │
     └── utils/                            # Shared Utilities & Network Security
         ├── directive_utils.js            # Directive parsing, counter increment & dynamic prompt injector
-        ├── gemini_vector_cache.js        # In-memory vector embedding cache
+        ├── gemini_vector_cache.js        # In-memory vector embedding cache with Tier 1 capability on-demand matching (~0.05ms)
         ├── logger.js                     # Structured colored asynchronous logger
         ├── security.js                   # Identity lock (Single Chat ID: 6798861902) & rate-limiting
         ├── telegram_network.js           # Resilient HTTP client with retry logic
@@ -750,6 +770,8 @@ nexa-cli/
 | **Financial Ledger** | REST / Realtime Database | Server (`Finance_Engine.js`) | Supabase PostgreSQL (`Supabase_Finance.js`) | Buku besar kas, sinkronisasi Bank Mandiri & pelacakan pengeluaran. |
 | **User Memory RAG** | Vector Similarity (pgvector) | Server (`Episodic_Recall.js`) | Supabase PostgreSQL (`Supabase_Memories.js`) | Penarikan memori percakapan jangka panjang & fakta kepribadian Tuan. |
 | **Financial Web Portal** | HTTPS / Server-Side Rendering | Web Browser (`nexa-finance-web`) | Supabase PostgreSQL & Server API | Dashboard visual analitik keuangan, grafik pengeluaran & anggaran realtime PWA. |
+| **Self-Knowledge Progressive Disclosure** | In-Memory / Router Prompts | Master Registry (`capabilities_registry.js`) | Router (`Router_Prompts.js` & `gemini_vector_cache.js`) | Injeksi Tier 0 Manifes (~265 token) ke prompt dengan Anti-False-Denial Rule dan penarikan Tier 1 Kartu detail secara on-demand di RAM (~0.05ms) saat ada pertanyaan arsitektur/kapabilitas. |
+| **5-Tier Cognitive Memory Routing** | Database / Contingency Classifier | Classifier (`Memory_Classifier.js`) | Living Memory (`Memory_Living.js`) & Supabase | Klasifikasi 5 tingkat (CORE, PHASE, PREFERENCE, RULE, EPHEMERAL) dengan penalaran kontingensi, bi-temporal superseding, dan peluruhan dinamis Ebbinghaus di Hygiene Engine. |
 | **Gemini AI Studio US Relay** | HTTPS Proxy (`iad1` Edge) | Server (`Fallback_Engine.js`) | Vercel Edge (`nexa-gemini-proxy`) -> Google | Akses API Gemini via US Washington D.C. gateway untuk latensi optimal dan bypass batasan regional. |
 | **Terminal Console CLI** | HTTPS / JSON Webhook | Standalone Terminal (`nexa-cli`) | Server (`interfaces/cli/adapter.js`) | Akses kontrol konsol eksekutif N.E.X.A bergaya HUD Cyberpunk dari laptop manapun di dunia. |
 
