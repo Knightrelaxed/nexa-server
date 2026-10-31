@@ -1,0 +1,266 @@
+'use strict';
+
+/**
+ * ============================================================
+ * [N.E.X.A] CAPABILITIES REGISTRY (Single Source of Truth)
+ * ============================================================
+ * Registri kapabilitas resmi N.E.X.A bersumber langsung dari kode
+ * (Tools, Handlers, Crons, dan Database).
+ *
+ * Menggantikan aturan teks statis yang rentan drift di nexa_core_identity.
+ * Digunakan oleh:
+ * 1. scripts/build_capabilities.js (Generator Tier 0 Manifest & Tier 1 Cards)
+ * 2. src/core/router/Router_Prompts.js (Tier 0 Manifest Injection)
+ * 3. tests/capabilities_integrity.test.js (Enforcement Test)
+ * ============================================================
+ */
+
+const { VERSION } = require('./version');
+
+const CAPABILITIES_REGISTRY = [
+  {
+    id: 'finance_ledger',
+    domain: 'FINANCE',
+    title: 'Pencatatan Keuangan & Multi-Split Transaksi',
+    summary: 'Mencatat pemasukan/pengeluaran kas, multi-split belanja, riwayat, dan pembatalan transaksi.',
+    details: 'Pencatatan mutasi kas langsung ke database Supabase (tabel nexa_transactions). Mendukung single-entry dan multi-item split transactions (misal belanja kebutuhan dengan beberapa kategori berbeda), koreksi nominal/kategori, pembatalan/undo delete, dan pelacakan metode pembayaran.',
+    keywords: ['catat pengeluaran', 'pemasukan', 'beli', 'bayar', 'split transaksi', 'belanja', 'hapus transaksi', 'batal transaksi', 'kas'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/domain/finance/Finance_Ledger.js',
+      'src/domain/Split_Engine.js',
+      'src/infrastructure/Supabase_Finance.js'
+    ]
+  },
+  {
+    id: 'finance_bank_sync',
+    domain: 'FINANCE',
+    title: 'Auto-Sync Mutasi Email Bank (Mandiri Livin & Bank Jago)',
+    summary: 'Sinkronisasi mutasi email resmi Mandiri Livin dan Bank Jago via Gmail secara periodik.',
+    details: 'Worker background cron membaca email notifikasi transaksi via Google Workspace Gmail API menggunakan OAuth2 Master Client. Bounded lookahead regex mengekstrak nominal, merchant/tujuan, dan waktu transaksi secara deterministik, lalu menyimpannya ke Supabase dengan deduplikasi ketat.',
+    keywords: ['email mandiri', 'email jago', 'auto sync bank', 'mutasi bank', 'livin mandiri', 'notifikasi transfer', 'tarik mutasi'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/domain/finance/Finance_Email_Sync.js',
+      'src/infrastructure/Gmail_Client.js',
+      'src/infrastructure/memories/Memory_Finance_Dedup.js'
+    ]
+  },
+  {
+    id: 'finance_analytics',
+    domain: 'FINANCE',
+    title: 'Analisis Finansial, Tren Kas, & Pacing Anggaran',
+    summary: 'Menghitung ringkasan pengeluaran bulanan, breakdown kategori, tren saldo, dan saving rate.',
+    details: 'Mesin analitik finansial di tabel Supabase: breakdown pengeluaran per kategori, komparasi periode mingguan/bulanan, pengeluaran terbesar, tren saldo harian, rasio tabungan (saving rate), dan evaluasi pacing anggaran kategori via Budget_Engine.',
+    keywords: ['pengeluaran bulan ini', 'analisis keuangan', 'breakdown kategori', 'sisa budget', 'rekap belanja', 'saving rate', 'tren pengeluaran'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/domain/finance/Finance_Analytics.js',
+      'src/domain/Budget_Engine.js',
+      'src/infrastructure/finance_db/analytics.js'
+    ]
+  },
+  {
+    id: 'task_google_tasks',
+    domain: 'TASK',
+    title: 'Manajemen Tugas & Sinkronisasi Google Tasks',
+    summary: 'Mengelola to-do list Google Tasks, subtask, ordinal index ("tugas 1"), dan due date.',
+    details: 'Integrasi penuh Google Tasks API v1 via Google Master Client. Mendukung operasi CRUD daftar tugas, subtask bertingkat, resolusi referensi ordinal relatif ("tandai tugas 1 selesai", "hapus ke-2"), filter status (hari ini, besok, overdue), dan sinkronisasi blok kerja ke kalender.',
+    keywords: ['tugas', 'to-do', 'deadline', 'kerjakan', 'selesaikan tugas', 'list tugas', 'tugas kuliah', 'daftar to-do'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/domain/Task_Manager.js',
+      'src/infrastructure/Google_Tasks.js',
+      'src/interfaces/common/handlers/task_handler.js'
+    ]
+  },
+  {
+    id: 'calendar_scheduling',
+    domain: 'CALENDAR',
+    title: 'Manajemen Jadwal, Agenda, & Batch Perkuliahan (Google Calendar)',
+    summary: 'Mencatat agenda, batch jadwal kuliah semester, aturan berulang (RRULE), dan query jadwal.',
+    details: 'Integrasi Google Calendar API v3 via Google Workspace Client. Mendukung pembuatan agenda tunggal atau multi-course semester sekaligus (action CREATE_MULTIPLE), recurrent events (RRULE harian/mingguan/bulanan), resolusi temporal WIB (pagi, siang, sore, ba\'da ashar/isya), serta sintesis timeline situasional harian.',
+    keywords: ['jadwal', 'agenda', 'kalender', 'jadwal kuliah', 'acara', 'jadwal hari ini', 'jadwal besok', 'rrule'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/domain/Agenda_Manager.js',
+      'src/domain/Situational_Synthesizer.js',
+      'src/infrastructure/Google_Workspace.js'
+    ]
+  },
+  {
+    id: 'device_android_control',
+    domain: 'DEVICE_CONTROL',
+    title: 'Telemetri & Kontrol Perangkat Keras Android (Bridge)',
+    summary: 'Kontrol hardware Android: senter, lock screen, volume, baterai, GPS, foto, screenshot, TTS.',
+    details: 'Komunikasi dua arah via WebSocket Bridge / Termux API ke smartphone Android Tuan Faqih. Mengontrol hardware: toggle senter, kunci layar, atur level volume audio, inspeksi baterai/sinyal, ambil lokasi GPS, capture foto kamera depan/belakang, screenshot layar, TTS suara, dump UI hierarchy, dan gestur klik/input aksesibilitas.',
+    keywords: ['senter', 'kunci hp', 'cek baterai', 'volume', 'foto kamera', 'screenshot hp', 'lokasi hp', 'telepon hp', 'cari hp'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/domain/Device_Control_Engine.js',
+      'src/interfaces/bridge/mobile_bridge/adapter.js',
+      'src/interfaces/bridge/mobile_bridge/client.js'
+    ]
+  },
+  {
+    id: 'device_discipline',
+    domain: 'DISCIPLINE',
+    title: 'Digital Wellbeing & Pembatasan Aplikasi (GodMode)',
+    summary: 'Memantau durasi aplikasi Android, intervensi bertingkat, dan GodMode force-close.',
+    details: 'Mesin disiplin digital memantau durasi sesi dan batas harian aplikasi Android (YouTube, medsos, game) via event telemetri bridge. Menerapkan eskalasi intervensi bertingkat: pengingat santai, overlay warning di layar, hingga GodMode force-stop/DND saat batas waktu terlampaui.',
+    keywords: ['batas aplikasi', 'limit youtube', 'limit instagram', 'godmode', 'disiplin aplikasi', 'kunci aplikasi'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/domain/App_Discipline_Engine.js',
+      'src/domain/Discipline_GodMode.js'
+    ]
+  },
+  {
+    id: 'cognitive_identity',
+    domain: 'IDENTITY',
+    title: 'Model Kognitif 7-Layer & Chief of Staff Persona',
+    summary: 'Model kepribadian laten (Facts, Preferences, Habits, Values, Decision Style, Weaknesses, Motivations).',
+    details: 'Arsitektur kognitif 7-layer mengintegrasikan pemahaman psikologis Tuan Faqih secara laten ke dalam pembentukan instruksi prompt. Dilengkapi proteksi Anti-Stalker (kelemahan dan rahasia pribadi tidak pernah dibocorkan mentah-mentah), gaya bahasa elegan Chief of Staff, dan kepatuhan mutlak anti em-dash.',
+    keywords: ['kamu siapa', 'kepribadian', 'gaya bahasa', 'sifat', 'chief of staff', 'prinsip kerja'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/config/personality.js',
+      'src/infrastructure/memories/Memory_Identity.js',
+      'src/infrastructure/memories/Memory_Self_Model.js'
+    ]
+  },
+  {
+    id: 'memory_dual_store',
+    domain: 'MEMORY',
+    title: 'Dual-Store Memory & Episodic Recall (Supabase + Vector Cache)',
+    summary: 'Penyimpanan memori jangka panjang di Supabase dan in-memory vector cache untuk recall cepat.',
+    details: 'Menggabungkan database relasional Supabase (tabel nexa_user_profile, nexa_core_identity, nexa_chat_memories, nexa_vault_items) dengan in-memory Gemini Vector Cache (data/facts_vectors.json) untuk semantic cosine similarity search (0.1ms di RAM) tanpa overhead round-trip API.',
+    keywords: ['ingat', 'kamu ingat apa', 'memori', 'ingatan', 'apa yang kamu tahu tentangku', 'arsip masa lalu'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/utils/gemini_vector_cache.js',
+      'src/domain/Episodic_Recall.js',
+      'src/infrastructure/Supabase_Memories.js'
+    ]
+  },
+  {
+    id: 'search_research',
+    domain: 'WEB_SEARCH',
+    title: 'Riset Web & Berita Terkini (Fast & Deep Search)',
+    summary: 'Mencari informasi aktual, berita terkini, dan riset mendalam melalui mesin pencari web.',
+    details: 'Infrastruktur pencarian web multi-mode: mode fast untuk verifikasi cepat fakta aktual atau berita hari ini, serta mode deep untuk investigasi topik komprehensif. Menghubungkan engine web search dengan sanitasi query ketat langsung dari kata-kata Tuan Faqih.',
+    keywords: ['cari info', 'googling', 'berita terbaru', 'apa itu', 'riset', 'baca tentang'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/infrastructure/Web_Search.js',
+      'src/domain/Intelligence_Brief.js'
+    ]
+  },
+  {
+    id: 'location_places',
+    domain: 'LOCATION',
+    title: 'Pencarian Tempat Terdekat & Kalkulasi Rute Perjalanan',
+    summary: 'Mencari fasilitas umum terdekat (warkop, ATM, SPBU, masjid) dan menghitung estimasi jarak & rute.',
+    details: 'Integrasi API geolokasi (Overpass OpenStreetMap, Nominatim, dan Google Places) berbasis titik GPS koordinat smartphone Tuan Faqih. Menghitung rute perjalanan, jarak tempuh (km), dan perkiraan durasi perjalanan (menit) dari origin ke destinasi.',
+    keywords: ['warkop terdekat', 'atm terdekat', 'spbu terdekat', 'masjid terdekat', 'tempat ngopi', 'rute ke', 'jarak dari'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/infrastructure/Location_Engine.js',
+      'src/domain/Location_Orchestrator.js'
+    ]
+  },
+  {
+    id: 'channel_telegram',
+    domain: 'INTERFACE',
+    title: 'Antarmuka Telegram Bot (Voice STT Whisper, Vision OCR, Vault)',
+    summary: 'Interaksi via Telegram: transkripsi voice note (Whisper), analisis foto/nota (Vision), vault terenkripsi.',
+    details: 'Adapter bot Telegram interaktif. Mendukung pesan suara/voice note dengan transkripsi Speech-to-Text cepat via Groq Whisper v3, analisis visual foto/dokumen/struk belanja via model multimodal Gemini 2.5 Vision, inline interactive buttons, dan manajemen brankas file aman nexa_vault.',
+    keywords: ['telegram', 'voice note', 'pesan suara', 'kirim foto', 'struk belanja', 'vault', 'brankas'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/interfaces/telegram/adapter.js',
+      'src/interfaces/telegram/media_handler.js',
+      'src/interfaces/telegram/vault_handler.js'
+    ]
+  },
+  {
+    id: 'channel_whatsapp',
+    domain: 'INTERFACE',
+    title: 'Antarmuka WhatsApp Multi-Device (Baileys)',
+    summary: 'Interaksi chat via WhatsApp multi-device dengan format teks elegan dan dispatch otomatis.',
+    details: 'Adapter WhatsApp berbasis Baileys library yang terhubung multi-device. Memproses chat teks masuk, memvalidasi nomor terverifikasi Tuan Faqih, mendisposisikan intent ke router domain, dan memformat balasan percakapan secara natural dan sopan.',
+    keywords: ['whatsapp', 'wa', 'chat whatsapp'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/interfaces/whatsapp/adapter.js',
+      'src/interfaces/whatsapp/formatter.js'
+    ]
+  },
+  {
+    id: 'system_llm_resilience',
+    domain: 'SYSTEM',
+    title: 'Multi-Tier LLM Fallback (Groq, Cerebras, Gemini, Mistral)',
+    summary: 'Ketahanan AI tingkat tinggi dengan peralihan otomatis antar penyedia LLM jika terjadi limit/down.',
+    details: 'Arsitektur orkestrasi LLM multi-tier: Tier 1 Groq Llama 3.3 70B Versatile (~400ms ultra-low latency), Tier 2 Cerebras Llama 3.3 70B, Tier 3 Google Gemini 2.5 Flash, Tier 4 Mistral / OpenRouter. Menjamin ketersediaan tinggi (high-availability) dengan circuit breaker dan error fallback otomatis.',
+    keywords: ['llm', 'groq', 'cerebras', 'gemini', 'mistral', 'fallback ai', 'model backup'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/core/AI_Router.js',
+      'src/core/router/Router_Dispatcher.js',
+      'src/config/model_backup_plan.json'
+    ]
+  },
+  {
+    id: 'system_proactive_cron',
+    domain: 'SYSTEM',
+    title: 'Background Cron Pulses & Rutinitas Proaktif',
+    summary: 'Jadwal otomatis background: Midday Pulse, Evening Debrief, Tomorrow Prep, & bank sync.',
+    details: 'Penjadwal cron terintegrasi (src/interfaces/cron.js) di zona waktu Asia/Jakarta (WIB). Mengirimkan pulse proaktif: sapaan dan peninjauan tengah hari (Midday Pulse), evaluasi pencapaian malam (Evening Debrief), persiapan agenda esok hari (Tomorrow Prep), konsolidasi harian, dan bank sync periodik.',
+    keywords: ['cron', 'midday pulse', 'evening debrief', 'tomorrow prep', 'otomatis', 'jadwal otomatis'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/interfaces/cron.js',
+      'src/domain/Chrono_Consolidator.js'
+    ]
+  },
+  {
+    id: 'system_cloud_security',
+    domain: 'SYSTEM',
+    title: 'Infrastruktur Cloud Azure, Node.js 22 LTS, & Keamanan Caddy',
+    summary: 'Hosting production di Azure VPS Ubuntu 24.04, Node.js 22 LTS, reverse proxy Caddy HTTPS, PM2.',
+    details: 'Infrastruktur production berjalan di Azure Linux VPS (Ubuntu 24.04 LTS), runtime Node.js v22.23.4 LTS (kebal CVE-2026-111497 Node2Shell), Caddy reverse proxy dengan TLS otomatis (Let\'s Encrypt), PM2 cluster process management, dan endpoint health check terproteksi.',
+    keywords: ['vps', 'server azure', 'caddy', 'https', 'keamanan', 'node 22', 'pm2', 'uptime'],
+    status: 'ACTIVE',
+    source_files: [
+      'src/config/version.js',
+      'src/interfaces/webhook.js'
+    ]
+  }
+];
+
+/**
+ * Kompilasi Tier 0 Manifest teks padat untuk prompt router (~150-220 token).
+ * @param {string} [ver] - Versi sistem (default: VERSION dari package.json)
+ * @returns {string} - Manifest string siap pakai
+ */
+function compileManifest(ver = VERSION) {
+  const lines = [
+    `[KAPABILITAS RESMI N.E.X.A v${ver}]`,
+    `- FINANCE: Kas & split transaksi, auto-sync email bank (Mandiri/Jago via Gmail), analitik & budget.`,
+    `- TASK: Google Tasks CRUD, ordinal ("tugas 1"), subtasks, sinkronisasi kalender kerja.`,
+    `- CALENDAR: Google Calendar v3, batch semester, event berulang (RRULE), fuzzy temporal WIB.`,
+    `- DEVICE_CONTROL: Android bridge (senter, lock, volume, baterai, GPS, kamera, screenshot, TTS).`,
+    `- DISCIPLINE: Limit durasi aplikasi Android, GodMode DND/force-close, wellbeing.`,
+    `- IDENTITY & MEMORY: Model kognitif 7-layer, latent directives, dual-store memory (Supabase + Vector).`,
+    `- SEARCH & LOCATION: Fast/deep web search, berita terkini, tempat terdekat, estimasi rute.`,
+    `- INTERFACE: Telegram (Voice STT Whisper, Vision OCR, Vault) & WhatsApp multi-device.`,
+    `- SYSTEM: Multi-LLM fallback (Groq, Cerebras, Gemini, Mistral), cron pulses, Azure Core.`,
+    `PEDOMAN: Rujuk daftar ini untuk kemampuan aktif. DILARANG menyatakan tidak bisa untuk fitur di atas. Jika di luar daftar, jawab sopan belum didukung.`
+  ];
+  return lines.join('\n');
+}
+
+module.exports = {
+  CAPABILITIES_REGISTRY,
+  compileManifest
+};

@@ -5,7 +5,8 @@
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
-    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js tests/signal_detector.test.js tests/playbook_engine.test.js tests/micro_reviewer.test.js tests/directive_utils.test.js tests/identity_directive_flow.test.js tests/playbook_counters.test.js tests/topic_classifier.test.js tests/reviewer_resilience.test.js tests/telegram_adapter.test.js tests/cli_adapter.test.js tests/common_handlers.test.js tests/version.test.js tests/finance_characterization.test.js tests/memories_characterization.test.js tests/router_characterization.test.js tests/situational_synthesizer.test.js tests/context_regressions.test.js tests/multi_device_bridge.test.js tests/supabase_finance_characterization.test.js tests/task_context_resolution.test.js tests/multi_bank_email_finance_sync.test.js tests/test_isolation_regression.test.js"
+    "build:capabilities": "node scripts/build_capabilities.js",
+    "test": "node --test tests/upgrade.test.js tests/day_simulation.test.js tests/signal_detector.test.js tests/playbook_engine.test.js tests/micro_reviewer.test.js tests/directive_utils.test.js tests/identity_directive_flow.test.js tests/playbook_counters.test.js tests/topic_classifier.test.js tests/reviewer_resilience.test.js tests/telegram_adapter.test.js tests/cli_adapter.test.js tests/common_handlers.test.js tests/version.test.js tests/finance_characterization.test.js tests/memories_characterization.test.js tests/router_characterization.test.js tests/situational_synthesizer.test.js tests/context_regressions.test.js tests/multi_device_bridge.test.js tests/supabase_finance_characterization.test.js tests/task_context_resolution.test.js tests/multi_bank_email_finance_sync.test.js tests/test_isolation_regression.test.js tests/capabilities_integrity.test.js"
   },
   "keywords": [],
   "author": "",

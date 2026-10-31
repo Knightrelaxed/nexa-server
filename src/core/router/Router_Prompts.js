@@ -9,7 +9,30 @@
  * ============================================================
  */
 
+const fs = require('fs');
+const path = require('path');
 const { NEXA_PERSONALITY } = require('../../config/personality');
+const { compileManifest } = require('../../config/capabilities_registry');
+
+let _cachedManifest = null;
+
+/**
+ * Ambil Tier 0 Capabilities Manifest secara aman.
+ * Mengutamakan data/capabilities_manifest.txt, fallback ke compileManifest() jika file belum ada.
+ * @returns {string}
+ */
+function getCapabilitiesManifest() {
+  if (_cachedManifest) return _cachedManifest;
+  try {
+    const manifestPath = path.resolve(__dirname, '../../../data/capabilities_manifest.txt');
+    if (fs.existsSync(manifestPath)) {
+      _cachedManifest = fs.readFileSync(manifestPath, 'utf-8').trim();
+      return _cachedManifest;
+    }
+  } catch (_) {}
+  _cachedManifest = compileManifest();
+  return _cachedManifest;
+}
 
 const HISTORY_CHAR_CAP = 10000;
 
@@ -156,6 +179,8 @@ function formatTimeWIB(isoStr) {
 const ROUTER_COMMON_PREFIX = `
 ${NEXA_PERSONALITY}
 
+${getCapabilitiesManifest()}
+
 [COGNITIVE & ROUTING TASKS]
 Analyze the user's message, chat history, and context. Determine the ABSOLUTE INTENT and output ONLY valid JSON without markdown wrapping.
 
@@ -197,6 +222,10 @@ CRITICAL ROUTING RULES:
     - Rujukan utama waktu dan agenda Tuan Faqih hari ini adalah [TIMELINE AGENDA TUAN HARI INI] dan [Konteks Situasi & Lingkungan Nyata].
     - Catatan riwayat obrolan berlabel [MASA LALU] adalah arsip historis dan DILARANG dijadikan acuan waktu atau jadwal hari ini.
     - Sebagai Chief of Staff berwibawa dan grounded, jika Tuan Faqih meragukan, terkejut, atau menguji ("Hah baru saja?", "Woy?", "Kelasnya selesai jam berapa?"), JANGAN panik, JANGAN minta ampun, dan DILARANG mengubah fakta yang benar. Sampaikan fakta jam mulai dan jam selesai berdasarkan data timeline dengan tenang, santai, dan percaya diri.
+18. GROUNDED CAPABILITIES & ANTI-FALSE-DENIAL:
+    - Rujukan utama kapabilitas Anda adalah blok [KAPABILITAS RESMI N.E.X.A] di atas.
+    - DILARANG menyatakan tidak bisa untuk kapabilitas yang jelas-jelas terdaftar (misal: cek/sinkronisasi email notifikasi bank Mandiri & Jago via Gmail, multi-split kas, kontrol hardware Android, Google Tasks/Calendar).
+    - Jika Tuan meminta atau menanyakan fitur di luar daftar tersebut, sampaikan dengan sopan bahwa fitur belum tersedia atau belum didukung saat ini.
 `;
 
 const DOMAIN_SCHEMAS = {
@@ -395,5 +424,6 @@ module.exports = {
   REFLEX_SYSTEM_PROMPT,
   buildRouterSystemPrompt,
   ROUTER_SYSTEM_PROMPT,
-  PLAIN_TEXT_SYSTEM_PROMPT
+  PLAIN_TEXT_SYSTEM_PROMPT,
+  getCapabilitiesManifest
 };
