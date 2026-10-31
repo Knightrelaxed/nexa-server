@@ -62,7 +62,8 @@ nexa-server/
 │   ├── PHASE6_DUAL_MEMORY_SYSTEM.md      # Dual-memory (Episodic + Semantic) architectural design
 │   ├── PHASE_4_ADVANCED_WORKFLOW.md      # Autonomous background workflows & task chains
 │   ├── PHASE_5_NEXA_V3_WEB_UI.md         # Web portal frontend specifications
-│   └── PHASE_6_COGNITIVE_IDENTITY_ENGINE.md # Cognitive user modeling & identity inference engine
+│   ├── PHASE_6_COGNITIVE_IDENTITY_ENGINE.md # Cognitive user modeling & identity inference engine
+│   └── USER_EXPERIENCE_GUIDE_NEXA_FINANCE.md # End-to-end UX guide: Web, PWA, chat, & multi-bank automation
 │
 ├── logs/                                 # Runtime application logs (PM2 / Express)
 │
