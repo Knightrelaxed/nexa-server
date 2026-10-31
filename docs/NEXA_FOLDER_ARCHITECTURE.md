@@ -64,6 +64,7 @@ nexa-server/
 │   ├── JSON_PROTOCOL_SPECIFICATION.md    # Bidirectional WebSocket schema (Nexa Protocol 3.0)
 │   ├── MOBILE_BRIDGE_TESTING_REPORT.md   # Sensor latency & hardware test logs
 │   ├── NEXA_AZURE_VPS_PRODUCTION_ARCHITECTURE.md # Sovereign VPS Jakarta deployment whitepaper
+│   ├── NEXA_COGNITIVE_ROUTER_PROMPT_ARCHITECTURE.md # Full verbatim prompt specification & two-payload simulation
 │   ├── nexa_core_identity_dump_231.json  # Comprehensive persona trait snapshot & embeddings dump
 │   ├── NEXA_FOLDER_ARCHITECTURE.md       # This complete ecosystem folder directory tree
 │   ├── NEXA_MOBILE_BRIDGE_DOCUMENTATION.md # Complete Android bridge technical documentation
