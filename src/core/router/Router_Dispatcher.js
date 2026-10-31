@@ -273,6 +273,9 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   if (semanticMatches?.stats?.matchedProfileCount > 0 || semanticMatches?.stats?.matchedIdentityCount > 0) {
     console.log(`[ROUTER] 🎯 Gemini Semantic matched: ${semanticMatches.stats.matchedProfileCount} profiles, ${semanticMatches.stats.matchedIdentityCount} identities (${semanticMatches.stats.latencyMs} ms parallel).`);
   }
+  if (semanticMatches?.capabilityCard) {
+    console.log(`[ROUTER] ⚡ On-Demand Capability matched: ${semanticMatches.capabilityCard.title} (${semanticMatches.capabilityCard.id}).`);
+  }
 
   // Character safety net — trim oldest messages if total exceeds HISTORY_CHAR_CAP.
   let _memories = _rawMemories;
@@ -310,6 +313,16 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
   if (personalFacts.coreIdentity && personalFacts.coreIdentity.length > 0) {
     const _selectedIdentity = _selectCoreIdentityFacts(personalFacts.coreIdentity, textInput, semanticMatches?.identityFacts);
     factsContext += `\n[CORE IDENTITY & ATURAN SIKAP N.E.X.A — PATUHI INI]\n${_selectedIdentity.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`;
+  }
+
+  // [TIER 1 ON-DEMAND CAPABILITY DETAIL]
+  if (semanticMatches?.capabilityCard) {
+    const cap = semanticMatches.capabilityCard;
+    factsContext += `\n[DETAIL ARSITEKTUR KAPABILITAS (ON-DEMAND TIER 1)]\n` +
+      `Fitur: ${cap.title} (${cap.domain})\n` +
+      `Ringkasan: ${cap.summary}\n` +
+      `Spesifikasi Teknis: ${cap.details}\n` +
+      `(Catatan: Gunakan rincian teknis di atas HANYA untuk menjawab atau menjelaskan cara kerja fitur jika Tuan bertanya).\n`;
   }
 
   // [PHASE 8] Inject top 5 N.E.X.A Self-Model facts dari RAM Cache (0 ms)

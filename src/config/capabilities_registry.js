@@ -94,7 +94,7 @@ const CAPABILITIES_REGISTRY = [
     title: 'Telemetri & Kontrol Perangkat Keras Android (Bridge)',
     summary: 'Kontrol hardware Android: senter, lock screen, volume, baterai, GPS, foto, screenshot, TTS.',
     details: 'Komunikasi dua arah via WebSocket Bridge / Termux API ke smartphone Android Tuan Faqih. Mengontrol hardware: toggle senter, kunci layar, atur level volume audio, inspeksi baterai/sinyal, ambil lokasi GPS, capture foto kamera depan/belakang, screenshot layar, TTS suara, dump UI hierarchy, dan gestur klik/input aksesibilitas.',
-    keywords: ['senter', 'kunci hp', 'cek baterai', 'volume', 'foto kamera', 'screenshot hp', 'lokasi hp', 'telepon hp', 'cari hp'],
+    keywords: ['android', 'hp android', 'kontrol hp', 'senter', 'kunci hp', 'cek baterai', 'volume', 'foto kamera', 'screenshot hp', 'lokasi hp', 'telepon hp', 'cari hp'],
     status: 'ACTIVE',
     source_files: [
       'src/domain/Device_Control_Engine.js',

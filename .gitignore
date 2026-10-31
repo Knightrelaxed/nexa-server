@@ -42,6 +42,7 @@ scripts/analyze_chats.js
 data/transcripts_dump/
 data/*.json
 !data/capabilities_cards.json
+!data/capabilities_vectors.json
 data/facts_vectors.json
 docs/*identity_dump*.json
 *.tmp

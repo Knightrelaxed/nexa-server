@@ -105,3 +105,47 @@ test('Router_Prompts: Tier 0 Manifest and Anti-False-Denial Rule are injected in
   assert(selectivePrompt.includes('[KAPABILITAS RESMI N.E.X.A'), 'buildRouterSystemPrompt(["FINANCE"]) must include manifest');
   assert(selectivePrompt.includes('18. GROUNDED CAPABILITIES & ANTI-FALSE-DENIAL:'), 'Selective prompt must retain Rule 18');
 });
+
+test('Vector Cache & Gating (Phase 2): Tier 1 On-Demand Capability Retrieval', async () => {
+  const geminiVectorCache = require('../src/utils/gemini_vector_cache');
+  geminiVectorCache.loadVectorSnapshot();
+
+  const cachedCapabilities = geminiVectorCache.getCachedCapabilityVectors();
+  assert(Array.isArray(cachedCapabilities) && cachedCapabilities.length === 16, 'Must have 16 capabilities loaded in RAM');
+
+  // 1. Strict Gating Test: Routine operational chats MUST NOT trigger any capability card
+  const casualQueries = [
+    'catat pengeluaran kopi 15rb',
+    'beli nasi goreng 25rb pakai qris',
+    'jadwal kuliah besok jam 8 pagi',
+    'tandai tugas 1 selesai',
+    'nyalakan senter hp',
+    'halo nexa selamat pagi',
+    'makasih ya nex'
+  ];
+
+  for (const q of casualQueries) {
+    const res = geminiVectorCache.getRelevantCapability(q);
+    assert.equal(res, null, `Casual query "${q}" must return null to save prompt tokens`);
+  }
+
+  // 2. Curiosity & Architecture Gating Test: Architecture questions MUST trigger matching capability card
+  const resSync = geminiVectorCache.getRelevantCapability('gimana cara kerja auto sync email bank mandiri?');
+  assert(resSync !== null, 'Curiosity query about bank sync must return capability card');
+  assert.equal(resSync.card.id, 'finance_bank_sync', 'Must match finance_bank_sync');
+  assert.equal(resSync.card.domain, 'FINANCE');
+  assert(resSync.card.details.includes('Gmail API'), 'Details must contain real architecture details');
+
+  const resAndroid = geminiVectorCache.getRelevantCapability('kamu bisa apa aja di hp android?');
+  assert(resAndroid !== null, 'Query about android capability must return card');
+  assert.equal(resAndroid.card.id, 'device_android_control');
+  assert.equal(resAndroid.card.domain, 'DEVICE_CONTROL');
+
+  const resDiscipline = geminiVectorCache.getRelevantCapability('apa itu godmode dan bagaimana cara kerjanya?');
+  assert(resDiscipline !== null, 'Query about godmode must return discipline card');
+  assert.equal(resDiscipline.card.id, 'device_discipline');
+  assert.equal(resDiscipline.card.domain, 'DISCIPLINE');
+
+  // 3. Token budget guard on Tier 1 Card
+  assert(resSync.card.details.length <= 1000, 'Capability card details must not exceed 1000 characters (~250 tokens)');
+});
