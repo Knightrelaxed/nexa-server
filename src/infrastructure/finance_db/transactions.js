@@ -18,21 +18,53 @@ const { resolveAccountId, resolveCategoryId } = require('./reference_data');
 /**
  * Normalisasi metode pembayaran agar sesuai PostgreSQL CHECK constraint:
  * ('QRIS', 'Transfer bank', 'Kartu Kredit', 'Tunai', 'Direct Debit')
+ * Menangani typo (qis, debet, tranfer) serta singkatan/alias (dd, tf, cc, cash, kantong)
  */
 function _normalizePaymentMethod(paymentMethod) {
-  if (!paymentMethod) return null;
-  const pmLower = String(paymentMethod).toLowerCase().trim();
-  if (pmLower.includes('qris') || pmLower.includes('qr') || pmLower.includes('kris')) {
-    return 'QRIS';
-  } else if (pmLower.includes('direct') || pmLower.includes('debit') || pmLower.includes('autodebit') || pmLower.includes('auto debit') || pmLower.includes('kantong')) {
+  if (!paymentMethod || typeof paymentMethod !== 'string') return null;
+  const s = paymentMethod.toLowerCase().trim();
+  if (!s) return null;
+
+  // 1. Direct Debit (debit otomatis / account linking / kantong ekosistem)
+  if (
+    /\b(direct\s*debit|direct\s*debet|direk\s*debit|direk\s*debet|dd|autodebit|auto\s*debit|autodebet|auto\s*debet|debit|debet|debitt|direk|direct)\b/i.test(s) ||
+    /\b(kantong|kantong\s*jago|kantong\s*utama|saku|saku\s*jago)\b/i.test(s) ||
+    /\b(debit\s*otomatis|debet\s*otomatis|potong\s*saldo|potong\s*rekening|potong\s*jago)\b/i.test(s) ||
+    /\b(linked|link\s*account|akun\s*terhubung|rekening\s*terhubung)\b/i.test(s)
+  ) {
     return 'Direct Debit';
-  } else if (pmLower.includes('transfer') || pmLower.includes('tf') || pmLower.includes('bank') || pmLower.includes('atm')) {
-    return 'Transfer bank';
-  } else if (pmLower.includes('kredit') || pmLower.includes('credit') || pmLower.includes('cc')) {
+  }
+
+  // 2. QRIS (scan barcode / QR / qis typo / transcription variations)
+  if (
+    /\b(qris|qis|qiss|qriz|kris|kriss|chris|gris|crispy|grisy|quris|qri|qriss|cris|criss|qr|qrcode|barcode|scan|kode\s*qr)\b/i.test(s) ||
+    s === 'q-r-i-s' || s === 'q.r.i.s'
+  ) {
+    return 'QRIS';
+  }
+
+  // 3. Kartu Kredit (credit card / cc / cicilan)
+  if (
+    /\b(kartu\s*kredit|kredit|credit\s*card|credit|cc|k\.kredit|kartucredit|kartu\s*credit|gesek|swipe|cicil|cicilan|visa|mastercard)\b/i.test(s)
+  ) {
     return 'Kartu Kredit';
-  } else if (pmLower.includes('tunai') || pmLower.includes('cash') || pmLower.includes('kontan')) {
+  }
+
+  // 4. Transfer Bank (tf / trf / tranfer / remit / mbanking)
+  if (
+    /\b(transfer|transfer\s*bank|transfer\s*antar\s*bank|atm|bank\s*transfer|trasnfer|tranfer|trnsfer|tf|trf|kirim|remit|e-banking|internet\s*banking|mobile\s*banking|m-banking|mbanking|bi-fast|bifast)\b/i.test(s)
+  ) {
+    return 'Transfer bank';
+  }
+
+  // 5. Tunai (cash / kas / kontan / uang fisik)
+  if (
+    /\b(tunai|cash|kontan|kas|uang\s*tunai|uang\s*cash|uang\s*fisik|uang\s*kertas|bayar\s*tunai|bayar\s*cash|cash\s*money)\b/i.test(s) ||
+    s === 'uang'
+  ) {
     return 'Tunai';
   }
+
   return null;
 }
 

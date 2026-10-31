@@ -12,58 +12,58 @@
 // VALID_FINANCE_CATEGORIES statis telah dihapus. Daftar ditarik dinamis dari DB.
 
 // ============================================================
-// PAYMENT METHOD NORMALIZER — terpusat, fuzzy-aware
-// Hanya 4 metode valid: QRIS, Transfer bank, Kartu Kredit, Tunai
-// Mampu menangkap transcription error dari Whisper (e.g. "crispy" → QRIS)
+// PAYMENT METHOD NORMALIZER — terpusat, fuzzy & typo-aware
+// Mendukung 5 metode valid: QRIS, Direct Debit, Transfer bank, Kartu Kredit, Tunai
+// Mampu menangkap typo (e.g. "qis" → QRIS, "debet" → Direct Debit) serta shorthand (dd, tf, cc, cash)
 // ============================================================
 function _normalizePaymentMethod(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const s = raw.toLowerCase().trim();
+  if (!s) return null;
 
-  // Daftar kata kunci fuzzy untuk tiap metode (semakin banyak alias, semakin tahan transcription error)
-  const PAYMENT_ALIASES = [
-    {
-      canonical: 'QRIS',
-      aliases: [
-        'qris', 'qr', 'kris', 'chris', 'gris', 'crispy', 'grisy', 'quris',
-        'qri', 'qriss', 'kriss', 'cris', 'criss', 'kriss', 'scan', 'qrcode',
-        'barcode', 'kode qr', 'q.r.i.s', 'q-r-i-s',
-      ]
-    },
-    {
-      canonical: 'Transfer bank',
-      aliases: [
-        'transfer', 'transfer bank', 'transfer antar bank', 'atm', 'bank transfer',
-        'trasnfer', 'tranfer', 'trnsfer', 'tf', 'trf', 'trf bank', 'kirim', 'remit',
-        'transfer bri', 'transfer bca', 'transfer mandiri', 'saldo', 'e-banking',
-        'internet banking', 'mobile banking', 'm-banking', 'mbbanking',
-      ]
-    },
-    {
-      canonical: 'Kartu Kredit',
-      aliases: [
-        'kartu kredit', 'kredit', 'credit card', 'credit', 'cc', 'k.kredit',
-        'kartucredit', 'kartu credit', 'gesek', 'swipe', 'cicil', 'cicilan',
-        'kartu visa', 'kartu mastercard', 'visa', 'mastercard',
-      ]
-    },
-    {
-      canonical: 'Tunai',
-      aliases: [
-        'tunai', 'cash', 'kontan', 'uang tunai', 'uang cash', 'uang fisik',
-        'bayar tunai', 'bayar cash', 'uang', 'cash money',
-      ]
-    },
-  ];
-
-  for (const { canonical, aliases } of PAYMENT_ALIASES) {
-    if (aliases.some(a => s === a || s.includes(a))) {
-      return canonical;
-    }
+  // 1. Direct Debit (debit otomatis / account linking / kantong ekosistem)
+  // Short aliases & typos: dd, debit, debet, direk, direct, autodebit, kantong, saku, link
+  if (
+    /\b(direct\s*debit|direct\s*debet|direk\s*debit|direk\s*debet|dd|autodebit|auto\s*debit|autodebet|auto\s*debet|debit|debet|debitt|direk|direct)\b/i.test(s) ||
+    /\b(kantong|kantong\s*jago|kantong\s*utama|saku|saku\s*jago)\b/i.test(s) ||
+    /\b(debit\s*otomatis|debet\s*otomatis|potong\s*saldo|potong\s*rekening|potong\s*jago)\b/i.test(s) ||
+    /\b(linked|link\s*account|akun\s*terhubung|rekening\s*terhubung)\b/i.test(s)
+  ) {
+    return 'Direct Debit';
   }
 
-  // Jika tidak cocok dengan alias manapun → return null (jangan simpan nilai acak)
-  console.log(`[FINANCE] Payment method "${raw}" tidak dikenali → disimpan sebagai null (tidak akan mengotori DB).`);
+  // 2. QRIS (scan barcode / QR / qis typo / transcription variations)
+  if (
+    /\b(qris|qis|qiss|qriz|kris|kriss|chris|gris|crispy|grisy|quris|qri|qriss|cris|criss|qr|qrcode|barcode|scan|kode\s*qr)\b/i.test(s) ||
+    s === 'q-r-i-s' || s === 'q.r.i.s'
+  ) {
+    return 'QRIS';
+  }
+
+  // 3. Kartu Kredit (credit card / cc / cicilan)
+  if (
+    /\b(kartu\s*kredit|kredit|credit\s*card|credit|cc|k\.kredit|kartucredit|kartu\s*credit|gesek|swipe|cicil|cicilan|visa|mastercard)\b/i.test(s)
+  ) {
+    return 'Kartu Kredit';
+  }
+
+  // 4. Transfer Bank (tf / trf / tranfer / remit / mbanking)
+  if (
+    /\b(transfer|transfer\s*bank|transfer\s*antar\s*bank|atm|bank\s*transfer|trasnfer|tranfer|trnsfer|tf|trf|kirim|remit|e-banking|internet\s*banking|mobile\s*banking|m-banking|mbanking|bi-fast|bifast)\b/i.test(s)
+  ) {
+    return 'Transfer bank';
+  }
+
+  // 5. Tunai (cash / kas / kontan / uang fisik)
+  if (
+    /\b(tunai|cash|kontan|kas|uang\s*tunai|uang\s*cash|uang\s*fisik|uang\s*kertas|bayar\s*tunai|bayar\s*cash|cash\s*money)\b/i.test(s) ||
+    s === 'uang'
+  ) {
+    return 'Tunai';
+  }
+
+  // Jika tidak cocok dengan alias manapun → return null
+  console.log(`[FINANCE] Payment method "${raw}" tidak dikenali → disimpan sebagai null.`);
   return null;
 }
 

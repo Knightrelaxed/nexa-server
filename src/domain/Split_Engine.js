@@ -430,15 +430,8 @@ function formatSplitMessage(items, total, storeName = '', successCount = null) {
 async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx, storeName = '', existingTxId = null, respondToTelegramFn = null) {
   // Normalize payment method to prevent check constraint violations
   if (baseTx.paymentMethod) {
-    const txt = String(baseTx.paymentMethod).toLowerCase();
-    let normalizedPM = 'QRIS';
-    if (txt.includes('qris')) normalizedPM = 'QRIS';
-    else if (txt.includes('direct') || txt.includes('debit') || txt.includes('kantong') || txt.includes('autodebit')) normalizedPM = 'Direct Debit';
-    else if (txt.includes('transfer') || txt.includes('tf')) normalizedPM = 'Transfer bank';
-    else if (txt.includes('tunai') || txt.includes('cash')) normalizedPM = 'Tunai';
-    else if (txt.includes('kredit') || txt.includes('cc')) normalizedPM = 'Kartu Kredit';
-    else normalizedPM = null;
-    baseTx.paymentMethod = normalizedPM;
+    const { _normalizePaymentMethod } = require('../infrastructure/finance_db/transactions');
+    baseTx.paymentMethod = _normalizePaymentMethod(baseTx.paymentMethod);
   }
 
   const sumItems = splitItems.reduce((s, i) => s + (Number(i.nominal) || 0), 0);
@@ -549,13 +542,8 @@ async function resolveRemainderReply(chatId, userText) {
   cancelPendingRemainder(cid);
 
   if (pending.waitingFor === 'PAYMENT_METHOD') {
-    const txt = userText.trim().toLowerCase();
-    let normalizedPM = 'QRIS';
-    if (txt.includes('qris')) normalizedPM = 'QRIS';
-    else if (txt.includes('transfer') || txt.includes('tf')) normalizedPM = 'Transfer bank';
-    else if (txt.includes('tunai') || txt.includes('cash')) normalizedPM = 'Tunai';
-    else if (txt.includes('kredit') || txt.includes('cc')) normalizedPM = 'Kartu Kredit';
-    else normalizedPM = null;
+    const { _normalizePaymentMethod } = require('../infrastructure/finance_db/transactions');
+    const normalizedPM = _normalizePaymentMethod(userText);
 
     pending.baseTx.paymentMethod = normalizedPM;
     const res = await executeSplit(pending.items, pending.baseTx, pending.existingTxId);

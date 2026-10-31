@@ -350,7 +350,7 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
         if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
       }, 5 * 60 * 1000);
       pending.timeoutId = newTimeoutId;
-      return `⚠️ <b>Metode pembayaran "${newPaymentMethod}" tidak dikenali.</b>\n\nMetode yang tersedia hanya:\n• <b>QRIS</b> (scan QR)\n• <b>Transfer bank</b>\n• <b>Kartu Kredit</b>\n• <b>Tunai</b>\n\nSilakan balas dengan salah satu metode di atas, atau abaikan agar disimpan dalam 5 menit.`;
+      return `⚠️ <b>Metode pembayaran "${newPaymentMethod}" tidak dikenali.</b>\n\nMetode yang tersedia:\n• <b>QRIS</b> (scan QR / qis / barcode)\n• <b>Direct Debit</b> (dd / debit / kantong / autodebit)\n• <b>Transfer bank</b> (tf / trf / atm)\n• <b>Kartu Kredit</b> (cc)\n• <b>Tunai</b> (cash / kontan)\n\nSilakan balas dengan salah satu metode di atas, atau abaikan agar disimpan dalam 5 menit.`;
     }
   }
 

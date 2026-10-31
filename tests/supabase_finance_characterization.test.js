@@ -153,16 +153,45 @@ test('finance_db: graceful handling when unconfigured or query on null client', 
   }
 });
 
-test('Payment Method Normalization (including Direct Debit)', () => {
+test('Payment Method Normalization (including Direct Debit, typo tolerance, and shorthands)', () => {
   const { _normalizePaymentMethod } = require('../src/infrastructure/finance_db/transactions');
+  // Direct Debit & shorthands / typos
   assert.strictEqual(_normalizePaymentMethod('Direct Debit'), 'Direct Debit');
   assert.strictEqual(_normalizePaymentMethod('direct debit gojek'), 'Direct Debit');
   assert.strictEqual(_normalizePaymentMethod('Kantong Jago'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('kantong'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('saku jago'), 'Direct Debit');
   assert.strictEqual(_normalizePaymentMethod('AutoDebit BRI'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('debit'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('debet'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('direk debit'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('dd'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('pakai dd'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('potong saldo jago'), 'Direct Debit');
+
+  // QRIS & typo tolerance
   assert.strictEqual(_normalizePaymentMethod('QRIS'), 'QRIS');
+  assert.strictEqual(_normalizePaymentMethod('qis'), 'QRIS');
+  assert.strictEqual(_normalizePaymentMethod('kris'), 'QRIS');
+  assert.strictEqual(_normalizePaymentMethod('scan barcode'), 'QRIS');
+  assert.strictEqual(_normalizePaymentMethod('kode qr'), 'QRIS');
+
+  // Transfer & shorthands / typos
   assert.strictEqual(_normalizePaymentMethod('transfer bca'), 'Transfer bank');
+  assert.strictEqual(_normalizePaymentMethod('tf bank'), 'Transfer bank');
+  assert.strictEqual(_normalizePaymentMethod('trf'), 'Transfer bank');
+  assert.strictEqual(_normalizePaymentMethod('tranfer'), 'Transfer bank');
+  assert.strictEqual(_normalizePaymentMethod('mbanking mandiri'), 'Transfer bank');
+
+  // Kartu Kredit & Tunai
   assert.strictEqual(_normalizePaymentMethod('kartu kredit mandiri'), 'Kartu Kredit');
+  assert.strictEqual(_normalizePaymentMethod('cc'), 'Kartu Kredit');
   assert.strictEqual(_normalizePaymentMethod('tunai cash'), 'Tunai');
+  assert.strictEqual(_normalizePaymentMethod('kontan'), 'Tunai');
+  assert.strictEqual(_normalizePaymentMethod('kas'), 'Tunai');
+
+  // Null & empty
   assert.strictEqual(_normalizePaymentMethod(''), null);
   assert.strictEqual(_normalizePaymentMethod(null), null);
+  assert.strictEqual(_normalizePaymentMethod('random garbage text'), null);
 });
