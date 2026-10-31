@@ -1,28 +1,48 @@
-# N.E.X.A: Neural Executive with Xenial Agent
-> Chief of Staff AI: Immortality Protocol v3.4.3
+# 🤖 N.E.X.A — Neural Executive with Xenial Agent
 
-**N.E.X.A (Neural Executive with Xenial Agent)** adalah sistem kecerdasan buatan otonom bergaya "J.A.R.V.I.S" yang dirancang khusus untuk bertindak sebagai *Chief of Staff* digital personal bagi Tuan Faqih. Berbeda dengan chatbot konvensional yang bersifat pasif, N.E.X.A beroperasi secara proaktif (*set-and-forget*), mengorkestrasi tata kelola keuangan, agenda akademik dan diplomasi, integrasi ekosistem Google Workspace, manajemen memori jangka panjang, hingga penegakan kedisiplinan digital secara fisik.
-
----
-
-## 🏗️ Arsitektur Sistem Utama
-
-Arsitektur N.E.X.A terbagi menjadi dua entitas utama yang saling terhubung secara *real-time*:
-
-1. **N.E.X.A Core Server (Backend & Cognitive Brain)**
-   - **Direktori:** Root repository ini (`/src`)
-   - **Runtime:** Node.js 20 LTS, Express.js, WebSocket Engine, PM2 Process Manager
-   - **Infrastruktur Produksi:** Ubuntu Linux VPS (Azure Jakarta & Oracle Cloud OCI)
-   - **Peran:** Otak pusat otonom, pemroses bahasa natural, eksekutor domain, orkestrator Google Master OAuth 2.0, dan jembatan API multi-provider (Telegram, Supabase PostgreSQL, Gemini, Groq, Cerebras, Notion).
-
-2. **Nexa Finance Web (Frontend GUI Dashboard)**
-   - **Direktori:** `/nexa-finance-web`
-   - **Framework:** Next.js (App Router), React, Tailwind CSS
-   - **Peran:** Antarmuka visual analitik keuangan untuk memantau arus kas, distribusi pos pengeluaran, dan audit histori transaksi secara *real-time*.
+> **⚠️ Catatan Penting / Disclaimer:**  
+> **Repository ini adalah PROYEK PRIBADI (*Personal Project*)** yang dikembangkan khusus untuk kebutuhan produktivitas, tata kelola keuangan, dan automasi harian personal. Bukan produk komersial atau sistem publik.
 
 ---
 
-## INI ADALAH PROJECT PRIBADI
+## 📌 Sekilas Tentang N.E.X.A
+
+**N.E.X.A** adalah sistem asisten AI otonom (*Personal Chief of Staff*) yang dirancang untuk membantu mengelola kehidupan digital dan finansial secara proaktif melalui integrasi chat (Telegram), aplikasi web, serta perangkat seluler.
+
+Berbeda dari chatbot biasa yang pasif, N.E.X.A beroperasi di latar belakang (*background services & crons*) untuk memantau agenda harian, mencatat keuangan secara otomatis, dan memberikan rekomendasi cerdas.
 
 ---
-*Dikelola dengan dedikasi penuh oleh N.E.X.A untuk Tuan Faqih.*
+
+## 🚀 Fitur & Kemampuan Utama
+
+1. **💰 Tata Kelola Keuangan (Personal Finance Engine)**
+   - **Sinkronisasi Bank Otomatis:** Membaca mutasi resmi multi-bank (Bank Mandiri & Bank Jago) via email notifikasi.
+   - **Pencatatan Cepat & Alami:** Mendukung input percakapan via Telegram dengan ketahanan *typo* dan singkatan (QRIS, Direct Debit, Transfer, Tunai, Kartu Kredit).
+   - **Split Transaction:** Pemisahan satu struk belanja ke berbagai kategori anggaran.
+   - **Audit & Analitik:** Pemantauan arus kas, sisa anggaran, dan tren pengeluaran real-time.
+
+2. **🗓️ Asisten Produktivitas & Agenda**
+   - **Briefing Harian:** Notifikasi rangkuman agenda pagi dan pengingat jadwal Google Calendar.
+   - **Memori Kontekstual Jangka Panjang:** Menyimpan preferensi dan catatan penting menggunakan Supabase PostgreSQL & Vector Embeddings.
+
+3. **📱 Multi-Device Bridge**
+   - Jembatan WebSocket real-time yang menghubungkan server dengan aplikasi pendamping di Android dan desktop.
+
+---
+
+## 🏗️ Struktur & Komponen Repository
+
+Proyek ini terdiri dari dua komponen utama:
+
+- **Backend / Core Engine (`/src`):**
+  - Berjalan di Node.js dengan arsitektur modular (*domain-driven*).
+  - Mengorkestrasikan LLM routing (Gemini, Groq), database Supabase, integrasi Telegram bot, dan cron job otonom.
+- **Frontend Dashboard (`/nexa-finance-web`):**
+  - Web dashboard berbasis Next.js (App Router), React, dan Tailwind CSS.
+  - Berfungsi sebagai GUI untuk visualisasi portofolio akun, riwayat transaksi, dan manajemen anggaran.
+
+---
+
+## 🔒 Lisensi & Privasi
+
+Proyek ini dikembangkan secara tertutup dan mandiri untuk penggunaan pribadi (*Personal Use Only*). Seluruh hak cipta dan konfigurasi data bersifat privat.
