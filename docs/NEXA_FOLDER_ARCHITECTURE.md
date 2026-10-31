@@ -71,10 +71,6 @@ nexa-server/
 │   ├── NEXA_SECURITY_ARCHITECTURE_AND_HARDENING.md # Comprehensive security hardening guide
 │   ├── NEXA_VERSION_EVOLUTION_ROADMAP.md # Version evolution & release milestone roadmap (v1.0 - v3.4.4)
 │   ├── NEXA_Whitepaper.md                # General N.E.X.A architecture whitepaper (v3.4.4 with BAB 24 & BAB 25)
-│   ├── PHASE6_DUAL_MEMORY_SYSTEM.md      # Dual-memory (Episodic + Semantic) architectural design
-│   ├── PHASE_4_ADVANCED_WORKFLOW.md      # Autonomous background workflows & task chains
-│   ├── PHASE_5_NEXA_V3_WEB_UI.md         # Web portal frontend specifications
-│   ├── PHASE_6_COGNITIVE_IDENTITY_ENGINE.md # Cognitive user modeling & identity inference engine
 │   └── USER_EXPERIENCE_GUIDE_NEXA_FINANCE.md # End-to-end UX guide: Web, PWA, chat, & multi-bank automation
 │
 ├── logs/                                 # Runtime application logs (PM2 / Express)
