@@ -1803,6 +1803,58 @@ Modul `env.js` mengelola lebih dari 30 *credential* rahasia untuk mengeksekusi i
 - **Unified Master Google OAuth 2.0**: Mengonsolidasikan seluruh 16 izin resmi Google API (Calendar, Tasks, Gmail, Drive Vault, Docs 2nd Brain, Sheets, Meet) di bawah satu klien Master OAuth 2.0 terpadu (`Google_Master_Client.js`), meniadakan sepenuhnya ketergantungan pada Service Account lama.
 - **Node Fisik & Integrasi Eksternal**: Kunci akses untuk Supabase (Memori Permanen), Notion (Task Sync), Serper.dev (Pencarian Web), Nexa Bridge Secret (`NEXA_DEVICE_SECRET=nexa_device_sec_998234_a335g` untuk Eksekutor God Mode Android & N.E.X.A Windows Bridge Desktop Companion), serta CLI Secret (`NEXA_CLI_SECRET=cLiNeXa17` untuk Remote Terminal Console).
 
+### 8.4 Manajemen Proses 24/7 & Ketahanan Sistem (`ecosystem.config.js` + systemd)
+
+Beroperasi sebagai peladen mandiri (*stateful production server*) di Azure VPS Jakarta, N.E.X.A mengandalkan kombinasi **PM2 Enterprise Process Manager** dan **systemd daemon** untuk menjamin *zero downtime* dan pemulihan otomatis (*self-healing*):
+
+1. **Konfigurasi Ekosistem PM2 (`ecosystem.config.js`)**:
+   - `instances: 1` dengan mode `fork`, memberikan isolasi proses Node.js yang stabil pada VPS spesifikasi 2 vCPU dan 1 GB RAM.
+   - `node_args: '--max-old-space-size=512'`: Membatasi V8 heap memory Node.js pada 512 MB agar sisa RAM peladen aman untuk operasi sistem operasi dan daemon pendukung.
+   - `max_memory_restart: '650M'`: Secara otomatis memicu *graceful reload* jika konsumsi RAM melewati ambang batas 650 MB, mencegah kegagalan *Out of Memory* (OOM).
+   - `autorestart: true`: Jika proses Node.js mengalami crash tak terduga, PM2 membangkitkannya seketika dalam hitungan milidetik.
+   - `merge_logs: true` dengan stempel waktu terformat `YYYY-MM-DD HH:mm:ss` pada direktori `./logs/out.log` dan `./logs/err.log`.
+2. **Keterikatan systemd OS Boot (`pm2 startup`)**:
+   - Daemon PM2 dikaitkan langsung ke init system Ubuntu Linux via `systemd -u nexa`. Ketika VM Azure mengalami pemeliharaan fisik atau reboot, PM2 dan N.E.X.A otomatis aktif kembali tanpa intervensi manual.
+3. **Telemetri Cloud Real-Time (PM2 Plus Dashboard)**:
+   - Terkoneksi secara terenkripsi ke konsol pemantauan web `app.pm2.io`, mengekspos grafik beban CPU, grafik konsumsi memori, riwayat restart, dan event loop latency secara langsung.
+
+### 8.5 Prosedur Operasional & Deployment Mandiri (One-Click CI/CD: `deploy.sh`)
+
+Untuk menjaga kemurnian kode produksi dan mempermudah pembaruan tanpa risiko regresi, N.E.X.A memisahkan dua prosedur operasional harian:
+
+#### A. Skenario Restart Cepat (Tanpa Pembaruan Kode)
+Digunakan ketika Tuan Faqih hanya ingin menyegarkan proses peladen (misalnya setelah membersihkan RAM atau menyegarkan socket jaringan) tanpa menarik kode baru dari repository:
+- **Dari Terminal Laptop / Komputer Lokal**:
+  ```bash
+  ssh nexa@48.193.41.76 "pm2 reload nexa-server"
+  ```
+- **Dari Dalam Sesi SSH VPS**:
+  ```bash
+  pm2 reload nexa-server
+  ```
+  *Catatan*: Perintah `pm2 reload` menggunakan mekanisme *cluster zero-downtime* di mana request yang sedang berlangsung diselesaikan terlebih dahulu sebelum proses lama ditukar dengan proses baru.
+
+#### B. Skenario Deployment Produksi Penuh (One-Command CI/CD)
+Ketika fitur baru telah di-commit ke GitHub branch `main`, eksekusi deployment diotomatisasi secara end-to-end melalui script terpadu `scripts/deploy.sh` (tersedia shortcut `~/deploy.sh` atau `npm run deploy` di root peladen).
+- **Dari Terminal Laptop / Komputer Lokal**:
+  ```bash
+  ssh nexa@48.193.41.76 "~/deploy.sh"
+  ```
+- **Dari Dalam Sesi SSH VPS**:
+  ```bash
+  ~/deploy.sh
+  # atau
+  cd ~/nexa-server && npm run deploy
+  ```
+
+#### Rantai Eksekusi Pipeline Otomatis `deploy.sh`:
+Script deployment menjalankan protokol perlindungan 5 tahap secara berurutan dengan flag `set -e` (eksekusi langsung dibatalkan jika salah satu tahap gagal):
+1. **Verifikasi Lingkungan Kerja**: Memastikan eksekusi berada tepat di direktori `/home/nexa/nexa-server`.
+2. **Pembersihan Artefak Build Lokal**: Menjalankan `git checkout data/capabilities_cards.json data/capabilities_manifest.txt` untuk membuang modifikasi timestamp lokal hasil kompilasi pengujian sebelumnya, memastikan proses `git pull` bebas dari konflik git (*merge conflict*).
+3. **Penarikan Kode Terbaru**: Menjalankan `git pull origin main` untuk mengunduh patch dan fitur mutakhir dari GitHub.
+4. **Gerbang Verifikasi Regresi Otomatis (Pretest & Full Test Suite)**: Menjalankan `npm test` yang secara otomatis mengeksekusi kompilator kapabilitas (`scripts/build_capabilities.js`) dan 428 unit test komprehensif. Jika ada satu saja test yang gagal, script seketika berhenti (*abort*), mencegah kode rusak dimuat ke memori produksi.
+5. **Zero-Downtime Reload & Verifikasi Status**: Setelah seluruh 428 pengujian lulus 100%, script mengeksekusi `pm2 reload nexa-server` dan mencetak tabel status proses PM2 terbaru ke terminal.
+
 ## BAB 9: PETA KODE (*CODEBASE MAPPING*) & PANDUAN PENGEMBANGAN
 
 Di tingkat fondasi *software engineering*, arsitektur N.E.X.A mematuhi prinsip *Domain-Driven Design* (DDD) secara absolut. Tidak ada *Spaghetti Code*; setiap batas domain dipisahkan dengan sangat ketat agar asisten ini bisa terus berevolusi di masa depan tanpa merusak fitur lama.
