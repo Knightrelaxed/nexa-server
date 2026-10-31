@@ -35,10 +35,10 @@ let _cachedCapabilityVectors = []; // Array of capability objects with vector: f
 let _isSnapshotLoaded = false;
 
 // Kata kunci rasa ingin tahu arsitektur / mekanisme fitur
-const ARCHITECTURE_CURIOSITY_REGEX = /\b(gimana|bagaimana|apa itu|cara kerja|sistem kerja|arsitektur|kemampuanmu|bisa apa|fitur apa|mekanisme|detail teknis|penjelasan teknis|spesifikasi)\b/i;
+const ARCHITECTURE_CURIOSITY_REGEX = /\b(gimana|bagaimana|apa itu|itu apa|apa maksud|cara kerja|sistem kerja|arsitektur|kemampuan(mu)?|bisa (apa|ngapain|lakukan)|fitur (apa|kamu|mu)?|mekanisme|detail teknis|penjelasan teknis|spesifikasi|ngapain aja)\b/i;
 
 // Pola pertanyaan kapabilitas spesifik ("bisa ga...", "apakah bisa...")
-const CAPABILITY_QUERY_REGEX = /\b(bisa (nggak|ga|ngga|tidak|kah)|apakah (bisa|kamu bisa)|mampu (nggak|ga|kah))\b/i;
+const CAPABILITY_QUERY_REGEX = /\b(bisa (nggak|ga|ngga|tidak|kah)|apakah (bisa|kamu bisa)|mampu (nggak|ga|kah)|kamu bisa (apa|ngapain)?)\b/i;
 
 /**
  * Cosine similarity antara dua vektor float.
