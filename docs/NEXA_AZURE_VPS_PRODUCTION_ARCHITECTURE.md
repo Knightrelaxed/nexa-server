@@ -111,10 +111,10 @@ Pada Azure **Network Security Group (`nexa-server-nsg`)**, aturan Inbound dikonf
 
 ## 5. Instalasi Runtime, Git, & Injeksi Konfigurasi
 
-### A. Instalasi Node.js 20 LTS & PM2
+### A. Instalasi Node.js 22 LTS (Hardened) & PM2
 ```bash
-# Update repository package & install Node.js 20 LTS
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# Update repository package & install Node.js 22 LTS (v22.23.4+ patched against CVE-2026-111497)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs git
 
 # Instalasi Process Manager PM2 secara global
