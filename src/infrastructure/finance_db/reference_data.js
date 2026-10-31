@@ -77,7 +77,7 @@ async function _loadAccounts() {
 
   const { data, error } = await supabaseFinance
     .from('accounts')
-    .select('id, name, type, color')
+    .select('id, name, type, color, initial_balance')
     .eq('is_archived', false)
     .order('created_at', { ascending: true });
 
