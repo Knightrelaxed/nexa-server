@@ -121,6 +121,15 @@ test('Telegram Module: command_handler intercepts direct slash commands', async 
   assert.strictEqual(searchHandled, true, '/search command must be intercepted');
   assert.ok(replyText.includes('Format'), 'Empty /search should show usage format');
 
+  // Capabilities command test
+  const capHandled = await commandHandler.handleDirectCommand('/capabilities', {
+    respondToTelegram: mockRespond,
+    deliverWebhookReply: mockDeliver
+  });
+  assert.strictEqual(capHandled, true, '/capabilities command must be intercepted');
+  assert.ok(replyText.includes('KAPABILITAS RESMI N.E.X.A'), 'Reply must show capabilities header');
+  assert.ok(replyText.includes('FINANCE') && replyText.includes('DEVICE_CONTROL'), 'Reply must contain core domains');
+
   // Non-command
   const nonCommand = await commandHandler.handleDirectCommand('Halo apa kabar?', {
     respondToTelegram: mockRespond,

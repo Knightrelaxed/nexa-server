@@ -149,3 +149,47 @@ test('Vector Cache & Gating (Phase 2): Tier 1 On-Demand Capability Retrieval', a
   // 3. Token budget guard on Tier 1 Card
   assert(resSync.card.details.length <= 1000, 'Capability card details must not exceed 1000 characters (~250 tokens)');
 });
+
+test('Phase 3 Anti-Drift: All active router domains must have representation in CAPABILITIES_REGISTRY', () => {
+  const { DOMAIN_SCHEMAS } = require('../src/core/router/Router_Prompts');
+  const routerDomains = Object.keys(DOMAIN_SCHEMAS);
+  const registryDomains = new Set(CAPABILITIES_REGISTRY.map(c => c.domain));
+
+  const domainMapping = {
+    DEVICE_CONTROL: 'DEVICE_CONTROL',
+    FINANCE: 'FINANCE',
+    CALENDAR: 'CALENDAR',
+    TASK: 'TASK',
+    DISCIPLINE: 'DISCIPLINE',
+    USER_PROFILE: 'IDENTITY',
+    CORE_IDENTITY: 'IDENTITY',
+    WEB_SEARCH: 'WEB_SEARCH',
+    LOCATION: 'LOCATION',
+    DATABASE: 'MEMORY',
+    '2ND_BRAIN': 'MEMORY',
+    EMAIL: 'FINANCE',
+    DIAGNOSE_SYSTEM: 'SYSTEM'
+  };
+
+  for (const d of routerDomains) {
+    const targetDomain = domainMapping[d] || d;
+    assert(
+      registryDomains.has(targetDomain) || registryDomains.has(d),
+      `Domain schema "${d}" has no representation in CAPABILITIES_REGISTRY! (Anti-drift guard failed)`
+    );
+  }
+});
+
+test('Phase 3 Anti-Drift: Direct Slash Command /capabilities must return formatted directory', async () => {
+  const { handleDirectCommand } = require('../src/interfaces/telegram/command_handler');
+  let replyText = '';
+  const handled = await handleDirectCommand('/capabilities', {
+    respondToTelegram: async (txt) => { replyText = txt; },
+    deliverWebhookReply: () => {}
+  });
+
+  assert.equal(handled, true, '/capabilities must be handled');
+  assert(replyText.includes('KAPABILITAS RESMI N.E.X.A'), 'Must have official header');
+  assert(replyText.includes('FINANCE') && replyText.includes('TASK'), 'Must list domains');
+  assert(replyText.includes('cara kerja'), 'Must offer proactive technical curiosity guidance');
+});

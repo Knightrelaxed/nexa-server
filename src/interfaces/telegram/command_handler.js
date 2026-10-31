@@ -167,6 +167,54 @@ async function handleDirectCommand(textInput, { respondToTelegram, deliverWebhoo
     return true;
   }
 
+  // 7. Capabilities Directory (/capabilities, /fitur, /bisaapa, /kemampuan)
+  if (/^(\/capabilities|\/fitur|\/bisaapa|\/kemampuan)\b/i.test(trimmed)) {
+    console.log('[TELEGRAM-CMD] Menerima perintah /capabilities:', trimmed);
+    const { CAPABILITIES_REGISTRY } = require('../../config/capabilities_registry');
+    const { VERSION } = require('../../config/version');
+
+    const lines = [
+      `🤖 <b>KAPABILITAS RESMI N.E.X.A v${VERSION}</b>`,
+      `<i>(Chief of Staff Intelligence Core)</i>`,
+      ''
+    ];
+
+    const domains = {};
+    for (const cap of CAPABILITIES_REGISTRY) {
+      if (!domains[cap.domain]) domains[cap.domain] = [];
+      domains[cap.domain].push(cap);
+    }
+
+    const domainIcons = {
+      FINANCE: '💰',
+      TASK: '✅',
+      CALENDAR: '📅',
+      DEVICE_CONTROL: '📱',
+      DISCIPLINE: '🛡️',
+      IDENTITY: '🧠',
+      MEMORY: '💾',
+      WEB_SEARCH: '🌐',
+      LOCATION: '📍',
+      INTERFACE: '💬',
+      SYSTEM: '⚙️'
+    };
+
+    for (const [dom, list] of Object.entries(domains)) {
+      const icon = domainIcons[dom] || '•';
+      lines.push(`<b>${icon} ${dom}:</b>`);
+      for (const item of list) {
+        lines.push(`  • <b>${escapeHtml(item.title)}</b>: ${escapeHtml(item.summary)}`);
+      }
+      lines.push('');
+    }
+
+    lines.push(`<i>💡 Tuan dapat menanyakan langsung teknis cara kerja fitur apa pun, misal: "Gimana cara kerja auto sync email?"</i>`);
+
+    await respondToTelegram(lines.join('\n'), false);
+    deliverWebhookReply();
+    return true;
+  }
+
   return false;
 }
 
