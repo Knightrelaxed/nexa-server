@@ -566,9 +566,10 @@ export function DashboardView() {
                             'Transfer bank': 'bg-blue-100 text-blue-700',
                             'Kartu Kredit': 'bg-orange-100 text-orange-700',
                             'Tunai': 'bg-green-100 text-green-700',
+                            'Direct Debit': 'bg-teal-100 text-teal-700',
                           }
                           const shortLabel: Record<string, string> = {
-                            'QRIS': 'QRIS', 'Transfer bank': 'TF', 'Kartu Kredit': 'KK', 'Tunai': 'Tunai'
+                            'QRIS': 'QRIS', 'Transfer bank': 'TF', 'Kartu Kredit': 'KK', 'Tunai': 'Tunai', 'Direct Debit': 'DD'
                           }
                           return (
                             <span className={`inline-flex items-center px-1 py-0.5 rounded text-[9px] font-bold ${styles[pm] ?? ''}`}>

@@ -433,6 +433,7 @@ async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx
     const txt = String(baseTx.paymentMethod).toLowerCase();
     let normalizedPM = 'QRIS';
     if (txt.includes('qris')) normalizedPM = 'QRIS';
+    else if (txt.includes('direct') || txt.includes('debit') || txt.includes('kantong') || txt.includes('autodebit')) normalizedPM = 'Direct Debit';
     else if (txt.includes('transfer') || txt.includes('tf')) normalizedPM = 'Transfer bank';
     else if (txt.includes('tunai') || txt.includes('cash')) normalizedPM = 'Tunai';
     else if (txt.includes('kredit') || txt.includes('cc')) normalizedPM = 'Kartu Kredit';

@@ -29,7 +29,7 @@ interface AddTransactionModalProps {
 
 type TxType = "expense" | "income" | "transfer"
 
-const PAYMENT_METHODS = ["QRIS", "Transfer bank", "Kartu Kredit", "Tunai"]
+const PAYMENT_METHODS = ["QRIS", "Transfer bank", "Kartu Kredit", "Tunai", "Direct Debit"]
 const PAYMENT_METHODS_WITH_EMPTY = ["", ...PAYMENT_METHODS]
 
 export function AddTransactionModal({ open, onClose, onSuccess, initialData }: AddTransactionModalProps) {

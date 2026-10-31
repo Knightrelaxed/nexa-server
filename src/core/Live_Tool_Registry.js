@@ -170,7 +170,7 @@ const LIVE_TOOL_DECLARATIONS = [
         amount:        { type: 'NUMBER', description: 'Jumlah nominal uang dalam Rupiah. Contoh: 25000 untuk 25 ribu.' },
         category:      { type: 'STRING', description: 'Kategori pengeluaran. Contoh: "Makan Berat / Makan Luar", "Jajan / Ngopi / Kafe", "Transportasi", "Bahan Makanan / Groceries", "Tagihan", "Kesehatan", "Hiburan", "Pendidikan", "Jasa Laundry", "Lainnya".' },
         description:   { type: 'STRING', description: 'Keterangan atau nama barang/jasa. Contoh: "nasi ayam bakar", "bensin pertalite", "kopi americano".' },
-        paymentMethod: { type: 'STRING', description: 'Metode pembayaran yang disebutkan Tuan. Contoh: "Bank Jago", "Bank Mandiri", "BCA", "Cash", "QRIS", "GoPay", "ShopeePay", "Transfer".' },
+        paymentMethod: { type: 'STRING', description: 'Metode pembayaran yang disebutkan Tuan. Contoh: "Bank Jago", "Bank Mandiri", "BCA", "Cash", "QRIS", "GoPay", "ShopeePay", "Transfer", "Direct Debit".' },
         date:          { type: 'STRING', description: 'Tanggal transaksi jika disebutkan secara khusus. Contoh: "today", "yesterday", "kemarin", "2026-08-19".' }
       },
       required: ['amount', 'description']

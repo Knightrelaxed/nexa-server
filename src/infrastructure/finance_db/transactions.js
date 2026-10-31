@@ -16,6 +16,27 @@ const { supabaseFinance } = require('./client');
 const { resolveAccountId, resolveCategoryId } = require('./reference_data');
 
 /**
+ * Normalisasi metode pembayaran agar sesuai PostgreSQL CHECK constraint:
+ * ('QRIS', 'Transfer bank', 'Kartu Kredit', 'Tunai', 'Direct Debit')
+ */
+function _normalizePaymentMethod(paymentMethod) {
+  if (!paymentMethod) return null;
+  const pmLower = String(paymentMethod).toLowerCase().trim();
+  if (pmLower.includes('qris') || pmLower.includes('qr') || pmLower.includes('kris')) {
+    return 'QRIS';
+  } else if (pmLower.includes('direct') || pmLower.includes('debit') || pmLower.includes('autodebit') || pmLower.includes('auto debit') || pmLower.includes('kantong')) {
+    return 'Direct Debit';
+  } else if (pmLower.includes('transfer') || pmLower.includes('tf') || pmLower.includes('bank') || pmLower.includes('atm')) {
+    return 'Transfer bank';
+  } else if (pmLower.includes('kredit') || pmLower.includes('credit') || pmLower.includes('cc')) {
+    return 'Kartu Kredit';
+  } else if (pmLower.includes('tunai') || pmLower.includes('cash') || pmLower.includes('kontan')) {
+    return 'Tunai';
+  }
+  return null;
+}
+
+/**
  * Tulis satu transaksi ke tabel `transactions` di Supabase Nexa Finance.
  *
  * @param {object} params
@@ -59,20 +80,8 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
   const dbType = txType.toUpperCase() === 'INCOME' ? 'income' : 'expense';
 
   // Normalize payment_method to strictly match PostgreSQL check constraint:
-  // ('QRIS', 'Transfer bank', 'Kartu Kredit', 'Tunai')
-  let cleanPaymentMethod = null;
-  if (paymentMethod) {
-    const pmLower = String(paymentMethod).toLowerCase().trim();
-    if (pmLower.includes('qris') || pmLower.includes('qr') || pmLower.includes('kris')) {
-      cleanPaymentMethod = 'QRIS';
-    } else if (pmLower.includes('transfer') || pmLower.includes('tf') || pmLower.includes('bank') || pmLower.includes('atm')) {
-      cleanPaymentMethod = 'Transfer bank';
-    } else if (pmLower.includes('kredit') || pmLower.includes('credit') || pmLower.includes('cc')) {
-      cleanPaymentMethod = 'Kartu Kredit';
-    } else if (pmLower.includes('tunai') || pmLower.includes('cash') || pmLower.includes('kontan')) {
-      cleanPaymentMethod = 'Tunai';
-    }
-  }
+  // ('QRIS', 'Transfer bank', 'Kartu Kredit', 'Tunai', 'Direct Debit')
+  const cleanPaymentMethod = _normalizePaymentMethod(paymentMethod);
 
   // Build row data
   const rowData = {
@@ -203,7 +212,9 @@ async function updateTransaction(uuid, patchData) {
   if (patchData.txType !== undefined) payload.type = patchData.txType.toUpperCase() === 'INCOME' ? 'income' : 'expense';
   if (patchData.dateISO !== undefined) payload.transaction_date = patchData.dateISO;
   if (patchData.timeHHMM !== undefined) payload.transaction_time = patchData.timeHHMM ? String(patchData.timeHHMM).replace(/\./g, ':') : null;
-  if (patchData.paymentMethod !== undefined) payload.payment_method = patchData.paymentMethod;
+  if (patchData.paymentMethod !== undefined) {
+    payload.payment_method = _normalizePaymentMethod(patchData.paymentMethod);
+  }
   
   // Resolve relations if provided
   if (patchData.accountName) {
@@ -256,5 +267,6 @@ module.exports = {
   writeTransaction,
   readTransactions,
   updateTransaction,
-  deleteTransaction
+  deleteTransaction,
+  _normalizePaymentMethod
 };

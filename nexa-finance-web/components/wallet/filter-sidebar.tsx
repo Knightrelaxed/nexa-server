@@ -247,7 +247,8 @@ export function FilterSidebar({ title, filters, onFilterChange, onReset, isDrawe
               {value: 'QRIS', label: 'QRIS'}, 
               {value: 'Transfer bank', label: 'Transfer Bank'}, 
               {value: 'Kartu Kredit', label: 'Kartu Kredit'}, 
-              {value: 'Tunai', label: 'Tunai'}
+              {value: 'Tunai', label: 'Tunai'},
+              {value: 'Direct Debit', label: 'Direct Debit'}
             ]} 
           />
         </div>

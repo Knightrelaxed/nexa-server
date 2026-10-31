@@ -29,6 +29,7 @@ const PAYMENT_METHOD_STYLE: Record<string, { bg: string; text: string; label: st
   'Transfer bank': { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Transfer bank' },
   'Kartu Kredit':  { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Kartu Kredit' },
   'Tunai':         { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Tunai' },
+  'Direct Debit':  { bg: 'bg-teal-100',   text: 'text-teal-700',   label: 'Direct Debit' },
 }
 
 function PaymentBadge({ method }: { method: PaymentMethod | null | undefined }) {

@@ -152,3 +152,17 @@ test('finance_db: graceful handling when unconfigured or query on null client', 
     assert.strictEqual(writeRes.status, 'SKIPPED');
   }
 });
+
+test('Payment Method Normalization (including Direct Debit)', () => {
+  const { _normalizePaymentMethod } = require('../src/infrastructure/finance_db/transactions');
+  assert.strictEqual(_normalizePaymentMethod('Direct Debit'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('direct debit gojek'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('Kantong Jago'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('AutoDebit BRI'), 'Direct Debit');
+  assert.strictEqual(_normalizePaymentMethod('QRIS'), 'QRIS');
+  assert.strictEqual(_normalizePaymentMethod('transfer bca'), 'Transfer bank');
+  assert.strictEqual(_normalizePaymentMethod('kartu kredit mandiri'), 'Kartu Kredit');
+  assert.strictEqual(_normalizePaymentMethod('tunai cash'), 'Tunai');
+  assert.strictEqual(_normalizePaymentMethod(''), null);
+  assert.strictEqual(_normalizePaymentMethod(null), null);
+});
