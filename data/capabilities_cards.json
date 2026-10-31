@@ -22,8 +22,8 @@
       "src/domain/Split_Engine.js",
       "src/infrastructure/Supabase_Finance.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "finance_bank_sync",
@@ -46,8 +46,8 @@
       "src/infrastructure/Gmail_Client.js",
       "src/infrastructure/memories/Memory_Finance_Dedup.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "finance_analytics",
@@ -70,8 +70,8 @@
       "src/domain/Budget_Engine.js",
       "src/infrastructure/finance_db/analytics.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "task_google_tasks",
@@ -95,8 +95,8 @@
       "src/infrastructure/Google_Tasks.js",
       "src/interfaces/common/handlers/task_handler.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "calendar_scheduling",
@@ -120,8 +120,8 @@
       "src/domain/Situational_Synthesizer.js",
       "src/infrastructure/Google_Workspace.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "device_android_control",
@@ -149,8 +149,8 @@
       "src/interfaces/bridge/mobile_bridge/adapter.js",
       "src/interfaces/bridge/mobile_bridge/client.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "device_windows_control",
@@ -177,8 +177,8 @@
       "src/interfaces/bridge/windows_bridge/client.js",
       "src/interfaces/bridge/gateway.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "device_discipline",
@@ -199,8 +199,8 @@
       "src/domain/App_Discipline_Engine.js",
       "src/domain/Discipline_GodMode.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "cognitive_identity",
@@ -222,8 +222,8 @@
       "src/infrastructure/memories/Memory_Identity.js",
       "src/infrastructure/memories/Memory_Self_Model.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "memory_dual_store",
@@ -245,8 +245,8 @@
       "src/domain/Episodic_Recall.js",
       "src/infrastructure/Supabase_Memories.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "search_research",
@@ -267,8 +267,8 @@
       "src/infrastructure/Web_Search.js",
       "src/domain/Intelligence_Brief.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "location_places",
@@ -290,8 +290,8 @@
       "src/infrastructure/Location_Engine.js",
       "src/domain/Location_Orchestrator.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "channel_telegram",
@@ -314,8 +314,8 @@
       "src/interfaces/telegram/media_handler.js",
       "src/interfaces/telegram/vault_handler.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "channel_whatsapp",
@@ -333,8 +333,8 @@
       "src/interfaces/whatsapp/adapter.js",
       "src/interfaces/whatsapp/formatter.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "system_llm_resilience",
@@ -357,8 +357,8 @@
       "src/core/router/Router_Dispatcher.js",
       "src/config/model_backup_plan.json"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "system_proactive_cron",
@@ -379,8 +379,8 @@
       "src/interfaces/cron.js",
       "src/domain/Chrono_Consolidator.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   },
   {
     "id": "system_cloud_security",
@@ -403,7 +403,7 @@
       "src/config/version.js",
       "src/interfaces/webhook.js"
     ],
-    "version": "3.4.3",
-    "updated_at": "2026-10-31T06:32:58.119Z"
+    "version": "3.4.4",
+    "updated_at": "2026-10-31T08:11:02.730Z"
   }
 ]

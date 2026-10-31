@@ -1,19 +1,23 @@
 /**
  * ============================================================
- * [PHASE 9] MEMORY HYGIENE ENGINE — Memory_Hygiene_Engine.js
+ * [PHASE 9 & v3.4.4] MEMORY HYGIENE ENGINE — Memory_Hygiene_Engine.js
  * ============================================================
  * Autonomous Living Memory Maintenance System
+ *
+ * Taksonomi 5 Tingkat: CORE, PHASE, PREFERENCE, RULE, EPHEMERAL
  *
  * TUGAS UTAMA:
  *   Menjalankan pipeline pembersihan memori mingguan (Minggu 02:00 WIB)
  *   untuk memastikan nexa_user_profile dan nexa_core_identity selalu:
- *   - Bebas dari fakta sementara yang sudah kadaluarsa (EPHEMERAL)
- *   - Bebas dari fakta yang confidence-nya sudah meluruh (PREFERENCE)
+ *   - Bebas dari fakta sementara yang kadaluarsa (EPHEMERAL dan timed RULE)
+ *   - Memantau peluruhan memori musiman/fase hidup (PHASE) sesuai valid_days
+ *   - Memantau pergeseran preferensi (PREFERENCE) dengan rumus peluruhan Ebbinghaus
+ *   - Menjaga CORE kebal dari peluruhan waktu
  *   - Bebas dari kontradiksi yang terakumulasi tanpa terdeteksi
  *
  * PIPELINE 5 STEP:
- *   Step 1 — runEphemeralSweep()          -> Pure JS, 0 AI call
- *   Step 2 — runDecayScoreUpdate()         -> Pure JS, 0 AI call
+ *   Step 1 — runEphemeralSweep()          -> Pure JS, hard expiry EPHEMERAL & timed RULE
+ *   Step 2 — runDecayScoreUpdate()         -> Pure JS, Ebbinghaus R = e^(-lambda * t)
  *   Step 3 — runContradictionBatchAudit()  -> 1 AI call (Gemini 3.6 Flash)
  *   Step 4 — reportStagedForPruning()      -> Kirim laporan Telegram + inline buttons
  *   Step 5 — Log Summary                   -> Console & ringkasan
@@ -38,61 +42,110 @@ function _getSupabase() {
   return _supabase;
 }
 
-// Laju peluruhan Ebbinghaus per kategori
+// Laju peluruhan Ebbinghaus per kategori statis
+// Catatan: CORE kebal peluruhan waktu. EPHEMERAL kedaluwarsa hard di Step 1.
+// PHASE menggunakan lambda dinamis: lambda = -ln(0.60) / valid_days.
 const DECAY_LAMBDA = {
-  PERMANENT_FACT: 0.001,
-  PREFERENCE:     0.010,
-  EPHEMERAL:      0.100,
-  RULE:           0.003,
+  PREFERENCE: 0.010,
+  RULE:       0.003,
 };
 
 const STAGED_THRESHOLD   = 0.60;
 const ARCHIVED_THRESHOLD = 0.30;
 const EPHEMERAL_MAX_DAYS = 30;
+const EPHEMERAL_GRACE    = 1.5;
+const EPHEMERAL_MIN_DAYS = 3;
+const PHASE_DEFAULT_DAYS = 120;
 
-// STEP 1
+// STEP 1 - Hard expiry untuk EPHEMERAL dan timed RULE
 async function runEphemeralSweep() {
   const sb = _getSupabase();
   if (!sb) return { archived: 0 };
   console.log('[HYGIENE] Step 1 — Ephemeral Sweep starting...');
-  const cutoffDate = new Date(Date.now() - EPHEMERAL_MAX_DAYS * 24 * 60 * 60 * 1000).toISOString();
   let archived = 0;
+  const now = Date.now();
+
   for (const table of ['nexa_user_profile', 'nexa_core_identity']) {
-    const { data, error } = await sb.from(table).select('id, content, last_reinforced_at')
-      .eq('status', 'ACTIVE').eq('category_type', 'EPHEMERAL').lt('last_reinforced_at', cutoffDate);
+    const selectCols = table === 'nexa_user_profile'
+      ? 'id, content, category_type, valid_days, last_reinforced_at'
+      : 'id, content, category_type, last_reinforced_at';
+
+    const { data, error } = await sb.from(table)
+      .select(selectCols)
+      .in('status', ['ACTIVE', 'STAGED_FOR_PRUNING'])
+      .in('category_type', ['EPHEMERAL', 'RULE']);
+
     if (error || !data || data.length === 0) continue;
-    const ids = data.map(r => r.id);
-    const { error: ae } = await sb.from(table).update({ status: 'ARCHIVED' }).in('id', ids);
-    if (!ae) {
-      archived += ids.length;
-      data.forEach(r => console.log(`[HYGIENE] Step 1 Archived EPHEMERAL [${table}] ID:${r.id} "${String(r.content).substring(0, 60)}"`));
+
+    const expiredIds = [];
+    for (const r of data) {
+      const lastReinforced = r.last_reinforced_at ? new Date(r.last_reinforced_at).getTime() : 0;
+      const ageDays = (now - lastReinforced) / (1000 * 60 * 60 * 24);
+
+      if (r.category_type === 'EPHEMERAL') {
+        const ttl = r.valid_days
+          ? Math.max(EPHEMERAL_MIN_DAYS, r.valid_days * EPHEMERAL_GRACE)
+          : EPHEMERAL_MAX_DAYS;
+        if (ageDays > ttl) expiredIds.push(r.id);
+      } else if (r.category_type === 'RULE' && r.valid_days && ageDays > r.valid_days) {
+        expiredIds.push(r.id);
+      }
+    }
+
+    if (expiredIds.length > 0) {
+      const { error: ae } = await sb.from(table).update({ status: 'ARCHIVED' }).in('id', expiredIds);
+      if (!ae) {
+        archived += expiredIds.length;
+        console.log(`[HYGIENE] Step 1 Archived ${expiredIds.length} expired items in [${table}]`);
+      }
     }
   }
   console.log(`[HYGIENE] Step 1 complete. Archived: ${archived}`);
   return { archived };
 }
 
-// STEP 2
+// STEP 2 - Ebbinghaus Decay untuk PHASE, PREFERENCE, dan untimed RULE
+// CORE kebal terhadap peluruhan waktu. EPHEMERAL ditangani di Step 1.
 async function runDecayScoreUpdate() {
   const sb = _getSupabase();
   if (!sb) return { staged: 0, autoArchived: 0 };
   console.log('[HYGIENE] Step 2 — Decay Score Update starting...');
   let staged = 0, autoArchived = 0;
   const now = Date.now();
+
   for (const table of ['nexa_user_profile', 'nexa_core_identity']) {
-    const { data, error } = await sb.from(table).select('id, content, category_type, last_reinforced_at')
-      .eq('status', 'ACTIVE').neq('category_type', 'PERMANENT_FACT').neq('category_type', 'RULE');
+    const selectCols = table === 'nexa_user_profile'
+      ? 'id, content, category_type, valid_days, last_reinforced_at, status'
+      : 'id, content, category_type, last_reinforced_at, status';
+
+    const { data, error } = await sb.from(table).select(selectCols)
+      .in('status', ['ACTIVE', 'STAGED_FOR_PRUNING'])
+      .in('category_type', ['PHASE', 'PREFERENCE', 'RULE']);
+
     if (error || !data) continue;
+
     for (const row of data) {
-      const lambda = DECAY_LAMBDA[row.category_type] || DECAY_LAMBDA.PREFERENCE;
+      if (row.category_type === 'RULE' && row.valid_days) continue;
+
+      let lambda;
+      if (row.category_type === 'PHASE') {
+        const vd = row.valid_days > 0 ? row.valid_days : PHASE_DEFAULT_DAYS;
+        lambda = -Math.log(STAGED_THRESHOLD) / vd;
+      } else {
+        lambda = DECAY_LAMBDA[row.category_type] || DECAY_LAMBDA.PREFERENCE;
+      }
+
+      if (!(lambda > 0)) continue;
+
       const lastReinforced = row.last_reinforced_at ? new Date(row.last_reinforced_at).getTime() : 0;
       const daysSince = (now - lastReinforced) / (1000 * 60 * 60 * 24);
       const confidence = Math.exp(-lambda * daysSince);
+
       if (confidence < ARCHIVED_THRESHOLD) {
         await sb.from(table).update({ status: 'ARCHIVED' }).eq('id', row.id);
         autoArchived++;
         console.log(`[HYGIENE] Step 2 Auto-archived (conf=${confidence.toFixed(2)}) ID:${row.id} "${String(row.content).substring(0, 50)}"`);
-      } else if (confidence < STAGED_THRESHOLD) {
+      } else if (confidence < STAGED_THRESHOLD && row.status === 'ACTIVE') {
         await sb.from(table).update({ status: 'STAGED_FOR_PRUNING' }).eq('id', row.id);
         staged++;
         console.log(`[HYGIENE] Step 2 Staged (conf=${confidence.toFixed(2)}) ID:${row.id} "${String(row.content).substring(0, 50)}"`);
@@ -103,7 +156,7 @@ async function runDecayScoreUpdate() {
   return { staged, autoArchived };
 }
 
-// STEP 3
+// STEP 3 - Contradiction & Redundancy Batch Audit
 async function runContradictionBatchAudit() {
   const sb = _getSupabase();
   if (!sb) return { merged: 0, errors: 0 };
@@ -162,7 +215,7 @@ JSON FORMAT:
   return { merged, errors };
 }
 
-// STEP 4
+// STEP 4 - Review Report to Telegram
 async function reportStagedForPruning(sendTelegramFn, stats = {}) {
   const sb = _getSupabase();
   if (!sb) return;
@@ -211,4 +264,10 @@ async function runFullHygienePipeline() {
   console.log(`[HYGIENE] Pipeline complete in ${elapsed}s. Ephemeral:${stats.ephemeralArchived} | AutoArchived:${stats.decayAutoArchived} | Staged:${stats.decayStaged} | Merged:${stats.merged} | Errors:${stats.errors}`);
 }
 
-module.exports = { runFullHygienePipeline, runEphemeralSweep, runDecayScoreUpdate, runContradictionBatchAudit, reportStagedForPruning };
+module.exports = {
+  runFullHygienePipeline,
+  runEphemeralSweep,
+  runDecayScoreUpdate,
+  runContradictionBatchAudit,
+  reportStagedForPruning
+};

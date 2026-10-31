@@ -14,6 +14,7 @@ const supabaseMemories = require('../../infrastructure/Supabase_Memories');
 const { loadPersonalFactsWithCache, invalidatePersonalFactsCache } = require('./Router_Cache');
 const { _cleanEmDashes } = require('./Router_Output');
 const { PLAIN_TEXT_SYSTEM_PROMPT } = require('./Router_Prompts');
+const { _classifyMemoryCategory: _classifyWithCognitiveEngine } = require('./Memory_Classifier');
 
 async function callAI(prompt, options = {}) {
   const isJson = options.jsonMode === true ||
@@ -169,10 +170,10 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
 
     // Kasus pertama: belum ada fakta sama sekali → langsung INSERT
     if (!existingFacts || existingFacts.length === 0) {
-      const catType = await _classifyMemoryCategory(newFact);
-      await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
+      const cls = await _classifyMemoryCategory(newFact);
+      await supabaseMemories.saveMemoryWithMeta(newFact, cls, type);
       invalidatePersonalFactsCache();
-      console.log(`[SUPERSEDE] FIRST FACT (${type}) saved [${catType}]: ${newFact.substring(0, 60)}`);
+      console.log(`[SUPERSEDE] FIRST FACT (${type}) saved [${cls.label || cls}]: ${newFact.substring(0, 60)}`);
       return true;
     }
 
@@ -187,11 +188,30 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
     const decision = String(result || '').trim().toUpperCase();
 
     if (decision.startsWith('NEW')) {
-      // INSERT fakta baru dengan kategori yang diklasifikasikan AI
-      const catType = await _classifyMemoryCategory(newFact);
-      await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
+      // Ambil active chapters jika nexa_user_profile untuk mencegah slug drift
+      let activeChapters = [];
+      if (type === 'USER_PROFILE') {
+        try {
+          const { getActiveChapters } = require('../../infrastructure/memories/Memory_Living');
+          activeChapters = await getActiveChapters(15, type);
+        } catch (_) {}
+      }
+
+      // INSERT fakta baru dengan kategori yang diklasifikasikan AI 5-tier
+      const cls = await _classifyMemoryCategory(newFact, { activeChapters });
+      const saveRes = await supabaseMemories.saveMemoryWithMeta(newFact, cls, type);
+
+      if (saveRes?.id && (cls.closes_chapter || cls.supersedes?.length)) {
+        try {
+          const { applyLifecycleEffects } = require('../../infrastructure/memories/Memory_Living');
+          await applyLifecycleEffects(saveRes.id, cls, type);
+        } catch (e) {
+          console.warn('[SUPERSEDE] Error applying lifecycle effects:', e.message);
+        }
+      }
+
       invalidatePersonalFactsCache();
-      console.log(`[SUPERSEDE] NEW (${type}) [${catType}]: ${newFact.substring(0, 60)}`);
+      console.log(`[SUPERSEDE] NEW (${type}) [${cls.label || cls}]: ${newFact.substring(0, 60)}`);
       return true;
 
     } else if (decision.startsWith('REINFORCE')) {
@@ -207,13 +227,13 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
       }
       // Fallback jika ID tidak valid: simpan sebagai NEW
       console.warn(`[SUPERSEDE] REINFORCE id invalid, saving as NEW: ${newFact.substring(0, 60)}`);
-      const catType = await _classifyMemoryCategory(newFact);
-      await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
+      const cls = await _classifyMemoryCategory(newFact);
+      await supabaseMemories.saveMemoryWithMeta(newFact, cls, type);
       invalidatePersonalFactsCache();
       return true;
 
     } else if (decision.startsWith('SUPERSEDE')) {
-      // [PHASE 9] Soft-archive fakta lama, INSERT fakta baru
+      // Soft-archive fakta lama, INSERT fakta baru dengan lifecycle metadata
       const match = decision.match(/SUPERSEDE\s*[\[\(:#]?\s*(\d+)/i);
       if (match) {
         const id = parseInt(match[1], 10);
@@ -222,18 +242,26 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
         // Arsipkan yang lama (bukan hard delete!)
         await supabaseMemories.archiveMemoryById(id, type);
 
-        // INSERT fakta baru dengan kategori yang sesuai
-        // Pertahankan category_type dari fakta lama jika ada, agar hierarki terjaga
-        const catType = oldFact?.category_type || await _classifyMemoryCategory(newFact);
-        await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
+        const cls = await _classifyMemoryCategory(newFact);
+        const saveRes = await supabaseMemories.saveMemoryWithMeta(newFact, cls, type);
+
+        if (saveRes?.id && (cls.closes_chapter || cls.supersedes?.length)) {
+          try {
+            const { applyLifecycleEffects } = require('../../infrastructure/memories/Memory_Living');
+            await applyLifecycleEffects(saveRes.id, cls, type);
+          } catch (e) {
+            console.warn('[SUPERSEDE] Error applying lifecycle effects:', e.message);
+          }
+        }
+
         invalidatePersonalFactsCache();
-        console.log(`[SUPERSEDE] SUPERSEDED (${type}) ID:${id} → "${newFact.substring(0, 60)}" [${catType}]`);
+        console.log(`[SUPERSEDE] SUPERSEDED (${type}) ID:${id} → "${newFact.substring(0, 60)}" [${cls.label || cls}]`);
         return true;
       }
       // Fallback: ID tidak valid → simpan sebagai NEW
       console.warn(`[SUPERSEDE] SUPERSEDE id invalid, saving as NEW: ${newFact.substring(0, 60)}`);
-      const catType = await _classifyMemoryCategory(newFact);
-      await supabaseMemories.saveMemoryWithMeta(newFact, catType, type);
+      const cls = await _classifyMemoryCategory(newFact);
+      await supabaseMemories.saveMemoryWithMeta(newFact, cls, type);
       invalidatePersonalFactsCache();
       return true;
 
@@ -252,23 +280,33 @@ async function deduplicateAndSaveFact(newFact, type = 'USER_PROFILE') {
 }
 
 /**
- * [PHASE 9] Klasifikasi kategori fakta menggunakan AI.
- * Menentukan apakah fakta bersifat PERMANENT_FACT, PREFERENCE, EPHEMERAL, atau RULE.
- * Temperature 0.0 untuk hasil yang konsisten dan deterministik.
+ * [v3.4.4] Klasifikasi kategori fakta menggunakan Cognitive Memory Classifier 5-tier.
+ * Mengembalikan objek klasifikasi lengkap (label, valid_days, chapter, end_event)
+ * yang kompatibel string (toString() mengembalikan label).
  *
  * @param {string} fact - Fakta yang akan diklasifikasikan
- * @returns {Promise<'PERMANENT_FACT'|'PREFERENCE'|'EPHEMERAL'|'RULE'>}
+ * @param {object} [opts={}]
+ * @returns {Promise<object>}
  */
-async function _classifyMemoryCategory(fact) {
-  const prompt = `Classify this personal fact into ONE category:\n\nFACT: "${fact}"\n\nCategories:\n- PERMANENT_FACT: Unchanging objective facts (birth date, blood type, allergies, religion, hometown)\n- PREFERENCE: Personal tastes and habits that may evolve over time (favorite food, preferred style, hobbies)\n- EPHEMERAL: Temporary states that will definitely change (current project, current illness, current mood, this week's focus)\n- RULE: Operational rules for how N.E.X.A should behave (response format rules, how to address the user, restrictions)\n\nReply ONLY with one word: PERMANENT_FACT, PREFERENCE, EPHEMERAL, or RULE`;
-
+async function _classifyMemoryCategory(fact, opts = {}) {
   try {
-    const result = await executeWithFallback(prompt, 'Reply with exactly one word from the given options.', 0.0, false);
-    const clean = String(result || '').trim().toUpperCase().replace(/[^A-Z_]/g, '');
-    const VALID = new Set(['PERMANENT_FACT', 'PREFERENCE', 'EPHEMERAL', 'RULE']);
-    return VALID.has(clean) ? clean : 'PREFERENCE';
-  } catch (_) {
-    return 'PREFERENCE'; // Default aman jika AI gagal
+    return await _classifyWithCognitiveEngine(fact, opts);
+  } catch (err) {
+    console.warn('[_classifyMemoryCategory] Error in classifier engine, falling back:', err.message);
+    return {
+      label: 'PHASE',
+      category_type: 'PHASE',
+      valid_days: 90,
+      end_event: null,
+      chapter: null,
+      completed_past: false,
+      confidence: 0,
+      closes_chapter: null,
+      supersedes: [],
+      source: 'fallback_error',
+      guardrails: [err.message],
+      toString() { return this.label; }
+    };
   }
 }
 

@@ -1,4 +1,4 @@
-[KAPABILITAS RESMI N.E.X.A v3.4.3]
+[KAPABILITAS RESMI N.E.X.A v3.4.4]
 - FINANCE: Kas & split transaksi, auto-sync email bank (Mandiri/Jago via Gmail), analitik & budget.
 - TASK: Google Tasks CRUD, ordinal ("tugas 1"), subtasks, sinkronisasi kalender kerja.
 - CALENDAR: Google Calendar v3, batch semester, event berulang (RRULE), fuzzy temporal WIB.
