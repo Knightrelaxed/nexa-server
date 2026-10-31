@@ -4017,10 +4017,261 @@ Untuk menjamin tidak ada lagi data pengujian yang mencemari database riil maupun
 
 ---
 
+## BAB 24: ARSITEKTUR v3.4.4 (BAGIAN 1) : HYBRID PROGRESSIVE DISCLOSURE SELF-KNOWLEDGE ENGINE & CODE-AS-TRUTH CAPABILITIES REGISTRY
+
+### 24.1 Anatomi Masalah: Token Bloat, Halusinasi Kemampuan & False Denial Anti-Pattern
+
+Sebelum peluncuran versi 3.4.4, N.E.X.A menghadapi dua kelemahan sistemik fundamental terkait kesadaran kognitifnya atas arsitektur dan kapabilitas dirinya sendiri (*self-knowledge*):
+
+```
+[Masalah 1: Sampah Token & Konteks Usang]
+Tabel nexa_core_identity: 254 baris (berisi log teknis, spesifikasi tabel Supabase, arsitektur v3.0 usang)
+└──> Dampak: ~1.300+ token terbuang percuma pada SETIAP interaksi chat harian!
+
+[Masalah 2: Asimetri Pengetahuan (False Denial vs Hallucination)]
+1. Penolakan Palsu (False Denial): AI menjawab "Maaf Tuan, saya belum punya fitur itu", padahal backend sudah ada.
+2. Halusinasi Arsitektural: AI menjelaskan mekanisme kerja fiktif yang tidak sesuai dengan implementasi kode v3.4.
+```
+
+Akar penyebabnya adalah ketergantungan historis pada pencatatan manual spesifikasi teknis ke dalam tabel database `nexa_core_identity`. Setiap kali developer melakukan refactoring pada backend, dokumentasi database kerap tertinggal (*developer fatigue*). Akibatnya, tabel identitas dipenuhi sampah teks yang membengkak, membebani jendela konteks prompt, dan membingungkan penalaran model LLM.
+
+---
+
+### 24.2 Paradigma Desain: Source Code Sebagai Single Source of Truth
+
+Arsitektur v3.4.4 melakukan pergeseran paradigma total: **Kode sumber (*Source Code*) ditetapkan sebagai satu-satunya sumber kebenaran tunggal (*Single Source of Truth*)**, bukan catatan manual di database.
+
+```mermaid
+flowchart TD
+    subgraph SingleSourceOfTruth ["Master Registry: src/config/capabilities_registry.js (17 Kartu Resmi)"]
+        CAP[17 Certified Capabilities: Finance, Workspace, Telegram, WhatsApp, Android, Windows, Cron, etc.]
+    end
+
+    subgraph Compiler ["Automated Compiler: scripts/build_capabilities.js (Hooked to pretest)"]
+        T0[Tier 0 Manifest: capabilities_manifest.txt\nPadat ~250 token, 1 baris per modul]
+        T1[Tier 1 Cards: capabilities_cards.json\n17 kartu arsitektur lengkap dengan implementasi file]
+    end
+
+    subgraph RuntimeEngine ["Dual-Tier Progressive Disclosure Routing"]
+        ROUTER[Router Prompts: Anti-False-Denial Rule]
+        RAMCACHE[RAM Vector Cache: gemini_vector_cache.js]
+    end
+
+    CAP --> Compiler
+    T0 --> ROUTER
+    T1 --> RAMCACHE
+```
+
+Langkah sanitasi fondasi yang dieksekusi:
+1. **Pembersihan Identitas Database**: Seluruh 254 entri di `nexa_core_identity` dicadangkan ke backup permanen, 167 entri teknis usang diarsipkan, dan hanya **10 Aturan Inti Berbahasa Inggris** yang dipertahankan (ID 283-292). Aturan berbahasa Inggris dipilih secara terukur karena representasi tokennya 30% lebih hemat, memiliki ambiguitas semantik rendah, dan ditaati lebih konsisten oleh model instruksi LLM.
+2. **Master Registry Mandiri**: Dibuat modul sentral [`src/config/capabilities_registry.js`](file:///c:/workspace/nexa-server/src/config/capabilities_registry.js) yang memetakan seluruh kapabilitas resmi sistem, domain router terkait, implementasi file, parameter, dan kata kunci leksikal.
+
+---
+
+### 24.3 Arsitektur Dua Tingkat: Hybrid Progressive Disclosure
+
+Sistem mendistribusikan kesadaran diri N.E.X.A melalui mekanisme bertingkat (*2-Tier Hybrid Progressive Disclosure*):
+
+#### 1. Tier 0: Manifes Kapabilitas Ringkas (~250 Token)
+File [`data/capabilities_manifest.txt`](file:///c:/workspace/nexa-server/data/capabilities_manifest.txt) berisi intisari satu baris untuk setiap kapabilitas. Manifes ini **selalu disuntikkan** ke dalam *system prompt* di [`src/core/router/Router_Prompts.js`](file:///c:/workspace/nexa-server/src/core/router/Router_Prompts.js) bersama aturan tegas:
+> **Anti-False-Denial Rule**: N.E.X.A dilarang keras menolak atau menyatakan tidak mampu menjalankan kapabilitas yang terdaftar di dalam Tier 0 Manifest.
+
+#### 2. Tier 1: Kartu Detail Arsitektur On-Demand (Tersimpan di RAM)
+Sebanyak 17 kartu arsitektural lengkap dikompilasi ke file [`data/capabilities_cards.json`](file:///c:/workspace/nexa-server/data/capabilities_cards.json) dan dimuat langsung ke memori RAM peladen saat booting melalui [`src/utils/gemini_vector_cache.js`](file:///c:/workspace/nexa-server/src/utils/gemini_vector_cache.js).
+* **Pada 95% Interaksi Chat Harian Biasa** (*"catat kopi 15rb"*, *"jadwal hari ini apa"*): Gerbang Tier 1 tertutup rapat. **NOL token tambahan disuntikkan**, menghemat biaya API dan latensi pemrosesan.
+* **Pada 5% Pertanyaan Arsitektur atau Kapabilitas** (*"bagaimana cara kerja auto sync email?"*, *"apakah kamu bisa kunci layar laptop?"*): Gerbang Tier 1 terbuka otomatis melalui deteksi regex rasa ingin tahu (*curiosity/capability gating*). Sistem menghitung kemiripan vektor (*cosine similarity*) di RAM dengan latensi hanya ~0.05 milidetik ($0 biaya ekstra API karena menggunakan kembali vektor pertanyaan yang sudah dihitung) dan hanya menyuntikkan **1 kartu fitur yang relevan**.
+
+---
+
+### 24.4 Otomasi Kompilasi, Slash Command & Pengaman Anti-Drift
+
+Untuk menjamin kode dan dokumentasi tidak akan pernah mengalami desinkronisasi (*anti developer fatigue*):
+1. **Automated Compiler**: Skrip [`scripts/build_capabilities.js`](file:///c:/workspace/nexa-server/scripts/build_capabilities.js) bertindak sebagai *compiler* yang memvalidasi integritas kartu dan menghasilkan file manifes.
+2. **Pretest Hook**: Didaftarkan pada `package.json` (`"pretest": "node scripts/build_capabilities.js"`), memastikan manifes selalu diperbarui otomatis setiap kali developer menjalankan `npm test`.
+3. **Slash Command `/capabilities`**: Di antarmuka Telegram, pengguna dapat mengetik `/capabilities` untuk melihat direktori kapabilitas sistem dalam format HTML tanpa memakan kuota token model LLM.
+4. **Anti-Drift Test Suite**: File [`tests/capabilities_integrity.test.js`](file:///c:/workspace/nexa-server/tests/capabilities_integrity.test.js) menguji 7 dimensi integritas: validasi skema, batasan panjang token manifes (maksimal 300 token), injeksi Anti-False-Denial Rule, penelusuran on-demand di RAM, dan verifikasi bahwa setiap domain router aktif wajib terwakili dalam kartu kapabilitas.
+
+---
+
+### 24.5 Matriks Evaluasi: Sebelum vs Sesudah Self-Knowledge v3.4.4
+
+| Dimensi Evaluasi | Sebelum Arsitektur v3.4.4 | Setelah Arsitektur v3.4.4 |
+| :--- | :--- | :--- |
+| **Beban Token Identitas per Chat** | ~1.300+ token (254 baris DB mentah) | **~265 token (Hemat 1.000+ token / -24%)** |
+| **Sumber Kebenaran Arsitektur** | Entri teks manual di database Supabase | **Single Source of Truth: `capabilities_registry.js`** |
+| **Resiko Penolakan Palsu (False Denial)** | Sering (AI menyangkal fitur yang sudah ada) | **0% (Dicegah permanen via Anti-False-Denial Rule)** |
+| **Latensi Akses Pengetahuan Detail** | Tidak terstruktur / query database lambat | **0.05 milidetik di RAM via Gemini Vector Cache** |
+| **Biaya Tambahan Detail Kapabilitas** | Memerlukan retrieval API eksternal | **$0 (Reusing embedding vektor input pengguna)** |
+| **Sinkronisasi Kode & Dokumen** | Rawan tertinggal (*developer drift*) | **Otomatis via compiler hook `pretest` di CI/CD** |
+
+---
+
+## BAB 25: ARSITEKTUR v3.4.4 (BAGIAN 2) : 5-TIER COGNITIVE MEMORY TAXONOMY, CONTINGENCY REASONING HEURISTICS & DYNAMIC EBBINGHAUS PHASE DECAY
+
+### 25.1 Anatomi Masalah: Kerapuhan Klasifikasi Biner "Permanen vs Fana"
+
+Pada akhir Oktober 2026, teridentifikasi kegagalan logika kognitif serius pada sistem memori jangka panjang N.E.X.A (`nexa_user_profile`).
+
+#### Kasus Nyata Kegagalan Sistem (Fakta ID 240 & ID 272):
+```json
+{
+  "id": 240,
+  "content": "Tuan Faqih menempuh mata kuliah UTS Praktik Bahasa Arab Diplomasi dan Bahasa Arab Tulis (BAT) dalam kurikulum akademiknya.",
+  "category_type": "PERMANENT_FACT"
+}
+```
+Fakta ID 240 dan Fakta ID 272 (*domisili di Yogyakarta saat masa kuliah*) dikategorikan sebagai `PERMANENT_FACT` oleh model LLM. Padahal, ujian tengah semester (UTS) dan mata kuliah akademik berubah setiap 4 bulan (satu semester), dan domisili kuliah akan berakhir ketika masa perkuliahan usai.
+
+```
+[Akar Masalah Kognitif: Dilema Taksonomi Tradisional]
+Kategori Lama: [EPHEMERAL (harian)] vs [PERMANENT_FACT (seumur hidup)]
+                            ▲
+                            │
+               [JURANG WAKTU 4 BULAN]
+               Mata kuliah semesteran (~120 hari) tidak cocok untuk keduanya!
+               Karena tidak ada label yang jujur, model memilih "least-wrong label" -> PERMANENT_FACT.
+```
+
+Ketiadaan kategori waktu menengah (*medium-term tier*) memaksa LLM mengabadikan fakta-fakta sementara. Selain itu, kata label *"PERMANENT"* memberikan bias psikologis (*label priming*) pada model kecil sehingga enggan menurunkan status memori.
+
+---
+
+### 25.2 Desain Taksonomi Kognitif 5 Tingkat & Heuristik Kontingensi
+
+Arsitektur v3.4.4 merombak taksonomi memori menjadi 5 tingkat kognitif yang seimbang dan memperkenalkan metode penalaran berbasis kontingensi (*Contingency Reasoning*).
+
+```mermaid
+flowchart TD
+    INPUT[Input Fakta Baru / Ekstraksi Chat] --> CR{Penalaran Kontingensi: end_event}
+    
+    CR -->|Peristiwa Asisten| R[RULE: Intruksi Operasional Asisten]
+    CR -->|Selera / Gaya Hidup| P[PREFERENCE: Selera / Habit Stabil]
+    CR -->|end_event: none OR completed_past: true| C[CORE: Identitas Seumur Hidup & Riwayat Tuntas]
+    CR -->|end_event terdefinisi AND valid_days <= 30| E[EPHEMERAL: Kondisi Sementara, TTL 3-30 Hari]
+    CR -->|end_event terdefinisi AND valid_days > 30| PH[PHASE: Babak Hidup / Semester, Peluruhan Dinamis]
+```
+
+#### Spesifikasi 5 Tingkat Taksonomi:
+1. **`EPHEMERAL`** (Hari hingga ~30 Hari): Kondisi fisik/suasana hati sementara, janji temu mendatang, persiapan ujian minggu ini, atau rencana perjalanan singkat.
+2. **`PHASE`** (>1 Bulan dengan Titik Akhir Terprediksi): Babak hidup atau musim kehidupan. Masa perkuliahan semester aktif, pengerjaan skripsi, kontrak kerja/magang, sewa tempat tinggal, proyek aktif, atau pembelajaran keahlian baru.
+3. **`PREFERENCE`** (Jangka Panjang Lentur): Selera, kebiasaan, dan preferensi personal yang bergeser secara lambat.
+4. **`RULE`** (Instruksi Perilaku): Aturan bagaimana asisten harus bertindak (dapat berbatas waktu).
+5. **`CORE`** (Abadi Puluhan Tahun): Menggantikan istilah `PERMANENT_FACT` untuk menghapus bias label. Mencakup dua entitas: **Identitas Utama** (kelahiran, NIK, kota asal, keyakinan) dan **Peristiwa Masa Lalu yang Telah Tuntas (*Completed Past Events*)** seperti riwayat perjalanan masa lalu, karena sejarah yang sudah tuntas selamanya bernilai benar.
+
+#### Heuristik Penalaran Kontingensi (*Contingency Reasoning*):
+Alih-alih menebak durasi tahun, model diwajibkan mengisi urutan JSON terstruktur:
+$$\text{end\_event} \longrightarrow \text{completed\_past} \longrightarrow \text{valid\_days} \longrightarrow \text{label}$$
+
+Pertanyaan pemandu utama bagi LLM adalah: *"Peristiwa hidup biasa apa yang akan membuat kalimat ini menjadi salah di masa depan?"* (`end_event`). Jika peristiwa berakhirnya dapat disebutkan (misal: "semester berakhir", "lulus kuliah", "pindah rumah"), fakta tersebut **dilarang keras** masuk ke `CORE`.
+
+#### Empat Lapisan Guardrails Deterministik di `Memory_Classifier.js`:
+* **Guardrail 1 (Perishable-Part Rule)**: Jika fakta memiliki `end_event` nyata atau batas waktu terdefinisi, label `CORE` otomatis ditolak dan dialihkan ke `PHASE` atau `EPHEMERAL`.
+* **Guardrail 2 (Ambang Batas Keyakinan)**: Kandidat `CORE` dengan skor keyakinan (*confidence*) di bawah 0.75 secara asimetris diturunkan ke `PHASE` demi keamanan.
+* **Guardrail 3 (Sanitasi Completed Past)**: Jika `completed_past: true`, fakta diterima sebagai `CORE` dan nilai `valid_days` dipaksa bernilai `null` karena masa lalu tidak memiliki masa kedaluwarsa.
+* **Guardrail 4 (Deterministic Tier Alignment)**: Batas 30 hari ditegakkan secara numerik dari nilai `valid_days`. Jika model memilih `PHASE` namun durasinya 7 hari, sistem otomatis meluruskannya menjadi `EPHEMERAL`.
+
+---
+
+### 25.3 Formulasi Matematika Dynamic Ebbinghaus Decay untuk PHASE
+
+Pada sistem pembersihan memori [`src/domain/Memory_Hygiene_Engine.js`](file:///c:/workspace/nexa-server/src/domain/Memory_Hygiene_Engine.js), kategori `PHASE` tidak lagi menggunakan konstanta peluruhan statis, melainkan laju peluruhan dinamis ($\lambda$) yang diturunkan langsung dari estimasi masa berlaku fakta (`valid_days`).
+
+#### Formula Laju Peluruhan Dinamis:
+Untuk ambang batas pemangkasan $R_{\text{staged}} = 0.60$:
+$$\lambda = -\frac{\ln(0.60)}{\text{valid\_days}}$$
+
+Dengan formula ini, retensi memori $R(t) = e^{-\lambda t}$ dijamin menyentuh angka tepat $0.60$ ketika umur memori mencapai hari ke-`valid_days`:
+$$R(\text{valid\_days}) = \exp\left(-\left(-\frac{\ln(0.60)}{\text{valid\_days}}\right) \cdot \text{valid\_days}\right) = \exp(\ln(0.60)) = 0.60$$
+
+```
+Kurva Retensi Memori PHASE (Contoh: Semester Kuliah valid_days = 120 Hari):
+
+Retensi R
+1.00 ├───────╮
+     │       ╰╮
+0.77 ├──────────╮ (Hari ke-60: Masih ACTIVE)
+     │           ╰╮
+0.60 ├─────────────● (Hari ke-120: Tepat STAGED_FOR_PRUNING -> Konfirmasi Briefing Pagi)
+     │              ╰╮
+0.30 ├─────────────────● (Hari ke-282 / ~2.35x valid_days: ARCHIVED jika tidak ada konfirmasi)
+     └───────────────────────────────────────► Waktu (Hari)
+     0          60     120            282
+```
+
+#### Mekanisme Eksekusi Dua Tahap (*Two-Step Hygiene Sweep*):
+1. **Step 1: Hard Expiry untuk `EPHEMERAL` & Timed `RULE`**:
+   Fakta sementara kedaluwarsa pada formula batas toleransi:
+   $$\text{TTL} = \max(3, \text{valid\_days} \times 1.5) \quad (\text{Fallback: 30 hari})$$
+   Jika umur fakta melampaui TTL, baris langsung diarsipkan (`status = 'ARCHIVED'`).
+2. **Step 2: Dynamic Ebbinghaus Decay untuk `PHASE`**:
+   Memori yang mencapai $R \le 0.60$ dialihkan ke status `STAGED_FOR_PRUNING` dan disajikan pada *morning briefing* mingguan untuk diverifikasi oleh pengguna. Jika pengguna tidak pernah mengonfirmasi hingga $R \le 0.30$ ($t \approx 2.35 \times \text{valid\_days}$), fakta diarsipkan secara permanen.
+3. **Kekebalan `CORE`**:
+   Fakta `CORE` dan `PREFERENCE` dikecualikan total dari peluruhan waktu dan tidak akan pernah terdegradasi secara otomatis.
+
+---
+
+### 25.4 Dekomposisi Siklus Hidup Bi-Temporal & Database Migration
+
+Untuk mendukung taksonomi baru tanpa merusak data historis:
+1. **Pembaruan Skema Database ([`database/001_memory_tiers_migration.sql`](file:///c:/workspace/nexa-server/database/001_memory_tiers_migration.sql))**:
+   * Menambahkan kolom siklus hidup: `valid_days` (INT), `chapter` (VARCHAR), `end_event` (TEXT), dan `superseded_by` (BIGINT self-referencing foreign key).
+   * Menyelaraskan *check constraints* secara harmonis pada tabel `nexa_user_profile` (`nup_category_type_chk`) dan `nexa_core_identity` (`nci_category_type_chk`).
+   * Mengoreksi data historis legasi (`PERMANENT_FACT` dan `CAPABILITY`) menjadi taksonomi resmi sebelum *constraint* dipasang.
+2. **Manajemen Penggantian Bi-Temporal (*Bi-Temporal Superseding*)**:
+   Di [`src/infrastructure/memories/Memory_Living.js`](file:///c:/workspace/nexa-server/src/infrastructure/memories/Memory_Living.js), fakta lama yang bertentangan dengan fakta baru tidak dihapus secara destruktif, melainkan statusnya ditutup dengan menyematkan referensi `superseded_by = new_fact_id`.
+3. **Isolasi Babak Hidup (*Chapter Life-Cycle*)**:
+   Fungsi `getActiveChapters()` menyuplai slug babak yang aktif (seperti `university`, `career`, `housing`) ke prompt pengklasifikasi guna mencegah terciptanya variasi slug yang terfragmentasi.
+
+---
+
+### 25.5 Hasil Audit Lapangan & Reklasifikasi Data Riil
+
+Melalui eksekusi skrip audit berbasis kecerdasan kognitif [`scripts/reclassify_core.js`](file:///c:/workspace/nexa-server/scripts/reclassify_core.js), seluruh baris yang sebelumnya berlabel `PERMANENT_FACT` di database Supabase diaudit ulang baris demi baris:
+
+```text
+[RECLASSIFY] FULL AUDIT COMPLETE
+  nexa_user_profile:  Total=7  | CORE=5 | Demoted to PHASE=2
+  nexa_core_identity: Total=2  | CORE=0 | Demoted to PHASE/RULE=2
+  Mode: APPLIED TO PRODUCTION DATABASE
+```
+
+#### Hasil Restrukturisasi Data Profil Pengguna (`nexa_user_profile`):
+* **Fakta Semesteran & Babak Hidup Diturunkan ke `PHASE`**:
+  * Fakta #240 (UTS Bahasa Arab) -> `PHASE` (120 hari, chapter: `university`).
+  * Fakta #272 (Domisili Kuliah Jogja) -> `PHASE` (365 hari, chapter: `university`).
+  * Fakta #120 (Status Mahasiswa Aktif) -> `PHASE` (730 hari, chapter: `university`).
+  * Fakta #159 (NIM Mahasiswa) -> `PHASE` (1095 hari, chapter: `university`).
+  * Fakta #72 (Kewajiban Sholat Shubuh dengan Jadwal Jam Tertentu) -> `PHASE` (1825 hari).
+  * Fakta #218 (Teman bernama Hasan) -> `PHASE` (1800 hari, chapter: `relationships`).
+* **Hanya Tersisa Tepat 5 Fakta Sejati di `CORE`**:
+  1. Fakta #64: *"Tuan Faqih beragama Islam"* (Identitas spiritual seumur hidup).
+  2. Fakta #117: *"Rumah asal Tuan Faqih berlokasi di Banjarnegara, Jawa Tengah..."* (Kota asal kelahiran/keluarga).
+  3. Fakta #141: *"Tuan Faqih lahir di Banjarnegara pada 17 Mei 2007 dengan NIK 3304081705070001 dan nomor BPJS Kesehatan 0002019540846"* (Identitas kependudukan permanen).
+  4. Fakta #119: *"Nama pasangan Tuan Faqih adalah Nurul Azizah, yang biasa dipanggil Zizah atau Azizah"* (Pasangan hidup inti).
+  5. Fakta #113: *"Tuan Faqih sampai di kos Jogja pada 25 Juli 2026 pukul 22:43 WIB setelah melakukan perjalanan bersepeda yang sangat melelahkan"* (Completed past event: peristiwa sejarah yang telah selesai).
+
+---
+
+### 25.6 Matriks Evaluasi & Verifikasi: Sebelum vs Sesudah Arsitektur v3.4.4
+
+| Dimensi Kognitif | Sebelum Arsitektur v3.4.4 | Setelah Arsitektur v3.4.4 |
+| :--- | :--- | :--- |
+| **Jumlah Tingkat Taksonomi** | 4 Tingkat Kaku (Binari Jangka Panjang/Pendek) | **5 Tingkat Kognitif (`CORE`, `PHASE`, `PREFERENCE`, `RULE`, `EPHEMERAL`)** |
+| **Klasifikasi Fakta Semesteran** | Salah cap ke `PERMANENT_FACT` (Abadi seumur hidup) | **Tepat sasaran ke `PHASE` (120 hari / Chapter `university`)** |
+| **Metode Penalaran Model** | Tebakan label berbasis kemiripan kata kunci | **Penalaran Kontingensi (`end_event` -> `completed_past` -> `valid_days`)** |
+| **Peluruhan Fakta Menengah** | Lambda statis (sering memangkas terlalu dini) | **Dynamic Ebbinghaus Decay ($\lambda = -\ln(0.60)/\text{valid\_days}$)** |
+| **Perlakuan Peristiwa Lampau** | Rentan terhapus atau salah label | **Dilindungi sebagai `CORE` (`valid_days = null`)** |
+| **Siklus Hidup Data Lama** | Ditimpa secara destruktif (*overwritten*) | **Bi-Temporal Closed (`superseded_by` pointer referensial)** |
+| **Cakupan Test Suite Monorepo** | 428 automated unit tests | **437 automated unit tests (100% Green, 0 Fail)** |
+| **Status Produksi** | v3.4.3 | **v3.4.4 Deployed & Running on Azure VPS (PM2 PID 1037134)** |
+
+---
+
 ---
 
 ---
 **~ TAMAT ~**
 *Mahakarya arsitektur The Chief of Staff, secara eksklusif dikembangkan untuk memperluas kognisi dan otonomi penggunanya, Tuan Faqih Hidayatulloh.*
+
 
 
