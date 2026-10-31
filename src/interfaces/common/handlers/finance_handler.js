@@ -96,7 +96,42 @@ async function handleFinanceIntent(routingData, context = {}) {
 
   if (action === 'UPDATE_PENDING') {
     const updatedMsg = await financeEngine.updatePendingTransaction(ed.description || null, ed.category || null, ed.nominal || null, ed.account || null, ed.payment_method || null, null);
-    return updatedMsg || '❌ Tidak ada transaksi yang tertunda untuk diubah.';
+    if (updatedMsg) return updatedMsg;
+
+    // Fallback: If pending confirmation timed out (already saved) or user quoted a previous message, edit committed transaction
+    let kw = ed.search_keyword;
+    if (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|\s)*$/i.test(String(kw).trim())) {
+      const replyMsgText = context.message?.reply_to_message?.text || null;
+      if (replyMsgText) {
+        const cMatch = replyMsgText.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+        const nLabelMatch = replyMsgText.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
+        const nRpMatch = replyMsgText.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+        if (cMatch && cMatch[1] && cMatch[1].trim().length > 1) {
+          kw = cMatch[1].trim();
+        } else if (nLabelMatch && nLabelMatch[1]) {
+          kw = nLabelMatch[1].replace(/[^0-9]/g, '');
+        } else if (nRpMatch && nRpMatch[1]) {
+          kw = nRpMatch[1].replace(/[^0-9]/g, '');
+        } else {
+          kw = 'latest';
+        }
+      } else {
+        kw = 'latest';
+      }
+    }
+    const editRes = await financeEngine.editTransaction(
+      kw || 'latest',
+      ed.nominal,
+      ed.description || ed.destination,
+      ed.category,
+      ed.account,
+      ed.payment_method,
+      ed.type || null
+    );
+    if (editRes && editRes.status === 'SUCCESS') {
+      return editRes.message;
+    }
+    return '❌ Tidak ada transaksi yang tertunda atau cocok untuk diubah.';
   }
 
   if (action === 'CANCEL_TRANSACTION') {
@@ -125,7 +160,7 @@ async function handleFinanceIntent(routingData, context = {}) {
         kw = 'latest';
       }
     }
-    const result = await financeEngine.editTransaction(kw, ed.nominal, ed.description || ed.destination, ed.category, ed.account, ed.payment_method);
+    const result = await financeEngine.editTransaction(kw, ed.nominal, ed.description || ed.destination, ed.category, ed.account, ed.payment_method, ed.type || null);
     return result.message;
   }
 

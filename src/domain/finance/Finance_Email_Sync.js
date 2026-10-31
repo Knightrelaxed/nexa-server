@@ -127,31 +127,35 @@ function _parseJagoTransaction(blob, email) {
                    blob.toLowerCase().includes('status transaksi gagal') ||
                    blob.toLowerCase().includes('transaksi tidak berhasil');
 
-  const isIncome = /kamu baru saja menerima uang|kamu telah menerima uang|transfer masuk|dana masuk|penerimaan uang|uang telah dikembalikan|pengembalian dana|refund/i.test(blob) ||
-                   /kamu baru saja menerima uang|dana masuk|transfer masuk|uang telah dikembalikan|pengembalian dana/i.test(email?.subject || '');
+  const isIncome = /(?:menerima\s+(?:sejumlah\s+)?uang|transfer masuk|dana masuk|penerimaan uang|uang telah dikembalikan|pengembalian dana|refund)/i.test(blob) ||
+                   /(?:menerima\s+(?:sejumlah\s+)?uang|dana masuk|transfer masuk|uang telah dikembalikan|pengembalian dana|refund)/i.test(email?.subject || '');
   const type = isIncome ? 'INCOME' : 'EXPENSE';
 
-  // Extract Destination / Merchant
+  // Extract Destination / Merchant / Sender
   let rawDest = '';
-  // 1. From "Ke <Merchant>" (bounded by 8+ digits, next headers, or newline)
-  const keMatch = blob.match(/\bKe\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Jumlah|Total|Nominal|Tanggal|Status|Nama Acquirer|Lokasi Merchant)\b|[\r\n]|$))/i);
-  if (keMatch?.[1]) {
-    rawDest = keMatch[1].trim();
-  } else {
-    // Fallback: "Penerima <Nama>"
-    const penerimaMatch = blob.match(/\bPenerima\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Jumlah|Total|Nominal|Tanggal|Status|Bank Penerima)\b|[\r\n]|$))/i);
-    if (penerimaMatch?.[1]) {
-      rawDest = penerimaMatch[1].trim();
+
+  // For income transactions, prioritize sender ("Dari <Pengirim>")
+  if (isIncome) {
+    const summaryIndex = blob.toLowerCase().indexOf('ringkasan transaksi');
+    const searchBlob = summaryIndex !== -1 ? blob.substring(summaryIndex) : blob;
+    const dariMatch = searchBlob.match(/\bDari\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Ke|Jumlah|Total|Nominal|Tanggal|Status)\b|[\r\n]|$))/i) ||
+                      blob.match(/\bDari\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Ke|Jumlah|Total|Nominal|Tanggal|Status)\b|[\r\n]|$))/i);
+    if (dariMatch?.[1]) {
+      rawDest = dariMatch[1].trim();
     }
   }
 
-  // If income, check "Dari <Pengirim>" after "Ringkasan transaksi"
-  if (isIncome && !rawDest) {
-    const summaryIndex = blob.toLowerCase().indexOf('ringkasan transaksi');
-    const searchBlob = summaryIndex !== -1 ? blob.substring(summaryIndex) : blob;
-    const dariMatch = searchBlob.match(/\bDari\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Ke|Jumlah|Total|Nominal|Tanggal|Status)\b|[\r\n]|$))/i);
-    if (dariMatch?.[1]) {
-      rawDest = dariMatch[1].trim();
+  // For expense, or fallback if sender not found: From "Ke <Merchant>" (bounded by 8+ digits, next headers, or newline)
+  if (!rawDest) {
+    const keMatch = blob.match(/\bKe\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Jumlah|Total|Nominal|Tanggal|Status|Nama Acquirer|Lokasi Merchant)\b|[\r\n]|$))/i);
+    if (keMatch?.[1]) {
+      rawDest = keMatch[1].trim();
+    } else {
+      // Fallback: "Penerima <Nama>"
+      const penerimaMatch = blob.match(/\bPenerima\s+([\s\S]*?)(?=(?:\s+\d{8,}|\s+(?:Jumlah|Total|Nominal|Tanggal|Status|Bank Penerima)\b|[\r\n]|$))/i);
+      if (penerimaMatch?.[1]) {
+        rawDest = penerimaMatch[1].trim();
+      }
     }
   }
 
@@ -165,9 +169,9 @@ function _parseJagoTransaction(blob, email) {
 
   if (!rawDest) rawDest = isIncome ? 'Dana Masuk Jago' : 'Auto-Sync Jago';
 
-  // Sanitize and remove emojis (e.g. 💸)
+  // Sanitize and remove emojis (e.g. 💸) and HTML entities like &#96;
   rawDest = rawDest.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
-  rawDest = rawDest.replace(/&nbsp;?/ig, ' ').replace(/&\w+;?/g, ' ');
+  rawDest = rawDest.replace(/&nbsp;?/ig, ' ').replace(/&#?\w+;?/g, ' ');
   rawDest = rawDest.replace(/[\r\n].*$/s, '').trim();
 
   // Extract Merchant Location (e.g. "Lokasi Merchant Jakarta" or "Jakarta Selatan")

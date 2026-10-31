@@ -222,6 +222,30 @@ Status Transaksi Gagal`;
     assert.strictEqual(parsed.account, 'Bank Jago');
     assert.strictEqual(parsed.isFailed, true);
   });
+
+  await t.test('parses Jago incoming transfer with "sejumlah uang" and sender details', () => {
+    const email = {
+      from: 'Jago <noreply@jago.com>',
+      subject: 'Asik, kamu telah menerima sejumlah uang 💰'
+    };
+    const blob = `Halo FAQIH HIDAYATULLOH,
+Kantong Jago-mu telah menerima sejumlah uang dan berikut rinciannya:
+
+Ringkasan transaksi
+Dari VISIONET INTERNASIONAL&#96;PT
+Danamon • 003534115336
+Ke MA • 101182943827
+Jumlah Rp35.000
+Tanggal transaksi 31 October 2026 08:16 WIB`;
+
+    const parsed = _parseJagoTransaction(blob, email);
+    assert.strictEqual(parsed.nominal, 35000);
+    assert.strictEqual(parsed.type, 'INCOME');
+    assert.strictEqual(parsed.destination, 'VISIONET INTERNASIONAL PT');
+    assert.strictEqual(parsed.paymentMethod, 'Transfer bank');
+    assert.strictEqual(parsed.account, 'Bank Jago');
+    assert.strictEqual(parsed.isFailed, false);
+  });
 });
 
 test('Supabase Finance Account Provisioning & Resolution', async (t) => {

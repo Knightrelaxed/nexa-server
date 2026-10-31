@@ -172,7 +172,7 @@ function extractFinanceTransactionsFromEmails(emails) {
 
     const merchantMatch = text.match(/(?:penerima|ke|di|merchant|tujuan|dari)\s+([A-Za-z0-9\s._-]{2,60})/i);
     const destination = merchantMatch?.[1] ? merchantMatch[1].trim() : defaultDest;
-    const isExpense = !/(masuk|inflow|cr|kredit|setoran|menerima uang)/i.test(text);
+    const isExpense = !/(masuk|inflow|cr|kredit|setoran|menerima\s+(?:sejumlah\s+)?uang)/i.test(text);
 
     let isoDate = null;
     const emailDate = parseEmailDateSafe(e.date);

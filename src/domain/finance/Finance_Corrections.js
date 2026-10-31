@@ -195,7 +195,7 @@ async function undoDeleteTransaction() {
 /**
  * Edit a specific transaction matching a keyword in Supabase.
  */
-async function editTransaction(keyword, newNominal, newDescription, newCategory, newAccount, newPaymentMethod) {
+async function editTransaction(keyword, newNominal, newDescription, newCategory, newAccount, newPaymentMethod, newType) {
   try {
     const rows = await supabaseFinance.readTransactions({ limit: 50 });
     if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel database saat ini masih kosong.' };
@@ -251,6 +251,11 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
     if (newPaymentMethod) {
       patchData.paymentMethod = newPaymentMethod;
     }
+
+    // Update txType if provided (e.g. user corrected EXPENSE to INCOME)
+    if (newType) {
+      patchData.txType = String(newType).toUpperCase();
+    }
     
     // Update the Supabase record
     const result = await supabaseFinance.updateTransaction(tx.id, patchData);
@@ -264,13 +269,15 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
     const finalCategory = patchData.categoryName !== undefined ? patchData.categoryName : (tx.categories?.name || '-');
     const finalAccount = patchData.accountName !== undefined ? patchData.accountName : (tx.accounts?.name || '-');
     const finalPaymentMethod = patchData.paymentMethod !== undefined ? patchData.paymentMethod : (tx.payment_method || 'QRIS');
-    const tipeLabel = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+    const activeType = patchData.txType ? patchData.txType.toLowerCase() : tx.type;
+    const tipeLabel = activeType === 'income' ? 'Pemasukan' : 'Pengeluaran';
     const akunName = finalAccount;
     
     const nominalFmt = `Rp${finalNominal.toLocaleString('id-ID')}`;
 
     let editedFields = [];
     if (patchData.nominal !== undefined) editedFields.push(`Nominal (dari Rp${Math.abs(tx.amount || 0).toLocaleString('id-ID')} menjadi ${nominalFmt})`);
+    if (patchData.txType !== undefined) editedFields.push(`Tipe (menjadi "${tipeLabel}")`);
     if (patchData.description !== undefined) editedFields.push(`Catatan (dari "${oldCatatan}" menjadi "${finalDescription}")`);
     if (patchData.categoryName !== undefined) editedFields.push(`Kategori (dari "${oldKategori}" menjadi "${finalCategory}")`);
     if (patchData.accountName !== undefined) editedFields.push(`Akun (menjadi "${finalAccount}")`);
