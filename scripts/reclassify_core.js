@@ -2,7 +2,8 @@
 /**
  * scripts/reclassify_core.js
  *
- * One-off audit: re-run the 5-tier cognitive classifier over every live CORE row.
+ * One-off audit: re-run the 5-tier cognitive classifier over every live CORE row
+ * across both nexa_user_profile and nexa_core_identity.
  * Dry-run by default. Rows that are still CORE are never touched.
  *
  * Usage:
@@ -25,19 +26,24 @@ const APPLY = process.argv.includes('--apply');
 const PAUSE_MS = 800; // rate limit guard
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-(async () => {
-  console.log(`[RECLASSIFY] Auditing nexa_user_profile CORE rows... Mode: ${APPLY ? 'APPLY' : 'DRY-RUN'}`);
+async function auditTable(tableName, hasLifecycleMeta = true) {
+  console.log(`\n============================================================`);
+  console.log(`[RECLASSIFY] Auditing ${tableName} CORE rows... Mode: ${APPLY ? 'APPLY' : 'DRY-RUN'}`);
+  console.log(`============================================================`);
 
   const { data: rows, error } = await supabase
-    .from('nexa_user_profile')
+    .from(tableName)
     .select('id, content')
     .eq('category_type', 'CORE')
     .in('status', ['ACTIVE', 'STAGED_FOR_PRUNING'])
     .order('id');
 
-  if (error) throw error;
+  if (error) {
+    console.error(`[RECLASSIFY] Error fetching rows from ${tableName}:`, error.message);
+    return { total: 0, kept: 0, changed: 0 };
+  }
 
-  console.log(`[RECLASSIFY] Found ${rows.length} active CORE rows to audit.\n`);
+  console.log(`[RECLASSIFY] Found ${rows.length} active CORE rows in ${tableName}.\n`);
 
   const chapters = new Set();
   let kept = 0;
@@ -61,28 +67,36 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     console.log(`  confidence: ${cls.confidence} | source: ${cls.source}`);
 
     if (APPLY && cls.source !== 'fallback') {
-      const { error: upErr } = await supabase.from('nexa_user_profile').update({
-        category_type: cls.label,
-        valid_days: cls.valid_days,
-        chapter: cls.chapter,
-        end_event: cls.end_event,
-      }).eq('id', row.id);
+      const patch = { category_type: cls.label };
+      if (hasLifecycleMeta) {
+        patch.valid_days = cls.valid_days;
+        patch.chapter = cls.chapter;
+        patch.end_event = cls.end_event;
+      }
+      const { error: upErr } = await supabase.from(tableName).update(patch).eq('id', row.id);
 
       if (upErr) {
-        console.error(`  ❌ Update failed for #${row.id}:`, upErr.message);
+        console.error(`  ❌ Update failed for #${row.id} in ${tableName}:`, upErr.message);
       } else {
-        console.log(`  ✅ Successfully updated #${row.id} to ${cls.label}`);
+        console.log(`  ✅ Successfully updated #${row.id} to ${cls.label} in ${tableName}`);
       }
     }
     await sleep(PAUSE_MS);
   }
 
+  console.log(`\n[RECLASSIFY] Summary for ${tableName}: Total=${rows.length}, Stayed CORE=${kept}, Demoted=${changed}`);
+  return { total: rows.length, kept, changed };
+}
+
+(async () => {
+  const profileStats = await auditTable('nexa_user_profile', true);
+  const identityStats = await auditTable('nexa_core_identity', false);
+
   console.log(`\n============================================================`);
-  console.log(`[RECLASSIFY] Audit complete.`);
-  console.log(`  Total audited: ${rows.length}`);
-  console.log(`  Stayed CORE:   ${kept}`);
-  console.log(`  Demoted:       ${changed}`);
-  console.log(`  Mode:          ${APPLY ? 'APPLIED TO DATABASE' : 'DRY-RUN (nothing written)'}`);
+  console.log(`[RECLASSIFY] FULL AUDIT COMPLETE`);
+  console.log(`  nexa_user_profile: Total=${profileStats.total}, CORE=${profileStats.kept}, Demoted=${profileStats.changed}`);
+  console.log(`  nexa_core_identity: Total=${identityStats.total}, CORE=${identityStats.kept}, Demoted=${identityStats.changed}`);
+  console.log(`  Mode: ${APPLY ? 'APPLIED TO DATABASE' : 'DRY-RUN (nothing written)'}`);
   console.log(`============================================================\n`);
 })().catch(e => {
   console.error('[RECLASSIFY] Fatal error:', e);
