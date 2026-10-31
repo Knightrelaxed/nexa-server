@@ -1835,7 +1835,7 @@ Digunakan ketika Tuan Faqih hanya ingin menyegarkan proses peladen (misalnya set
   *Catatan*: Perintah `pm2 reload` menggunakan mekanisme *cluster zero-downtime* di mana request yang sedang berlangsung diselesaikan terlebih dahulu sebelum proses lama ditukar dengan proses baru.
 
 #### B. Skenario Deployment Produksi Penuh (One-Command CI/CD)
-Ketika fitur baru telah di-commit ke GitHub branch `main`, eksekusi deployment diotomatisasi secara end-to-end melalui script terpadu `scripts/deploy.sh` (tersedia shortcut `~/deploy.sh` atau `npm run deploy` di root peladen).
+Ketika fitur baru telah di-commit ke GitHub branch `main`, eksekusi deployment diotomatisasi secara end-to-end melalui script terpadu `./deploy.sh` (tersedia shortcut `~/deploy.sh` atau `npm run deploy` di root peladen).
 - **Dari Terminal Laptop / Komputer Lokal**:
   ```bash
   ssh nexa@48.193.41.76 "~/deploy.sh"
