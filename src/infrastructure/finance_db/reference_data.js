@@ -29,13 +29,25 @@ const DEFAULT_FALLBACK_ACCOUNTS = [
   { id: '00000000-0000-0000-0000-000000000002', name: 'Bank Jago', type: 'bank', color: '#f59e0b' }
 ];
 
+// Default in-memory categories fallback saat Supabase offline / null client
+const DEFAULT_FALLBACK_CATEGORIES = [
+  { id: '5cb57143-9cb0-42de-8e65-9f8f99e7f130', name: 'Lainnya', type: 'expense', group_name: 'Penyesuaian (Sistem)' },
+  { id: '00000000-0000-0000-0000-000000000003', name: 'Pendapatan (umum)', type: 'income', group_name: 'Pendapatan' }
+];
+
 // ── Private: Load & Cache Categories ─────────────────────────────────────────
 async function _loadCategories() {
   const now = Date.now();
   if (_categoryCache && (now - _categoryFetchedAt) < CACHE_TTL_MS) {
     return _categoryCache;
   }
-  if (!supabaseFinance) return [];
+  if (!supabaseFinance) {
+    if (!_categoryCache) {
+      _categoryCache = [...DEFAULT_FALLBACK_CATEGORIES];
+      _categoryFetchedAt = now;
+    }
+    return _categoryCache;
+  }
 
   const { data, error } = await supabaseFinance
     .from('categories')
@@ -45,7 +57,7 @@ async function _loadCategories() {
 
   if (error) {
     console.error('[SUPABASE_FINANCE] Gagal load categories:', error.message);
-    return _categoryCache || []; // Gunakan cache lama jika ada
+    return _categoryCache || [...DEFAULT_FALLBACK_CATEGORIES];
   }
 
   _categoryCache = data || [];
@@ -199,14 +211,23 @@ async function resolveCategoryId(categoryName, txType) {
     return best.id;
   }
 
-  // Fallback: cari kategori "Lainnya" sebagai catch-all
-  const fallback = categories.find(c => c.name === 'Lainnya' && c.type === dbType);
+  // Fallback: cari kategori catch-all sesuai tipe transaksi
+  // Untuk expense: 'Lainnya'
+  // Untuk income: 'Pendapatan (umum)' atau varian pendapatan lain
+  const fallback = categories.find(c => {
+    if (c.type !== dbType) return false;
+    if (dbType === 'income') {
+      return c.name === 'Pendapatan (umum)' || c.name.toLowerCase().includes('pendapatan') || c.name === 'Lainnya';
+    }
+    return c.name === 'Lainnya' || c.name.toLowerCase().includes('lain');
+  }) || filtered[0] || categories[0];
+
   if (fallback) {
-    console.warn(`[SUPABASE_FINANCE] resolveCategoryId: Fallback ke "Lainnya" untuk "${categoryName}"`);
+    console.warn(`[SUPABASE_FINANCE] resolveCategoryId: Fallback ke "${fallback.name}" (${fallback.type}) untuk "${categoryName}"`);
     return fallback.id;
   }
 
-  console.warn(`[SUPABASE_FINANCE] resolveCategoryId: Tidak ada kategori yang cocok dan tidak ada fallback "Lainnya".`);
+  console.warn(`[SUPABASE_FINANCE] resolveCategoryId: Tidak ada kategori yang cocok dan tidak ada fallback.`);
   return null;
 }
 

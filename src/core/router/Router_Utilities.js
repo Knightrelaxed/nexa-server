@@ -15,9 +15,24 @@ const { loadPersonalFactsWithCache, invalidatePersonalFactsCache } = require('./
 const { _cleanEmDashes } = require('./Router_Output');
 const { PLAIN_TEXT_SYSTEM_PROMPT } = require('./Router_Prompts');
 
-async function callAI(prompt) {
-  const result = await executeWithFallback(prompt, PLAIN_TEXT_SYSTEM_PROMPT, 0.5, false);
+async function callAI(prompt, options = {}) {
+  const isJson = options.jsonMode === true ||
+    (typeof options.systemInstruction === 'string' && options.systemInstruction.includes('JSON')) ||
+    (typeof options.systemPrompt === 'string' && options.systemPrompt.includes('JSON')) ||
+    /\b(output\s+(hanya|harus|format|tepat:?)\s*json|json\s*array|format\s+json)\b/i.test(prompt);
+
+  const systemInstruction = options.systemPrompt || options.systemInstruction || (isJson
+    ? 'You are an AI specialized in structured data extraction. Output ONLY valid, parseable JSON matching the requested schema without markdown wrapping or conversational commentary.'
+    : PLAIN_TEXT_SYSTEM_PROMPT);
+
+  const temperature = typeof options.temperature === 'number' ? options.temperature : (isJson ? 0.2 : 0.5);
+  const result = await executeWithFallback(prompt, systemInstruction, temperature, isJson, Object.keys(options).length > 0 ? options : undefined);
   let text = String(result).trim();
+
+  if (isJson) {
+    return text;
+  }
+
   // If the model wrapped its answer in JSON anyway, extract the first string value
   try {
     const parsed = JSON.parse(text);

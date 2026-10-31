@@ -92,7 +92,7 @@ function _detectCandidateDomains(textInput, runtimeHints = {}) {
     matched.add('EMAIL');
   }
 
-  if (/\b(disiplin|limit|batas aplikasi|screen time|durasi aplikasi)\b/i.test(clean)) {
+  if (/\b(disiplin|limit|batas aplikasi|screen time|durasi aplikasi|god\s*mode|godmode)\b/i.test(clean)) {
     matched.add('DISCIPLINE');
   }
 
@@ -104,7 +104,7 @@ function _detectCandidateDomains(textInput, runtimeHints = {}) {
     matched.add('USER_PROFILE');
   }
 
-  if (/\b(kamu itu siapa|kamu siapa|kamu diciptakan|kemampuanmu|aturanmu|namamu|identitasmu|kamu bisa apa)\b/i.test(clean)) {
+  if (/\b(kamu itu siapa|kamu siapa|kamu diciptakan|kemampuanmu|aturanmu|namamu|identitasmu|kamu bisa apa|kamu bisa|bisa apa|fitur apa|kemampuan)\b/i.test(clean)) {
     matched.add('CORE_IDENTITY');
   }
 
