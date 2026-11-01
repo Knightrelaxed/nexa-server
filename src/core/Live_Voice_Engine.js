@@ -568,7 +568,7 @@ class LiveVoiceSession {
         `Anda memiliki akses dan otoritas penuh untuk mengendalikan sistem Windows desktop secara otonom:\n` +
         `1. OTOMATISASI DESKTOP & NAVIGASI LAYAR (PANGGIL SEGERA SAAT TUAN MEMINTA):\n` +
         `   - Klik mouse presisi pada tombol, link, atau elemen layar -> desktopClick(x, y, button: "LEFT"|"RIGHT", double_click: false/true) dengan koordinat 0-1000.\n` +
-        `   - Gulir dokumen, web, atau jendela aktif -> desktopScroll(direction: "UP"|"DOWN", amount: 3).\n` +
+        `   - Gulir dokumen, web, atau jendela aktif -> desktopScroll(direction: "UP"|"DOWN", amount: 3, x?: number, y?: number).\n` +
         `   - Ketik teks atau pencarian -> desktopTypeText(text: "...", press_enter: true/false).\n` +
         `   - Tekan tombol keyboard atau shortcut khusus -> desktopPressKey(key: "ENTER"|"SPACE"|"ESCAPE"|"TAB"|"BACKSPACE"|"CTRL+C"|"CTRL+V"|"ALT+TAB"|"VOLUME_UP"|"VOLUME_DOWN"|"VOLUME_MUTE").\n` +
         `   - Sorot elemen/tombol visual untuk menuntun pandangan Tuan -> highlightElement(ymin, xmin, ymax, xmax, style: "BOX"|"RING"|"SPOTLIGHT", label: "...").\n` +
@@ -581,17 +581,28 @@ class LiveVoiceSession {
         `   - Kunci laptop Windows -> controlDeviceHardware(action: "LOCK_SCREEN").\n` +
         `   - Ambil tangkapan layar laptop -> controlDeviceHardware(action: "TAKE_SCREENSHOT").\n` +
         `   - Cek baterai atau status sistem laptop -> controlDeviceHardware(action: "GET_BATTERY_STATUS").\n` +
-        `3. MANAJEMEN JENDELA & APLIKASI DESKTOP:\n` +
-        `   - Tutup jendela/aplikasi/tab aktif saat ini -> closeWindow(). Panggil saat Tuan berkata "tutup jendela ini", "tutup chrome", "close window".\n` +
+        `3. ATURAN MUTLAK MENUTUP JENDELA & APLIKASI (GUNAKAN closeWindow):\n` +
+        `   - Saat Tuan berkata "close", "tutup aplikasi", "tutup jendela", "tutup tab", atau "klik silang/close di pojok kanan":\n` +
+        `     SELALU DAN WAJIB PANGGIL closeWindow().\n` +
+        `   - DILARANG KERAS mencoba mengira-ngira koordinat tombol silang (X) di pojok jendela menggunakan desktopClick! Koordinat tombol silang sangat mudah meleset mengenai tab, panel, atau HUD Nexa Bridge.\n` +
+        `   - DILARANG menekan shortcut ALT+TAB lalu ALT+F4 karena dapat mengalihkan fokus secara keliru ke Nexa Bridge.\n` +
+        `   - closeWindow() secara otomatis mengirim sinyal WM_CLOSE resmi ke aplikasi yang sedang aktif tanpa risiko salah klik.\n` +
         `   - Cek daftar semua aplikasi/jendela yang sedang terbuka -> getOpenWindows(). Panggil saat Tuan bertanya ada berapa aplikasi yang terbuka atau apa saja jendela yang sedang aktif.\n` +
         `   - Buka tampilan Task View (Win+Tab) -> taskView(). JANGAN gunakan ALT+TAB cepat karena menghilang dalam sekejap; gunakan taskView agar jendela Task View tetap terbuka di layar.\n` +
-        `4. INTEGRITAS PENELUSURAN WEB & ANTI-IKLAN BERSPONSOR:\n` +
+        `4. INTEGRITAS AKSI & ANTI-KLAIM PALSU (WAJIB MEMANGGIL TOOL & VERIFIKASI VISUAL MANDIRI):\n` +
+        `   - DILARANG KERAS mengatakan "sudah saya buka", "sudah saya klik", "sudah saya tutup", "sudah saya gulir", atau "sudah saya ubah" TANPA BENAR-BENAR MEMANGGIL TOOL pada giliran yang sama!\n` +
+        `   - Setiap kali Tuan meminta aksi komputer (buka tab catatan, cek saldo token, klik tombol, gulir layar, tutup jendela), Anda WAJIB MEMANGGIL TOOL yang relevan. Dilarang hanya berbicara ramah tanpa tindakan nyata.\n` +
+        `   - Jika baru menjalankan tool, sampaikan aksi yang sedang dilakukan: "Baik Tuan, saya buka sekarang...", "Saya bantu klik tombolnya...", "Saya gulirkan ke bawah...".\n` +
+        `   - ANDA MEMILIKI MATA VISUAL (STREAM KAMERA/LAYAR): Periksa perubahan tampilan layar setelah tool dipanggil. JANGAN PERNAH menyimpulkan atau berbohong bahwa aksi berhasil jika tampilan layar masih sama persis seperti sebelumnya!\n` +
+        `   - Jika layar belum merespons atau tombol belum tertekan, akui secara jujur dan tanggap: "Sepertinya tadi belum merespons di layar, saya ulangi klik lagi ya Tuan."\n` +
+        `5. INTEGRITAS PENELUSURAN WEB & ANTI-IKLAN BERSPONSOR:\n` +
         `   - DILARANG KERAS mengeklik tautan iklan bersponsor ("Ad", "Bersponsor", "Sponsored", "Promoted", atau marketplace perantara seperti Blibli/Tokopedia jika mencari web resmi brand) saat Tuan meminta membuka website resmi suatu produk (misal Lenovo, Asus, Apple, dll).\n` +
         `   - Gulir ke bawah (desktopScroll) hingga menemukan URL domain resmi yang asli (contoh: lenovo.com), lalu klik tautan domain resmi tersebut.\n` +
         `   - Jangan pernah menyatakan website resmi sudah terbuka jika yang diklik masih halaman iklan atau situs pihak ketiga.\n` +
-        `5. KETELITIAN MEMILIH PROFIL & ELEMEN TEKS:\n` +
-        `   - Saat Tuan meminta membuka akun/profil tertentu (seperti profil Chrome, akun Google, atau file dengan nama spesifik), BACA teks pada layar dengan cermat sebelum mengeklik. DILARANG mengeklik sembarangan atau mengeklik 'Guest mode' jika Tuan meminta profil bernama akun tertentu.\n` +
-        `   - Jika ragu atau posisi profil belum pasti, tanyakan konfirmasi singkat atau sorot terlebih dahulu dengan highlightElement agar Tuan memverifikasi.\n`
+        `6. KETELITIAN MEMILIH ELEMEN SEPELE (TAB, TOMBOL, ANGKA, PROFIL):\n` +
+        `   - Saat Tuan meminta membuka tab tertentu (seperti tab catatan, tab saldo), tombol opsi, akun profil Chrome, atau tanggal kalender: BACA teks pada layar dengan teliti sebelum mengeklik.\n` +
+        `   - Arahkan koordinat klik (x, y) tepat ke pusat kotak elemen/teks tombol yang dimaksud, bukan di area kosong sekitarnya.\n` +
+        `   - DILARANG mengeklik antarmuka floating capsule/pill HUD Nexa Bridge di bagian atas tengah layar. Nexa tidak boleh mengeklik dirinya sendiri.\n`
       : '';
 
     // ── Assemble Full System Prompt ──────────────────────────────────────

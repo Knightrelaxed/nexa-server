@@ -512,12 +512,14 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 24. DESKTOP AUTOMATION: SCROLL SCREEN ─────────────────────
   {
     name: 'desktopScroll',
-    description: 'Menggulir halaman dokumen, web, atau jendela aktif di laptop Tuan ke atas atau ke bawah.',
+    description: 'Menggulir halaman dokumen, web, atau jendela aktif di laptop Tuan ke atas atau ke bawah. Jika ingin menggulir area atau panel tertentu, sertakan koordinat target x dan y (0-1000). Jika tidak disertakan, kursor otomatis ditempatkan ke area tengah konten yang dapat digulir.',
     parameters: {
       type: 'OBJECT',
       properties: {
         direction: { type: 'STRING', description: 'Arah gulir: "DOWN" (gulir ke bawah) atau "UP" (gulir ke atas).' },
-        amount:    { type: 'NUMBER', description: 'Jumlah ketukan putaran roda mouse (default: 3).' }
+        amount:    { type: 'NUMBER', description: 'Jumlah ketukan putaran roda mouse (default: 3).' },
+        x:         { type: 'NUMBER', description: 'Koordinat horizontal (0-1000) target area yang ingin digulir (opsional).' },
+        y:         { type: 'NUMBER', description: 'Koordinat vertikal (0-1000) target area yang ingin digulir (opsional).' }
       },
       required: ['direction']
     }
@@ -1851,10 +1853,10 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
       case 'desktopScroll': {
         const direction = String(args.direction || 'DOWN').toUpperCase();
         const amount = Number(args.amount) || 3;
-        const res = await windowsBridge.sendCommand('DESKTOP_SCROLL', {
-          direction,
-          amount
-        }, { timeoutMs: 5000 });
+        const payload = { direction, amount };
+        if (args.x !== undefined && args.x !== null) payload.x = Number(args.x);
+        if (args.y !== undefined && args.y !== null) payload.y = Number(args.y);
+        const res = await windowsBridge.sendCommand('DESKTOP_SCROLL', payload, { timeoutMs: 5000 });
         return {
           status: res.success ? 'SUCCESS' : 'FAILED',
           action: 'desktopScroll',

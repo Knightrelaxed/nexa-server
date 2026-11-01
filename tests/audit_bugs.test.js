@@ -82,3 +82,34 @@ test('AUDIT LIVE TOOLS: closeWindow, getOpenWindows, and taskView declarations a
     windowsBridge.sendCommand = originalSendCommand;
   }
 });
+
+test('AUDIT LIVE TOOLS: desktopScroll declaration accepts x and y and passes them to windowsBridge', async () => {
+  const { LIVE_TOOL_DECLARATIONS, executeLiveTool } = require('../src/core/Live_Tool_Registry');
+  const windowsBridge = require('../src/interfaces/bridge').windows.client;
+
+  const scrollDecl = LIVE_TOOL_DECLARATIONS.find(t => t.name === 'desktopScroll');
+  assert.ok(scrollDecl, 'desktopScroll must be declared');
+  assert.ok(scrollDecl.parameters.properties.x, 'desktopScroll must declare x coordinate parameter');
+  assert.ok(scrollDecl.parameters.properties.y, 'desktopScroll must declare y coordinate parameter');
+
+  const originalSendCommand = windowsBridge.sendCommand;
+  const recorded = [];
+  windowsBridge.sendCommand = async (action, params) => {
+    recorded.push({ action, params });
+    return { success: true, message: 'Layar desktop berhasil digulir ke DOWN (delta: -360).' };
+  };
+
+  try {
+    const res = await executeLiveTool('desktopScroll', { direction: 'DOWN', amount: 3, x: 500, y: 400 });
+    assert.equal(res.status, 'SUCCESS');
+    assert.equal(res.action, 'desktopScroll');
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0].action, 'DESKTOP_SCROLL');
+    assert.equal(recorded[0].params.direction, 'DOWN');
+    assert.equal(recorded[0].params.amount, 3);
+    assert.equal(recorded[0].params.x, 500);
+    assert.equal(recorded[0].params.y, 400);
+  } finally {
+    windowsBridge.sendCommand = originalSendCommand;
+  }
+});
