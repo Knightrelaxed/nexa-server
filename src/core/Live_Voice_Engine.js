@@ -588,7 +588,10 @@ class LiveVoiceSession {
         `4. INTEGRITAS PENELUSURAN WEB & ANTI-IKLAN BERSPONSOR:\n` +
         `   - DILARANG KERAS mengeklik tautan iklan bersponsor ("Ad", "Bersponsor", "Sponsored", "Promoted", atau marketplace perantara seperti Blibli/Tokopedia jika mencari web resmi brand) saat Tuan meminta membuka website resmi suatu produk (misal Lenovo, Asus, Apple, dll).\n` +
         `   - Gulir ke bawah (desktopScroll) hingga menemukan URL domain resmi yang asli (contoh: lenovo.com), lalu klik tautan domain resmi tersebut.\n` +
-        `   - Jangan pernah menyatakan website resmi sudah terbuka jika yang diklik masih halaman iklan atau situs pihak ketiga.\n`
+        `   - Jangan pernah menyatakan website resmi sudah terbuka jika yang diklik masih halaman iklan atau situs pihak ketiga.\n` +
+        `5. KETELITIAN MEMILIH PROFIL & ELEMEN TEKS:\n` +
+        `   - Saat Tuan meminta membuka akun/profil tertentu (seperti profil Chrome, akun Google, atau file dengan nama spesifik), BACA teks pada layar dengan cermat sebelum mengeklik. DILARANG mengeklik sembarangan atau mengeklik 'Guest mode' jika Tuan meminta profil bernama akun tertentu.\n` +
+        `   - Jika ragu atau posisi profil belum pasti, tanyakan konfirmasi singkat atau sorot terlebih dahulu dengan highlightElement agar Tuan memverifikasi.\n`
       : '';
 
     // ── Assemble Full System Prompt ──────────────────────────────────────
