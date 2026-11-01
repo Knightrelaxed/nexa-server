@@ -243,6 +243,10 @@ class LiveVoiceSession {
     console.log(`[LIVE-VOICE] User call (ASR): "${text}"`);
     this.turnHistory.push({ role: 'user', text });
     supabaseMemories.saveChatMemory('user', text.slice(0, 800), 'live_call').catch(() => {});
+    this._sendToClient({
+      type: 'CALL_STATUS_UPDATE',
+      user_transcript: text
+    });
   }
 
   _calculatePcmRms(buffer) {
