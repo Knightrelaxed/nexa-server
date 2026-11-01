@@ -580,7 +580,15 @@ class LiveVoiceSession {
         `   - Mute / Unmute suara laptop -> controlDeviceHardware(action: "MUTE").\n` +
         `   - Kunci laptop Windows -> controlDeviceHardware(action: "LOCK_SCREEN").\n` +
         `   - Ambil tangkapan layar laptop -> controlDeviceHardware(action: "TAKE_SCREENSHOT").\n` +
-        `   - Cek baterai atau status sistem laptop -> controlDeviceHardware(action: "GET_BATTERY_STATUS").\n`
+        `   - Cek baterai atau status sistem laptop -> controlDeviceHardware(action: "GET_BATTERY_STATUS").\n` +
+        `3. MANAJEMEN JENDELA & APLIKASI DESKTOP:\n` +
+        `   - Tutup jendela/aplikasi/tab aktif saat ini -> closeWindow(). Panggil saat Tuan berkata "tutup jendela ini", "tutup chrome", "close window".\n` +
+        `   - Cek daftar semua aplikasi/jendela yang sedang terbuka -> getOpenWindows(). Panggil saat Tuan bertanya ada berapa aplikasi yang terbuka atau apa saja jendela yang sedang aktif.\n` +
+        `   - Buka tampilan Task View (Win+Tab) -> taskView(). JANGAN gunakan ALT+TAB cepat karena menghilang dalam sekejap; gunakan taskView agar jendela Task View tetap terbuka di layar.\n` +
+        `4. INTEGRITAS PENELUSURAN WEB & ANTI-IKLAN BERSPONSOR:\n` +
+        `   - DILARANG KERAS mengeklik tautan iklan bersponsor ("Ad", "Bersponsor", "Sponsored", "Promoted", atau marketplace perantara seperti Blibli/Tokopedia jika mencari web resmi brand) saat Tuan meminta membuka website resmi suatu produk (misal Lenovo, Asus, Apple, dll).\n` +
+        `   - Gulir ke bawah (desktopScroll) hingga menemukan URL domain resmi yang asli (contoh: lenovo.com), lalu klik tautan domain resmi tersebut.\n` +
+        `   - Jangan pernah menyatakan website resmi sudah terbuka jika yang diklik masih halaman iklan atau situs pihak ketiga.\n`
       : '';
 
     // ── Assemble Full System Prompt ──────────────────────────────────────

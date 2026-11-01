@@ -606,6 +606,36 @@ const LIVE_TOOL_DECLARATIONS = [
       },
       required: ['reason']
     }
+  },
+
+  // ── 31. WINDOW MANAGEMENT: CLOSE WINDOW ───────────────────────
+  {
+    name: 'closeWindow',
+    description: 'Menutup jendela aplikasi aktif di layar laptop secara aman (graceful close via WM_CLOSE). Panggil saat Tuan meminta menutup jendela, menutup aplikasi, atau menutup tab/window yang sedang aktif saat ini.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {}
+    }
+  },
+
+  // ── 32. WINDOW MANAGEMENT: GET OPEN WINDOWS ───────────────────
+  {
+    name: 'getOpenWindows',
+    description: 'Melihat dan mendata daftar semua jendela aplikasi yang sedang terbuka di layar laptop Windows Tuan. Panggil saat Tuan bertanya ada berapa aplikasi yang terbuka atau menanyakan apa saja jendela yang sedang aktif.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {}
+    }
+  },
+
+  // ── 33. WINDOW MANAGEMENT: TASK VIEW ──────────────────────────
+  {
+    name: 'taskView',
+    description: 'Membuka tampilan Windows Task View (Win+Tab) di laptop untuk menampilkan seluruh jendela dan virtual desktop yang sedang terbuka agar terlihat jelas dan menetap di layar.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {}
+    }
   }
 ];
 
@@ -1431,6 +1461,44 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
             };
           }
 
+          if (action === 'CLOSE_WINDOW' || action === 'CLOSE_APP' || action === 'CLOSE_TAB') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('CLOSE_WINDOW', {}, { timeoutMs: 5000 }),
+              6000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              message: bridgeRes.message || (bridgeRes.success ? 'Jendela aktif berhasil ditutup.' : 'Gagal menutup jendela aktif.')
+            };
+          }
+
+          if (action === 'TASK_VIEW' || action === 'SHOW_TASK_VIEW' || action === 'SWITCH_WINDOWS') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('TASK_VIEW', {}, { timeoutMs: 5000 }),
+              6000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              message: bridgeRes.message || (bridgeRes.success ? 'Tampilan Task View berhasil dibuka.' : 'Gagal membuka Task View.')
+            };
+          }
+
+          if (action === 'GET_OPEN_WINDOWS' || action === 'LIST_WINDOWS' || action === 'OPEN_WINDOWS') {
+            const bridgeRes = await _withToolTimeout(
+              windowsBridge.sendCommand('GET_OPEN_WINDOWS', {}, { timeoutMs: 5000 }),
+              6000
+            );
+            return {
+              status: bridgeRes.success ? 'SUCCESS' : 'FAILED',
+              action,
+              count: bridgeRes?.data?.count || 0,
+              windows: bridgeRes?.data?.windows || [],
+              message: bridgeRes.message || 'Daftar jendela berhasil diambil.'
+            };
+          }
+
           if (action === 'END_CALL' || action === 'HANGUP') {
             return await executeLiveTool('endCall', args, context);
           }
@@ -1898,6 +1966,53 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
           mode: 'DEEP_THINKING_ACTIVE',
           model: 'models/gemini-3.8-live-extended-thinking',
           message: 'Mode penalaran mendalam (Extended Thinking) aktif. Lakukan analisis bertingkat langkah demi langkah sebelum menyimpulkan jawaban.'
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 31. WINDOW MANAGEMENT: CLOSE WINDOW
+      // ─────────────────────────────────────────────────────────────
+      case 'closeWindow': {
+        const res = await _withToolTimeout(
+          windowsBridge.sendCommand('CLOSE_WINDOW', {}, { timeoutMs: 5000 }),
+          6000
+        );
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'closeWindow',
+          result: res.message || (res.success ? 'Jendela aktif berhasil ditutup.' : 'Gagal menutup jendela aktif.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 32. WINDOW MANAGEMENT: GET OPEN WINDOWS
+      // ─────────────────────────────────────────────────────────────
+      case 'getOpenWindows': {
+        const res = await _withToolTimeout(
+          windowsBridge.sendCommand('GET_OPEN_WINDOWS', {}, { timeoutMs: 5000 }),
+          6000
+        );
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'getOpenWindows',
+          count: res?.data?.count || 0,
+          windows: res?.data?.windows || [],
+          result: res.message || 'Daftar jendela berhasil diambil.'
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 33. WINDOW MANAGEMENT: TASK VIEW
+      // ─────────────────────────────────────────────────────────────
+      case 'taskView': {
+        const res = await _withToolTimeout(
+          windowsBridge.sendCommand('TASK_VIEW', {}, { timeoutMs: 5000 }),
+          6000
+        );
+        return {
+          status: res.success ? 'SUCCESS' : 'FAILED',
+          action: 'taskView',
+          result: res.message || (res.success ? 'Tampilan Task View berhasil dibuka.' : 'Gagal membuka Task View.')
         };
       }
 

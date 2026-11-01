@@ -39,3 +39,46 @@ test('AUDIT BUG 3: callAI must respect options and JSON requests without strippi
   const plainRes = await callAI('Sebutkan 1 kata: HALO', { maxTokens: 20 });
   assert.ok(typeof plainRes === 'string' && plainRes.length > 0);
 });
+
+test('AUDIT LIVE TOOLS: closeWindow, getOpenWindows, and taskView declarations and execution parity', async () => {
+  const { LIVE_TOOL_DECLARATIONS, executeLiveTool } = require('../src/core/Live_Tool_Registry');
+  const windowsBridge = require('../src/interfaces/bridge').windows.client;
+
+  const names = new Set(LIVE_TOOL_DECLARATIONS.map(t => t.name));
+  assert.ok(names.has('closeWindow'), 'closeWindow must be in LIVE_TOOL_DECLARATIONS');
+  assert.ok(names.has('getOpenWindows'), 'getOpenWindows must be in LIVE_TOOL_DECLARATIONS');
+  assert.ok(names.has('taskView'), 'taskView must be in LIVE_TOOL_DECLARATIONS');
+
+  // Mock windowsBridge.sendCommand to simulate bridge communication
+  const originalSendCommand = windowsBridge.sendCommand;
+  const recorded = [];
+  windowsBridge.sendCommand = async (action, params) => {
+    recorded.push({ action, params });
+    if (action === 'GET_OPEN_WINDOWS') {
+      return { success: true, message: '2 windows found', data: { count: 2, windows: [{ title: 'Chrome', process_name: 'chrome.exe' }] } };
+    }
+    return { success: true, message: `OK for ${action}` };
+  };
+
+  try {
+    const resClose = await executeLiveTool('closeWindow', {}, {});
+    assert.equal(resClose.status, 'SUCCESS');
+    assert.equal(resClose.action, 'closeWindow');
+
+    const resOpen = await executeLiveTool('getOpenWindows', {}, {});
+    assert.equal(resOpen.status, 'SUCCESS');
+    assert.equal(resOpen.count, 2);
+    assert.equal(resOpen.windows.length, 1);
+
+    const resTask = await executeLiveTool('taskView', {}, {});
+    assert.equal(resTask.status, 'SUCCESS');
+    assert.equal(resTask.action, 'taskView');
+
+    assert.equal(recorded.length, 3);
+    assert.equal(recorded[0].action, 'CLOSE_WINDOW');
+    assert.equal(recorded[1].action, 'GET_OPEN_WINDOWS');
+    assert.equal(recorded[2].action, 'TASK_VIEW');
+  } finally {
+    windowsBridge.sendCommand = originalSendCommand;
+  }
+});
