@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Executive with Xenial Agent : v3.4.3 "True Multimodal Duplex, Adaptive Procedural Memory, Dynamic Situational Awareness, Multi-Bank Auto-Sync & Closed-Loop Learning")*
+*(Neural Executive with Xenial Agent : v3.4.4+ "True Multimodal Duplex, Adaptive Procedural Memory, Omnichannel Finance Dual-Leg Transfers, Dynamic Situational Awareness & Closed-Loop Learning")*
 
 ---
 
@@ -1258,7 +1258,8 @@ Setelah penghapusan berhasil, data transaksi lengkap disimpan di `lastDeletedTra
 - `description` → langsung update
 - `category` → resolve UUID via `resolveCategoryId`
 - `account` → resolve UUID via `resolveAccountId`
-- `payment_method` → validasi ke enum (`QRIS|Transfer bank|Kartu Kredit|Tunai`)
+- `payment_method` → validasi ke enum 5 metode resmi (`QRIS|Transfer bank|Kartu Kredit|Tunai|Direct Debit`)
+- `date` & `time` → parsing tanggal dan jam via `_parseDateTimeExpression` / `_parseIndonesianDateString`
 
 ---
 
@@ -3205,9 +3206,9 @@ Dekomposisi ini membagi domain keuangan ke dalam 7 modul independen di bawah dir
 #### 2. [`Finance_Helpers.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_Helpers.js) — Parser & Pengenal Pola Deterministik
 - **Ukuran**: 288 baris kode.
 - **Tanggung Jawab**:
-  - `_normalizePaymentMethod(raw)`: Normalisasi fuzzy 4 metode bayar resmi (QRIS, Transfer Bank, Kartu Kredit, Tunai). Dirancang tahan terhadap *transcription error* Groq Whisper (misal: "crispy", "quris", "scan" secara otomatis dipetakan ke `'QRIS'`).
+  - `_normalizePaymentMethod(raw)`: Normalisasi fuzzy 5 metode bayar resmi (QRIS, Transfer Bank, Kartu Kredit, Tunai, dan Direct Debit). Dirancang tahan terhadap *transcription error* (misal: "crispy", "quris" → `'QRIS'`, "dd", "auto debit", "direct debit" → `'Direct Debit'`).
   - `_parseFlexibleCurrency(str)`: Konversi nominal uang dari berbagai representasi string (angka mentah, desimal internasional, format ribuan Indo) menjadi nilai numerik murni tanpa kehilangan presisi.
-  - `_parseIndonesianDateString(str)` & `_parseRelativeDateFilter(text)`: Parser tanggal bahasa Indonesia untuk mengenali teks temporal seperti *"14 Oktober 2026"*, *"kemarin"*, *"bulan lalu"*, dan *"minggu ini"*.
+  - `_parseIndonesianDateString(str)`, `_parseRelativeDateFilter(text)`, & `_parseDateTimeExpression(text)`: Parser ekspresi waktu dan tanggal bahasa Indonesia untuk mengenali teks temporal tunggal maupun majemuk komposit seperti *"14 Oktober 2026"*, *"kemarin jam 9 malam"*, *"tadi sore jam 16.30"*, *"2 hari lalu jam 10 pagi"*, menghasilkan tanggal ISO dan jam:menit yang presisi.
   - `_autoCategorizeMerchant(merchant, currentCategory)`: Pengkategorian pintar pedagang/merchant menggunakan AI secara berbiaya komputasi rendah (*dedicated zero-overhead prompt*) dengan daftar kategori resmi yang ditarik dinamis dari Supabase.
   - `_formatTxAsCard(tx, accounts, categories)`: Pembuat format kartu ringkasan visual transaksi untuk antarmuka konsol dan pesan ringkas.
 
@@ -3236,14 +3237,14 @@ Dekomposisi ini membagi domain keuangan ke dalam 7 modul independen di bawah dir
   - `requestDeleteConfirmation(target)`: Pencarian cerdas transaksi yang hendak dihapus (berdasarkan kata kunci merchant atau kata kunci `'terakhir'`) dan persiapan sesi konfirmasi interaktif.
   - `confirmDeleteTransaction(confirmed)`: Eksekusi *soft-delete* transaksi setelah konfirmasi diterima dari Tuan Faqih, sekaligus menyimpan snapshot cadangan ke `lastDeletedTransaction`.
   - `undoDeleteTransaction()`: Fitur pemulihan instan (*undo ledger*) yang mengembalikan transaksi yang baru saja terhapus ke database dengan status dan tanggal asli.
-  - `editTransaction(target, newNominal, newCategory, newDesc, newAccount, newDate)`: Modifikasi nilai transaksi yang telah tercatat tanpa merusak konsistensi saldo agregat.
+  - `editTransaction(target, newNominal, newCategory, newDesc, newAccount, newDate, newTime, newPaymentMethod)`: Modifikasi nilai transaksi yang telah tercatat (termasuk pergeseran tanggal dan waktu historis) tanpa merusak konsistensi saldo agregat.
 
 #### 6. [`Finance_Confirmations.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_Confirmations.js) — Siklus Hidup Transaksi Tertunda & Watchdog
 - **Ukuran**: 623 baris kode.
 - **Tanggung Jawab**:
   - `requestTransactionConfirmation(txData, sourceLabel, customKey)`: Mendaftarkan transaksi tertunda, menyimpan cadangan persistensi awal ke Supabase (`telegram_sent = false`), merakit pesan pratinjau konfirmasi, dan menyalakan timer batas waktu 5 menit.
   - `confirmPendingTransactions(confirmed, targetKey)`: Mengonfirmasi penyimpanan transaksi tertunda, memicu AI categorizer jika kategori belum ditentukan, dan membersihkan status pending.
-  - `updatePendingTransaction(targetKey, newNotes, newCategory, newNominal)`: Memperbarui rincian transaksi tertunda secara interaktif sebelum disimpan permanen.
+  - `updatePendingTransaction(targetKey, newNotes, newCategory, newNominal, newDate, newTime)`: Memperbarui rincian transaksi tertunda secara interaktif (termasuk koreksi waktu dan tanggal) sebelum disimpan permanen.
   - `_autoSavePending(compositeKey, tx)` & `autoSaveFromWatchdog(compositeKey, tx)`: Logika simpan otomatis saat waktu tunggu 5 menit habis agar tidak ada transaksi finansial yang hilang terlupakan.
   - `recoverPendingTransactions()`: **Fitur Pemulihan Pasca-Restart**. Saat server mengalami reboot/deploy, fungsi ini membaca tabel `nexa_pending_transactions` di Supabase, menghitung sisa waktu *timeout*, dan mendaftarkan kembali transaksi aktif ke memori kerja N.E.X.A.
 
@@ -4264,6 +4265,166 @@ Melalui eksekusi skrip audit berbasis kecerdasan kognitif [`scripts/reclassify_c
 | **Siklus Hidup Data Lama** | Ditimpa secara destruktif (*overwritten*) | **Bi-Temporal Closed (`superseded_by` pointer referensial)** |
 | **Cakupan Test Suite Monorepo** | 428 automated unit tests | **437 automated unit tests (100% Green, 0 Fail)** |
 | **Status Produksi** | v3.4.3 | **v3.4.4 Deployed & Running on Azure VPS (PM2 PID 1037134)** |
+
+---
+
+## BAB 26: EVOLUSI OMNICHANNEL FINANCE ENGINE v3.4.4+ : DUAL-LEG CHAT TRANSFERS, TEMPORAL COMPOSITE PARSER, SPLIT-ENGINE RESILIENCE & INTERACTIVE REACT DATA REFETCHING
+
+### 26.1 Urgensi & Latar Belakang: Evolusi Interaksi Finansial Pengguna Sehari-hari
+
+Pencatatan keuangan personal pada N.E.X.A telah bertransformasi dari sekadar pencatatan pengeluaran reaktif (*simple expense tracker*) menjadi ekosistem manajemen kekayaan pribadi (*Personal Wealth & Liquidity Engine*). Seiring dengan semakin intensifnya penggunaan lapangan oleh Tuan Faqih, teridentifikasi 5 batas fungsional kritis (*functional friction boundaries*) yang memerlukan peningkatan arsitektural:
+
+1. **Ketiadaan Transfer Antar-Akun Percakapan**:
+   Pencatatan transfer saldo antar-rekening (misal: memindahkan dana dari Bank Mandiri ke Bank Jago, atau dari dompet digital Dana ke rekening bank) sebelumnya hanya dapat dilakukan secara visual melalui antarmuka Web. Ketika pengguna meminta transfer via obrolan teks (misal: *"Pindah saldo 50rb dari Dana ke Jago"*), sistem mencatatnya sebagai pengeluaran atau gagal mengaitkan akun tujuan.
+2. **Keterbatasan Resolusi Waktu Lampau Majemuk (*Composite Temporal Blindness*)**:
+   Ketika pengguna mencatat mutasi lampau dengan keterangan waktu gabungan (seperti *"kemarin jam 9 malam"* atau *"tadi sore jam 16.30"*), parser konvensional hanya mampu menangkap tanggal atau terbentur pada ekstraksi waktu jam, sehingga transaksi salah tersimpan dengan stempel jam saat pesan dikirim (*current wall-clock timestamp*).
+3. **Ambiguitas Kata Kuantitas pada Mesin Split Transaksi (*Split False-Positives*)**:
+   Mesin transaksi terpisah (*Split_Engine.js*) sebelumnya mengandalkan regex pemecah kata yang agresif. Akibatnya, penyebutan jumlah porsi pesanan tunggal seperti *"beli es teh dua"* atau *"nasi goreng 2 porsi"* keliru dianggap sebagai perintah pemecahan multi-item (*split transactions*), menghasilkan baris transaksi kosong atau anomali nominal.
+4. **Kebutuhan Standarisasi Metode Pembayaran `Direct Debit`**:
+   Layanan perbankan digital dan e-commerce modern kerap menggunakan otorisasi debit otomatis (seperti *Shopee Pay Direct Debit* atau *GoPay Direct Debit via Bank Jago*). Ketiadaan entitas metode pembayaran ini menyebabkan mutasi terlempar ke kategori *Lainnya* atau salah dilabeli sebagai kartu kredit.
+5. **Kebutuhan Penyegaran Data Terisolasi (*In-Card Asynchronous Refetching*) pada Frontend**:
+   Pada antarmuka Web (`nexa-finance-web`), pengguna yang baru saja mencatat mutasi via Telegram atau email poller harus menekan tombol refresh browser penuh (*F5* / *Ctrl+R*) untuk melihat catatan terkini. Ini merusak kenyamanan pengguna (*cognitive disruption*) karena seluruh state aplikasi dan filter di-reload dari awal.
+
+---
+
+### 26.2 Mesin Transfer Antar-Akun Percakapan (Dual-Leg Chat Transfer Engine)
+
+Untuk memungkinkan transfer antar-rekening melalui bahasa alami santai, dirancang integrasi menyeluruh dari Cognitive Router hingga lapisan Database:
+
+```mermaid
+flowchart TD
+    UserMsg["💬 Pesan Pengguna:\n'Pindah saldo 50rb dari Dana ke Jago'"] --> Router["🧠 Cognitive Router (Router_Prompts.js)"]
+    Router --> Intent{"Deteksi Intent == 'TRANSFER'?"}
+    
+    Intent -- "Ya" --> Extract["Ekstraksi Entitas:\n• nominal: 50000\n• from_account: 'Dana'\n• to_account: 'Bank Jago'"]
+    Extract --> Handler["⚙️ Finance Handler (finance_handler.js)"]
+    Handler --> PairGen["🔗 writeTransferPair() Engine"]
+    
+    subgraph Atomic_DB_Transaction["Dual-Leg Atomic Write (split_group_id)"]
+        Leg1["Kaki 1 (transfer_out):\n• Akun: Dana\n• split_label: 'transfer_out'\n• amount: 50.000\n• Saldo Dana: -50.000"]
+        Leg2["Kaki 2 (transfer_in):\n• Akun: Bank Jago\n• split_label: 'transfer_in'\n• amount: 50.000\n• Saldo Jago: +50.000"]
+    end
+    
+    PairGen --> Leg1
+    PairGen --> Leg2
+    Leg1 & Leg2 --> VerifyBalance["⚖️ Verifikasi Net Worth:\nDelta Kekayaan Global = Rp0"]
+    VerifyBalance --> TelegramNotify["📲 Notifikasi Konfirmasi:\n'🔄 Transfer Berhasil: Dana ➔ Bank Jago (Rp50.000)'"]
+```
+
+#### Komponen Inti Implementasi:
+1. **Schema & Cognitive Router Prompt ([`src/core/router/Router_Prompts.js`](file:///c:/workspace/nexa-server/src/core/router/Router_Prompts.js))**:
+   Intent `TRANSFER` diformalkan ke dalam skema deterministik:
+   ```json
+   {
+     "domain": "FINANCE",
+     "action": "TRANSFER",
+     "parameters": {
+       "nominal": 50000,
+       "from_account": "Dana",
+       "to_account": "Bank Jago",
+       "description": "Pindah saldo"
+     }
+   }
+   ```
+2. **Atomic Dual-Leg Insertion ([`src/interfaces/common/handlers/finance_handler.js`](file:///c:/workspace/nexa-server/src/interfaces/common/handlers/finance_handler.js) & [`src/infrastructure/finance_db/transactions.js`](file:///c:/workspace/nexa-server/src/infrastructure/finance_db/transactions.js))**:
+   Sistem men-generate `split_group_id` tunggal (UUID v4) dan memasukkan 2 record simultan:
+   - Baris 1: `type = 'transfer'`, `split_label = 'transfer_out'`, `account_id = fromAccountId`, `amount = nominal`.
+   - Baris 2: `type = 'transfer'`, `split_label = 'transfer_in'`, `account_id = toAccountId`, `amount = nominal`.
+3. **Integritas Agregat Net Worth**:
+   Perhitungan saldo master global mengabaikan efek nominal transaksi transfer berpasangan sehingga tidak terjadi inflasi aset (*zero-sum wealth integrity*).
+
+---
+
+### 26.3 Heuristik Pengurai Waktu Komposit Alami (`_parseDateTimeExpression`)
+
+Untuk menangani input waktu bahasa alami yang kompleks, diimplementasikan parser komposit deterministik pada [`src/domain/finance/Finance_Helpers.js`](file:///c:/workspace/nexa-server/src/domain/finance/Finance_Helpers.js):
+
+$$\text{Input Teks} \xrightarrow{\text{Regex Decomposition}} \{\text{Relative Date Token}\} + \{\text{Temporal Clock Token}\} \xrightarrow{\text{Clock Arithmetic}} (\text{YYYY-MM-DD}, \text{HH:mm:ss})$$
+
+#### Fitur Utama Pengurai:
+- **Deteksi Relatif Multi-Hari**: Mengenali pola `"kemarin"`, `"tadi"`, `"lusa"`, `"kemarin lusa"`, `"X hari lalu"`.
+- **Deteksi Penanda Waktu Indonesia**: Mengenali modifier `"pagi"` (00:00 - 10:59), `"siang"` (11:00 - 14:59), `"sore"` (15:00 - 18:29), dan `"malam"` (18:30 - 23:59).
+- **Konversi Jam 12-ke-24**: Jam `"9 malam"` dikonversi otomatis menjadi `"21:00:00"`, `"setengah 4 sore"` menjadi `"15:30:00"`.
+- **Integrasi Koreksi Dua Arah**:
+  - `updatePendingTransaction(compositeKey, ..., newDate, newTime)`: Memungkinkan koreksi waktu pada transaksi pending (misal: *"waktunya kemarin jam 8 malam"*).
+  - `editTransaction(target, ..., newDate, newTime)`: Memodifikasi tanggal dan jam pada catatan historis yang telah tersimpan.
+
+---
+
+### 26.4 Perlindungan Anti False-Positive Mesin Split Transaksi (`Split_Engine.js`)
+
+Pada versi sebelumnya, pemisahan item menggunakan ekspresi reguler yang mencocokkan angka atau kata bilangan sebagai pemisah item. Akibatnya, frasa kuantitas makanan seperti *"es teh dua"* atau *"bakso 2"* dipotong di kata *"dua"* dan memicu split kosong.
+
+Di [`src/domain/Split_Engine.js`](file:///c:/workspace/nexa-server/src/domain/Split_Engine.js), diterapkan **Safeguard Disambiguasi Kuantitas**:
+- Membedakan antara kata hubung pemisah transaksi (*conjunctions*: `"dan"`, `"sama"`, `"serta"`, `"+"`) dengan kata penunjuk kuantitas (*item quantities*: `"dua"`, `"2"`, `"tiga"`, `"porsi"`, `"gelas"`, `"bungkus"`).
+- Transaksi pesanan tunggal yang mengandung kata kuantitas tetap dipertahankan sebagai satu transaksi utuh dengan nominal dan deskripsi lengkap.
+
+---
+
+### 26.5 Standarisasi Metode Pembayaran Resmi Ke-5: `Direct Debit`
+
+Metode pembayaran `Direct Debit` kini diresmikan sebagai entitas kelas satu (*first-class payment method*):
+1. **Normalizer Deterministik**:
+   `_normalizePaymentMethod(raw)` memetakan variasi teks seperti `"direct debit"`, `"directdebit"`, `"dd"`, `"autodebit"`, `"auto debit"` ke nilai kanonikal `'Direct Debit'`.
+2. **Penyelarasan Skema Database**:
+   Validasi enum dan filter di Supabase mendukung `'Direct Debit'` secara transparan.
+3. **Representasi Visual UI ([`nexa-finance-web`](file:///c:/workspace/nexa-server/nexa-finance-web))**:
+   - Ditambahkan lencana khusus bertema *teal* (`bg-teal-100 text-teal-700`).
+   - Tersedia di opsi filter modal transaksi, sidebar filter, dan daftar mutasi.
+
+---
+
+### 26.6 Evolusi Antarmuka Frontend: Deep-Linking & In-Card Asynchronous Refresh
+
+Pada portal web [`nexa-finance-web`](file:///c:/workspace/nexa-server/nexa-finance-web), dilakukan pembaruan pengalaman visual yang terinspirasi oleh sistem manajemen database modern (seperti Supabase Table Editor):
+
+#### A. Deep-Link Routing Detail Akun dari Dasbor
+- **Masalah Lama**: Mengeklik kartu rekening di dasbor hanya membuka daftar rekening generik (`/accounts`), memaksa pengguna mencari dan mengeklik kembali akun yang diinginkan.
+- **Penyelesaian**: Kartu rekening di dasbor ([`dashboard-view.tsx`](file:///c:/workspace/nexa-server/nexa-finance-web/components/wallet/dashboard-view.tsx)) kini mengarahkan langsung ke `/accounts?id=${account.id}`.
+- **Reaktif State & Suspense Guard**:
+  [`accounts-view.tsx`](file:///c:/workspace/nexa-server/nexa-finance-web/components/wallet/accounts-view.tsx) mendeteksi query parameter via `useSearchParams()`. Halaman dibungkus `<Suspense fallback={null}>` di [`page.tsx`](file:///c:/workspace/nexa-server/nexa-finance-web/app/accounts/page.tsx) untuk memastikan kompatibilitas statis Next.js App Router.
+- **Back Button Ergonomics**:
+  Menekan tombol kembali pada Detail Akun memanggil `router.replace('/accounts')` dan mereset state, menyinkronkan riwayat tombol Back/Forward browser tanpa *page reload*.
+- **Flicker-Free Account Detail**:
+  [`account-detail-view.tsx`](file:///c:/workspace/nexa-server/nexa-finance-web/components/wallet/account-detail-view.tsx) menampilkan spinner pemuatan data awal jika data akun masih dalam proses *fetch*, mencegah munculnya pesan keliru *"Akun tidak ditemukan"*.
+
+#### B. Standalone In-Card Table Refresh Button (Gaya Supabase Table Editor)
+- **Komponen**: Diletakkan di pojok kanan atas div catatan pada [`records-view.tsx`](file:///c:/workspace/nexa-server/nexa-finance-web/components/wallet/records-view.tsx), sejajar dengan teks *"Ditemukan X catatan"*.
+- **Mekanisme Asinkron**:
+  ```tsx
+  const handleRefresh = async () => {
+    try {
+      setIsRefreshing(true)
+      await refetch()
+      toast.success("Catatan berhasil direfresh")
+    } catch (err) {
+      toast.error("Gagal merefresh catatan")
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+  ```
+- **Karakteristik UX**:
+  1. Hanya me-refresh data catatan dan statistik saldo di dalam div bersangkutan melalui hook `useTransactions()`.
+  2. Bebas dari reload browser penuh (*Zero Browser Reload / Zero F5*).
+  3. Dilengkapi animasi putar (*spin animation*) pada ikon `RefreshCw` selama pengambilan data berlangsung.
+  4. Menyajikan umpan balik toast instan: *"Catatan berhasil direfresh"*.
+
+---
+
+### 26.7 Matriks Evaluasi & Verifikasi: Sebelum vs Sesudah Evolusi Finansial
+
+| Dimensi Finansial & UX | Sebelum Evolusi v3.4.4+ | Setelah Evolusi v3.4.4+ |
+| :--- | :--- | :--- |
+| **Transfer Saldo via Chat** | Tidak didukung (dianggap Expense) | **Didukung Penuh (`TRANSFER` intent, dual-leg transfer pair)** |
+| **Parsing Waktu Komposit** | Terbatas (hanya tanggal, jam default ke waktu kirim) | **Presisi Penuh (`_parseDateTimeExpression`: tanggal + jam:menit lampau)** |
+| **Koreksi Waktu Catatan** | Hanya nominal & kategori | **Dapat mengoreksi tanggal & waktu pada pending maupun confirmed** |
+| **Resiliensi Mesin Split** | Rentan salah tafsir kata kuantitas (*"es teh dua"*) | **Kebal False-Positive (disambiguasi kuantitas vs konjungsi)** |
+| **Metode Pembayaran Resmi** | 4 Metode (QRIS, Transfer, Kartu Kredit, Tunai) | **5 Metode Resmi (+ Direct Debit, badge teal)** |
+| **Navigasi Kartu Dasbor** | Mengarah ke daftar umum `/accounts` | **Direct Deep-Link ke `/accounts?id=<uuid>` (Detail Akun)** |
+| **Penyegaran Data Tabel Web** | Wajib reload browser penuh (*F5*) | **In-Card Asynchronous Refresh (Gaya Supabase Table Editor)** |
+| **Cakupan Test Suite Monorepo** | 437 automated unit tests | **456 automated unit tests (100% Green Pass, 0 Fail)** |
+| **Status Produksi** | v3.4.4 Base | **v3.4.4+ Enhanced Deployed on Azure VPS & Vercel** |
 
 ---
 
