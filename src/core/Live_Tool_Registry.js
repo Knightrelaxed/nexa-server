@@ -503,7 +503,8 @@ const LIVE_TOOL_DECLARATIONS = [
         x:            { type: 'NUMBER', description: 'Koordinat horizontal x ternormalisasi (0 - 1000). Contoh: 500 untuk tengah layar.' },
         y:            { type: 'NUMBER', description: 'Koordinat vertikal y ternormalisasi (0 - 1000). Contoh: 500 untuk tengah layar.' },
         button:       { type: 'STRING', description: 'Tombol mouse: "LEFT" (default), "RIGHT" (klik kanan/menu konteks), atau "MIDDLE".' },
-        double_click: { type: 'BOOLEAN', description: 'True jika ingin melakukan klik ganda (double click).' }
+        double_click: { type: 'BOOLEAN', description: 'True jika ingin melakukan klik ganda (double click).' },
+        target_hint:  { type: 'STRING', description: 'Petunjuk label teks tombol persis di layar (misal: "Login", "Search", "Next"). Membantu akurasi presisi pada deretan tombol padat.' }
       },
       required: ['x', 'y']
     }
@@ -1834,12 +1835,16 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
         if (isNaN(x) || isNaN(y) || x < 0 || x > 1000 || y < 0 || y > 1000) {
           return { status: 'ERROR', message: 'Koordinat x dan y harus berada di rentang 0-1000.' };
         }
-        const res = await windowsBridge.sendCommand('DESKTOP_CLICK', {
+        const payload = {
           x,
           y,
           button: args.button || 'LEFT',
-          double_click: args.double_click === true
-        }, { timeoutMs: 5000 });
+          double_click: args.double_click === true,
+        };
+        if (args.target_hint || args.hint || args.target) {
+          payload.target_hint = String(args.target_hint || args.hint || args.target);
+        }
+        const res = await windowsBridge.sendCommand('DESKTOP_CLICK', payload, { timeoutMs: 5000 });
         return {
           status: res.success ? 'SUCCESS' : 'FAILED',
           action: 'desktopClick',
