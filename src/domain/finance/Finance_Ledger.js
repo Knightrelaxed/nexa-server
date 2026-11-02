@@ -59,6 +59,46 @@ async function processTransaction(data, source) {
       hour12: false
     }).replace(':', '.');
 
+    // Handle Transfer Pair routing if transaction is marked as self-transfer
+    if (data.isSelfTransfer || (data.type || '').toUpperCase() === 'TRANSFER') {
+      const fromAcc = data.fromAccount;
+      const toAcc = data.account || data.suggestedAccount;
+      if (fromAcc && toAcc) {
+        const txDateISO = transactionTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const txTimeHHMM = transactionTime.toLocaleTimeString('id-ID', {
+          timeZone: 'Asia/Jakarta',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+        const desc = data.description && data.description !== '[Menunggu Detail User]' && data.description !== '-'
+          ? data.description
+          : `Transfer dari ${fromAcc} ke ${toAcc}`;
+
+        const pairResult = await supabaseFinance.writeTransferPair({
+          fromAccountName: fromAcc,
+          toAccountName: toAcc,
+          nominal,
+          description: desc,
+          dateISO: txDateISO,
+          timeHHMM: txTimeHHMM,
+          categoryName: data.category || 'Pengeluaran tidak tercatat '
+        });
+
+        if (pairResult.status !== 'SUCCESS') {
+          throw new Error(`Supabase Finance transfer pair gagal: ${pairResult.reason}`);
+        }
+
+        await supabase.logTransactionKey(compositeKey, transactionTime, source);
+        console.log(`[FINANCE] ✅ Transfer Pair Supabase berhasil disimpan (Pair ID: ${pairResult.pairId})`);
+        return {
+          status: 'SUCCESS',
+          pairId: pairResult.pairId,
+          message: `✅ Transfer Rp${nominal.toLocaleString('id-ID')} dari ${fromAcc} ke ${toAcc} berhasil dicatat.`
+        };
+      }
+    }
+
     // Normalize type to Indonesian label
     const isIncome = (data.type || '').toUpperCase() === 'INCOME' || data.type === 'Pemasukan';
     const tipeLabel = isIncome ? 'Pemasukan' : 'Pengeluaran';

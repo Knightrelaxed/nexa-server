@@ -198,7 +198,10 @@ async function readTransactions({ limit = 5, keyword = '', txType = null, month 
   if (limit) query = query.limit(limit);
 
   if (txType) {
-    query = query.eq('type', txType.toUpperCase() === 'INCOME' ? 'income' : 'expense');
+    const t = txType.toUpperCase();
+    if (t === 'INCOME') query = query.eq('type', 'income');
+    else if (t === 'TRANSFER') query = query.eq('type', 'transfer');
+    else query = query.eq('type', 'expense');
   }
 
   // Filter bulan & tahun
@@ -342,12 +345,22 @@ async function writeTransferPair({
   if (!toAccountId) {
     return { status: 'SKIPPED', reason: `Akun tujuan "${toAccountName}" tidak ditemukan di database.` };
   }
+  if (fromAccountId === toAccountId) {
+    return { status: 'SKIPPED', reason: `Akun asal dan akun tujuan tidak boleh sama (${fromAccountName}).` };
+  }
   if (!categoryId) {
     return { status: 'SKIPPED', reason: `Kategori "${categoryName}" tidak ditemukan di database.` };
   }
 
-  const cleanDate = dateISO || new Date().toISOString().split('T')[0];
-  const cleanTime = timeHHMM ? String(timeHHMM).replace(/\./g, ':') : null;
+  const cleanDate = dateISO || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+  const cleanTime = timeHHMM
+    ? String(timeHHMM).replace(/\./g, ':')
+    : new Date().toLocaleTimeString('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
   const pairId = crypto.randomUUID();
   const desc = description || `Transfer dari ${fromAccountName} ke ${toAccountName}`;
 

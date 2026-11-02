@@ -67,17 +67,16 @@ async function recoverPendingTransactions() {
               categoryName: 'Pengeluaran tidak tercatat '
             });
             await supabase.logTransactionKey(compositeKey, txTime, tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL');
-            continue;
+          } else {
+            const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
+            const prep = tx.type === 'INCOME' ? 'dari' : 'ke';
+            const _recDest = tx.destination && tx.destination !== 'Unknown' ? tx.destination : '';
+            const _recDesc = tx.description && tx.description !== '[Menunggu Detail User]' && tx.description !== '-' ? tx.description : '';
+            const _recContext = [_recDest, _recDesc].filter(Boolean).join(' - ') || 'Unknown';
+            tx.category = await _autoCategorizeMerchant(_recContext, tx.category);
+            if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ${prep} ${tx.destination}`;
+            await processTransaction(tx, 'GMAIL_POLLING');
           }
-
-          const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
-          const prep = tx.type === 'INCOME' ? 'dari' : 'ke';
-          const _recDest = tx.destination && tx.destination !== 'Unknown' ? tx.destination : '';
-          const _recDesc = tx.description && tx.description !== '[Menunggu Detail User]' && tx.description !== '-' ? tx.description : '';
-          const _recContext = [_recDest, _recDesc].filter(Boolean).join(' - ') || 'Unknown';
-          tx.category = await _autoCategorizeMerchant(_recContext, tx.category);
-          if (tx.description === '[Menunggu Detail User]') tx.description = `${tipeStr} ${prep} ${tx.destination}`;
-          await processTransaction(tx, 'GMAIL_POLLING');
           // processTransaction already calls logTransactionKey, but we
           // delete the pending record immediately after to signal to the
           // Watchdog that this tx is resolved and should not be re-processed.
@@ -338,23 +337,31 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
   if (newDescription) {
     pending.tx.description = newDescription;
 
-    // ── DETEKSI PERUBAHAN KE TRANSFER ANTAR-AKUN ───────────────────────────────
-    // Jika deskripsi atau input mengindikasikan transfer dari akun lain:
-    // e.g. "itu transfer dari dana", "pindahan dari gopay", "tf dari shopeepay"
-    const transferMatch = (newDescription || '').match(/(?:transfer|tf|pindahan|kirim(?:an)?)\s+(?:dari|dr)\s+([a-z0-9\s]+)/i);
-    if (transferMatch) {
-      const rawSourceName = transferMatch[1].trim();
-      const accounts = await supabaseFinance.getAccountsList();
-      const matchedSource = accounts.find(a => {
-        const normalizedAcc = a.name.toLowerCase().replace(/^(bank|dompet)\s+/i, '').trim();
-        return rawSourceName.toLowerCase().includes(normalizedAcc) || normalizedAcc.includes(rawSourceName.toLowerCase());
-      });
-      if (matchedSource) {
-        pending.tx.isSelfTransfer = true;
-        pending.tx.fromAccount = matchedSource.name;
-        pending.tx.type = 'TRANSFER';
-        pending.tx.category = 'Pengeluaran tidak tercatat ';
-        pending.tx.description = `Transfer dari ${matchedSource.name} ke ${pending.tx.account || 'Bank Jago'}`;
+    // ── DETEKSI PERUBAHAN KE TRANSFER ANTAR-AKUN / PEMBATALAN ─────────────────
+    if (/\bbukan\s+(?:transfer|pindahan|tf)\b/i.test(newDescription)) {
+      pending.tx.isSelfTransfer = false;
+      pending.tx.type = 'INCOME';
+      pending.tx.fromAccount = null;
+      pending.tx.description = newDescription.replace(/\bbukan\s+(?:transfer|pindahan|tf)[,\s]*/i, '').trim() || 'Pemasukan';
+    } else {
+      // Mendukung variasi: "itu transfer dari dana", "tf dari dana", "dari dana", "pindahan dari gopay", "saldo dari dana", "tf dana"
+      const transferMatch = (newDescription || '').match(/(?:(?:transfer|tf|pindahan|pindah|kirim(?:an)?|saldo)\s+)?(?:dari|dr)\s+([a-z0-9\s]+)/i) ||
+                            (newDescription || '').match(/(?:transfer|tf|pindahan|pindah)\s+([a-z0-9\s]+)/i);
+      if (transferMatch) {
+        const rawSourceName = transferMatch[1].trim();
+        const accounts = await supabaseFinance.getAccountsList();
+        const matchedSource = accounts.find(a => {
+          if (a.name.toLowerCase() === (pending.tx.account || '').toLowerCase()) return false;
+          const normalizedAcc = a.name.toLowerCase().replace(/^(bank|dompet)\s+/i, '').trim();
+          return rawSourceName.toLowerCase().includes(normalizedAcc) || normalizedAcc.includes(rawSourceName.toLowerCase());
+        });
+        if (matchedSource) {
+          pending.tx.isSelfTransfer = true;
+          pending.tx.fromAccount = matchedSource.name;
+          pending.tx.type = 'TRANSFER';
+          pending.tx.category = 'Pengeluaran tidak tercatat ';
+          pending.tx.description = `Transfer dari ${matchedSource.name} ke ${pending.tx.account || 'Bank Jago'}`;
+        }
       }
     }
     
@@ -396,34 +403,46 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
   // Jika tidak ditemukan, JANGAN update pending.tx.account dan balas dengan
   // pesan konfirmasi yang menyebutkan daftar akun aktif.
   if (newAccount) {
-    const accounts = await supabaseFinance.getAccountsList();
-    const normalizedInput = newAccount.toLowerCase().replace(/\s+/g, '');
+    // Jika transaksi adalah self-transfer dan newAccount sama dengan fromAccount,
+    // jangan timpa destination account (pending.tx.account) karena newAccount
+    // yang diekstrak AI sebenarnya adalah akun sumber (fromAccount).
+    const isSourceAccount = pending.tx.isSelfTransfer &&
+      pending.tx.fromAccount &&
+      newAccount.toLowerCase().replace(/\s+/g, '').includes(pending.tx.fromAccount.toLowerCase().replace(/\s+/g, ''));
 
-    // Cari akun yang paling cocok (fuzzy match sederhana berbasis includes)
-    const matched = accounts.find(a => {
-      const normalizedName = a.name.toLowerCase().replace(/\s+/g, '');
-      return normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
-    });
+    if (!isSourceAccount) {
+      const accounts = await supabaseFinance.getAccountsList();
+      const normalizedInput = newAccount.toLowerCase().replace(/\s+/g, '');
 
-    if (matched) {
-      // Akun ditemukan — gunakan nama resmi dari database
-      pending.tx.account = matched.name;
-    } else {
-      // Akun TIDAK ditemukan — jangan update, dan balas dengan konfirmasi
-      const accountList = accounts.map(a => `• ${a.name} (${a.type})`).join('\n');
-      const unknownAccountMsg =
-        `⚠️ <b>Akun "${newAccount}" tidak ditemukan</b> di daftar akun aktif Tuan.\n\n` +
-        `Berikut akun yang terdaftar:\n${accountList}\n\n` +
-        `❓ Silakan pilih salah satu dari daftar di atas, atau abaikan agar disimpan ke akun default dalam 5 menit.`;
+      // Cari akun yang paling cocok (fuzzy match sederhana berbasis includes)
+      const matched = accounts.find(a => {
+        const normalizedName = a.name.toLowerCase().replace(/\s+/g, '');
+        return normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName);
+      });
 
-      // Reset timeout karena user sudah berinteraksi
-      clearTimeout(pending.timeoutId);
-      const newTimeoutId = setTimeout(async () => {
-        if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
-      }, 5 * 60 * 1000);
-      pending.timeoutId = newTimeoutId;
+      if (matched) {
+        // Akun ditemukan — gunakan nama resmi dari database
+        pending.tx.account = matched.name;
+        if (pending.tx.isSelfTransfer) {
+          pending.tx.description = `Transfer dari ${pending.tx.fromAccount} ke ${pending.tx.account}`;
+        }
+      } else {
+        // Akun TIDAK ditemukan — jangan update, dan balas dengan konfirmasi
+        const accountList = accounts.map(a => `• ${a.name} (${a.type})`).join('\n');
+        const unknownAccountMsg =
+          `⚠️ <b>Akun "${newAccount}" tidak ditemukan</b> di daftar akun aktif Tuan.\n\n` +
+          `Berikut akun yang terdaftar:\n${accountList}\n\n` +
+          `❓ Silakan pilih salah satu dari daftar di atas, atau abaikan agar disimpan ke akun default dalam 5 menit.`;
 
-      return unknownAccountMsg;
+        // Reset timeout karena user sudah berinteraksi
+        clearTimeout(pending.timeoutId);
+        const newTimeoutId = setTimeout(async () => {
+          if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
+        }, 5 * 60 * 1000);
+        pending.timeoutId = newTimeoutId;
+
+        return unknownAccountMsg;
+      }
     }
   }
 
@@ -469,7 +488,8 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
  * Extracted as a shared helper so recovery and new confirmations use the same format.
  */
 async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGAN TERBARU') {
-  const transactionTime = new Date(tx.time);
+  const txDateObj = tx.time ? new Date(tx.time) : new Date();
+  const transactionTime = isNaN(txDateObj.getTime()) ? new Date() : txDateObj;
   const dateStr = transactionTime.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' });
   const timeStr = transactionTime.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.');
   // BUG FIX #5: Safely parse nominal whether it comes as number or string (e.g., from Supabase recovery)
@@ -605,7 +625,12 @@ async function _autoSavePending(compositeKey, tx) {
       });
 
       if (pairResult.status !== 'SUCCESS') {
-        throw new Error(`Gagal auto-save transfer pair: ${pairResult.reason}`);
+        console.error('[FINANCE] Auto-save writeTransferPair failed:', pairResult.reason);
+        try {
+          const { sendTelegramOutbound } = require('../../interfaces/webhook');
+          await sendTelegramOutbound(`⚠️ <b>Gagal Menyimpan Transfer Otomatis</b>\n\nNominal: Rp${nominalNum.toLocaleString('id-ID')}\nSumber: ${fromAcc}\nTujuan: ${toAcc}\nAlasan: ${pairResult.reason}\n\n<i>Transaksi dibatalkan.</i>`);
+        } catch (_) {}
+        return;
       }
 
       await supabase.logTransactionKey(compositeKey, txTime, tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL');
@@ -754,7 +779,9 @@ async function getPendingConfirmationsContext() {
     let contextStr = "STATUS FINANCE TERTUNDA (MENUNGGU RESPON USER):\n";
     for (const [key, pending] of pendingConfirmations.entries()) {
       const tx = pending.tx;
-      contextStr += `- Ada transaksi tertunda: ${tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran'} Rp${tx.nominal} ke/dari ${tx.destination}.\n`;
+      const tipeText = tx.isSelfTransfer ? 'Transfer Antar-Akun' : (tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran');
+      const destText = tx.isSelfTransfer ? `dari ${tx.fromAccount || 'Dana'} ke ${tx.account || 'Bank Jago'}` : `ke/dari ${tx.destination}`;
+      contextStr += `- Ada transaksi tertunda: ${tipeText} Rp${tx.nominal} ${destText}.\n`;
       if (tx.description === '[Menunggu Detail User]' || tx.category === '[Menunggu Kategori AI/User]') {
         contextStr += `  User mungkin sedang mencoba memberi tahu rincian/kategori untuk transaksi ini!\n`;
       }
@@ -789,7 +816,9 @@ async function getPendingConfirmationsContext() {
     let contextStr = "STATUS FINANCE TERTUNDA (MENUNGGU RESPON USER — dipulihkan dari Supabase setelah restart):\n";
     for (const row of fresh) {
       const tx = row.tx_data;
-      contextStr += `- Ada transaksi tertunda: ${tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran'} Rp${tx.nominal} ke/dari ${tx.destination}.\n`;
+      const tipeText = tx.isSelfTransfer ? 'Transfer Antar-Akun' : (tx.type === 'INCOME' ? 'Pemasukan' : 'Pengeluaran');
+      const destText = tx.isSelfTransfer ? `dari ${tx.fromAccount || 'Dana'} ke ${tx.account || 'Bank Jago'}` : `ke/dari ${tx.destination}`;
+      contextStr += `- Ada transaksi tertunda: ${tipeText} Rp${tx.nominal} ${destText}.\n`;
     }
     return contextStr;
   } catch (e) {

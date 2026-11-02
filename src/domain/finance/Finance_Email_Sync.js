@@ -223,21 +223,29 @@ function detectSelfTransfer(destination, currentAccountName, registeredAccounts 
   const destLower = destination.toLowerCase();
 
   // 1. Strict Identity Check: Must contain user's name
-  const hasOwnerName = /\b(faqih|hidayatulloh)\b/i.test(destLower);
+  const hasOwnerName = /\b(faqih|hidayatulloh|hidayatullah)\b/i.test(destLower);
   if (!hasOwnerName) return null; // External income!
+
+  const destCleaned = destLower.replace(/[^a-z0-9\s]/g, ' ');
+  const destCompact = destLower.replace(/[^a-z0-9]/g, '');
 
   // 2. Match source account from registered accounts
   for (const acc of registeredAccounts) {
     if (acc.name.toLowerCase() === (currentAccountName || '').toLowerCase()) continue;
 
     // Remove prefixes like "Bank " or "Dompet "
-    const accKeyword = acc.name.toLowerCase().replace(/^(bank|dompet)\s+/i, '').trim();
-    if (!accKeyword) continue;
+    const rawAcc = acc.name.toLowerCase().replace(/^(bank|dompet)\s+/i, '').trim();
+    if (!rawAcc) continue;
 
-    // Check with word boundary or clean substring
-    const regex = new RegExp(`\\b${accKeyword.replace(/[^a-z0-9]/g, '')}\\b`, 'i');
-    const destCleaned = destLower.replace(/[^a-z0-9\s]/g, ' ');
-    if (regex.test(destCleaned) || destLower.includes(accKeyword)) {
+    const compactAcc = rawAcc.replace(/[^a-z0-9]/g, '');
+    const tokens = rawAcc.split(/\s+/).filter(t => t.length >= 3);
+
+    // Cocokkan token kata (misal "shopee", "dana", "mandiri", "gopay") dengan word boundary
+    const tokenMatched = tokens.some(tok => new RegExp(`\\b${tok}\\b`, 'i').test(destCleaned));
+    // Atau cocokkan bentuk compact (misal "shopeepay" di dalam "faqihhidayatullohshopeepay")
+    const compactMatched = compactAcc.length >= 3 && destCompact.includes(compactAcc);
+
+    if (tokenMatched || compactMatched) {
       return {
         isSelfTransfer: true,
         fromAccountName: acc.name,

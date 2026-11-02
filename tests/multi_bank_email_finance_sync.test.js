@@ -697,4 +697,96 @@ test('Smart Self-Transfer Detection and Flow', async (t) => {
       pendingConfirmations.delete(testKey);
     }
   });
+
+  await t.test('detectSelfTransfer: matches ShopeePay compact and variant HIDAYATULLAH', () => {
+    const r1 = detectSelfTransfer('FAQIH HIDAYATULLOH SHOPEEPAY', 'Bank Jago', registeredAccounts);
+    assert.ok(r1, 'Should match Shopee Pay compact');
+    assert.strictEqual(r1.fromAccountName, 'Shopee Pay');
+
+    const r2 = detectSelfTransfer('FAQIH HIDAYATULLAH DANA', 'Bank Jago', registeredAccounts);
+    assert.ok(r2, 'Should match variant spelling Hidayatullah');
+    assert.strictEqual(r2.fromAccountName, 'Dana');
+  });
+
+  await t.test('updatePendingTransaction protects destination account when AI provides source account as newAccount', async () => {
+    const { updatePendingTransaction } = require('../src/domain/finance/Finance_Confirmations');
+    const { pendingConfirmations } = require('../src/domain/finance/Finance_State');
+
+    const testKey = 'test_source_protection_key';
+    try {
+      pendingConfirmations.set(testKey, {
+        tx: {
+          nominal: 50000,
+          type: 'INCOME',
+          destination: 'FAQIH HIDAYATULLOH',
+          category: 'Lainnya',
+          description: '[Menunggu Detail User]',
+          account: 'Bank Jago',
+          suggestedAccount: 'Bank Jago',
+          time: '2026-11-02T14:22:00.000Z',
+          isAutoSyncEmail: true
+        },
+        timeoutId: setTimeout(() => {}, 100000)
+      });
+
+      // AI Router extracted: description: "itu transfer dari dana", account: "dana"
+      await updatePendingTransaction('itu transfer dari dana', null, null, 'dana', null, testKey);
+      const updated = pendingConfirmations.get(testKey)?.tx;
+
+      assert.ok(updated);
+      assert.strictEqual(updated.isSelfTransfer, true);
+      assert.strictEqual(updated.fromAccount, 'Dana', 'fromAccount must be Dana');
+      assert.strictEqual(updated.account, 'Bank Jago', 'Destination account must NOT be overwritten to Dana');
+    } finally {
+      clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
+      pendingConfirmations.delete(testKey);
+    }
+  });
+
+  await t.test('updatePendingTransaction reverts self-transfer to income when user says "bukan transfer"', async () => {
+    const { updatePendingTransaction } = require('../src/domain/finance/Finance_Confirmations');
+    const { pendingConfirmations } = require('../src/domain/finance/Finance_State');
+
+    const testKey = 'test_revert_income_key';
+    try {
+      pendingConfirmations.set(testKey, {
+        tx: {
+          nominal: 50000,
+          type: 'TRANSFER',
+          destination: 'FAQIH HIDAYATULLOH DANA •',
+          category: 'Pengeluaran tidak tercatat ',
+          description: 'Transfer dari Dana ke Bank Jago',
+          account: 'Bank Jago',
+          fromAccount: 'Dana',
+          isSelfTransfer: true,
+          time: '2026-11-02T14:22:00.000Z',
+          isAutoSyncEmail: true
+        },
+        timeoutId: setTimeout(() => {}, 100000)
+      });
+
+      await updatePendingTransaction('bukan transfer, itu honor freelance', 'Gaji & Pendapatan', null, null, null, testKey);
+      const updated = pendingConfirmations.get(testKey)?.tx;
+
+      assert.ok(updated);
+      assert.strictEqual(updated.isSelfTransfer, false, 'isSelfTransfer must be reverted to false');
+      assert.strictEqual(updated.type, 'INCOME', 'Type must be reverted to INCOME');
+      assert.strictEqual(updated.fromAccount, null, 'fromAccount must be cleared');
+      assert.ok(updated.description.includes('honor freelance'));
+    } finally {
+      clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
+      pendingConfirmations.delete(testKey);
+    }
+  });
+
+  await t.test('writeTransferPair rejects identical source and destination accounts', async () => {
+    const { writeTransferPair } = require('../src/infrastructure/finance_db/transactions');
+    const result = await writeTransferPair({
+      fromAccountName: 'Bank Jago',
+      toAccountName: 'Bank Jago',
+      nominal: 50000
+    });
+    assert.strictEqual(result.status, 'SKIPPED');
+    assert.ok(result.reason.includes('tidak boleh sama'));
+  });
 });
