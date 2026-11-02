@@ -699,7 +699,7 @@ export function DashboardView() {
           return (
             <Link
               key={acc.id}
-              href="/accounts"
+              href={`/accounts?id=${acc.id}`}
               style={cardBgStyle}
               className={cn(
                 "flex min-w-[220px] items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-md shrink-0 transition-transform hover:-translate-y-0.5 cursor-pointer",

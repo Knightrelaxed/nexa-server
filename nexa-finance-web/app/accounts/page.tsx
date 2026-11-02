@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { AppShell } from "@/components/wallet/app-shell"
 import { AccountsView } from "@/components/wallet/accounts-view"
 
@@ -9,7 +10,9 @@ export const metadata = {
 export default function AccountsPage() {
   return (
     <AppShell>
-      <AccountsView />
+      <Suspense fallback={null}>
+        <AccountsView />
+      </Suspense>
     </AppShell>
   )
 }

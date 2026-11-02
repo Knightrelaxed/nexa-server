@@ -51,7 +51,7 @@ interface AccountDetailViewProps {
 }
 
 export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps) {
-  const { accounts, deleteAccount, refetch: refetchAccounts } = useAccounts()
+  const { accounts, loading: accountsLoading, deleteAccount, refetch: refetchAccounts } = useAccounts()
   const account = accounts.find((a) => a.id === accountId)
   
   const [activeTab, setActiveTab] = useState<"saldo" | "catatan">("saldo")
@@ -236,6 +236,14 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
   }, [account])
 
   if (!account) {
+    if (accountsLoading) {
+      return (
+        <div className="p-12 text-center bg-white rounded-xl border border-border shadow-sm">
+          <div className="h-6 w-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">Memuat data akun...</p>
+        </div>
+      )
+    }
     return (
       <div className="p-8 text-center bg-white rounded-xl border border-border shadow-sm">
         <p className="text-muted-foreground mb-4">Akun tidak ditemukan.</p>

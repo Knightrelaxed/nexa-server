@@ -196,6 +196,9 @@ nexa-server/
     │   ├── Episodic_Recall.js            # Long-term episodic memory RAG & semantic retrieval
     │   ├── Finance_Engine.js             # Public Facade (56 baris) delegating to modular finance subsystems
     │   ├── Finance_Intel.js              # Financial intelligence, spending pattern heuristics & anomaly detection
+    │   ├── Live_Tool_Registry.js         # 32 certified Live Tools (Desktop automation, window management, hardware control)
+    │   ├── Live_Voice_Engine.js          # Real-time multimodal streaming engine (Gemini Live, duplex WebRTC audio & vision)
+    │   ├── Windows_Bridge.js             # Public Facade for Windows Desktop Automation & Command Dispatcher
     │   ├── finance/                      # Decomposed Modular Finance Subsystems
     │   │   ├── Finance_Analytics.js      # Financial reports, spending velocity, saving rate & balance trends
     │   │   ├── Finance_Confirmations.js  # Multi-turn confirmation lifecycle, auto-save timeout & restart recovery
@@ -262,6 +265,15 @@ nexa-server/
     │   │       ├── memory_handler.js     # Episodic memory, 2nd brain vault & semantic recall
     │   │       ├── system_handler.js     # Core system diagnostics, presence, discipline & location
     │   │       └── task_handler.js       # Google Tasks CRUD & status synchronization
+    │   │
+    │   ├── bridge/                       # Multi-Device Peripheral Bridge Gateway
+    │   │   ├── gateway.js                # Unified WebSocket gateway (/ws, /ws/windows) with device discrimination
+    │   │   ├── windows_bridge/           # Windows Desktop Companion Client & Adapter
+    │   │   │   ├── client.js             # Serialized command dispatcher & request-response tracker
+    │   │   │   └── adapter.js            # Desktop telemetry, screen capture frames & power event router
+    │   │   └── mobile_bridge/            # Android Smartphone Hardware Gateway
+    │   │       ├── client.js             # Mobile command dispatcher & result router
+    │   │       └── adapter.js            # Android sensor telemetry, battery & notification forwarder
     │   │
     │   ├── cli/                          # Command Line Interface (Debug & Terminal Channel)
     │   │   ├── adapter.js                # CLI WebSocket/terminal communication adapter

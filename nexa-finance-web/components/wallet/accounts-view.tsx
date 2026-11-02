@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { PiggyBank, Wallet, Banknote, Plus, Menu } from "lucide-react"
 import { useAccounts } from "@/hooks/use-finance-data"
 import { formatIDR } from "@/lib/wallet-data"
@@ -26,11 +27,29 @@ const ACCOUNT_LABEL: Record<string, string> = {
 }
 
 export function AccountsView() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const paramAccountId = searchParams.get("id")
+
   const [showArchived, setShowArchived] = useState(false)
   const [addOpen, setAddOpen]           = useState(false)
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(paramAccountId)
   const { accounts, loading, refetch } = useAccounts()
   const totalBalance = accounts.reduce((s, a) => s + a.balance, 0)
+
+  useEffect(() => {
+    setSelectedAccountId(paramAccountId)
+  }, [paramAccountId])
+
+  const handleSelectAccount = (id: string) => {
+    setSelectedAccountId(id)
+    router.push(`/accounts?id=${id}`)
+  }
+
+  const handleBack = () => {
+    setSelectedAccountId(null)
+    router.replace("/accounts")
+  }
 
   const visible = accounts.filter((a) => showArchived || !a.is_archived)
 
@@ -38,7 +57,7 @@ export function AccountsView() {
     return (
       <AccountDetailView 
         accountId={selectedAccountId} 
-        onBack={() => setSelectedAccountId(null)} 
+        onBack={handleBack} 
       />
     )
   }
@@ -117,7 +136,7 @@ export function AccountsView() {
                 return (
                   <button
                     key={account.id}
-                    onClick={() => setSelectedAccountId(account.id)}
+                    onClick={() => handleSelectAccount(account.id)}
                     className="w-full text-left flex flex-wrap sm:flex-nowrap items-center gap-4 p-4 sm:p-5 hover:bg-muted/30 transition-colors border-b border-border/50 last:border-0"
                   >
                     <div 
