@@ -366,34 +366,43 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
    - Mengimplementasikan rangkaian uji karakterisasi Golden-Master 69 skenario (`tests/memories_characterization.test.js`) dengan harness mock recorder yang memvalidasi 1.153 pemanggilan query PostgREST/Supabase identik secara deterministik.
    - Meningkatkan jangkauan uji regresi otomatis monorepo menjadi **269/269 Tests Passing (100% Pass, 0 Fail)**.
 
+8. **Integrasi Multimodal Windows Desktop Bridge & Otomasi Suara Real-Time (v3.4.5):**
+   - **Arsitektur Dual-Peripheral Bridge:** Mengintegrasikan klien native desktop Rust ([`nexa-windows-bridge`](https://github.com/Knightrelaxed/nexa-windows-bridge)) melalui WebSocket terisolasi (`/ws/windows` / gateway).
+   - **Streaming Multimodal Gemini Live:** Sesi suara real-time WebRTC/WSS dengan input audio WASAPI duplex 48kHz, pembatalan gema AEC3, deteksi barge-in seketika, dan stream tangkapan layar GPU Direct3D 11 (1fps).
+   - **Katalog 32 Live Tools & Kontrol Desktop Otonom:** `desktopClick` (dengan proteksi HUD), `desktopScroll` (dengan koordinat target & deadzone auto-centering), `desktopTypeText` (Unicode bebas layout + proteksi terminal), `desktopPressKey`, `highlightElement` (Native Win32 GDI Stealth Overlay Window bebas layar hitam), `pointCursor`, `clearHighlights`, `closeWindow` (WM_CLOSE dengan Z-order fallback), `getOpenWindows`, `taskView`, dan `controlDeviceHardware`.
+   - **Integritas Aksi & Anti-Klaim Palsu (Prompt Directives):** Mengunci aturan mutlak larangan mengaku selesai sebelum tool dipanggil, kewajiban verifikasi visual feed kamera/layar mandiri, mandat penutupan jendela via `closeWindow()`, dan filter anti-iklan bersponsor.
+   - **Cakupan Pengujian:** Memperluas suite pengujian menjadi **439/439 Tests Passing** pada `nexa-server` dan **118/118 Tests Passing** pada `nexa-windows-bridge`.
+
 ---
 
-## Kesimpulan & Metrik Spesifikasi v3.4.0
+## Kesimpulan & Metrik Spesifikasi v3.4.5
 
-| Parameter Arsitektur | Spesifikasi N.E.X.A v3.4.0 (Production Release) |
+| Parameter Arsitektur | Spesifikasi N.E.X.A v3.4.5 (Production Release) |
 | :--- | :--- |
 | **Official Name & Title** | **N.E.X.A (Neural Executive with Xenial Agent)** |
-| **Architectural Edition** | **Modular Ingress, Layered Finance, Modular Memory & Decoupled Cognitive Router (v3.4.0)** |
+| **Architectural Edition** | **Multi-Peripheral Bridge, Real-time Gemini Live Voice-Vision & Desktop Automation Core (v3.4.5)** |
 | **Core Compute Infrastructure** | Azure Virtual Machine `Standard_B2ats_v2` (Ubuntu 24.04 ARM, Jakarta `indonesiacentral`) |
 | **Process Management & Auto-Healing** | PM2 Process Manager v5.4 + Systemd Auto-Revive + PM2 Plus Cloud Dashboard |
 | **Edge Web Server & Security** | Caddy v2 Reverse Proxy + Automated Let's Encrypt TLS/SSL |
 | **Production Domain** | `https://nexa-server.indonesiacentral.cloudapp.azure.com` |
 | **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~18-28 MB, CPU Idle 0%) |
 | **Ingress Architecture** | Hexagonal Decoupling (Common Domain Handlers + Modular Telegram & CLI Adapters) |
+| **Desktop Automation Gateway** | Native Windows Bridge (Rust / Slint / Win32 GDI Stealth Overlay / WASAPI Duplex) |
 | **Finance Architecture** | Layered Subsystems + High-Performance Public Facade (`src/domain/finance/`) |
 | **Router Architecture** | Decoupled Cognitive Subsystems + Public Facade (`src/core/router/`) |
 | **Memory Architecture** | Layered Persistence Subsystems + High-Performance Public Facade (`src/infrastructure/memories/`) |
 | **Code Duplication Rate** | **0.50%** (3 klon, 41 baris tersisa di seluruh antarmuka) |
 | **Security Sanitization** | Platform-Aware HTML Escaping for Telegram + Clean Plain-Text for Terminal CLI |
-| **Currency & Spatial Engine** | Universal Bank Parser (`parseFlexibleNominal`) + OpenStreetMap / GPS Mobile Bridge |
+| **Desktop Security Policies** | Armed Guard 15-Min Lease, Terminal Injection Guard, Protected Process Whitelist, HUD Click Guard |
 | **Google Cloud Integration** | Unified Master OAuth 2.0 Client (16 Master Scopes, Zero Hardcoded Secrets) |
+| **Multimodal Real-Time Engine** | Gemini Live 2.5 + Sonora Resampling + Echo Cancellation AEC3 + D3D11 Capture |
 | **Procedural Learning Engine** | Hermes-Inspired Closed-Loop Playbook Reviewer + Turn N-1 Signal Attribution |
 | **Financial Engine** | Zero-LLM Deterministic Intelligence + Dynamic Recurring Rules (`nexa_recurring_rules`) |
 | **Notification Traffic Control** | Centralized Notifier + Quiet Hours Protection + Dedup Cooldown (`nexa_notifications`) |
 | **AI Resilience Matrix** | Round-Robin Key Ring Circuit Breaker + 429 Retry-After Parser + 11-Tier Fallback |
-| **Test Suite Coverage** | **317/317 Tests Passing** (`npm test`, 100% Pass) + **192 Golden Master Invariance Tests** (75 Finance + 69 Memories + 48 Router) |
+| **Test Suite Coverage** | **439/439 Tests Passing** (`npm test`, 100% Pass) + **118/118 Tests Passing** (`cargo test`) |
 | **Primary Beneficiary** | **Tuan Faqih Hidayatulloh** |
 
 ---
-*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v3.4.0. Diverifikasi dan disinkronkan dengan Azure Cloud Core.*
+*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v3.4.5. Diverifikasi dan disinkronkan dengan Azure Cloud Core.*
 

@@ -43,6 +43,17 @@ Proyek ini terdiri dari dua komponen utama:
 
 ---
 
+## 📚 Dokumentasi Teknis
+
+Dokumentasi arsitektur, integrasi, dan protokol sistem tersedia di direktori `docs/`:
+- [NEXA Windows Bridge Integration](docs/NEXA_WINDOWS_BRIDGE_INTEGRATION.md) — Spesifikasi integrasi desktop bridge, Live Voice-Vision WebSocket, 32 Win32 automation tools, dan guardrails kognitif.
+- [NEXA Mobile Bridge Documentation](docs/NEXA_MOBILE_BRIDGE_DOCUMENTATION.md) — Spesifikasi integrasi perangkat Android companion bridge.
+- [NEXA Folder Architecture](docs/NEXA_FOLDER_ARCHITECTURE.md) — Struktur direktori lengkap dan modul arsitektur NEXA Server.
+- [NEXA Version Evolution Roadmap](docs/NEXA_VERSION_EVOLUTION_ROADMAP.md) — Roadmap rilis, riwayat evolusi, dan catatan pengujian.
+- [JSON Protocol Specification](docs/JSON_PROTOCOL_SPECIFICATION.md) — Standar protokol komunikasi JSON via WebSocket.
+
+---
+
 ## 🔒 Lisensi & Privasi
 
 Proyek ini dikembangkan secara tertutup dan mandiri untuk penggunaan pribadi (*Personal Use Only*). Seluruh hak cipta dan konfigurasi data bersifat privat.
