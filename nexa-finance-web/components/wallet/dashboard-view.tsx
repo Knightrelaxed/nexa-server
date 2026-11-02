@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
+import Link from "next/link"
 import type { PaymentMethod } from "@/lib/supabase/types"
 import { Card } from "@/components/ui/card"
 import {
@@ -12,7 +13,7 @@ import {
   Trash2, Plus, PiggyBank, WalletCards, Eye, EyeOff,
   Utensils, Bus, ShoppingBag, Film, Receipt, HeartPulse, Book,
   Briefcase, TrendingUp, Wifi, Wallet, MoreHorizontal, CreditCard,
-  Wine, Coffee, Cake, Percent, Lock, Unlock, type LucideIcon,
+  Wine, Coffee, Cake, Percent, Lock, Unlock, Landmark, Banknote, type LucideIcon,
 } from "lucide-react"
 import { formatIDR, formatIDRCompact } from "@/lib/wallet-data"
 import { useAccounts, useDashboardData, usePeriodComparison } from "@/hooks/use-finance-data"
@@ -26,6 +27,26 @@ const ICON_MAP: Record<string, LucideIcon> = {
   receipt: Receipt, "heart-pulse": HeartPulse, book: Book, briefcase: Briefcase,
   "trending-up": TrendingUp, wifi: Wifi, wallet: Wallet, "more-horizontal": MoreHorizontal,
   "credit-card": CreditCard, wine: Wine, coffee: Coffee, cake: Cake, percent: Percent,
+  landmark: Landmark, banknote: Banknote, "piggy-bank": PiggyBank,
+}
+
+const ACCOUNT_TYPE_ICON: Record<string, LucideIcon> = {
+  bank: Landmark,
+  cash: Wallet,
+  "e-wallet": PiggyBank,
+}
+
+function getAccountIcon(acc: { type?: string; icon_key?: string }): LucideIcon {
+  if (acc.icon_key && acc.icon_key !== "wallet" && ICON_MAP[acc.icon_key]) {
+    return ICON_MAP[acc.icon_key]
+  }
+  if (acc.type && ACCOUNT_TYPE_ICON[acc.type]) {
+    return ACCOUNT_TYPE_ICON[acc.type]
+  }
+  if (acc.icon_key && ICON_MAP[acc.icon_key]) {
+    return ICON_MAP[acc.icon_key]
+  }
+  return PiggyBank
 }
 
 /* ── Six-dot drag handle icon ── */
@@ -666,20 +687,35 @@ export function DashboardView() {
         </div>
 
         {/* Individual Account Cards */}
-        {accounts.map((acc, i) => (
-          <div key={acc.id} className={cn(
-            "flex min-w-[220px] items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-md shrink-0 transition-transform hover:-translate-y-0.5",
-            i % 2 === 0 ? "bg-gradient-to-r from-[#22d3ee] to-[#3b82f6]" : "bg-gradient-to-r from-[#10b981] to-[#059669]"
-          )}>
-            <PiggyBank className="h-7 w-7 shrink-0" />
-            <div className="min-w-0">
-              <p className="text-[13px] font-semibold truncate opacity-90">{acc.name}</p>
-              <p className="text-base font-bold truncate">
-                {showBalance ? formatIDR(acc.balance) : "Rp ••••••••"}
-              </p>
-            </div>
-          </div>
-        ))}
+        {accounts.filter(a => !a.is_archived).map((acc, i) => {
+          const Icon = getAccountIcon(acc)
+          const cardBgStyle = acc.color
+            ? { background: `linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0%, rgba(0, 0, 0, 0.22) 100%), ${acc.color}` }
+            : undefined
+          const fallbackClass = i % 2 === 0
+            ? "bg-gradient-to-r from-[#22d3ee] to-[#3b82f6]"
+            : "bg-gradient-to-r from-[#10b981] to-[#059669]"
+
+          return (
+            <Link
+              key={acc.id}
+              href="/accounts"
+              style={cardBgStyle}
+              className={cn(
+                "flex min-w-[220px] items-center gap-3 rounded-2xl px-5 py-4 text-white shadow-md shrink-0 transition-transform hover:-translate-y-0.5 cursor-pointer",
+                !acc.color && fallbackClass
+              )}
+            >
+              <Icon className="h-7 w-7 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold truncate opacity-90">{acc.name}</p>
+                <p className="text-base font-bold truncate">
+                  {showBalance ? formatIDR(acc.balance) : "Rp ••••••••"}
+                </p>
+              </div>
+            </Link>
+          )
+        })}
         <button
           onClick={() => setIsAddAccountOpen(true)}
           className="flex h-auto min-w-[140px] sm:min-w-[160px] items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/50 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors text-sm font-semibold shrink-0"

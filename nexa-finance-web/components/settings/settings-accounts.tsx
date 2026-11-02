@@ -14,6 +14,7 @@ import { toast } from "sonner"
 import type { DbAccount } from "@/lib/supabase/types"
 import { formatIDR } from "@/lib/wallet-data"
 import { AddAccountModal } from "@/components/wallet/add-account-modal"
+import { cn } from "@/lib/utils"
 
 export function SettingsAccounts() {
   const { accounts, loading, refetch } = useAccounts()
@@ -79,7 +80,10 @@ export function SettingsAccounts() {
               {accounts.map((acc) => (
                 <div key={acc.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
                   <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#22d3ee] to-[#3b82f6] text-white shadow-sm">
+                    <div 
+                      className={cn("flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-sm", !acc.color && "bg-gradient-to-br from-[#22d3ee] to-[#3b82f6]")}
+                      style={acc.color ? { backgroundColor: acc.color } : undefined}
+                    >
                       <Wallet className="h-5 w-5" />
                     </div>
                     <div>

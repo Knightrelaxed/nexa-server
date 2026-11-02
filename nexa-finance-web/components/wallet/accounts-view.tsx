@@ -120,7 +120,10 @@ export function AccountsView() {
                     onClick={() => setSelectedAccountId(account.id)}
                     className="w-full text-left flex flex-wrap sm:flex-nowrap items-center gap-4 p-4 sm:p-5 hover:bg-muted/30 transition-colors border-b border-border/50 last:border-0"
                   >
-                    <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg shadow-sm", colorClass)}>
+                    <div 
+                      className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg shadow-sm text-white", !account.color && colorClass)}
+                      style={account.color ? { backgroundColor: account.color } : undefined}
+                    >
                       <Icon className="h-5 w-5" />
                     </div>
 
