@@ -96,9 +96,9 @@ export function RecordsView() {
     try {
       setIsRefreshing(true)
       await refetch()
-      toast.success("Catatan berhasil diperbarui")
+      toast.success("Catatan berhasil direfresh")
     } catch (err) {
-      toast.error("Gagal menyegarkan catatan")
+      toast.error("Gagal merefresh catatan")
     } finally {
       setIsRefreshing(false)
     }
@@ -314,12 +314,12 @@ export function RecordsView() {
               <button
                 onClick={handleRefresh}
                 disabled={loading || isRefreshing}
-                title="Segarkan catatan"
-                aria-label="Segarkan catatan"
+                title="Refresh catatan"
+                aria-label="Refresh catatan"
                 className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded-lg transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
               >
                 <RefreshCw className={cn("h-3.5 w-3.5", (loading || isRefreshing) && "animate-spin text-[#10b981]")} />
-                <span className="hidden sm:inline">Segarkan</span>
+                <span className="hidden sm:inline">Refresh</span>
               </button>
             </div>
             {/* Action Bar */}
