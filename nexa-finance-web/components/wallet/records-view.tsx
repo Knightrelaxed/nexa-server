@@ -4,7 +4,8 @@ import { useMemo, useState, useEffect } from "react"
 import {
   Search, ChevronLeft, ChevronRight, Filter, ChevronDown,
   Settings2, Plus, X, SlidersHorizontal, RotateCcw,
-  ListChecks, Pencil, Trash2, Copy, FileOutput, Scissors
+  ListChecks, Pencil, Trash2, Copy, FileOutput, Scissors,
+  RefreshCw
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -89,6 +90,19 @@ export function RecordsView() {
 
 
   const { loading, grouped, totalAmount, displayCount, refetch } = useTransactions(filters)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    try {
+      setIsRefreshing(true)
+      await refetch()
+      toast.success("Catatan berhasil diperbarui")
+    } catch (err) {
+      toast.error("Gagal menyegarkan catatan")
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   const sortedGrouped = useMemo(() => {
     return Object.entries(grouped)
@@ -294,9 +308,19 @@ export function RecordsView() {
 
           {/* Action Bar Container */}
           <div className="sticky top-16 sm:top-20 z-20 flex flex-col rounded-t-2xl bg-white shadow-sm ring-1 ring-slate-200/50 min-w-0">
-            {/* Top Text */}
-            <div className="px-4 pt-3 pb-1 bg-white rounded-t-2xl">
+            {/* Top Text & Refresh Header */}
+            <div className="flex items-center justify-between px-4 pt-3 pb-1 bg-white rounded-t-2xl">
               <span className="text-[13px] font-bold text-slate-700">Ditemukan {displayCount} catatan</span>
+              <button
+                onClick={handleRefresh}
+                disabled={loading || isRefreshing}
+                title="Segarkan catatan"
+                aria-label="Segarkan catatan"
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded-lg transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", (loading || isRefreshing) && "animate-spin text-[#10b981]")} />
+                <span className="hidden sm:inline">Segarkan</span>
+              </button>
             </div>
             {/* Action Bar */}
             <div className={cn(
