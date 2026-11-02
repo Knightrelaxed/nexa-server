@@ -41,6 +41,35 @@ async function recoverPendingTransactions() {
             continue;
           }
 
+          if (tx.isSelfTransfer) {
+            const fromAcc = tx.fromAccount || 'Dana';
+            const toAcc = tx.account || tx.suggestedAccount || 'Bank Jago';
+            const nominalNum = typeof tx.nominal === 'number' ? tx.nominal : _parseFlexibleCurrency(String(tx.nominal));
+            const txTime = new Date(tx.time || Date.now());
+            const dateISO = txTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+            const timeHHMM = txTime.toLocaleTimeString('id-ID', {
+              timeZone: 'Asia/Jakarta',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            });
+            const desc = tx.description && tx.description !== '[Menunggu Detail User]'
+              ? tx.description
+              : `Transfer dari ${fromAcc} ke ${toAcc}`;
+
+            await supabaseFinance.writeTransferPair({
+              fromAccountName: fromAcc,
+              toAccountName: toAcc,
+              nominal: nominalNum,
+              description: desc,
+              dateISO,
+              timeHHMM,
+              categoryName: 'Pengeluaran tidak tercatat '
+            });
+            await supabase.logTransactionKey(compositeKey, txTime, tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL');
+            continue;
+          }
+
           const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
           const prep = tx.type === 'INCOME' ? 'dari' : 'ke';
           const _recDest = tx.destination && tx.destination !== 'Unknown' ? tx.destination : '';
@@ -182,6 +211,45 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
         if (customCategory) pending.tx.category = customCategory;
         if (customAccount) pending.tx.account = customAccount;
         if (customPaymentMethod) pending.tx.payment_method = customPaymentMethod;
+
+        if (pending.tx.isSelfTransfer) {
+          const fromAcc = pending.tx.fromAccount || 'Dana';
+          const toAcc = customAccount || pending.tx.account || pending.tx.suggestedAccount || 'Bank Jago';
+          const nominalNum = typeof pending.tx.nominal === 'number' ? pending.tx.nominal : _parseFlexibleCurrency(String(pending.tx.nominal));
+          const txTime = new Date(pending.tx.time || Date.now());
+          const dateISO = txTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+          const timeHHMM = txTime.toLocaleTimeString('id-ID', {
+            timeZone: 'Asia/Jakarta',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          });
+          const desc = customDescription || pending.tx.description || `Transfer dari ${fromAcc} ke ${toAcc}`;
+
+          const pairResult = await supabaseFinance.writeTransferPair({
+            fromAccountName: fromAcc,
+            toAccountName: toAcc,
+            nominal: nominalNum,
+            description: desc,
+            dateISO,
+            timeHHMM,
+            categoryName: customCategory || 'Pengeluaran tidak tercatat '
+          });
+
+          if (pairResult.status !== 'SUCCESS') {
+            throw new Error(`Gagal menyimpan transfer pair: ${pairResult.reason}`);
+          }
+
+          const source = pending.tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL';
+          await supabase.logTransactionKey(key, txTime, source);
+
+          const nominalFmt = isNaN(nominalNum) ? String(pending.tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
+          successMessages.push(`✅ <b>Transfer Antar-Akun Berhasil Dicatat!</b>\n\n• Sumber: <b>${fromAcc}</b> (-${nominalFmt})\n• Tujuan: <b>${toAcc}</b> (+${nominalFmt})\n• Keterangan: ${desc}`);
+          processedCount++;
+          pendingConfirmations.delete(key);
+          try { await supabase.deletePendingTransaction(key); } catch (_) {}
+          continue;
+        }
         
         // Use lightweight AI categorizer instead of full routing
         if (!customCategory) {
@@ -269,10 +337,30 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
 
   if (newDescription) {
     pending.tx.description = newDescription;
+
+    // ── DETEKSI PERUBAHAN KE TRANSFER ANTAR-AKUN ───────────────────────────────
+    // Jika deskripsi atau input mengindikasikan transfer dari akun lain:
+    // e.g. "itu transfer dari dana", "pindahan dari gopay", "tf dari shopeepay"
+    const transferMatch = (newDescription || '').match(/(?:transfer|tf|pindahan|kirim(?:an)?)\s+(?:dari|dr)\s+([a-z0-9\s]+)/i);
+    if (transferMatch) {
+      const rawSourceName = transferMatch[1].trim();
+      const accounts = await supabaseFinance.getAccountsList();
+      const matchedSource = accounts.find(a => {
+        const normalizedAcc = a.name.toLowerCase().replace(/^(bank|dompet)\s+/i, '').trim();
+        return rawSourceName.toLowerCase().includes(normalizedAcc) || normalizedAcc.includes(rawSourceName.toLowerCase());
+      });
+      if (matchedSource) {
+        pending.tx.isSelfTransfer = true;
+        pending.tx.fromAccount = matchedSource.name;
+        pending.tx.type = 'TRANSFER';
+        pending.tx.category = 'Pengeluaran tidak tercatat ';
+        pending.tx.description = `Transfer dari ${matchedSource.name} ke ${pending.tx.account || 'Bank Jago'}`;
+      }
+    }
     
     // If user gives a new description but NO explicit category, 
     // let's re-run the AI categorizer so the preview reflects the correct category
-    if (!newCategory) {
+    if (!newCategory && !pending.tx.isSelfTransfer) {
       const dest = pending.tx.destination && pending.tx.destination !== 'Unknown' ? pending.tx.destination : '';
       const desc = pending.tx.description;
       const combinedContext = [dest, desc].filter(Boolean).join(' - ') || 'Unknown';
@@ -404,6 +492,26 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
     }
   } catch (_) {}
 
+  if (tx.isSelfTransfer) {
+    const fromAcc = tx.fromAccount || 'Dana';
+    const toAcc = tx.account || tx.suggestedAccount || 'Bank Jago';
+    const headerLabel = sourceLabel.includes('DIPERBARUI') ? 'TRANSFER ANTAR-AKUN DIPERBARUI ✏️' : 'SINKRONISASI TRANSFER ANTAR-AKUN';
+
+    return `🔄 <b>${headerLabel}</b>\n\n` +
+      `<b>No:</b> [Auto]\n` +
+      `<b>Tanggal:</b> ${dateStr}\n` +
+      `<b>Waktu:</b> ${timeStr}\n` +
+      `<b>Tipe:</b> Transfer Antar-Akun\n` +
+      `<b>Sumber:</b> ${fromAcc}\n` +
+      `<b>Tujuan:</b> ${toAcc}\n` +
+      `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
+      `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
+      `🔄 <b>Terdeteksi pemindahan dana dari ${fromAcc} ke ${toAcc} sebesar ${nominalFmt}.</b>\n` +
+      `• Saldo <b>${fromAcc}</b>: berkurang ${nominalFmt}\n` +
+      `• Saldo <b>${toAcc}</b>: bertambah ${nominalFmt}\n\n` +
+      `💡 <i>N.E.X.A akan menguncinya sebagai Transfer Antar-Akun dalam 5 menit jika tidak ada koreksi.</i>`;
+  }
+
   let proactiveQuestion = '';
   if (isMissingDesc) {
     const outContext = tx.destination === 'Unknown' ? `sebesar ${nominalFmt}` : `ke ${tx.destination}`;
@@ -471,6 +579,46 @@ async function _autoSavePending(compositeKey, tx) {
       return;
     }
 
+    if (tx.isSelfTransfer) {
+      const fromAcc = tx.fromAccount || 'Dana';
+      const toAcc = tx.account || tx.suggestedAccount || 'Bank Jago';
+      const nominalNum = typeof tx.nominal === 'number' ? tx.nominal : _parseFlexibleCurrency(String(tx.nominal));
+      const dateISO = txTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      const timeHHMM = txTime.toLocaleTimeString('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const desc = tx.description && tx.description !== '[Menunggu Detail User]'
+        ? tx.description
+        : `Transfer dari ${fromAcc} ke ${toAcc}`;
+
+      const pairResult = await supabaseFinance.writeTransferPair({
+        fromAccountName: fromAcc,
+        toAccountName: toAcc,
+        nominal: nominalNum,
+        description: desc,
+        dateISO,
+        timeHHMM,
+        categoryName: 'Pengeluaran tidak tercatat '
+      });
+
+      if (pairResult.status !== 'SUCCESS') {
+        throw new Error(`Gagal auto-save transfer pair: ${pairResult.reason}`);
+      }
+
+      await supabase.logTransactionKey(compositeKey, txTime, tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL');
+
+      const nominalFmt = isNaN(nominalNum) ? String(tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
+      const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransfer <b>${nominalFmt}</b> dari <b>${fromAcc}</b> ke <b>${toAcc}</b> telah disimpan otomatis.\n\n• Saldo ${fromAcc}: -${nominalFmt}\n• Saldo ${toAcc}: +${nominalFmt}`;
+      try {
+        const { sendTelegramOutbound } = require('../../interfaces/webhook');
+        await sendTelegramOutbound(timeoutMsg);
+      } catch (_) {}
+      return;
+    }
+
     const tipeStr = tx.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
     const prep = tx.type === 'INCOME' ? 'dari' : 'ke';
     // Use lightweight AI categorizer with combined destination+description for maximum context
@@ -518,7 +666,9 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
   const destination = txData.destination || 'Unknown';
 
   // AI auto-categorize IMMEDIATELY so the confirmation message shows the real category
-  const aiCategory = await _autoCategorizeMerchant(destination, txData.category);
+  const aiCategory = txData.isSelfTransfer
+    ? (txData.category || 'Pengeluaran tidak tercatat ')
+    : await _autoCategorizeMerchant(destination, txData.category);
 
   const cleanMerchant = destination.toLowerCase().replace(/[^a-z0-9]/g, '');
   const compositeKey = customKey || txData.compositeKey || `${nominal}_${cleanMerchant}`;
@@ -533,6 +683,8 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
     payment_method: txData.payment_method || null,
     account: txData.account || null,
     suggestedAccount: txData.suggestedAccount || null,
+    fromAccount: txData.fromAccount || null,
+    isSelfTransfer: !!txData.isSelfTransfer,
     compositeKey,
     isAutoSyncEmail: !!txData.isAutoSyncEmail
   };

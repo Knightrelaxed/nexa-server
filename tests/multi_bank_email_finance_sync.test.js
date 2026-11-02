@@ -20,6 +20,7 @@ const {
   _detectProvider,
   _parseMandiriTransaction,
   _parseJagoTransaction,
+  detectSelfTransfer,
 } = require('../src/domain/finance/Finance_Email_Sync');
 
 const {
@@ -542,6 +543,156 @@ test('Deep Audit: Edge Cases & Semantic Consistency', async (t) => {
       actions.sendTelegramOutbound = origActionsOutbound;
       supabase.logTransactionKey = origLogKey;
       supabase.deletePendingTransaction = origDeletePending;
+      clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
+      pendingConfirmations.delete(testKey);
+    }
+  });
+});
+
+test('Smart Self-Transfer Detection and Flow', async (t) => {
+  const registeredAccounts = [
+    { name: 'Dana' },
+    { name: 'Shopee Pay' },
+    { name: 'GoPay' },
+    { name: 'Bank Mandiri' },
+    { name: 'Bank Jago' }
+  ];
+
+  await t.test('detectSelfTransfer: Case A - matches owner name and registered account (Dana -> Jago)', () => {
+    const destination = 'FAQIH HIDAYATULLOH DANA •';
+    const result = detectSelfTransfer(destination, 'Bank Jago', registeredAccounts);
+    assert.ok(result, 'Expected result to be non-null');
+    assert.strictEqual(result.isSelfTransfer, true);
+    assert.strictEqual(result.fromAccountName, 'Dana');
+    assert.strictEqual(result.toAccountName, 'Bank Jago');
+  });
+
+  await t.test('detectSelfTransfer: Case B - non-owner name (Budi Santoso Dana) returns null (normal income)', () => {
+    const destination = 'BUDI SANTOSO DANA •';
+    const result = detectSelfTransfer(destination, 'Bank Jago', registeredAccounts);
+    assert.strictEqual(result, null, 'Must return null for external income');
+  });
+
+  await t.test('detectSelfTransfer: Case C - matches GoPay self-transfer', () => {
+    const destination = 'FAQIH HIDAYATULLOH GOPAY';
+    const result = detectSelfTransfer(destination, 'Bank Jago', registeredAccounts);
+    assert.ok(result);
+    assert.strictEqual(result.isSelfTransfer, true);
+    assert.strictEqual(result.fromAccountName, 'GoPay');
+    assert.strictEqual(result.toAccountName, 'Bank Jago');
+  });
+
+  await t.test('detectSelfTransfer: Case D - owner name without any account returns null', () => {
+    const destination = 'FAQIH HIDAYATULLOH';
+    const result = detectSelfTransfer(destination, 'Bank Jago', registeredAccounts);
+    assert.strictEqual(result, null, 'Should return null if no registered source account is mentioned');
+  });
+
+  await t.test('detectSelfTransfer: Case E - corporate merchant (Shopee International) returns null', () => {
+    const destination = 'PT SHOPEE INTERNATIONAL INDONESIA';
+    const result = detectSelfTransfer(destination, 'Bank Jago', registeredAccounts);
+    assert.strictEqual(result, null);
+  });
+
+  await t.test('_buildConfirmationMessage formats self-transfer notification correctly', async () => {
+    const { _buildConfirmationMessage } = require('../src/domain/finance/Finance_Confirmations');
+    const tx = {
+      nominal: 50000,
+      type: 'TRANSFER',
+      destination: 'FAQIH HIDAYATULLOH DANA •',
+      category: 'Pengeluaran tidak tercatat ',
+      description: 'Transfer dari Dana ke Bank Jago',
+      time: '2026-11-02T14:22:00.000Z',
+      account: 'Bank Jago',
+      suggestedAccount: 'Bank Jago',
+      fromAccount: 'Dana',
+      isSelfTransfer: true,
+      payment_method: 'Transfer bank'
+    };
+
+    const msg = await _buildConfirmationMessage(tx);
+    assert.ok(msg.includes('SINKRONISASI TRANSFER ANTAR-AKUN'), 'Must contain self-transfer header');
+    assert.ok(msg.includes('Sumber:</b> Dana'), 'Must show source account Dana');
+    assert.ok(msg.includes('Tujuan:</b> Bank Jago'), 'Must show destination account Bank Jago');
+    assert.ok(msg.includes('Saldo <b>Dana</b>: berkurang Rp50.000'), 'Must show Dana balance reduction');
+    assert.ok(msg.includes('Saldo <b>Bank Jago</b>: bertambah Rp50.000'), 'Must show Jago balance addition');
+  });
+
+  await t.test('confirmPendingTransactions handles self-transfer using writeTransferPair', async () => {
+    const { confirmPendingTransactions } = require('../src/domain/finance/Finance_Confirmations');
+    const { pendingConfirmations } = require('../src/domain/finance/Finance_State');
+    const supabaseFinance = require('../src/infrastructure/Supabase_Finance');
+
+    const testKey = 'test_self_transfer_confirm_key';
+    let capturedPair = null;
+
+    const originalWritePair = supabaseFinance.writeTransferPair;
+    supabaseFinance.writeTransferPair = async (params) => {
+      capturedPair = params;
+      return { status: 'SUCCESS', pairId: 'mock-pair-uuid' };
+    };
+
+    try {
+      pendingConfirmations.set(testKey, {
+        tx: {
+          nominal: 50000,
+          type: 'TRANSFER',
+          destination: 'FAQIH HIDAYATULLOH DANA •',
+          category: 'Pengeluaran tidak tercatat ',
+          description: 'Transfer dari Dana ke Bank Jago',
+          account: 'Bank Jago',
+          fromAccount: 'Dana',
+          isSelfTransfer: true,
+          time: '2026-11-02T14:22:00.000Z',
+          isAutoSyncEmail: true
+        },
+        timeoutId: setTimeout(() => {}, 100000)
+      });
+
+      const reply = await confirmPendingTransactions(true, null, null, null, null, testKey);
+      assert.ok(capturedPair, 'writeTransferPair should have been called');
+      assert.strictEqual(capturedPair.fromAccountName, 'Dana');
+      assert.strictEqual(capturedPair.toAccountName, 'Bank Jago');
+      assert.strictEqual(capturedPair.nominal, 50000);
+      assert.ok(reply.includes('Transfer Antar-Akun Berhasil Dicatat!'), 'Must reply with success message');
+    } finally {
+      supabaseFinance.writeTransferPair = originalWritePair;
+      clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
+      pendingConfirmations.delete(testKey);
+    }
+  });
+
+  await t.test('updatePendingTransaction converts normal income to self-transfer on user reply', async () => {
+    const { updatePendingTransaction } = require('../src/domain/finance/Finance_Confirmations');
+    const { pendingConfirmations } = require('../src/domain/finance/Finance_State');
+
+    const testKey = 'test_manual_reply_transfer_key';
+    try {
+      pendingConfirmations.set(testKey, {
+        tx: {
+          nominal: 50000,
+          type: 'INCOME',
+          destination: 'FAQIH HIDAYATULLOH',
+          category: 'Lainnya',
+          description: '[Menunggu Detail User]',
+          account: 'Bank Jago',
+          suggestedAccount: 'Bank Jago',
+          time: '2026-11-02T14:22:00.000Z',
+          isAutoSyncEmail: true
+        },
+        timeoutId: setTimeout(() => {}, 100000)
+      });
+
+      // User replies with "itu transfer dari dana"
+      const reply = await updatePendingTransaction('itu transfer dari dana', null, null, null, null, testKey);
+      const updated = pendingConfirmations.get(testKey)?.tx;
+
+      assert.ok(updated, 'Pending transaction must still exist');
+      assert.strictEqual(updated.isSelfTransfer, true, 'isSelfTransfer must be set to true');
+      assert.strictEqual(updated.fromAccount, 'Dana', 'fromAccount must be Dana');
+      assert.strictEqual(updated.type, 'TRANSFER');
+      assert.ok(reply.includes('Transfer Antar-Akun') || reply.includes('TRANSFER ANTAR-AKUN'), 'Reply preview must reflect self-transfer');
+    } finally {
       clearTimeout(pendingConfirmations.get(testKey)?.timeoutId);
       pendingConfirmations.delete(testKey);
     }

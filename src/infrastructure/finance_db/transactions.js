@@ -12,6 +12,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+const crypto = require('crypto');
 const { supabaseFinance } = require('./client');
 const { resolveAccountId, resolveCategoryId } = require('./reference_data');
 
@@ -109,7 +110,9 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
     };
   }
 
-  const dbType = txType.toUpperCase() === 'INCOME' ? 'income' : 'expense';
+  let dbType = 'expense';
+  if (txType.toUpperCase() === 'INCOME') dbType = 'income';
+  else if (txType.toUpperCase() === 'TRANSFER') dbType = 'transfer';
 
   // Normalize payment_method to strictly match PostgreSQL check constraint:
   // ('QRIS', 'Transfer bank', 'Kartu Kredit', 'Tunai', 'Direct Debit')
@@ -241,7 +244,12 @@ async function updateTransaction(uuid, patchData) {
   
   if (patchData.nominal !== undefined) payload.amount = Math.abs(patchData.nominal);
   if (patchData.description !== undefined) payload.description = patchData.description;
-  if (patchData.txType !== undefined) payload.type = patchData.txType.toUpperCase() === 'INCOME' ? 'income' : 'expense';
+  if (patchData.txType !== undefined) {
+    const t = patchData.txType.toUpperCase();
+    if (t === 'INCOME') payload.type = 'income';
+    else if (t === 'TRANSFER') payload.type = 'transfer';
+    else payload.type = 'expense';
+  }
   if (patchData.dateISO !== undefined) payload.transaction_date = patchData.dateISO;
   if (patchData.timeHHMM !== undefined) payload.transaction_time = patchData.timeHHMM ? String(patchData.timeHHMM).replace(/\./g, ':') : null;
   if (patchData.paymentMethod !== undefined) {
@@ -295,8 +303,105 @@ async function deleteTransaction(uuid) {
   return { status: 'SUCCESS' };
 }
 
+/**
+ * Tulis sepasang transaksi transfer antar-akun (transfer_out dan transfer_in)
+ * yang saling terikat dengan split_group_id yang sama ke Supabase Nexa Finance.
+ *
+ * @param {object} params
+ * @param {string} params.fromAccountName - Akun sumber pengirim (e.g. 'Dana')
+ * @param {string} params.toAccountName   - Akun tujuan penerima (e.g. 'Bank Jago')
+ * @param {number} params.nominal         - Nominal transfer (angka positif)
+ * @param {string} [params.description]   - Deskripsi transfer
+ * @param {string} [params.dateISO]       - Tanggal transaksi (YYYY-MM-DD)
+ * @param {string} [params.timeHHMM]      - Jam transaksi (HH:MM / HH.MM)
+ * @param {string} [params.categoryName]  - Kategori transfer (default: 'Pengeluaran tidak tercatat ')
+ * @returns {Promise<{status: 'SUCCESS'|'SKIPPED'|'ERROR', pairId?: string, outId?: string, inId?: string, reason?: string}>}
+ */
+async function writeTransferPair({
+  fromAccountName,
+  toAccountName,
+  nominal,
+  description,
+  dateISO,
+  timeHHMM,
+  categoryName = 'Pengeluaran tidak tercatat '
+}) {
+  if (!supabaseFinance) {
+    return { status: 'SKIPPED', reason: 'Supabase Finance tidak dikonfigurasi' };
+  }
+
+  const [fromAccountId, toAccountId, categoryId] = await Promise.all([
+    resolveAccountId(fromAccountName),
+    resolveAccountId(toAccountName),
+    resolveCategoryId(categoryName, 'EXPENSE')
+  ]);
+
+  if (!fromAccountId) {
+    return { status: 'SKIPPED', reason: `Akun asal "${fromAccountName}" tidak ditemukan di database.` };
+  }
+  if (!toAccountId) {
+    return { status: 'SKIPPED', reason: `Akun tujuan "${toAccountName}" tidak ditemukan di database.` };
+  }
+  if (!categoryId) {
+    return { status: 'SKIPPED', reason: `Kategori "${categoryName}" tidak ditemukan di database.` };
+  }
+
+  const cleanDate = dateISO || new Date().toISOString().split('T')[0];
+  const cleanTime = timeHHMM ? String(timeHHMM).replace(/\./g, ':') : null;
+  const pairId = crypto.randomUUID();
+  const desc = description || `Transfer dari ${fromAccountName} ke ${toAccountName}`;
+
+  const rows = [
+    {
+      account_id:       fromAccountId,
+      category_id:      categoryId,
+      amount:           Math.abs(nominal),
+      type:             'transfer',
+      split_label:      'transfer_out',
+      split_group_id:   pairId,
+      transaction_date: cleanDate,
+      transaction_time: cleanTime,
+      description:      desc,
+      payment_method:   'Transfer bank',
+    },
+    {
+      account_id:       toAccountId,
+      category_id:      categoryId,
+      amount:           Math.abs(nominal),
+      type:             'transfer',
+      split_label:      'transfer_in',
+      split_group_id:   pairId,
+      transaction_date: cleanDate,
+      transaction_time: cleanTime,
+      description:      desc,
+      payment_method:   'Transfer bank',
+    }
+  ];
+
+  const { data, error } = await supabaseFinance
+    .from('transactions')
+    .insert(rows)
+    .select('id, split_label');
+
+  if (error) {
+    console.error('[SUPABASE_FINANCE] writeTransferPair error:', error.message);
+    return { status: 'ERROR', reason: error.message };
+  }
+
+  const outRow = data?.find(r => r.split_label === 'transfer_out');
+  const inRow = data?.find(r => r.split_label === 'transfer_in');
+
+  return {
+    status: 'SUCCESS',
+    pairId,
+    outId: outRow?.id,
+    inId: inRow?.id
+  };
+}
+
 module.exports = {
   writeTransaction,
+  writeTransferPair,
   readTransactions,
   updateTransaction,
   deleteTransaction,

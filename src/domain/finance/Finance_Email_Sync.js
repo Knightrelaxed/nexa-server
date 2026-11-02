@@ -4,6 +4,7 @@
  * Extracted from Finance_Engine.js (finance split). Behaviour is unchanged; Finance_Engine.js remains the public facade.
  */
 const supabase = require('../../infrastructure/Supabase_Memories');
+const supabaseFinance = require('../../infrastructure/Supabase_Finance');
 const gmailClient = require('../../infrastructure/Gmail_Client');
 const env = require('../../config/env');
 const { _autoCategorizeMerchant, _parseFlexibleCurrency } = require('./Finance_Helpers');
@@ -203,6 +204,52 @@ function _parseJagoTransaction(blob, email) {
 }
 
 /**
+ * Detect whether an incoming mutation is a self-transfer between user's accounts.
+ *
+ * Rules (Two-way boundary):
+ * 1. Strict Identity Check: Destination/sender string MUST contain user's identity (FAQIH or HIDAYATULLOH).
+ * 2. Source Account Check: String MUST reference another registered account (e.g. DANA, GOPAY, SHOPEEPAY, MANDIRI).
+ *
+ * If both match -> Returns { isSelfTransfer: true, fromAccountName: string, toAccountName: string }
+ * If either fails -> Returns null (treated as pure external income, source accounts left untouched).
+ *
+ * @param {string} destination - Sender/source string (e.g. "FAQIH HIDAYATULLOH DANA •")
+ * @param {string} currentAccountName - Receiving account (e.g. "Bank Jago")
+ * @param {Array<{name: string, type?: string}>} registeredAccounts - Registered accounts list
+ * @returns {{isSelfTransfer: true, fromAccountName: string, toAccountName: string}|null}
+ */
+function detectSelfTransfer(destination, currentAccountName, registeredAccounts = []) {
+  if (!destination || typeof destination !== 'string') return null;
+  const destLower = destination.toLowerCase();
+
+  // 1. Strict Identity Check: Must contain user's name
+  const hasOwnerName = /\b(faqih|hidayatulloh)\b/i.test(destLower);
+  if (!hasOwnerName) return null; // External income!
+
+  // 2. Match source account from registered accounts
+  for (const acc of registeredAccounts) {
+    if (acc.name.toLowerCase() === (currentAccountName || '').toLowerCase()) continue;
+
+    // Remove prefixes like "Bank " or "Dompet "
+    const accKeyword = acc.name.toLowerCase().replace(/^(bank|dompet)\s+/i, '').trim();
+    if (!accKeyword) continue;
+
+    // Check with word boundary or clean substring
+    const regex = new RegExp(`\\b${accKeyword.replace(/[^a-z0-9]/g, '')}\\b`, 'i');
+    const destCleaned = destLower.replace(/[^a-z0-9\s]/g, ' ');
+    if (regex.test(destCleaned) || destLower.includes(accKeyword)) {
+      return {
+        isSelfTransfer: true,
+        fromAccountName: acc.name,
+        toAccountName: currentAccountName
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Automatically poll Gmail for new financial transaction emails, parse them, and record them.
  * Relies on Zero-Duplication Engine to prevent duplicate entries across polls.
  */
@@ -272,29 +319,69 @@ async function pollFinanceEmails() {
 
       newCount++;
 
-      // Let AI make an initial guess for the category based on the destination name.
+      // Detect Smart Self-Transfer vs Normal Income
       let guessedCategory = 'Lainnya';
-      try {
-        guessedCategory = await _autoCategorizeMerchant(destination, null);
-      } catch (e) {
-        console.warn('[FINANCE] Pre-categorization failed:', e.message);
+      let isSelfTransfer = false;
+      let fromAccountName = null;
+      let toAccountName = account;
+
+      if (parsed.type === 'INCOME') {
+        let accounts = [];
+        try {
+          accounts = await supabaseFinance.getAccountsList();
+        } catch (_) {}
+        if (!accounts || accounts.length === 0) {
+          accounts = [
+            { name: 'Dana' },
+            { name: 'Shopee Pay' },
+            { name: 'GoPay' },
+            { name: 'Bank Mandiri' },
+            { name: 'Bank Jago' }
+          ];
+        }
+
+        const selfTransferResult = detectSelfTransfer(destination, account, accounts);
+        if (selfTransferResult) {
+          isSelfTransfer = true;
+          fromAccountName = selfTransferResult.fromAccountName;
+          toAccountName = selfTransferResult.toAccountName;
+          guessedCategory = 'Pengeluaran tidak tercatat ';
+        }
+      }
+
+      if (!isSelfTransfer) {
+        // Let AI make an initial guess for the category based on the destination name.
+        try {
+          guessedCategory = await _autoCategorizeMerchant(destination, null);
+        } catch (e) {
+          console.warn('[FINANCE] Pre-categorization failed:', e.message);
+        }
       }
 
       const tx = {
         nominal,
-        type: parsed.type || 'EXPENSE',
+        type: isSelfTransfer ? 'TRANSFER' : (parsed.type || 'EXPENSE'),
         destination,
         category: guessedCategory,
-        description: '[Menunggu Detail User]',
+        description: isSelfTransfer ? `Transfer dari ${fromAccountName} ke ${toAccountName}` : '[Menunggu Detail User]',
         time: dateIso,
         suggestedAccount: account,
+        fromAccount: fromAccountName,
+        isSelfTransfer,
         payment_method: paymentMethod,
         compositeKey,
         isAutoSyncEmail: true
       };
+      if (isSelfTransfer) {
+        tx.account = toAccountName;
+      }
+
+      const confirmationLabel = isSelfTransfer
+        ? 'SINKRONISASI TRANSFER ANTAR-AKUN'
+        : 'SINKRONISASI KEUANGAN TERBARU';
 
       try {
-        const msg = await requestTransactionConfirmation(tx, 'SINKRONISASI KEUANGAN TERBARU', compositeKey);
+        const msg = await requestTransactionConfirmation(tx, confirmationLabel, compositeKey);
         if (msg) {
           const { sendTelegramMessage } = require('../../utils/telegram_network');
           await sendTelegramMessage(msg, env.TELEGRAM_CHAT_ID, env.TELEGRAM_BOT_TOKEN);
@@ -316,6 +403,7 @@ async function pollFinanceEmails() {
 
 module.exports = {
   pollFinanceEmails,
+  detectSelfTransfer,
   _detectProvider,
   _parseMandiriTransaction,
   _parseJagoTransaction,
