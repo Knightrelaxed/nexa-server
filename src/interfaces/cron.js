@@ -64,7 +64,7 @@ async function trackJobRun(jobName, runKey, jobFn) {
  * Returns { executed: boolean, reason: string, screenActive: boolean, text?: string }
  */
 async function executeMidnightCheckin(options = {}) {
-  const bridgeAdapter = require('./mobile_bridge/adapter');
+  const bridgeAdapter = require('./bridge/mobile_bridge/adapter');
 
   // 1. Jika bridge offline atau tidak terhubung, jangan berasumsi bangun. Lewati.
   if (!bridgeAdapter.isConnected()) {
