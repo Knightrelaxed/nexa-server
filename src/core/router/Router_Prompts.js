@@ -210,6 +210,7 @@ CRITICAL ROUTING RULES:
     - "transfer/TF/via BCA/Mandiri" -> "Transfer bank"
     - "kartu kredit/gesek/cicil/cc" -> "Kartu Kredit"
     - "tunai/cash/uang fisik" -> "Tunai"
+    - "direct debit/dd/kantong/autodebit" -> "Direct Debit"
 12. TELEGRAM FORMATTING RULE: DILARANG menyebar karakter asterisk/bintang (*) berlebihan dalam reply_message. Gunakan bahasa Indonesia natural yang bersih, atau tag HTML <b>teks</b> jika ingin penekanan kata.
 13. MOOD EXTRACTION (EMPATHY & INTENSITY SENSITIVITY):
     WAJIB evaluasi nada emosi dari pesan Tuan Faqih. Pilih 1 dari: "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD".
@@ -233,14 +234,18 @@ const DOMAIN_SCHEMAS = {
   DEVICE_CONTROL: `    // DEVICE_CONTROL: { action: "TOGGLE_FLASHLIGHT|LOCK_SCREEN|GO_HOME_SCREEN|GO_BACK|SHOW_RECENTS|SET_VOLUME|FORCE_DND|GET_BATTERY_STATUS|GET_NETWORK_INFO|TOGGLE_WIFI|GET_LOCATION|SPEAK_TEXT|TAKE_PHOTO|TAKE_SCREENSHOT|DUMP_UI_HIERARCHY|ACCESSIBILITY_CLICK|ACCESSIBILITY_INPUT_TEXT|ACCESSIBILITY_SCROLL|GET_CLIPBOARD|SET_CLIPBOARD|LAUNCH_APP|OPEN_INTENT|SHOW_OVERLAY_MSG|PLAY_RINGTONE|STOP_MEDIA|SIMULATE_INCOMING_CALL|SET_GEOFENCE|MARK_GEOFENCE_HERE", enabled: boolean, level: number, stream: "MUSIC|RING|ALARM|NOTIFICATION|SYSTEM", camera_facing: "front|back", text: string, package_name: string, url: string, target: string, x: number, y: number, direction: "FORWARD|BACKWARD", caller_name: string, message: string, options: [] }
     //   - Triggers: "nyalakan senter", "matikan senter", "kunci HP", "ke home screen", "buka recent apps", "cek baterai HP", "cek wifi/sinyal HP", "di mana HP-ku", "ucapkan suara di HP", "foto kamera depan/belakang", "screenshot HP", "buka youtube/chrome di HP", "salin ke clipboard", "bunyikan alarm HP / cari HP", "munculkan pop up di HP", "telepon HP-ku", "call aku"`,
 
-  FINANCE: `    // FINANCE: { action: "RECORD|RECORD_MULTIPLE|READ_LATEST|READ_ANALYTICS|EDIT|DELETE|UNDO_DELETE|IMPORT_FROM_EMAIL|CONFIRM_TRANSACTION|UPDATE_PENDING|CANCEL_TRANSACTION|CATEGORY_BREAKDOWN|PERIOD_COMPARISON|TOP_EXPENSES|ACCOUNT_BALANCES|DAILY_TREND|SMART_SUMMARY|MONTHLY_SUMMARY|SAVING_RATE|BALANCE_TREND", nominal: number, type: "INCOME|EXPENSE", destination: string, category: string, description: string, time: "ISO+07:00", account: string, payment_method: string, search_keyword: string, date_text: string, limit: number, transactions: [],
+  FINANCE: `    // FINANCE: { action: "RECORD|RECORD_MULTIPLE|READ_LATEST|READ_ANALYTICS|EDIT|DELETE|UNDO_DELETE|IMPORT_FROM_EMAIL|CONFIRM_TRANSACTION|UPDATE_PENDING|CANCEL_TRANSACTION|CATEGORY_BREAKDOWN|PERIOD_COMPARISON|TOP_EXPENSES|ACCOUNT_BALANCES|DAILY_TREND|SMART_SUMMARY|MONTHLY_SUMMARY|SAVING_RATE|BALANCE_TREND", nominal: number, type: "INCOME|EXPENSE|TRANSFER", from_account: string, to_account: string, destination: string, category: string, description: string, time: "ISO+07:00", account: string, payment_method: string, search_keyword: string, date_text: string, limit: number, transactions: [],
     //   is_split: boolean (true jika pengeluaran mengandung BEBERAPA item dengan kategori berbeda),
     //   store_name: string (nama toko/merchant jika disebutkan, e.g. "Indomaret", "Alfamart"),
     //   items: [{label: string, nominal: number, category: string}] (array rincian item split, WAJIB diisi jika is_split=true)
     //   SPLIT DETECTION RULES: Set is_split=true jika user menyebut beberapa item dengan kategori berbeda dalam satu perintah.
     //   Contoh split: "belanja indomaret 50rb: beras 20rb, sabun 15rb, es krim 15rb" -> is_split=true, items=[{beras,20000,Bahan Makanan},{sabun,15000,Perawatan},{es krim,15000,Jajan}]
-    //   Contoh BUKAN split: "beli nasi goreng 15rb" -> is_split=false (satu kategori, RECORD biasa)
-    //   - EDIT/DELETE last tx: set search_keyword="LATEST" (Triggers: "hapus yang tadi", "ubah yang barusan").`,
+    //   Contoh BUKAN split: "beli nasi goreng 15rb", "es teh dua seharga 9800" -> is_split=false (satu kategori/item tunggal, RECORD biasa)
+    //   TRANSFER ANTAR-AKUN RULES:
+    //   - Jika user mentransfer dana antar rekening/e-wallet sendiri (e.g. "TF dari jago ke shopee pay 10 ribu", "transfer dari dana ke mandiri 50rb", "pindah saldo 100rb dari jago ke dana", "top up shopeepay 10rb dari jago"):
+    //     Set action="RECORD", type="TRANSFER", from_account="Bank Jago", to_account="Shopee Pay", nominal=10000, description="Transfer dari Bank Jago ke Shopee Pay", payment_method="Transfer bank".
+    //   - EDIT/DELETE last tx: set search_keyword="LATEST" (Triggers: "hapus yang tadi", "ubah yang barusan").
+    //   - EDIT date/time: Jika user ingin mengubah tanggal/waktu transaksi (e.g. "tadi malam jam 9 tgl 1 nov", "jam 9 malam tgl 1 nov"): set action="EDIT", search_keyword="LATEST", date_text="2026-11-01", time="2026-11-01T21:00:00+07:00".`,
 
   CALENDAR: `    // CALENDAR: { action: "CREATE|CREATE_MULTIPLE|DELETE|UPDATE|READ|READ_TODAY|READ_TOMORROW|READ_UPCOMING", summary, start: "ISO+07:00", end: "ISO+07:00", description, eventId, location, reminder_minutes: [], recurrence: "RRULE...", color_id, events: [], semester_start: "YYYY-MM-DD", semester_end: "YYYY-MM-DD" }
     //   - CREATE_MULTIPLE (Batch Semester / Multi-Course Scheduling):

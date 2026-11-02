@@ -278,11 +278,128 @@ function _formatTxAsCard(tx) {
     `<b>Nominal (Rp):</b> ${nominalFmt}`;
 }
 
+/**
+ * Parse combined date and time expression in natural Indonesian text or ISO strings.
+ * Examples:
+ *   "jam 9 malam tgl 1 nov" -> { dateISO: '2026-11-01', timeHHMM: '21:00' }
+ *   "tadi malam jam 9"      -> { dateISO: '2026-11-01', timeHHMM: '21:00' } (assuming today is 2 Nov)
+ *   "kemarin jam 15:30"     -> { dateISO: '2026-11-01', timeHHMM: '15:30' }
+ *   "2026-11-01T21:00:00"   -> { dateISO: '2026-11-01', timeHHMM: '21:00' }
+ */
+function _parseDateTimeExpression(text, baseDate = null) {
+  if (!text) return { dateISO: null, timeHHMM: null };
+  const s = String(text).toLowerCase().trim();
+  const now = baseDate ? new Date(baseDate) : new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  let targetDate = null;
+  let targetTime = null;
+
+  // 1. Direct ISO Check: e.g. "2026-11-01T21:00:00+07:00" or "2026-11-01 21:00"
+  const isoMatch = s.match(/(\d{4})-(\d{2})-(\d{2})(?:[t\s](\d{2}):(\d{2}))?/i);
+  if (isoMatch) {
+    targetDate = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    if (isoMatch[4] !== undefined && isoMatch[5] !== undefined) {
+      targetTime = `${isoMatch[4]}:${isoMatch[5]}`;
+    }
+  }
+
+  // 2. Date Expression parsing (if not already found via ISO)
+  if (!targetDate) {
+    const MONTHS = {
+      jan: 0, januari: 0, january: 0,
+      feb: 1, februari: 1, february: 1,
+      mar: 2, maret: 2, march: 2,
+      apr: 3, april: 3,
+      mei: 4, may: 4,
+      jun: 5, juni: 5, june: 5,
+      jul: 6, juli: 6, july: 6,
+      agu: 7, agustus: 7, august: 7,
+      sep: 8, september: 8,
+      okt: 9, oktober: 9, october: 9,
+      nov: 10, november: 10,
+      des: 11, desember: 11, december: 11
+    };
+
+    // "tgl 1 nov", "tanggal 1 november 2026", "1 nov"
+    const indDateMatch = s.match(/(?:tanggal|tgl\s*)?(\d{1,2})\s+([a-z]{3,10})(?:\s+(\d{4}))?/i);
+    if (indDateMatch && MONTHS[indDateMatch[2].toLowerCase()] !== undefined) {
+      const day = parseInt(indDateMatch[1], 10);
+      const month = MONTHS[indDateMatch[2].toLowerCase()];
+      const year = indDateMatch[3] ? parseInt(indDateMatch[3], 10) : now.getFullYear();
+      const d = new Date(year, month, day);
+      targetDate = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    } else if (/\b(kemarin|yesterday)\b/i.test(s) || (/\btadi\s*malam\b/i.test(s) && !/\btgl\b|\btanggal\b/.test(s))) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 1);
+      targetDate = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    } else if (/\bhari\s*ini\b|\btoday\b/i.test(s)) {
+      targetDate = today.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    } else if (/\blusa\b/i.test(s)) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + 2);
+      targetDate = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    } else if (/\bbesok\b|\btomorrow\b/i.test(s)) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + 1);
+      targetDate = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    } else {
+      const tglMatch = s.match(/(?:tanggal|tgl)\s*(\d{1,2})/i);
+      if (tglMatch) {
+        const d = new Date(today);
+        d.setDate(parseInt(tglMatch[1], 10));
+        targetDate = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+      }
+    }
+  }
+
+  // 3. Time Expression parsing (if not already found via ISO)
+  if (!targetTime) {
+    // "jam 9 malam", "pukul 21:00", "jam 21.00", "jam 9 pagi", "tadi malam jam 9"
+    const timeMatch = s.match(/(?:jam|pukul)\s*(\d{1,2})(?:[.:](\d{2}))?(?:\s*(pagi|siang|sore|malam))?/i);
+    if (timeMatch) {
+      let hour = parseInt(timeMatch[1], 10);
+      const minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+      let period = timeMatch[3] ? timeMatch[3].toLowerCase() : null;
+
+      // If period was not directly after hour, check if "malam", "sore", "siang", "pagi" is in context
+      if (!period) {
+        if (/\bmalam\b/i.test(s)) period = 'malam';
+        else if (/\bsore\b/i.test(s)) period = 'sore';
+        else if (/\bsiang\b/i.test(s)) period = 'siang';
+        else if (/\bpagi\b/i.test(s)) period = 'pagi';
+      }
+
+      if (period === 'malam' && hour < 12) {
+        hour += 12;
+      } else if (period === 'sore' && hour < 12 && hour < 7) {
+        hour += 12;
+      } else if (period === 'siang' && hour < 10) {
+        hour += 12;
+      } else if (period === 'pagi' && hour === 12) {
+        hour = 0;
+      }
+
+      targetTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    } else if (/\btadi\s*malam\b/i.test(s)) {
+      targetTime = '21:00';
+    } else {
+      const hhmmMatch = s.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/);
+      if (hhmmMatch) {
+        targetTime = `${String(hhmmMatch[1]).padStart(2, '0')}:${String(hhmmMatch[2]).padStart(2, '0')}`;
+      }
+    }
+  }
+
+  return { dateISO: targetDate, timeHHMM: targetTime };
+}
+
 module.exports = {
   _normalizePaymentMethod,
   _autoCategorizeMerchant,
   _parseFlexibleCurrency,
   _parseRelativeDateFilter,
   _parseIndonesianDateString,
+  _parseDateTimeExpression,
   _formatTxAsCard,
 };

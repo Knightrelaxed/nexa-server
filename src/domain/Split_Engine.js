@@ -61,23 +61,40 @@ function isSplitIntent(text) {
   if (!text) return false;
   const s = text.toLowerCase().trim();
 
-  // Hard-pass: keyword eksplisit split
-  if (/\bsplit\b|\bpecah\b|\brincian\b/.test(s)) return true;
+  // Hard-pass: keyword eksplisit split / pemecahan transaksi
+  if (/\b(?:split|pecah|rincian|rinciannya|detail\s*item|item-item|dibagi)\b/i.test(s)) return true;
 
-  // Pola 1: minimal 2 pasangan [item + nominal] dipisahkan koma / "dan" / "sama" / "&" / spasi
-  // Contoh: "untuk es krim 5rb dan nasi 10rb dan sabun 9rb", "beras 100rb sabun 30rb"
-  const pairPattern = /\b[a-z]{2,30}\b\s+\d+(?:[.,]\d+)?\s*(?:ribu|rb|k|jt|juta|000)?/gi;
-  const pairMatches = s.match(pairPattern) || [];
+  // Masking time expressions: "jam 9", "jam 21.00", "pukul 10:30", "jam 9 malam"
+  // Masking date expressions: "tgl 1", "tanggal 14", "tgl 1 nov", "14/05", "14-05"
+  // Masking quantity expressions: "2 porsi", "2 pcs", "2 bungkus", "2 buah", "2 botol", "2 gelas", "2 cup", "2 mangkok", "2 biji"
+  const sanitized = s
+    .replace(/\b(?:jam|pukul)\s*\d{1,2}(?:[.:]\d{2})?(?:\s*(?:pagi|siang|sore|malam))?\b/gi, ' ')
+    .replace(/\b(?:tanggal|tgl)\s*\d{1,2}(?:\s*(?:jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des)[a-z]*)?\b/gi, ' ')
+    .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, ' ')
+    .replace(/\b\d+\s*(?:pcs|porsi|bungkus|buah|botol|gelas|cup|mangkok|biji|lembar|kotak|dus|pack|butir)\b/gi, ' ');
+
+  // Extract all genuine currency amounts from sanitized text:
+  // 1) Explicit suffix: "10rb", "10 ribu", "10k", "1jt", "1 juta"
+  // 2) Formatted currency: "10.000", "9.800"
+  // 3) Standalone numbers >= 1000 (IDR reasonable prices). Numbers < 1000 without suffix are treated as counts/indices.
+  const priceRegex = /(?:rp\.?\s*)?(?:\b\d+(?:[.,]\d+)?\s*(?:ribu|rb|k|jt|juta)\b|\b\d{1,3}(?:\.\d{3})+(?:,\d+)?\b|\b[1-9]\d{3,8}\b)/gi;
+  const nominalMatches = sanitized.match(priceRegex) || [];
+
+  // Jika nominal uang valid kurang dari 2, BUKAN transaksi split!
+  if (nominalMatches.length < 2) return false;
+
+  // Pola 1: minimal 2 pasangan [item + nominal]
+  const pairPattern = /\b[a-z]{2,30}\b\s+(?:rp\.?\s*)?(?:\d+(?:[.,]\d+)?\s*(?:ribu|rb|k|jt|juta)\b|\d{1,3}(?:\.\d{3})+\b|[1-9]\d{3,8}\b)/gi;
+  const pairMatches = sanitized.match(pairPattern) || [];
   if (pairMatches.length >= 2) return true;
 
   // Pola 2: nominal dahulu baru item (e.g. "20rb beras sama 15rb sabun")
-  const revPairPattern = /\d+(?:[.,]\d+)?\s*(?:ribu|rb|k|jt|juta|000)\s+[a-z]{2,30}\b/gi;
-  const revMatches = s.match(revPairPattern) || [];
+  const revPairPattern = /(?:rp\.?\s*)?(?:\d+(?:[.,]\d+)?\s*(?:ribu|rb|k|jt|juta)\b|\d{1,3}(?:\.\d{3})+\b|[1-9]\d{3,8}\b)\s+[a-z]{2,30}\b/gi;
+  const revMatches = sanitized.match(revPairPattern) || [];
   if (revMatches.length >= 2) return true;
 
-  // Pola 3: daftar koma / dan yang mengandung minimal 2 nominal
-  const commaList = s.match(/\d+(?:[.,]\d+)?\s*(?:ribu|rb|k|jt|juta|000)/gi) || [];
-  if (commaList.length >= 2 && (/[,&+]|\bdan\b|\bsama\b|\bserta\b/.test(s) || pairMatches.length >= 2)) return true;
+  // Pola 3: daftar koma / dan yang menghubungkan minimal 2 nominal uang
+  if (nominalMatches.length >= 2 && (/[,&+]|\bdan\b|\bsama\b|\bserta\b/.test(sanitized))) return true;
 
   return false;
 }

@@ -317,7 +317,7 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
 /**
  * Updates a pending transaction with new details (description/category/nominal/account/paymentMethod).
  */
-async function updatePendingTransaction(newDescription = null, newCategory = null, newNominal = null, newAccount = null, newPaymentMethod = null, targetKey = null) {
+async function updatePendingTransaction(newDescription = null, newCategory = null, newNominal = null, newAccount = null, newPaymentMethod = null, targetKey = null, newDate = null, newTime = null) {
   if (pendingConfirmations.size === 0) return null;
 
   // Targeted resolution: if a specific key was resolved from the user's Reply,
@@ -459,6 +459,15 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
       pending.timeoutId = newTimeoutId;
       return `⚠️ <b>Metode pembayaran "${newPaymentMethod}" tidak dikenali.</b>\n\nMetode yang tersedia:\n• <b>QRIS</b> (scan QR / qis / barcode)\n• <b>Direct Debit</b> (dd / debit / kantong / autodebit)\n• <b>Transfer bank</b> (tf / trf / atm)\n• <b>Kartu Kredit</b> (cc)\n• <b>Tunai</b> (cash / kontan)\n\nSilakan balas dengan salah satu metode di atas, atau abaikan agar disimpan dalam 5 menit.`;
     }
+  }
+
+  // ── UPDATE DATE & TIME IF PROVIDED ─────────────────────────────────────────
+  if (newDate || newTime) {
+    const dStr = newDate || (pending.tx.dateISO || (pending.tx.time ? pending.tx.time.slice(0, 10) : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })));
+    const tStr = newTime || (pending.tx.timeHHMM || (pending.tx.time ? pending.tx.time.slice(11, 16) : '12:00'));
+    pending.tx.dateISO = dStr;
+    pending.tx.timeHHMM = tStr;
+    pending.tx.time = `${dStr}T${tStr}:00+07:00`;
   }
 
   // Reset the 5-minute timeout because user interacted

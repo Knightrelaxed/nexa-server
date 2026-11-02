@@ -339,13 +339,16 @@ async function handlePendingFinanceConfirmation(message, textInput, chatId, { re
     return true;
   } else if (intent === 'UPDATE') {
     const up = parsedData.updates || {};
+    const dtInfo = require('../../domain/finance/Finance_Helpers')._parseDateTimeExpression(up.date_text || textInput);
     const updatedMsg = await financeEngine.updatePendingTransaction(
       up.description || null,
       up.category || null,
-      null,
+      up.nominal || null,
       up.account || null,
       up.payment_method || null,
-      targetKey
+      targetKey,
+      dtInfo?.dateISO || null,
+      dtInfo?.timeHHMM || null
     );
     if (updatedMsg) {
       await respondToTelegram(updatedMsg);

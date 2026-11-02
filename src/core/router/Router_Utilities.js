@@ -83,8 +83,10 @@ PENTING: Balas HARUS dengan format JSON valid seperti berikut:
   "updates": {
     "description": "isi jika user memberi deskripsi/catatan/tujuan pengeluaran (contoh: 'beli rokok dua batang', 'berangkat ke takom')",
     "category": "isi jika user menyebut kategori",
-    "payment_method": "isi jika user menyebut metode pembayaran (contoh: 'tunai', 'qris', 'transfer')",
-    "account": "isi jika user menyebut nama bank/dompet (contoh: 'bank mandiri', 'bca', 'dana')"
+    "nominal": null,
+    "payment_method": "isi jika user menyebut metode pembayaran (contoh: 'tunai', 'qris', 'transfer', 'direct debit', 'dd')",
+    "account": "isi jika user menyebut nama bank/dompet (contoh: 'bank mandiri', 'bca', 'dana', 'jago', 'shopee pay')",
+    "date_text": "isi jika user menyebut koreksi waktu/tanggal (contoh: 'tadi malam jam 9 tgl 1 nov', 'jam 9 malam', 'kemarin')"
   }
 }
 Biarkan field di dalam 'updates' bernilai null jika user tidak menyebutkannya.`;

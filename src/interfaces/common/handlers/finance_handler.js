@@ -95,7 +95,20 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'UPDATE_PENDING') {
-    const updatedMsg = await financeEngine.updatePendingTransaction(ed.description || null, ed.category || null, ed.nominal || null, ed.account || null, ed.payment_method || null, null);
+    const dtInfo = require('../../../domain/finance/Finance_Helpers')._parseDateTimeExpression(ed.time || ed.date_text || textInput);
+    const dateISO = dtInfo?.dateISO || null;
+    const timeHHMM = dtInfo?.timeHHMM || null;
+
+    const updatedMsg = await financeEngine.updatePendingTransaction(
+      ed.description || null,
+      ed.category || null,
+      ed.nominal || null,
+      ed.account || null,
+      ed.payment_method || null,
+      null,
+      dateISO,
+      timeHHMM
+    );
     if (updatedMsg) return updatedMsg;
 
     // Fallback: If pending confirmation timed out (already saved) or user quoted a previous message, edit committed transaction
@@ -126,7 +139,9 @@ async function handleFinanceIntent(routingData, context = {}) {
       ed.category,
       ed.account,
       ed.payment_method,
-      ed.type || null
+      ed.type || null,
+      dateISO,
+      timeHHMM
     );
     if (editRes && editRes.status === 'SUCCESS') {
       return editRes.message;
@@ -140,6 +155,10 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'EDIT') {
+    const dtInfo = require('../../../domain/finance/Finance_Helpers')._parseDateTimeExpression(ed.time || ed.date_text || textInput);
+    const dateISO = dtInfo?.dateISO || null;
+    const timeHHMM = dtInfo?.timeHHMM || null;
+
     let kw = ed.search_keyword;
     if (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|\s)*$/i.test(String(kw).trim())) {
       const replyMsgText = context.message?.reply_to_message?.text || null;
@@ -160,7 +179,17 @@ async function handleFinanceIntent(routingData, context = {}) {
         kw = 'latest';
       }
     }
-    const result = await financeEngine.editTransaction(kw, ed.nominal, ed.description || ed.destination, ed.category, ed.account, ed.payment_method, ed.type || null);
+    const result = await financeEngine.editTransaction(
+      kw,
+      ed.nominal,
+      ed.description || ed.destination,
+      ed.category,
+      ed.account,
+      ed.payment_method,
+      ed.type || null,
+      dateISO,
+      timeHHMM
+    );
     return result.message;
   }
 
@@ -227,17 +256,56 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (ed.nominal || action === 'RECORD') {
+    const isTransfer = String(ed.type || '').toUpperCase() === 'TRANSFER' ||
+      action === 'TRANSFER' ||
+      !!(ed.from_account && ed.to_account) ||
+      /\b(?:tf|transfer|pindah\s*saldo|kirim|top\s*up)\s+(?:dari\s+[a-z0-9\s]+\s+ke|ke\s+[a-z0-9\s]+\s+dari)\b/i.test(textInput);
+
+    let fromAccName = ed.from_account || null;
+    let toAccName = ed.to_account || null;
+
+    if (isTransfer) {
+      if (!fromAccName && ed.account) fromAccName = ed.account;
+      if (!toAccName && ed.destination) toAccName = ed.destination;
+
+      // Heuristic extraction from textInput if AI missed from/to
+      if (!fromAccName || !toAccName) {
+        const mFromTo = textInput.match(/(?:tf|transfer|pindah\s*saldo|kirim|top\s*up)\s+(?:dari\s+)?([a-z0-9\s]+?)\s+ke\s+([a-z0-9\s]+?)(?:\s+\d+|\s+sebesar|\s+sejumlah|\s*$)/i);
+        if (mFromTo) {
+          if (!fromAccName) fromAccName = mFromTo[1].trim();
+          if (!toAccName) toAccName = mFromTo[2].trim();
+        }
+      }
+
+      // Canonical account resolution via Supabase finance
+      const supabaseFinance = require('../../../infrastructure/Supabase_Finance');
+      if (fromAccName) {
+        const resolvedFrom = await supabaseFinance.resolveAccount(fromAccName);
+        if (resolvedFrom) fromAccName = resolvedFrom.name;
+      }
+      if (toAccName) {
+        const resolvedTo = await supabaseFinance.resolveAccount(toAccName);
+        if (resolvedTo) toAccName = resolvedTo.name;
+      }
+    }
+
     const txData = {
       nominal: ed.nominal,
-      type: ed.type || 'EXPENSE',
-      destination: ed.destination || ed.merchant || 'Unknown',
-      category: ed.category || 'Uncategorized',
-      description: ed.description || '-',
+      type: isTransfer ? 'TRANSFER' : (ed.type || 'EXPENSE'),
+      destination: isTransfer ? (toAccName || 'Transfer Antar-Akun') : (ed.destination || ed.merchant || 'Unknown'),
+      category: isTransfer ? 'Pengeluaran tidak tercatat ' : (ed.category || 'Uncategorized'),
+      description: ed.description && ed.description !== '-'
+        ? ed.description
+        : (isTransfer ? `Transfer dari ${fromAccName || 'Akun'} ke ${toAccName || 'Tujuan'}` : '-'),
       time: ed.time || new Date().toISOString(),
-      account: ed.account || null,
-      payment_method: ed.payment_method || null
+      account: isTransfer ? (toAccName || null) : (ed.account || null),
+      suggestedAccount: isTransfer ? (toAccName || null) : null,
+      fromAccount: isTransfer ? (fromAccName || null) : null,
+      isSelfTransfer: isTransfer,
+      payment_method: ed.payment_method || (isTransfer ? 'Transfer bank' : null)
     };
-    const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
+    const cardTitle = isTransfer ? 'TRANSFER ANTAR-AKUN' : 'PENCATATAN KEUANGAN BARU';
+    const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, cardTitle);
     if (confirmMsg) {
       const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
       const cKey = `${txData.nominal}_${cleanMerch}`;

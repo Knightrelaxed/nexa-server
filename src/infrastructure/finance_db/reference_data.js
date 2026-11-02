@@ -177,6 +177,31 @@ async function resolveAccountId(accountName) {
 }
 
 /**
+ * Resolve nama akun (string bebas) menjadi objek akun lengkap di tabel `accounts`.
+ *
+ * @param {string} accountName - Contoh: "jago", "shopeepay", "dana"
+ * @returns {Promise<object|null>} Objek akun { id, name, type, color }, atau null
+ */
+async function resolveAccount(accountName) {
+  if (!accountName) return null;
+  const accounts = await _loadAccounts();
+  if (!accounts.length) return null;
+
+  let best = { score: 0, account: null };
+  for (const acc of accounts) {
+    const score = _fuzzyScore(accountName, acc.name);
+    if (score > best.score) {
+      best = { score, account: acc };
+    }
+  }
+
+  if (best.score >= 30) {
+    return best.account;
+  }
+  return accounts[0] || null;
+}
+
+/**
  * Resolve nama kategori (string bebas) menjadi UUID di tabel `categories`.
  *
  * Memperhitungkan `type` transaksi (income/expense) agar tidak
@@ -318,6 +343,7 @@ module.exports = {
   _normalize,
   _fuzzyScore,
   resolveAccountId,
+  resolveAccount,
   resolveCategoryId,
   invalidateCache
 };

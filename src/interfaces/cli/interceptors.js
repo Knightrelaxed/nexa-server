@@ -123,8 +123,16 @@ async function handlePendingFinance(textInput) {
     return { handled: true, reply: stripHtml(cancelReply), intent: 'FINANCE' };
   } else if (pIntent === 'UPDATE') {
     const up = parsedData.updates || {};
+    const dtInfo = require('../../domain/finance/Finance_Helpers')._parseDateTimeExpression(up.date_text || textInput);
     const updMsg = await financeEngine.updatePendingTransaction(
-      up.description || null, up.category || null, null, up.account || null, up.payment_method || null, null
+      up.description || null,
+      up.category || null,
+      up.nominal || null,
+      up.account || null,
+      up.payment_method || null,
+      null,
+      dtInfo?.dateISO || null,
+      dtInfo?.timeHHMM || null
     ) || '';
     if (updMsg) {
       return { handled: true, reply: stripHtml(updMsg), intent: 'FINANCE' };

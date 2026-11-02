@@ -195,7 +195,7 @@ async function undoDeleteTransaction() {
 /**
  * Edit a specific transaction matching a keyword in Supabase.
  */
-async function editTransaction(keyword, newNominal, newDescription, newCategory, newAccount, newPaymentMethod, newType) {
+async function editTransaction(keyword, newNominal, newDescription, newCategory, newAccount, newPaymentMethod, newType, newDate = null, newTime = null) {
   try {
     const rows = await supabaseFinance.readTransactions({ limit: 50 });
     if (!rows || rows.length === 0) return { status: 'FAILED', message: 'Tabel database saat ini masih kosong.' };
@@ -256,6 +256,18 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
     if (newType) {
       patchData.txType = String(newType).toUpperCase();
     }
+
+    // Update date if provided
+    const oldTanggal = tx.transaction_date || '-';
+    if (newDate) {
+      patchData.dateISO = newDate;
+    }
+
+    // Update time if provided
+    const oldWaktu = tx.transaction_time ? tx.transaction_time.slice(0, 5) : '-';
+    if (newTime) {
+      patchData.timeHHMM = newTime;
+    }
     
     // Update the Supabase record
     const result = await supabaseFinance.updateTransaction(tx.id, patchData);
@@ -278,22 +290,30 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
     let editedFields = [];
     if (patchData.nominal !== undefined) editedFields.push(`Nominal (dari Rp${Math.abs(tx.amount || 0).toLocaleString('id-ID')} menjadi ${nominalFmt})`);
     if (patchData.txType !== undefined) editedFields.push(`Tipe (menjadi "${tipeLabel}")`);
+    if (patchData.dateISO !== undefined) editedFields.push(`Tanggal (dari "${oldTanggal}" menjadi "${patchData.dateISO}")`);
+    if (patchData.timeHHMM !== undefined) editedFields.push(`Waktu (dari "${oldWaktu}" menjadi "${patchData.timeHHMM}")`);
     if (patchData.description !== undefined) editedFields.push(`Catatan (dari "${oldCatatan}" menjadi "${finalDescription}")`);
     if (patchData.categoryName !== undefined) editedFields.push(`Kategori (dari "${oldKategori}" menjadi "${finalCategory}")`);
     if (patchData.accountName !== undefined) editedFields.push(`Akun (menjadi "${finalAccount}")`);
     if (patchData.paymentMethod !== undefined) editedFields.push(`Metode Pembayaran (menjadi "${finalPaymentMethod}")`);
 
+      const finalDate = patchData.dateISO !== undefined ? patchData.dateISO : (tx.transaction_date || '-');
+    const finalTime = patchData.timeHHMM !== undefined ? patchData.timeHHMM : (tx.transaction_time ? tx.transaction_time.slice(0,5) : '-');
+    const summaryEdit = editedFields.length > 0
+      ? `Yang saya edit adalah:\n- ${editedFields.join('\n- ')}`
+      : '⚠️ Tidak ada perubahan yang dilakukan karena data yang dimasukkan sama dengan data saat ini.';
+
     const message = `💸 <b>TRANSAKSI DIEDIT</b>\n\n` +
       `<b>No:</b> ${tx.id.substring(0,8)}\n` +
-      `<b>Tanggal:</b> ${tx.transaction_date || '-'}\n` +
-      `<b>Waktu:</b> ${tx.transaction_time ? tx.transaction_time.slice(0,5) : '-'}\n` +
+      `<b>Tanggal:</b> ${finalDate}\n` +
+      `<b>Waktu:</b> ${finalTime}\n` +
       `<b>Tipe:</b> ${tipeLabel}\n` +
       `<b>Kategori:</b> ${finalCategory}\n` +
       `<b>Akun:</b> ${akunName}\n` +
       `<b>Deskripsi:</b> ${finalDescription}\n` +
       `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
       `<b>Saldo (Rp) Saat Ini:</b> -\n\n` +
-      `Yang saya edit adalah:\n- ${editedFields.join('\n- ')}\n\n` +
+      `${summaryEdit}\n\n` +
       `Apakah ada hal lain yang mau diedit, Tuan?`;
 
     return { status: 'SUCCESS', message };
