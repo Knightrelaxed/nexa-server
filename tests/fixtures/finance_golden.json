@@ -146,13 +146,13 @@
     },
     "confirm: requestTransactionConfirmation": {
       "outcome": {
-        "ok": "💸 <b>TEST</b>\n\n<b>No:</b> [Auto]\n<b>Tanggal:</b> 14 Oktober 2026\n<b>Waktu:</b> 12.00\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe [Auto-AI]\n<b>Akun:</b> Cash\n<b>Metode:</b> -\n<b>Deskripsi:</b> [KOSONG - Tujuan: Kopi Kenangan]\n<b>Nominal (Rp):</b> Rp18.000\n<b>Saldo (Rp) Saat Ini:</b> Rp2.650.000\n\n❓ <b>N.E.X.A mencatat pengeluaran ke Kopi Kenangan.</b>\n\nTuan, uang ini digunakan untuk keperluan apa ya? <i>(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).</i>"
+        "ok": "💸 <b>TEST</b>\n\n<b>No:</b> [Auto]\n<b>Tanggal:</b> 14 Oktober 2026\n<b>Waktu:</b> 12.00\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe [Auto-AI]\n<b>Akun:</b> Cash\n<b>Metode:</b> -\n<b>Deskripsi:</b> [KOSONG - Tujuan: Kopi Kenangan]\n<b>Nominal (Rp):</b> Rp18.000\n<b>Saldo (Rp) Saat Ini:</b> Rp150.000\n\n❓ <b>N.E.X.A mencatat pengeluaran ke Kopi Kenangan.</b>\n\nTuan, uang ini digunakan untuk keperluan apa ya? <i>(Tanpa balasan, N.E.X.A akan menebak kategorinya dalam 5 menit).</i>"
       },
       "stubCalls": [
         "SF.getCategoriesList",
         "AI.callAI",
         "SM.savePendingTransaction",
-        "SF.getFinanceAnalytics"
+        "SF.getAccountBalances"
       ]
     },
     "confirm: pending count after request": {
@@ -169,12 +169,12 @@
     },
     "confirm: updatePendingTransaction": {
       "outcome": {
-        "ok": "💸 <b>DETAIL TRANSAKSI DIPERBARUI ✏️</b>\n\n<b>No:</b> [Auto]\n<b>Tanggal:</b> 14 Oktober 2026\n<b>Waktu:</b> 12.00\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe [Auto-AI]\n<b>Akun:</b> Cash\n<b>Metode:</b> -\n<b>Deskripsi:</b> Es kopi susu\n<b>Nominal (Rp):</b> Rp20.000\n<b>Saldo (Rp) Saat Ini:</b> Rp2.650.000\n\n✏️ <b>Detail catatan diperbarui!</b>\n\nSatu hal lagi Tuan, mohon informasikan metode pembayarannya (QRIS/Transfer/Tunai/Kredit) untuk transaksi ini."
+        "ok": "💸 <b>DETAIL TRANSAKSI DIPERBARUI ✏️</b>\n\n<b>No:</b> [Auto]\n<b>Tanggal:</b> 14 Oktober 2026\n<b>Waktu:</b> 12.00\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe [Auto-AI]\n<b>Akun:</b> Cash\n<b>Metode:</b> -\n<b>Deskripsi:</b> Es kopi susu\n<b>Nominal (Rp):</b> Rp20.000\n<b>Saldo (Rp) Saat Ini:</b> Rp150.000\n\n✏️ <b>Detail catatan diperbarui!</b>\n\nSatu hal lagi Tuan, mohon informasikan metode pembayarannya (QRIS/Transfer/Tunai/Kredit) untuk transaksi ini."
       },
       "stubCalls": [
         "SF.getCategoriesList",
         "SM.savePendingTransaction",
-        "SF.getFinanceAnalytics"
+        "SF.getAccountBalances"
       ]
     },
     "confirm: confirmPendingTransactions(true)": {
@@ -338,7 +338,7 @@
         "AI.callAI",
         "SF.getAccountsList",
         "SM.savePendingTransaction",
-        "SF.getFinanceAnalytics",
+        "SF.getAccountBalances",
         "net.sendTelegramMessage",
         "SM.markPendingTransactionSent",
         "SM.isDuplicateTransaction",

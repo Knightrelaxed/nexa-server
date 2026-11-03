@@ -509,22 +509,39 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
   const descLabel = tx.type === 'INCOME' ? 'Sumber' : 'Tujuan';
   const displayDesc = isMissingDesc ? `[KOSONG - ${descLabel}: ${tx.destination}]` : tx.description;
 
-  let currentSaldo = '-';
+  // Fetch real-time account balances to show accurate per-account balance
+  let accountBalances = [];
   try {
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const analytics = await supabaseFinance.getFinanceAnalytics(startOfMonth, endOfMonth);
-    if (analytics) {
-      const saldoNum = analytics.balance;
-      currentSaldo = isNaN(saldoNum) ? '-' : `Rp${Math.abs(saldoNum).toLocaleString('id-ID')}`;
-    }
-  } catch (_) {}
+    accountBalances = await supabaseFinance.getAccountBalances();
+  } catch (err) {
+    console.warn('[FINANCE] getAccountBalances failed in _buildConfirmationMessage:', err.message);
+  }
+
+  const matchAcc = (accName) => {
+    if (!accName || !accountBalances || !accountBalances.length) return null;
+    const target = String(accName).toLowerCase().replace(/^(bank|dompet)\s+/i, '').replace(/\s+/g, '');
+    return accountBalances.find(a => {
+      const aName = a.name.toLowerCase().replace(/^(bank|dompet)\s+/i, '').replace(/\s+/g, '');
+      return aName === target || aName.includes(target) || target.includes(aName);
+    }) || null;
+  };
+
+  const formatBalRp = (num) => {
+    if (num === null || num === undefined || isNaN(num)) return '-';
+    const prefix = num < 0 ? '-Rp' : 'Rp';
+    return `${prefix}${Math.abs(num).toLocaleString('id-ID')}`;
+  };
 
   if (tx.isSelfTransfer) {
     const fromAcc = tx.fromAccount || 'Dana';
     const toAcc = tx.account || tx.suggestedAccount || 'Bank Jago';
     const headerLabel = sourceLabel.includes('DIPERBARUI') ? 'TRANSFER ANTAR-AKUN DIPERBARUI ✏️' : 'SINKRONISASI TRANSFER ANTAR-AKUN';
+
+    const sourceMatched = matchAcc(fromAcc);
+    const destMatched = matchAcc(toAcc);
+    const sourceBalStr = sourceMatched ? formatBalRp(sourceMatched.balance) : '-';
+    const destBalStr = destMatched ? formatBalRp(destMatched.balance) : '-';
+    const transferSaldoDisplay = `${fromAcc} (${sourceBalStr}) • ${toAcc} (${destBalStr})`;
 
     return `🔄 <b>${headerLabel}</b>\n\n` +
       `<b>No:</b> [Auto]\n` +
@@ -534,11 +551,20 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
       `<b>Sumber:</b> ${fromAcc}\n` +
       `<b>Tujuan:</b> ${toAcc}\n` +
       `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
-      `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
+      `<b>Saldo (Rp) Saat Ini:</b> ${transferSaldoDisplay}\n\n` +
       `🔄 <b>Terdeteksi pemindahan dana dari ${fromAcc} ke ${toAcc} sebesar ${nominalFmt}.</b>\n` +
       `• Saldo <b>${fromAcc}</b>: berkurang ${nominalFmt}\n` +
       `• Saldo <b>${toAcc}</b>: bertambah ${nominalFmt}\n\n` +
       `💡 <i>N.E.X.A akan menguncinya sebagai Transfer Antar-Akun dalam 5 menit jika tidak ada koreksi.</i>`;
+  }
+
+  let currentSaldo = '-';
+  const matchedAcc = matchAcc(tx.account);
+  if (matchedAcc) {
+    currentSaldo = formatBalRp(matchedAcc.balance);
+  } else if (accountBalances && accountBalances.length > 0) {
+    const totalAll = accountBalances.reduce((sum, a) => sum + (typeof a.balance === 'number' ? a.balance : 0), 0);
+    currentSaldo = `${formatBalRp(totalAll)} (Total Semua Akun)`;
   }
 
   let proactiveQuestion = '';
