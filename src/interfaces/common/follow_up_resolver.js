@@ -159,7 +159,7 @@ function resolveFollowUp(textInput, conversationContext) {
         query: ctx.extractedData?.query || mergedKw || 'tempat terdekat',
         search_keywords: ctx.extractedData?.search_keywords || []
       },
-      reply_message: 'Siap Tuan, ini saya carikan kembali di sekitar posisi Tuan:',
+      reply_message: 'Baik, ini saya carikan kembali di sekitar posisi Anda:',
       god_mode_trigger: false
     };
   }
@@ -196,7 +196,7 @@ function resolveFollowUp(textInput, conversationContext) {
           query: target,
           search_keywords: kws
         },
-        reply_message: `Siap Tuan, langsung saya carikan ${target} terdekat dari posisi Tuan saat ini:`,
+        reply_message: `Siap, langsung saya carikan ${target} terdekat dari posisi saat ini:`,
         god_mode_trigger: false
       };
     }

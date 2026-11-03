@@ -60,8 +60,8 @@ function _detectCandidateDomains(textInput, runtimeHints = {}) {
   }
 
   const clean = textInput.toLowerCase();
-  // Short affirmative / confirmation follow-up: fail-open to all domains
-  if (/^(?:iya|ya|boleh|silakan|carikan|tolong|coba|lanjut|ok|oke|gas|bisa|siap)\b/i.test(clean)) {
+  // Short standalone confirmation without other content: fail-open to all domains
+  if (/^(?:iya|ya|boleh|silakan|carikan|tolong|coba|lanjut|ok|oke|gas|bisa|siap)(?:\s+(?:dong|deh|aja|saja|nexa|ya))?$/i.test(clean)) {
     return 'ALL';
   }
   const matched = new Set();
@@ -86,7 +86,7 @@ function _detectCandidateDomains(textInput, runtimeHints = {}) {
     matched.add('WEB_SEARCH');
   }
 
-  if (/\b(terdekat|lokasi|jarak|rute|peta|maps|alamat|di mana letak|warkop|cafe terdekat|pom bensin|masjid terdekat|spbu|bensin|sebelah|samping)\b/i.test(clean)) {
+  if (/\b(dekat|terdekat|lokasi|jarak|rute|peta|maps|alamat|di mana letak|warkop|cafe terdekat|pom bensin|masjid terdekat|spbu|bensin|sebelah|samping)\b/i.test(clean)) {
     matched.add('LOCATION');
   }
 

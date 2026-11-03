@@ -430,7 +430,7 @@ async function _handleRelationalPlaceRequest(query, relationalMeta, context, use
 
   // ── FORMAT KARTU RESPON ────────────────────────────────────
   let card = `📍 <b>Fasilitas & Tempat di Sekitar: ${anchor.name}</b>\n`;
-  card += `📌 <i>Titik Acuan: ${anchor.name} (~${anchor.distanceText} dari HP Tuan)</i>\n`;
+  card += `📌 <i>Titik Acuan: ${anchor.name} (~${anchor.distanceText} dari posisi Anda)</i>\n`;
   if (anchor.address && anchor.address !== anchor.name) {
     card += `🏠 <i>${anchor.address}</i>\n`;
   }
@@ -571,7 +571,7 @@ async function _handlePlaceSearchRequest(query, context) {
   places.sort((a, b) => a.distanceMeters - b.distanceMeters);
 
   if (places && places.length > 0) {
-    let card = `📍 <b>Rekomendasi Tempat di Sekitar Tuan:</b>\n`;
+    let card = `📍 <b>Rekomendasi Tempat Terdekat:</b>\n`;
     if (userAddressStr) {
       card += `📌 <i>Area: ${userAddressStr}</i>\n\n`;
     } else {
@@ -609,7 +609,7 @@ async function _handlePlaceSearchRequest(query, context) {
     : `https://www.google.com/maps/search/${encodedQ}`;
 
   return `📍 <b>Pencarian Tempat: "${cleanedKeyword}"</b>\n\n` +
-    (userAddressStr ? `📌 <i>Area Tuan: ${userAddressStr}</i>\n\n` : '') +
+    (userAddressStr ? `📌 <i>Area: ${userAddressStr}</i>\n\n` : '') +
     `N.E.X.A tidak menemukan titik POI persis di database lokal untuk kata kunci tersebut.\n\n` +
     `🗺️ <a href="${fallbackGmapsUrl}"><b>Klik di sini untuk mencari langsung di Google Maps</b></a>`;
 }
@@ -631,7 +631,7 @@ async function getCurrentLocation(context = {}) {
   const rev = await locationEngine.reverseGeocodeOsm(userCoords.lat, userCoords.lon);
   const addr = rev?.displayName || `${userCoords.lat}, ${userCoords.lon}`;
   const gmapsUrl = `https://www.google.com/maps?q=${userCoords.lat},${userCoords.lon}`;
-  return `📍 <b>Lokasi Tuan Saat Ini:</b>\n\n${addr}\n\n🧭 <a href="${gmapsUrl}"><b>Buka di Google Maps</b></a>`;
+  return `📍 <b>Lokasi Anda Saat Ini:</b>\n\n${addr}\n\n🧭 <a href="${gmapsUrl}"><b>Buka di Google Maps</b></a>`;
 }
 
 /**
