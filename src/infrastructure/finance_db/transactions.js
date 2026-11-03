@@ -174,7 +174,7 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
  * @param {number} options.year
  * @returns {Promise<Array>}
  */
-async function readTransactions({ limit = 5, keyword = '', txType = null, month = null, year = null } = {}) {
+async function readTransactions({ limit = 20, keyword = '', txType = null, month = null, year = null, dateISO = null } = {}) {
   if (!supabaseFinance) return [];
 
   let query = supabaseFinance
@@ -183,6 +183,8 @@ async function readTransactions({ limit = 5, keyword = '', txType = null, month 
       id,
       amount,
       type,
+      split_label,
+      split_group_id,
       transaction_date,
       transaction_time,
       description,
@@ -204,8 +206,10 @@ async function readTransactions({ limit = 5, keyword = '', txType = null, month 
     else query = query.eq('type', 'expense');
   }
 
-  // Filter bulan & tahun
-  if (year) {
+  // Filter tanggal spesifik (dateISO) atau rentang bulan & tahun
+  if (dateISO) {
+    query = query.eq('transaction_date', dateISO);
+  } else if (year) {
     const startDate = new Date(year, (month || 1) - 1, 1);
     const endDate = month ? new Date(year, month, 0) : new Date(year, 11, 31);
     

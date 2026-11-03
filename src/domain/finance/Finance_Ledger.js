@@ -243,8 +243,10 @@ async function getRecentTransactions(limit = 5) {
 async function searchTransactions(filters = {}) {
   try {
     const targetDate = filters.date_text ? _parseRelativeDateFilter(filters.date_text) : null;
-    let month = null, year = null;
+    let month = null, year = null, dateISO = null;
     if (targetDate) {
+      const tzOffset = targetDate.getTimezoneOffset() * 60000;
+      dateISO = new Date(targetDate.getTime() - tzOffset).toISOString().split('T')[0];
       month = targetDate.getMonth() + 1;
       year = targetDate.getFullYear();
     }
@@ -254,6 +256,7 @@ async function searchTransactions(filters = {}) {
     if (typeLower) {
       if (typeLower.includes('masuk') || typeLower === 'pemasukan' || typeLower === 'income') txType = 'INCOME';
       if (typeLower.includes('keluar') || typeLower === 'pengeluaran' || typeLower === 'expense') txType = 'EXPENSE';
+      if (typeLower.includes('transfer') || typeLower === 'tf') txType = 'TRANSFER';
     }
 
     // Gabungkan keyword dan category menjadi keyword umum untuk pencarian Supabase
@@ -263,9 +266,10 @@ async function searchTransactions(filters = {}) {
     const searchKeyword = keywordParts.join(' ');
 
     const rows = await supabaseFinance.readTransactions({
-      limit: filters.limit || 20,
+      limit: filters.limit || 50,
       keyword: searchKeyword,
       txType,
+      dateISO,
       month,
       year
     });
@@ -295,7 +299,17 @@ async function searchTransactions(filters = {}) {
 
     // Membalik urutan agar tampil dari yang terlama ke yang terbaru (kronologis)
     const cards = [...rows].reverse().map(tx => _formatTxAsCard(tx)).join('\n──────────────\n');
-    return header + cards;
+
+    let footer = '';
+    if (txType === 'EXPENSE') {
+      const totalExpense = rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+      footer = `\n──────────────\n💸 <b>Total Pengeluaran: Rp${totalExpense.toLocaleString('id-ID')}</b>`;
+    } else if (txType === 'INCOME') {
+      const totalIncome = rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+      footer = `\n──────────────\n💰 <b>Total Pemasukan: Rp${totalIncome.toLocaleString('id-ID')}</b>`;
+    }
+
+    return header + cards + footer;
   } catch (err) {
     console.error('[FINANCE] searchTransactions failed:', err.message);
     return `⚠️ Gagal mencari data transaksi: ${err.message}`;

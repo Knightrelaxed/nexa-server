@@ -108,13 +108,19 @@ async function handleSystemIntent(intent, routingData, context = {}) {
   if (intent === 'LOCATION') {
     const action = ed.action || 'GET';
     const query = ed.query || [ed.origin, ed.destination].filter(Boolean).join(' ke ') || textInput;
+    let locationReply = null;
     if (typeof locationOrchestrator.handleLocationIntent === 'function') {
-      return await locationOrchestrator.handleLocationIntent(ed, context);
+      locationReply = await locationOrchestrator.handleLocationIntent(ed, context);
+    } else if (action === 'SEARCH' || query) {
+      locationReply = await locationOrchestrator.searchLocation(query, context);
+    } else {
+      locationReply = await locationOrchestrator.getCurrentLocation(context);
     }
-    if (action === 'SEARCH' || query) {
-      return await locationOrchestrator.searchLocation(query, context);
+
+    if (routingData?.reply_message && locationReply) {
+      return `${routingData.reply_message}\n\n${locationReply}`;
     }
-    return await locationOrchestrator.getCurrentLocation(context);
+    return locationReply || routingData?.reply_message || null;
   }
 
   return null;

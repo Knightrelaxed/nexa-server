@@ -49,7 +49,7 @@ test('Hyper-Local Spatial Engine: Core Engine & Two-Pass Resolution Suite', asyn
     const reply = await locationOrchestrator.handleLocationQuery('cari tomoro terdekat', context);
 
     assert.ok(typeof reply === 'string', 'Reply harus berupa string');
-    assert.ok(reply.includes('Rekomendasi Tempat Terdekat'), 'Harus berisi judul rekomendasi');
+    assert.ok(reply.includes('Rekomendasi Tempat'), 'Harus berisi judul rekomendasi');
     assert.ok(reply.includes('TOMORO') || reply.includes('Tomoro'), 'Harus menyebut Tomoro');
     assert.ok(reply.includes('Google Maps'), 'Harus menyertakan tautan navigasi Google Maps');
   });
@@ -81,7 +81,7 @@ test('Hyper-Local Spatial Engine: Core Engine & Two-Pass Resolution Suite', asyn
 
     const reply = await locationOrchestrator.handleLocationIntent(routerPayload, context);
     assert.ok(typeof reply === 'string', 'Reply harus berupa string');
-    assert.ok(reply.includes('Rekomendasi Tempat Terdekat'), 'Harus berisi judul rekomendasi tempat');
+    assert.ok(reply.includes('Rekomendasi Tempat'), 'Harus berisi judul rekomendasi tempat');
     assert.ok(reply.includes('SPBU') || reply.includes('Pertamina'), 'Harus menemukan SPBU berdasarkan kata kunci router');
   });
 

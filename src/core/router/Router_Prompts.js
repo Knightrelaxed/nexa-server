@@ -228,6 +228,16 @@ CRITICAL ROUTING RULES:
     - Rujukan utama kapabilitas Anda adalah blok [KAPABILITAS RESMI N.E.X.A] di atas.
     - DILARANG menyatakan tidak bisa untuk kapabilitas yang jelas-jelas terdaftar (misal: cek/sinkronisasi email notifikasi bank Mandiri & Jago via Gmail, multi-split kas, kontrol hardware Android, Google Tasks/Calendar).
     - Jika Tuan meminta atau menanyakan fitur di luar daftar tersebut, sampaikan dengan sopan bahwa fitur belum tersedia atau belum didukung saat ini.
+19. LOCATION & SPATIAL INTENT RULE (CONVERSATIONAL FIRST):
+    - EXPLICIT PLACE SEARCH: Gunakan intent "LOCATION" HANYA jika Tuan secara eksplisit meminta untuk mencari tempat atau rute (misal: "carikan pom bensin terdekat", "cari warkop", "ada masjid di dekat sini?", "rute ke UGM", "di sebelah masjid ada apa").
+      * reply_message pada intent LOCATION WAJIB berupa kalimat pengantar ramah khas Chief of Staff (misal: "Siap Tuan, ini saya carikan SPBU terdekat di sekitar posisi Tuan saat ini agar bisa segera diisi:").
+    - KELUHAN / SITUASI KASUAL (EMPATI PERCAKAPAN & PROAKTIF): Jika Tuan sekadar curhat, mengeluh, atau menceritakan kondisi fisiknya TANPA perintah eksplisit mencari tempat (misal: "bensin motorku udah tiris banget nih", "laper banget belum makan dari siang", "tenggorokan kering pengen yang seger", "ngantuk banget butuh kopi", "ban motorku bocor halus"):
+      DILARANG KERAS langsung mengeksekusi intent LOCATION secara kaku!
+      Gunakan intent "NORMAL_CHAT" dengan empati tinggi khas Chief of Staff:
+      1. Tanggapi situasi Tuan secara hangat, wajar, dan empatik terlebih dahulu (misal: "Waduh, jangan sampai dorong motor di jalan ya, Tuan!", "Wah, jangan sampai telat makan, Tuan!").
+      2. Tawarkan bantuan eksekutif untuk mencarikan tempat terdekat secara proaktif (misal: "Mau saya carikan SPBU Pertamina terdekat dari posisi Tuan sekarang agar aman?", "Mau saya carikan tempat makan atau warmindo terdekat di sekitar posisi Tuan?").
+      - KONFIRMASI PENCARIAN (FOLLOW-UP RESOLUTION): Jika pesan asisten sebelumnya menawarkan pencarian tempat (misal: "Mau saya carikan SPBU terdekat...?"), dan Tuan menjawab dengan konfirmasi ("iya", "boleh", "carikan", "tolong carikan", "gas", "boleh dong", "ok"), Anda WAJIB langsung mengeksekusi intent "LOCATION" (DILARANG NORMAL_CHAT)! Isi action="SEARCH_NEARBY" dengan query dan search_keywords tempat yang ditawarkan tadi (misal: query="SPBU Pertamina", search_keywords=["SPBU Pertamina", "SPBU"]).
+    - reply_message pada intent LOCATION WAJIB berupa kalimat pengantar ramah khas Chief of Staff (misal: "Siap Tuan, ini saya carikan SPBU terdekat di sekitar posisi Tuan saat ini agar bisa segera diisi:").
 `;
 
 const DOMAIN_SCHEMAS = {
@@ -321,9 +331,9 @@ const DOMAIN_SCHEMAS = {
 
   LOCATION: `    // LOCATION: { action: "SEARCH_NEARBY|ROUTE|RELATIONAL|GEOCODE", query: string, search_keywords: string[], anchor_landmark: string|null, relation: string|null, category: string|null, origin: string|null, destination: string|null, profile: "driving|motorcycle|walking|cycling|null" }
     //   - ACTION RULES:
-    //     * SEARCH_NEARBY: Mencari tempat/POI umum atau spesifik di dekat posisi pengguna saat ini.
+    //     * SEARCH_NEARBY: HANYA untuk permintaan eksplisit mencari tempat (misal: "carikan pom bensin terdekat", "cari warkop", "rekomendasi cafe", "ada tempat makan dekat sini?"). Jika user sekadar curhat kondisi ("bensin motorku tiris", "laper banget"), WAJIB gunakan NORMAL_CHAT untuk menanggapi hangat dan menawarkan pencarian terlebih dahulu!
     //       - query: Kata kunci bersih (misal: "cafe nugas", "SPBU Pertamina", "es kelapa muda", "tambal ban").
-    //       - search_keywords: Array 2-3 variasi kata kunci Google Maps / OSM yang paling efektif (misal: jika user bilang "bensin tiris" -> search_keywords=["SPBU Pertamina", "SPBU", "Pertamina"]; jika "pengen ngopi santai nugas" -> search_keywords=["cafe", "warkop", "coworking space"]).
+    //       - search_keywords: Array 2-3 variasi kata kunci Google Maps / OSM yang paling efektif (misal: untuk pom bensin -> search_keywords=["SPBU Pertamina", "SPBU", "Pertamina"]).
     //       - category: Kategori opsional: "kuliner|cafe|spbu|atm|minimarket|ibadah|kesehatan|hunian|layanan|otomotif".
     //     * RELATIONAL: Menanyakan fasilitas atau tempat di dekat/samping/sebelah/depan/seberang suatu patokan (misal: "di sebelah masjid tempat aku berada ada apa", "seberang indomaret ada apa", "di samping RS Sardjito ada tempat makan apa?").
     //       - anchor_landmark: Nama patokan/landmark (misal: "masjid", "indomaret", "RS Sardjito").

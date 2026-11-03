@@ -256,14 +256,21 @@ function _parseIndonesianDateString(str) {
 function _formatTxAsCard(tx) {
   const tanggal  = tx.transaction_date || '-';
   const waktu    = tx.transaction_time || '-';
-  const tipe     = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+  let tipe = 'Pengeluaran';
+  let tipeIcon = '🔴';
+  if (tx.type === 'income') {
+    tipe = 'Pemasukan';
+    tipeIcon = '🟢';
+  } else if (tx.type === 'transfer') {
+    tipe = tx.split_label === 'transfer_in' ? 'Transfer (Masuk)' : (tx.split_label === 'transfer_out' ? 'Transfer (Keluar)' : 'Transfer');
+    tipeIcon = '🔄';
+  }
   const kategori = tx.categories?.name || '-';
   const akun     = tx.accounts?.name || '-';
   const deskripsi = tx.description || '-';
   const nominal  = tx.amount || 0;
 
   const nominalFmt = `Rp${Math.abs(nominal).toLocaleString('id-ID')}`;
-  const tipeIcon   = tipe === 'Pemasukan' ? '🟢' : '🔴';
   
   // Gunakan no jika ada, jika tidak fallback ke UUID pendek
   const displayId = tx.no ? `#${tx.no}` : (tx.id ? tx.id.substring(0, 8) : 'N/A');

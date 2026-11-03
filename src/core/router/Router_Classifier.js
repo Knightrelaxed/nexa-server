@@ -33,7 +33,8 @@ function _isReflexMessage(textInput, runtimeHints = {}) {
         runtimeHints.pendingDatabaseContext ||
         runtimeHints.pendingCalendarContext ||
         runtimeHints.pendingVaultContext ||
-        runtimeHints.conversationContext?.intent) {
+        runtimeHints.conversationContext?.intent ||
+        runtimeHints.conversationContext?.lastAssistantReply) {
       return false;
     }
   }
@@ -52,12 +53,17 @@ function _detectCandidateDomains(textInput, runtimeHints = {}) {
         runtimeHints.pendingDatabaseContext ||
         runtimeHints.pendingCalendarContext ||
         runtimeHints.pendingVaultContext ||
-        runtimeHints.conversationContext?.intent) {
+        runtimeHints.conversationContext?.intent ||
+        runtimeHints.conversationContext?.lastAssistantReply) {
       return 'ALL';
     }
   }
 
   const clean = textInput.toLowerCase();
+  // Short affirmative / confirmation follow-up: fail-open to all domains
+  if (/^(?:iya|ya|boleh|silakan|carikan|tolong|coba|lanjut|ok|oke|gas|bisa|siap)\b/i.test(clean)) {
+    return 'ALL';
+  }
   const matched = new Set();
 
   if (/\b(beli|bayar|uang|duit|rp|ribu|jt|juta|pengeluaran|pemasukan|belanja|saldo|transfer|tf|rekening|dompet|qris|cash|kas|finansial|biaya|ongkir|makan|kopi|nasi|tagihan|gaji|buku kas|split|indomaret|alfamart|top up|topup|ewallet|gopay|ovo|dana|shopeepay)\b/i.test(clean) || /\b\d+\s*(?:k|rb|ribu|jt|juta|rupiah)\b/i.test(clean)) {
@@ -80,7 +86,7 @@ function _detectCandidateDomains(textInput, runtimeHints = {}) {
     matched.add('WEB_SEARCH');
   }
 
-  if (/\b(terdekat|lokasi|jarak|rute|peta|maps|alamat|di mana letak|warkop|cafe terdekat|pom bensin|masjid terdekat)\b/i.test(clean)) {
+  if (/\b(terdekat|lokasi|jarak|rute|peta|maps|alamat|di mana letak|warkop|cafe terdekat|pom bensin|masjid terdekat|spbu|bensin|sebelah|samping)\b/i.test(clean)) {
     matched.add('LOCATION');
   }
 

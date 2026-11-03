@@ -491,7 +491,7 @@ async function _handleRouteRequest(query, context) {
   if (!origin || /^(?:posisi saya|lokasi saya|sini|current location|tempat saya)$/i.test(String(origin).trim())) {
     const userCoords = await _resolveUserCoordinates(context);
     if (userCoords) {
-      origCoords = { lat: userCoords.lat, lng: userCoords.lon, name: 'Posisi Anda Saat Ini' };
+      origCoords = { lat: userCoords.lat, lng: userCoords.lon, name: 'Posisi Tuan Saat Ini' };
       origin = origCoords;
     }
   }
@@ -571,11 +571,12 @@ async function _handlePlaceSearchRequest(query, context) {
   places.sort((a, b) => a.distanceMeters - b.distanceMeters);
 
   if (places && places.length > 0) {
-    let card = `📍 <b>Rekomendasi Tempat Terdekat</b>\n`;
+    let card = `📍 <b>Rekomendasi Tempat di Sekitar Tuan:</b>\n`;
     if (userAddressStr) {
-      card += `📌 <i>Posisi Anda: ${userAddressStr}</i>\n`;
+      card += `📌 <i>Area: ${userAddressStr}</i>\n\n`;
+    } else {
+      card += `\n`;
     }
-    card += `🔍 <i>Pencarian: "${cleanedKeyword}"</i>\n\n`;
 
     places.slice(0, 5).forEach((p, idx) => {
       const num = idx + 1;
@@ -608,7 +609,7 @@ async function _handlePlaceSearchRequest(query, context) {
     : `https://www.google.com/maps/search/${encodedQ}`;
 
   return `📍 <b>Pencarian Tempat: "${cleanedKeyword}"</b>\n\n` +
-    (userAddressStr ? `📌 <i>Posisi Anda: ${userAddressStr}</i>\n\n` : '') +
+    (userAddressStr ? `📌 <i>Area Tuan: ${userAddressStr}</i>\n\n` : '') +
     `N.E.X.A tidak menemukan titik POI persis di database lokal untuk kata kunci tersebut.\n\n` +
     `🗺️ <a href="${fallbackGmapsUrl}"><b>Klik di sini untuk mencari langsung di Google Maps</b></a>`;
 }

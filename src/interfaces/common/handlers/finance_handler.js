@@ -61,14 +61,24 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'READ_LATEST') {
-    const hasFilter = ed.date_text || ed.search_keyword || ed.type || ed.category;
+    let resolvedType = ed.type || null;
+    if (!resolvedType && routingData.user_message) {
+      const msg = routingData.user_message.toLowerCase();
+      if (/\b(pengeluaran|beli apa|belanja apa|habis berapa|keluar berapa)\b/i.test(msg)) {
+        resolvedType = 'EXPENSE';
+      } else if (/\b(pemasukan|dapat apa|uang masuk)\b/i.test(msg)) {
+        resolvedType = 'INCOME';
+      }
+    }
+
+    const hasFilter = ed.date_text || ed.search_keyword || resolvedType || ed.category;
     if (hasFilter) {
       return await financeEngine.searchTransactions({
         date_text: ed.date_text || ed.time || null,
         keyword: ed.search_keyword || null,
-        type: ed.type || null,
+        type: resolvedType,
         category: ed.category || null,
-        limit: ed.limit || 30
+        limit: ed.limit || 50
       });
     }
     return await financeEngine.getRecentTransactions(5);
