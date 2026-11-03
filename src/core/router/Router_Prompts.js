@@ -319,10 +319,24 @@ const DOMAIN_SCHEMAS = {
     //   - EXAMPLE CORRECT: User says "coba baca tentang apa yang terbaru" -> query="berita terbaru", type="news", mode="fast"
     //   - EXAMPLE WRONG: query="analisis konten terbaru dari lampiran" (DO NOT add words not spoken by user)`,
 
-  LOCATION: `    // LOCATION: { action: "SEARCH_NEARBY|ROUTE|GEOCODE", query: string, origin: string, destination: string }
-    //   - Triggers SEARCH_NEARBY: "carikan warkop/tempat ngopi/cafe/pom bensin/ATM/makan terdekat", "tempat makan di sekitar sini", "kopi terdekat dari posisi saya", "rekomendasi kuliner dekat sini", "ada masjid dekat sini?"
-    //   - Triggers ROUTE: "berapa menit dari A ke B", "rute dari X ke Y", "jarak dari sini ke kampus"
-    //   - Triggers GEOCODE: "alamat Masjid Zayed Solo", "di mana letak Monas"`,
+  LOCATION: `    // LOCATION: { action: "SEARCH_NEARBY|ROUTE|RELATIONAL|GEOCODE", query: string, search_keywords: string[], anchor_landmark: string|null, relation: string|null, category: string|null, origin: string|null, destination: string|null, profile: "driving|motorcycle|walking|cycling|null" }
+    //   - ACTION RULES:
+    //     * SEARCH_NEARBY: Mencari tempat/POI umum atau spesifik di dekat posisi pengguna saat ini.
+    //       - query: Kata kunci bersih (misal: "cafe nugas", "SPBU Pertamina", "es kelapa muda", "tambal ban").
+    //       - search_keywords: Array 2-3 variasi kata kunci Google Maps / OSM yang paling efektif (misal: jika user bilang "bensin tiris" -> search_keywords=["SPBU Pertamina", "SPBU", "Pertamina"]; jika "pengen ngopi santai nugas" -> search_keywords=["cafe", "warkop", "coworking space"]).
+    //       - category: Kategori opsional: "kuliner|cafe|spbu|atm|minimarket|ibadah|kesehatan|hunian|layanan|otomotif".
+    //     * RELATIONAL: Menanyakan fasilitas atau tempat di dekat/samping/sebelah/depan/seberang suatu patokan (misal: "di sebelah masjid tempat aku berada ada apa", "seberang indomaret ada apa", "di samping RS Sardjito ada tempat makan apa?").
+    //       - anchor_landmark: Nama patokan/landmark (misal: "masjid", "indomaret", "RS Sardjito").
+    //       - relation: "sebelah|samping|depan|belakang|seberang|sekitar".
+    //       - query: Target yang dicari jika spesifik (misal: "tempat makan", "laundry"), atau null jika menanyakan apa saja di sekitarnya.
+    //     * ROUTE: Menghitung jarak atau rute perjalanan antar 2 titik (misal: "berapa menit dari Malioboro ke UGM", "rute ke stasiun", "jarak ke bandara").
+    //       - origin: Titik asal (null jika dari posisi saya).
+    //       - destination: Titik tujuan.
+    //       - profile: "driving|motorcycle|walking|cycling" (default: "driving" atau "walking" jika jalan kaki).
+    //     * GEOCODE: Menanyakan alamat pasti atau koordinat suatu tempat tertentu (misal: "di mana letak Monas", "alamat Masjid Sheikh Zayed").`,
+
+
+
 
   DIAGNOSE_SYSTEM: `    // DIAGNOSE_SYSTEM: { action: "READ_LOGS", search_keyword: string }
     //   - Triggers STRICTLY TECHNICAL LOGS ONLY: "cek log error", "kenapa server error", "baca log sistem". DO NOT use for chat history or past conversations!`

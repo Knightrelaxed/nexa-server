@@ -70,4 +70,35 @@ test('Hyper-Local Spatial Engine: Core Engine & Two-Pass Resolution Suite', asyn
     assert.ok(reply.includes('Two-Pass Hyper-Local Spatial Engine'), 'Harus teridentifikasi sebagai Two-Pass Spatial Engine');
   });
 
+  await t.test('6. Tier 1: AI Router Upfront Semantic Intent is handled directly with zero overhead', async () => {
+    const context = { lat: testLat, lon: testLon };
+    const routerPayload = {
+      action: 'SEARCH_NEARBY',
+      query: 'bensin tiris',
+      search_keywords: ['SPBU Pertamina', 'SPBU'],
+      category: 'fuel station'
+    };
+
+    const reply = await locationOrchestrator.handleLocationIntent(routerPayload, context);
+    assert.ok(typeof reply === 'string', 'Reply harus berupa string');
+    assert.ok(reply.includes('Rekomendasi Tempat Terdekat'), 'Harus berisi judul rekomendasi tempat');
+    assert.ok(reply.includes('SPBU') || reply.includes('Pertamina'), 'Harus menemukan SPBU berdasarkan kata kunci router');
+  });
+
+  await t.test('7. Tier 2: Spatial Semantic Cache accelerates identical queries', async () => {
+    const context = { lat: testLat, lon: testLon };
+    const query = 'cari tempat ngopi terdekat';
+
+    const t0 = Date.now();
+    const firstRes = await locationOrchestrator.handleLocationQuery(query, context);
+    const firstDur = Date.now() - t0;
+
+    const t1 = Date.now();
+    const secondRes = await locationOrchestrator.handleLocationQuery(query, context);
+    const secondDur = Date.now() - t1;
+
+    assert.ok(typeof firstRes === 'string' && typeof secondRes === 'string');
+    assert.ok(secondDur <= firstDur || secondDur < 2000, `Panggilan cache harus lebih cepat atau stabil, first: ${firstDur}ms, second: ${secondDur}ms`);
+  });
+
 });

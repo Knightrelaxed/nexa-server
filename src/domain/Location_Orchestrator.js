@@ -1,45 +1,40 @@
 // ============================================================
-// N.E.X.A — LOCATION ORCHESTRATOR DOMAIN
+// N.E.X.A: LOCATION ORCHESTRATOR DOMAIN
 // Pengorkestrasi Lokasi Cerdas (Open-Source Spatial Stack + Auto-GPS Bridge)
 // 100% Gratis Tanpa API Key & Tanpa Kartu Kredit
+// Arsitektur Hibrida 3-Tier: Router Upfront -> RAM Cache -> Fast AI Parser -> Heuristic Fallback
 // ============================================================
 'use strict';
 
 const locationEngine = require('../infrastructure/Location_Engine');
 const bridge = require('../interfaces/bridge').mobile.adapter;
+const { executeWithFallback, extractFirstValidJson } = require('../core/Fallback_Engine');
 
 /**
- * Pemetaan kata percakapan Indonesia ke sinonim POI OpenStreetMap yang optimal
+ * In-memory Semantic Cache untuk Kueri Spasial (TTL 1 Jam, Max 200 item)
+ * Memastikan kueri berulang berespon instan (<1ms)
  */
-const POI_SYNONYMS = {
-  'ngopi': ['warkop', 'cafe', 'kopi'],
-  'tempat ngopi': ['warkop', 'cafe', 'kopi'],
-  'kopi': ['warkop', 'cafe', 'kopi'],
-  'warkop': ['warkop', 'cafe', 'kopi'],
-  'makan': ['warung', 'restoran', 'kuliner'],
-  'tempat makan': ['restoran', 'warung', 'kuliner'],
-  'kuliner': ['kuliner', 'warung', 'restoran'],
-  'pom bensin': ['SPBU Pertamina', 'SPBU', 'Pertamina'],
-  'bensin': ['SPBU Pertamina', 'SPBU', 'Pertamina'],
-  'spbu': ['SPBU Pertamina', 'SPBU', 'Pertamina'],
-  'atm': ['ATM', 'Bank'],
-  'tarik tunai': ['ATM', 'Bank'],
-  'bank': ['Bank', 'ATM'],
-  'rumah sakit': ['Rumah Sakit', 'Hospital', 'Klinik'],
-  'dokter': ['Klinik', 'Rumah Sakit'],
-  'apotek': ['Apotek', 'Pharmacy'],
-  'minimarket': ['Indomaret', 'Alfamart', 'Superindo'],
-  'supermarket': ['Superindo', 'Supermarket', 'Indomaret'],
-  'masjid': ['Masjid', 'Mosque'],
-  'mushola': ['Mushola', 'Masjid'],
-  'hotel': ['Hotel', 'Penginapan', 'Homestay'],
-  'bengkel': ['Bengkel', 'Tambal Ban'],
-  'asrama': ['asrama mahasiswa', 'wisma', 'asrama pelajar'],
-  'asrama mahasiswa': ['asrama mahasiswa', 'wisma', 'asrama pelajar'],
-  'kost': ['kost', 'rumah kost', 'kost putri', 'kost putra'],
-  'es kelapa': ['es kelapa muda', 'es degan', 'kelapa muda'],
-  'kelapa muda': ['es kelapa muda', 'es degan']
-};
+const spatialSemanticCache = new Map();
+const SPATIAL_CACHE_TTL_MS = 60 * 60 * 1000;
+const SPATIAL_CACHE_MAX_SIZE = 200;
+
+function _getCachedSpatialIntent(key) {
+  const item = spatialSemanticCache.get(key);
+  if (!item) return null;
+  if (Date.now() - item.cachedAt > SPATIAL_CACHE_TTL_MS) {
+    spatialSemanticCache.delete(key);
+    return null;
+  }
+  return item.data;
+}
+
+function _setCachedSpatialIntent(key, data) {
+  if (spatialSemanticCache.size >= SPATIAL_CACHE_MAX_SIZE) {
+    const oldestKey = spatialSemanticCache.keys().next().value;
+    spatialSemanticCache.delete(oldestKey);
+  }
+  spatialSemanticCache.set(key, { data, cachedAt: Date.now() });
+}
 
 /**
  * Menghitung arah mata angin relatif dari titik asal ke titik tujuan
@@ -62,18 +57,16 @@ function getCardinalDirection(fromLat, fromLon, toLat, toLon) {
 }
 
 /**
- * Mendeteksi kueri spasial relasional (misal: "di sebelah masjid tempat aku berada ada apa")
+ * Fallback Heuristik Cepat untuk Ekstraksi Relasional jika AI offline
  */
-function _extractRelationalQuery(query) {
+function _extractRelationalHeuristic(query) {
   const clean = String(query || '')
     .replace(/[?!.,]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 
-  // Pola relasional: di sebelah X, di samping X, di sekitar X, ada apa di sebelah X, dll.
-  const relRegex = /(?:(?:ada\s+apa\s+(?:saja\s+)?)|(?:apa\s+saja\s+))?(?:di\s+)?(sebelah|samping|dekat|sekitar|depan|belakang)\s+([a-z0-9\s]+?)(?:\s+(?:di\s+)?(?:tempat|posisi|lokasi)\s+(?:aku|saya|kita|kami)\s*(?:sedang\s+)?(?:berada|sekarang)?)?(?:\s+(?:ada\s+apa|apa\s+saja|tempat\s+apa))?$/i;
-
+  const relRegex = /(?:(?:ada\s+apa\s+(?:saja\s+)?)|(?:apa\s+saja\s+))?(?:di\s+)?(sebelah|samping|dekat|sekitar|depan|belakang|seberang)\s+([a-z0-9\s]+?)(?:\s+(?:di\s+)?(?:tempat|posisi|lokasi)\s+(?:aku|saya|kita|kami)\s*(?:sedang\s+)?(?:berada|sekarang)?)?(?:\s+(?:ada\s+apa|apa\s+saja|tempat\s+apa))?$/i;
   const match = clean.match(relRegex);
   if (match) {
     const relation = match[1].trim();
@@ -87,6 +80,128 @@ function _extractRelationalQuery(query) {
     }
   }
   return null;
+}
+
+/**
+ * Fallback Heuristik Cepat untuk Ekstraksi Rute jika AI offline
+ */
+function _extractRouteHeuristic(query) {
+  const clean = String(query || '').trim();
+  const lower = clean.toLowerCase();
+  const isRouteQuery =
+    /rute|jarak|berapa (menit|jam|km)|estimasi waktu|perjalanan dari|menuju ke|arah ke/i.test(lower) &&
+    (lower.includes(' dari ') || lower.includes(' ke ') || lower.includes(' menuju '));
+
+  if (!isRouteQuery) return null;
+
+  let origin = null;
+  let destination = null;
+  const match = clean.match(/(?:dari|dr)\s+(.*?)\s+(?:ke|tujuan|menuju)\s+(.*)/i);
+  if (match) {
+    origin = match[1].trim();
+    destination = match[2].trim();
+  } else {
+    const matchTo = clean.match(/(?:ke|menuju)\s+(.*)/i);
+    if (matchTo) {
+      destination = matchTo[1].trim();
+      origin = 'posisi saya';
+    }
+  }
+  return { origin, destination };
+}
+
+const SPATIAL_PARSER_SYSTEM_PROMPT = `You are NEXA Fast Spatial Intent Parser.
+Analyze the Indonesian spatial/navigation query and output ONLY valid JSON without markdown wrapping.
+Output JSON schema:
+{
+  "action": "SEARCH_NEARBY" | "RELATIONAL" | "ROUTE" | "GEOCODE",
+  "cleaned_query": string,
+  "search_keywords": ["keyword 1", "keyword 2"],
+  "anchor_landmark": string or null,
+  "relation": "sebelah" | "samping" | "depan" | "belakang" | "seberang" | "sekitar" or null,
+  "category": string or null,
+  "origin": string or null,
+  "destination": string or null,
+  "profile": "driving" | "walking" | "cycling" or null
+}
+Rules:
+- Convert slang and conversational terms to official Google Maps POI keywords (e.g. "bensin tiris" -> search_keywords: ["SPBU Pertamina", "SPBU"], "tempat nugas pewe" -> search_keywords: ["cafe", "coworking space"], "es kelapa" -> search_keywords: ["es kelapa muda", "es degan"]).
+- If relational query (e.g. "di sebelah masjid tempat aku berada ada apa", "seberang indomaret ada warung apa"):
+  action: "RELATIONAL", anchor_landmark: "masjid", relation: "sebelah", search_keywords: []
+- If asking route (e.g. "berapa menit dari malioboro ke ugm"):
+  action: "ROUTE", origin: "malioboro", destination: "ugm"`;
+
+/**
+ * Mengurai kueri spasial bahasa Indonesia bebas menggunakan Fast AI (Tier 3)
+ */
+async function _parseSpatialIntentWithAI(rawQuery) {
+  const normKey = String(rawQuery || '').toLowerCase().trim();
+  if (!normKey) return null;
+
+  try {
+    const rawRes = await executeWithFallback(
+      normKey,
+      SPATIAL_PARSER_SYSTEM_PROMPT,
+      0.1,
+      true,
+      { forceHeavy: false, userText: normKey }
+    );
+    const parsed = typeof rawRes === 'object' ? rawRes : extractFirstValidJson(rawRes);
+    if (parsed && parsed.action) {
+      return parsed;
+    }
+  } catch (err) {
+    console.warn('[LOCATION-ORCHESTRATOR] Fast AI Parser gagal, beralih ke Tier 4 Fallback:', err.message);
+  }
+
+  // Tier 4: Heuristic fallback jika AI tidak tersedia
+  const routeHeur = _extractRouteHeuristic(rawQuery);
+  if (routeHeur) {
+    return {
+      action: 'ROUTE',
+      origin: routeHeur.origin,
+      destination: routeHeur.destination,
+      search_keywords: []
+    };
+  }
+
+  const relHeur = _extractRelationalHeuristic(rawQuery);
+  if (relHeur) {
+    return {
+      action: 'RELATIONAL',
+      anchor_landmark: relHeur.landmark,
+      relation: relHeur.relation,
+      search_keywords: []
+    };
+  }
+
+  const cleaned = _cleanPlaceQuery(rawQuery);
+  return {
+    action: 'SEARCH_NEARBY',
+    cleaned_query: cleaned,
+    search_keywords: [cleaned]
+  };
+}
+
+/**
+ * Resolusi Spasial Hibrida (Tier 2 Memory Cache -> Tier 3 Fast AI -> Tier 4 Heuristic)
+ */
+async function _resolveSpatialIntent(rawQuery) {
+  const normKey = String(rawQuery || '').toLowerCase().trim();
+  if (!normKey) return null;
+
+  // Tier 2: In-Memory Cache (<1ms)
+  const cached = _getCachedSpatialIntent(normKey);
+  if (cached) {
+    return cached;
+  }
+
+  // Tier 3: Fast AI Parser
+  const resolved = await _parseSpatialIntentWithAI(rawQuery);
+  if (resolved) {
+    _setCachedSpatialIntent(normKey, resolved);
+  }
+  return resolved;
 }
 
 /**
@@ -123,7 +238,7 @@ async function _resolveUserCoordinates(context = {}) {
     }
   }
 
-  // GPS tidak tersedia — kembalikan null agar pesan error yang informatif dikirim ke user
+  // GPS tidak tersedia: kembalikan null agar pesan error yang informatif dikirim ke user
   console.warn('[LOCATION-ORCHESTRATOR] ⚠️ GPS tidak tersedia dan tidak ada koordinat konteks.');
   return null;
 }
@@ -151,71 +266,93 @@ function _cleanPlaceQuery(query) {
 }
 
 /**
- * Menghasilkan daftar kandidat kata kunci pencarian dari query pengguna
+ * Menghasilkan daftar kandidat kata kunci pencarian dari query pengguna dan input AI
  */
-function _expandSearchKeywords(cleanQuery) {
-  const lower = cleanQuery.toLowerCase().trim();
+function _expandSearchKeywords(cleanQuery, providedKeywords = []) {
   const candidates = [];
-
-  // 1. Cek sinonim langsung (prioritaskan nama resmi OSM seperti 'SPBU Pertamina')
-  for (const [key, syns] of Object.entries(POI_SYNONYMS)) {
-    if (lower.includes(key)) {
-      candidates.push(...syns);
-    }
+  if (Array.isArray(providedKeywords) && providedKeywords.length > 0) {
+    candidates.push(...providedKeywords);
   }
 
-  // 2. Tambahkan kata kunci asli
-  candidates.push(cleanQuery);
+  const cleaned = _cleanPlaceQuery(cleanQuery);
+  if (cleaned) {
+    candidates.push(cleaned);
+  }
 
-  // 3. Pisahkan konjungsi "atau", "dan", "/"
+  const lower = (cleaned || '').toLowerCase();
   if (lower.includes(' atau ') || lower.includes(' dan ') || lower.includes('/')) {
     const parts = lower.split(/\s+(?:atau|dan|\/)\s+/);
     for (const part of parts) {
       const pClean = part.replace(/^tempat\s+/i, '').trim();
-      if (pClean) {
-        for (const [key, syns] of Object.entries(POI_SYNONYMS)) {
-          if (pClean.includes(key)) candidates.push(...syns);
-        }
-        candidates.push(pClean);
-      }
+      if (pClean) candidates.push(pClean);
     }
   }
 
-  // Ambil hanya yang unik
-  return [...new Set(candidates)];
+  return [...new Set(candidates.filter(Boolean))];
 }
 
 /**
  * Handle incoming location/navigation intent and route to appropriate API
  * @param {string} query - Full query text
- * @param {object} [context] - Context options (e.g., origin, userLocation, transportProfile)
+ * @param {object} [context] - Context options (including Tier 1 structured data from Router)
  * @returns {Promise<string>} - Formatted HTML response for Telegram
  */
 async function handleLocationQuery(query, context = {}) {
   const cleanQ = String(query || '').trim();
-  if (!cleanQ) return '⚠️ Mohon berikan nama tempat atau rute yang ingin dicari, Tuan.';
+  if (!cleanQ && !context.origin && !context.destination && !context.anchorLandmark) {
+    return '⚠️ Mohon berikan nama tempat atau rute yang ingin dicari, Tuan.';
+  }
 
-  const lower = cleanQ.toLowerCase();
-
-  // 1. Deteksi kueri Rute/Navigasi
-  const isRouteQuery =
-    /rute|jarak|berapa (menit|jam|km)|estimasi waktu|perjalanan dari|menuju ke|arah ke/i.test(lower) &&
-    (lower.includes(' dari ') || lower.includes(' ke ') || lower.includes(' menuju '));
-
-  if (isRouteQuery) {
+  // ── TIER 1: Jika sudah diekstrak oleh AI_Router ────────────────
+  if (context.intentAction === 'ROUTE' || (context.origin && context.destination)) {
     return await _handleRouteRequest(cleanQ, context);
   }
 
-  // 2. Deteksi kueri Spasial Relasional (misal: "di sebelah masjid tempat aku berada ada apa")
-  const relationalMeta = _extractRelationalQuery(cleanQ);
-  if (relationalMeta) {
+  if (context.intentAction === 'RELATIONAL' || context.anchorLandmark) {
     const userCoords = await _resolveUserCoordinates(context);
     if (userCoords) {
-      return await _handleRelationalPlaceRequest(cleanQ, relationalMeta, context, userCoords);
+      return await _handleRelationalPlaceRequest(cleanQ, {
+        relation: context.relation || 'sebelah',
+        landmark: context.anchorLandmark
+      }, context, userCoords);
     }
   }
 
-  // 3. Pencarian Tempat Standar (Nearby POI)
+  if (context.intentAction === 'SEARCH_NEARBY' && Array.isArray(context.searchKeywords) && context.searchKeywords.length > 0) {
+    return await _handlePlaceSearchRequest(cleanQ, context);
+  }
+
+  // ── TIER 2 & 3: Resolusi Spasial Mandiri (Cache -> Fast AI -> Heuristic Fallback) ──
+  const resolved = await _resolveSpatialIntent(cleanQ);
+
+  if (resolved) {
+    if (resolved.action === 'ROUTE') {
+      return await _handleRouteRequest(cleanQ, {
+        ...context,
+        origin: resolved.origin || context.origin,
+        destination: resolved.destination || context.destination,
+        profile: resolved.profile || context.profile
+      });
+    }
+
+    if (resolved.action === 'RELATIONAL' && resolved.anchor_landmark) {
+      const userCoords = await _resolveUserCoordinates(context);
+      if (userCoords) {
+        return await _handleRelationalPlaceRequest(cleanQ, {
+          relation: resolved.relation || 'sebelah',
+          landmark: resolved.anchor_landmark
+        }, context, userCoords);
+      }
+    }
+
+    // Default: SEARCH_NEARBY
+    return await _handlePlaceSearchRequest(cleanQ, {
+      ...context,
+      searchKeywords: resolved.search_keywords || context.searchKeywords
+    });
+  }
+
+  // Fallback standar
   return await _handlePlaceSearchRequest(cleanQ, context);
 }
 
@@ -412,8 +549,8 @@ async function _handlePlaceSearchRequest(query, context) {
   const lat = userCoords.lat;
   const lon = userCoords.lon;
 
-  // 2. Kembangkan kata kunci pencarian (Sinonim & Konjungsi)
-  const searchKeywords = _expandSearchKeywords(cleanedKeyword);
+  // 2. Kembangkan kata kunci pencarian (Sinonim Cerdas dari AI Router / Fast AI)
+  const searchKeywords = _expandSearchKeywords(cleanedKeyword, context.searchKeywords);
   console.log('[LOCATION-ORCHESTRATOR] Keyword pencarian:', searchKeywords);
 
   let places = [];
@@ -504,18 +641,26 @@ async function searchLocation(query, context = {}) {
 }
 
 /**
- * Handles extracted location intent payload
+ * Handles extracted location intent payload (Tier 1: Upfront Semantic Extraction from AI_Router)
  */
 async function handleLocationIntent(extractedData = {}, context = {}) {
+  const action = extractedData.action || 'GET';
   const query = extractedData.query || [extractedData.origin, extractedData.destination].filter(Boolean).join(' ke ') || '';
-  if (extractedData.action === 'GET' && !query) {
+
+  if (action === 'GET' && !query && !extractedData.origin && !extractedData.destination) {
     return await getCurrentLocation(context);
   }
+
   return await handleLocationQuery(query, {
+    ...context,
+    intentAction: action,
+    searchKeywords: extractedData.search_keywords,
+    anchorLandmark: extractedData.anchor_landmark,
+    relation: extractedData.relation,
+    category: extractedData.category,
     origin: extractedData.origin,
     destination: extractedData.destination,
-    profile: extractedData.profile,
-    ...context
+    profile: extractedData.profile
   });
 }
 

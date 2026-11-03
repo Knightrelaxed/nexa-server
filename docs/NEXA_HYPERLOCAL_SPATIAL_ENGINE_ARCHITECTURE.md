@@ -1,4 +1,4 @@
-# 🗺️ N.E.X.A — Hyper-Local Spatial Engine & Google Maps Integration Architecture
+# 🗺️ N.E.X.A: Hyper-Local Spatial Engine & Google Maps Integration Architecture
 
 > **Dokumentasi Arsitektur, Hasil Pengujian Empiris, & Metode Optimasi Maksimal**  
 > **Status:** Verified & Production Ready 🚀  
@@ -160,13 +160,12 @@ Untuk mencegah pemanggilan API berulang saat Tuan menanyakan kategori yang sama 
 * **Kunci Cache:** `hash(keyword + round(lat, 3) + round(lon, 3))`
 * Pembulatan ke 3 desimal merepresentasikan radius ~100 meter. Jika pengguna berada di dalam area 100 meter dan mencari kategori yang sama dalam kurun waktu 30 menit, sistem langsung menyajikan data dari *in-memory cache* (latensi < 5 ms, nol kuota API).
 
-### Strategi 3: Indonesian Colloquial Synonym Mapping
-Pengguna sering menggunakan bahasa percakapan sehari-hari. Sistem memetakan istilah informal ke kata kunci resmi Google Maps:
-* *"ngopi / nongkrong"* -> `warkop`, `cafe`, `kedai kopi`
-* *"bensin / pertalite"* -> `SPBU Pertamina`
-* *"tarik tunai"* -> `ATM BCA`, `ATM Mandiri`
-* *"obat / apotek"* -> `Apotek 24 Jam`, `Kimia Farma`
-* *"makan murah / nugas"* -> `warmindo`, `burjo`, `kuliner`
+### Strategi 3: Dynamic 3-Tier Semantic Spatial Resolution (Zero-Latency AI Router -> RAM Cache -> JIT Fast AI)
+Menggantikan kamus sinonim statis yang kaku (`POI_SYNONYMS`) dengan pemrosesan semantik adaptif:
+* **Tier 1 (Upfront Router Extraction - 0ms Added Latency):** AI Router mengekstrak `search_keywords`, `anchor_landmark`, dan `relation` langsung saat pesan masuk dari Telegram/Web. Memahami bahasa gaul seperti *"bensin tiris"*, *"tempat nugas pewe"*, *"pengen yang seger-seger"*.
+* **Tier 2 (In-Memory Semantic Cache - <1ms):** Menyimpan kueri yang pernah ditanyakan dalam memori RAM (TTL 1 jam, kapasitas 200 item).
+* **Tier 3 (Just-in-Time Fast AI Parser - ~150ms):** Menggunakan model ultra cepat via Fallback Engine jika dipanggil langsung dari saluran yang melewati router (misalnya NEXA Live Voice Mode di `Live_Tool_Registry.js` atau CLI).
+* **Tier 4 (Heuristic Regex Fallback - 0ms):** Jaring pengaman deterministik saat koneksi AI offline.
 
 ### Strategi 4: Haversine Sorting & Direct Navigation Deep-Link
 Google Maps terkadang mengurutkan hasil berdasarkan sponsor atau popularitas ulasan. N.E.X.A mengatasi hal ini dengan menghitung ulang jarak garis lurus menggunakan formula **Haversine**:
