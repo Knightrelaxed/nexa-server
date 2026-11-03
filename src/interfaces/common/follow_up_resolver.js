@@ -38,6 +38,9 @@ function isAmbiguousFollowUp(text) {
   // Compound patterns: "hapus itu", "ubah itu", etc.
   if (/^(hapus|delete|ubah|edit|update|ganti)\s+(itu|yang itu|yang tadi)$/.test(norm)) return true;
 
+  // Affirmative confirmations to proactive offers
+  if (/^(?:iya|ya|boleh|silakan|carikan|gas|coba|tolong|ok|oke|siap|mau)(?:\s+(?:dong|deh|aja|saja|carikan|tolong|coba))*$/i.test(norm)) return true;
+
   return false;
 }
 
@@ -84,7 +87,8 @@ function isGenericContinuation(text) {
  */
 function resolveFollowUp(textInput, conversationContext) {
   if (!conversationContext || !conversationContext.intent) return null;
-  if (!isAmbiguousFollowUp(textInput) || hasStrongNewIntentCue(textInput)) return null;
+  const isAffirmative = /^(?:iya|ya|boleh|silakan|carikan|gas|coba|tolong|ok|oke|siap|mau)(?:\s+(?:dong|deh|aja|saja|carikan|tolong|coba))*$/i.test(String(textInput || '').toLowerCase().trim());
+  if (!isAmbiguousFollowUp(textInput) || (hasStrongNewIntentCue(textInput) && !isAffirmative)) return null;
 
   const ctxAgeMs = Date.now() - (conversationContext.askedAt || 0);
   if (ctxAgeMs >= 10 * 60 * 1000) return null; // context expired after 10 minutes
@@ -147,6 +151,55 @@ function resolveFollowUp(textInput, conversationContext) {
       reply_message: '',
       god_mode_trigger: false
     };
+  } else if (ctx.intent === 'LOCATION') {
+    result = {
+      intent: 'LOCATION',
+      extracted_data: {
+        action: 'SEARCH_NEARBY',
+        query: ctx.extractedData?.query || mergedKw || 'tempat terdekat',
+        search_keywords: ctx.extractedData?.search_keywords || []
+      },
+      reply_message: 'Siap Tuan, ini saya carikan kembali di sekitar posisi Tuan:',
+      god_mode_trigger: false
+    };
+  }
+
+  // Handle proactive location assistance confirmation (e.g. from NORMAL_CHAT offer)
+  if (!result) {
+    const lastReply = String(ctx.lastAssistantReply || '').toLowerCase();
+    const isAffirmative = /^(?:iya|ya|boleh|silakan|carikan|gas|coba|tolong|ok|oke|siap|mau)(?:\s+(?:dong|deh|aja|saja|carikan|tolong|coba))*$/i.test(norm);
+
+    if (isAffirmative && (lastReply.includes('carikan') || lastReply.includes('spbu') || lastReply.includes('tempat') || lastReply.includes('cafe') || lastReply.includes('warkop') || lastReply.includes('makan'))) {
+      let target = 'tempat terdekat';
+      let kws = [];
+      if (lastReply.includes('spbu') || lastReply.includes('bensin') || lastReply.includes('pertamina')) {
+        target = 'SPBU Pertamina';
+        kws = ['SPBU Pertamina', 'SPBU', 'Pertamina'];
+      } else if (lastReply.includes('cafe') || lastReply.includes('ngopi') || lastReply.includes('nugas') || lastReply.includes('warkop')) {
+        target = 'cafe';
+        kws = ['cafe', 'warkop', 'kedai kopi'];
+      } else if (lastReply.includes('makan') || lastReply.includes('warmindo') || lastReply.includes('kuliner')) {
+        target = 'tempat makan';
+        kws = ['warung makan', 'restoran', 'kuliner'];
+      } else if (lastReply.includes('kelapa')) {
+        target = 'es kelapa muda';
+        kws = ['es kelapa muda', 'es degan'];
+      } else if (lastReply.includes('tambal') || lastReply.includes('bengkel')) {
+        target = 'tambal ban';
+        kws = ['tambal ban', 'bengkel'];
+      }
+
+      result = {
+        intent: 'LOCATION',
+        extracted_data: {
+          action: 'SEARCH_NEARBY',
+          query: target,
+          search_keywords: kws
+        },
+        reply_message: `Siap Tuan, langsung saya carikan ${target} terdekat dari posisi Tuan saat ini:`,
+        god_mode_trigger: false
+      };
+    }
   }
 
   if (result) {
