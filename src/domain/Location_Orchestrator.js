@@ -33,8 +33,61 @@ const POI_SYNONYMS = {
   'masjid': ['Masjid', 'Mosque'],
   'mushola': ['Mushola', 'Masjid'],
   'hotel': ['Hotel', 'Penginapan', 'Homestay'],
-  'bengkel': ['Bengkel', 'Tambal Ban']
+  'bengkel': ['Bengkel', 'Tambal Ban'],
+  'asrama': ['asrama mahasiswa', 'wisma', 'asrama pelajar'],
+  'asrama mahasiswa': ['asrama mahasiswa', 'wisma', 'asrama pelajar'],
+  'kost': ['kost', 'rumah kost', 'kost putri', 'kost putra'],
+  'es kelapa': ['es kelapa muda', 'es degan', 'kelapa muda'],
+  'kelapa muda': ['es kelapa muda', 'es degan']
 };
+
+/**
+ * Menghitung arah mata angin relatif dari titik asal ke titik tujuan
+ */
+function getCardinalDirection(fromLat, fromLon, toLat, toLon) {
+  if (!fromLat || !fromLon || !toLat || !toLon) return '';
+  const dLat = toLat - fromLat;
+  const dLon = toLon - fromLon;
+  const angle = Math.atan2(dLon, dLat) * (180 / Math.PI); // -180 to 180 (0 = Utara)
+  
+  if (angle >= -22.5 && angle < 22.5) return 'sisi utara';
+  if (angle >= 22.5 && angle < 67.5) return 'sisi timur laut';
+  if (angle >= 67.5 && angle < 112.5) return 'sisi timur';
+  if (angle >= 112.5 && angle < 157.5) return 'sisi tenggara';
+  if (angle >= 157.5 || angle < -157.5) return 'sisi selatan';
+  if (angle >= -157.5 && angle < -112.5) return 'sisi barat daya';
+  if (angle >= -112.5 && angle < -67.5) return 'sisi barat';
+  if (angle >= -67.5 && angle < -22.5) return 'sisi barat laut';
+  return '';
+}
+
+/**
+ * Mendeteksi kueri spasial relasional (misal: "di sebelah masjid tempat aku berada ada apa")
+ */
+function _extractRelationalQuery(query) {
+  const clean = String(query || '')
+    .replace(/[?!.,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  // Pola relasional: di sebelah X, di samping X, di sekitar X, ada apa di sebelah X, dll.
+  const relRegex = /(?:(?:ada\s+apa\s+(?:saja\s+)?)|(?:apa\s+saja\s+))?(?:di\s+)?(sebelah|samping|dekat|sekitar|depan|belakang)\s+([a-z0-9\s]+?)(?:\s+(?:di\s+)?(?:tempat|posisi|lokasi)\s+(?:aku|saya|kita|kami)\s*(?:sedang\s+)?(?:berada|sekarang)?)?(?:\s+(?:ada\s+apa|apa\s+saja|tempat\s+apa))?$/i;
+
+  const match = clean.match(relRegex);
+  if (match) {
+    const relation = match[1].trim();
+    let landmark = match[2].trim()
+      .replace(/^(?:sebuah|suatu|titik)\s+/i, '')
+      .replace(/\s+(?:terdekat|dekat sini)$/i, '')
+      .trim();
+
+    if (landmark && landmark.length > 2 && !/^(?:sini|sana|situ|tempat|lokasi)$/i.test(landmark)) {
+      return { relation, landmark };
+    }
+  }
+  return null;
+}
 
 /**
  * Mendapatkan koordinat GPS pengguna secara otomatis dari HP via Mobile Bridge
@@ -144,16 +197,135 @@ async function handleLocationQuery(query, context = {}) {
 
   const lower = cleanQ.toLowerCase();
 
-  // Deteksi tipe query: Rute/Navigasi vs Pencarian Tempat (Nearby POI)
+  // 1. Deteksi kueri Rute/Navigasi
   const isRouteQuery =
     /rute|jarak|berapa (menit|jam|km)|estimasi waktu|perjalanan dari|menuju ke|arah ke/i.test(lower) &&
     (lower.includes(' dari ') || lower.includes(' ke ') || lower.includes(' menuju '));
 
   if (isRouteQuery) {
     return await _handleRouteRequest(cleanQ, context);
-  } else {
-    return await _handlePlaceSearchRequest(cleanQ, context);
   }
+
+  // 2. Deteksi kueri Spasial Relasional (misal: "di sebelah masjid tempat aku berada ada apa")
+  const relationalMeta = _extractRelationalQuery(cleanQ);
+  if (relationalMeta) {
+    const userCoords = await _resolveUserCoordinates(context);
+    if (userCoords) {
+      return await _handleRelationalPlaceRequest(cleanQ, relationalMeta, context, userCoords);
+    }
+  }
+
+  // 3. Pencarian Tempat Standar (Nearby POI)
+  return await _handlePlaceSearchRequest(cleanQ, context);
+}
+
+/**
+ * Menangani pencarian tempat relasional dua-langkah (Two-Pass Spatial Resolution)
+ * Pass 1: Resolusi Landmark Jangkar dari GPS Pengguna
+ * Pass 2: Radial Multi-Category Sweeping di sekitar Titik Jangkar
+ */
+async function _handleRelationalPlaceRequest(query, relationalMeta, context, userCoords) {
+  const { relation, landmark } = relationalMeta;
+  const lat = userCoords.lat;
+  const lon = userCoords.lon;
+
+  console.log(`[LOCATION-ORCHESTRATOR] 🎯 Two-Pass Relational: Jangkar="${landmark}", Relasi="${relation}"`);
+
+  // ── PASS 1: RESOLUSI TITIK JANGKAR ──────────────────────────
+  const anchorPlaces = await locationEngine.searchNearbyPlaces(landmark, lat, lon, { limit: 1, zoom: 17 });
+  if (!anchorPlaces || anchorPlaces.length === 0) {
+    return await _handlePlaceSearchRequest(query, context, userCoords);
+  }
+
+  const anchor = anchorPlaces[0];
+  const anchorLat = anchor.lat || lat;
+  const anchorLon = anchor.lon || lon;
+
+  console.log(`[LOCATION-ORCHESTRATOR] ✅ Titik Jangkar: "${anchor.name}" di ${anchorLat}, ${anchorLon} (~${anchor.distanceText})`);
+
+  // ── PASS 2: RADIAL MULTI-CLUSTER SWEEPING (Radius < 200m) ────
+  const clusters = [
+    { key: 'hunian', label: 'Hunian & Asrama Mahasiswa', icon: '🏢', queries: ['asrama mahasiswa', 'wisma kost', 'pondokan'] },
+    { key: 'kuliner', label: 'Kuliner & Tempat Makan', icon: '🍲', queries: ['warung makan', 'kedai kopi', 'kuliner'] },
+    { key: 'layanan', label: 'Toko, Layanan & Fasilitas', icon: '🏪', queries: ['toko', 'laundry', 'minimarket'] }
+  ];
+
+  const foundByCluster = {
+    hunian: [],
+    kuliner: [],
+    layanan: []
+  };
+
+  const seenTitles = new Set();
+  seenTitles.add(anchor.name.toLowerCase().trim());
+
+  await Promise.allSettled(clusters.map(async (c) => {
+    for (const q of c.queries) {
+      try {
+        const places = await locationEngine.searchNearbyPlaces(q, anchorLat, anchorLon, { limit: 4, zoom: 18, maxDistanceMeters: 250 });
+        for (const p of places) {
+          const normTitle = p.name.toLowerCase().trim();
+          if (!seenTitles.has(normTitle)) {
+            const distFromAnchor = (anchorLat && anchorLon && p.lat && p.lon)
+              ? locationEngine.calculateHaversineDistance(anchorLat, anchorLon, p.lat, p.lon)
+              : p.distanceMeters;
+
+            if (distFromAnchor <= 200) {
+              seenTitles.add(normTitle);
+              const dir = getCardinalDirection(anchorLat, anchorLon, p.lat, p.lon);
+              foundByCluster[c.key].push({
+                ...p,
+                distFromAnchor,
+                distFromAnchorText: `${distFromAnchor}m`,
+                direction: dir
+              });
+            }
+          }
+        }
+      } catch (_) {}
+      if (foundByCluster[c.key].length >= 3) break;
+    }
+  }));
+
+  for (const k of Object.keys(foundByCluster)) {
+    foundByCluster[k].sort((a, b) => a.distFromAnchor - b.distFromAnchor);
+  }
+
+  // ── FORMAT KARTU RESPON ────────────────────────────────────
+  let card = `📍 <b>Fasilitas & Tempat di Sekitar: ${anchor.name}</b>\n`;
+  card += `📌 <i>Titik Acuan: ${anchor.name} (~${anchor.distanceText} dari HP Tuan)</i>\n`;
+  if (anchor.address && anchor.address !== anchor.name) {
+    card += `🏠 <i>${anchor.address}</i>\n`;
+  }
+  card += `\n`;
+
+  let totalFound = 0;
+  for (const c of clusters) {
+    const items = foundByCluster[c.key];
+    if (items && items.length > 0) {
+      totalFound += items.length;
+      card += `${c.icon} <b>${c.label}:</b>\n`;
+      items.slice(0, 3).forEach(item => {
+        const dirStr = item.direction ? ` (${item.direction})` : '';
+        const ratingStr = item.rating ? ` • ⭐ ${item.rating}` : '';
+        card += `• <b>${item.name}</b> (~${item.distFromAnchorText}${dirStr}${ratingStr})\n`;
+        if (item.address && item.address !== item.name) {
+          card += `  <i>${item.address.split(',')[0]}</i>\n`;
+        }
+      });
+      card += `\n`;
+    }
+  }
+
+  if (totalFound === 0) {
+    card += `<i>Tidak ada fasilitas tambahan yang terdata di samping persis titik ini.</i>\n\n`;
+  }
+
+  const gmapsAreaUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(anchor.name + ' ' + anchor.address)}`;
+  card += `🧭 <a href="${gmapsAreaUrl}"><b>Buka Area Sekitar di Google Maps</b></a>\n\n`;
+  card += `<i>Dianalisis secara presisi menggunakan Two-Pass Hyper-Local Spatial Engine.</i>`;
+
+  return card.trim();
 }
 
 /**
@@ -270,14 +442,25 @@ async function _handlePlaceSearchRequest(query, context) {
 
     places.slice(0, 5).forEach((p, idx) => {
       const num = idx + 1;
-      card += `${num}. <b>${p.name}</b> (~${p.distanceText})\n`;
+      const ratingStr = p.rating ? ` (⭐ ${p.rating}${p.ratingCount ? `, ${p.ratingCount} ulasan` : ''})` : '';
+      card += `${num}. <b>${p.name}</b> (~${p.distanceText})${ratingStr}\n`;
       if (p.address && p.address !== p.name) {
         card += `   🏠 <i>${p.address}</i>\n`;
+      }
+      if (p.openingHours) {
+        const todayName = new Intl.DateTimeFormat('id-ID', { weekday: 'long', timeZone: 'Asia/Jakarta' }).format(new Date());
+        const todayHours = p.openingHours[todayName] || (typeof p.openingHours === 'string' ? p.openingHours : null);
+        if (todayHours) {
+          card += `   🕒 <i>Jam Buka (${todayName}): ${todayHours}</i>\n`;
+        }
       }
       card += `   🧭 <a href="${p.gmapsUrl}">Buka Navigasi di Google Maps</a>\n\n`;
     });
 
-    card += `<i>Data lokasi real-time berbasis OpenStreetMap Spatial Engine.</i>`;
+    const isGoogle = places.some(p => p.source === 'GOOGLE_MAPS');
+    card += isGoogle
+      ? `<i>Data lokasi real-time Google Maps via Serper Engine.</i>`
+      : `<i>Data lokasi real-time berbasis OpenStreetMap Spatial Engine.</i>`;
     return card.trim();
   }
 

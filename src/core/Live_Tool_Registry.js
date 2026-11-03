@@ -325,11 +325,11 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 12. LOCATION: SEARCH NEARBY PLACES ────────────────────────
   {
     name: 'searchNearbyPlaces',
-    description: 'Mencari tempat, fasilitas, atau POI terdekat dari posisi GPS aktif Tuan Faqih (warkop, cafe, pom bensin, ATM, masjid, tempat makan).',
+    description: 'Mencari tempat, fasilitas, atau POI terdekat dari posisi GPS aktif Tuan Faqih (warkop, cafe, pom bensin, ATM, masjid, asrama mahasiswa, tempat makan), termasuk kueri relasional seperti "di sebelah masjid tempat aku berada ada apa".',
     parameters: {
       type: 'OBJECT',
       properties: {
-        keyword: { type: 'STRING', description: 'Jenis tempat yang dicari. Contoh: "warkop", "spbu", "pom bensin", "atm", "masjid", "tempat makan", "cafe".' }
+        keyword: { type: 'STRING', description: 'Jenis tempat yang dicari atau kueri relasional. Contoh: "warkop", "spbu", "atm", "masjid", "asrama", "di sebelah masjid ada apa".' }
       },
       required: ['keyword']
     }
@@ -1090,7 +1090,7 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
       }
 
       // ─────────────────────────────────────────────────────────────
-      // 12. LOCATION: SEARCH NEARBY PLACES (OpenStreetMap Spatial)
+      // 12. LOCATION: SEARCH NEARBY PLACES (Hyper-Local Spatial Engine)
       // ─────────────────────────────────────────────────────────────
       case 'searchNearbyPlaces': {
         const keyword = String(args.keyword || '').trim();
@@ -1100,14 +1100,14 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
         try {
           locRes = await _withToolTimeout(
             locationOrchestrator.handleLocationQuery(keyword),
-            7000
+            8500
           );
         } catch (e) {
           console.warn('[LIVE-TOOL] Location query error:', e.message);
         }
 
         const cleanMessage = typeof locRes === 'string'
-          ? locRes.replace(/<[^>]+>/g, '').slice(0, 600)
+          ? locRes.replace(/<[^>]+>/g, '').slice(0, 1000)
           : 'Tidak dapat menemukan tempat di sekitar posisi saat ini.';
 
         return {

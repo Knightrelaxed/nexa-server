@@ -14,6 +14,10 @@ const USER_AGENT_HEADER = {
   'User-Agent': `${USER_AGENT} (Personal AI Assistant; admin@nexa-assistant.local)`
 };
 
+// ── In-Memory Spatial Cache (30-Minute TTL) ───────────────────
+const _spatialCache = new Map();
+const SPATIAL_CACHE_TTL_MS = 30 * 60 * 1000;
+
 /**
  * Hitung jarak garis lurus (Haversine formula) antara 2 koordinat (dalam Meter)
  */
@@ -43,7 +47,99 @@ function formatDistance(meters) {
 }
 
 /**
- * Search places and local POIs around GPS coordinates using Photon (Komoot / OpenStreetMap)
+ * Search places using Serper Google Maps API (https://google.serper.dev/maps)
+ * Coordinates-biased hyper-local search with Haversine distance sorting and in-memory caching.
+ * @param {string} query
+ * @param {number} [lat]
+ * @param {number} [lon]
+ * @param {object} [opts]
+ * @returns {Promise<Array<object>>}
+ */
+async function searchSerperGoogleMaps(query, lat, lon, opts = {}) {
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery || !env.SERPER_API_KEY) return [];
+
+  const limit = opts.limit || 5;
+  const zoom = opts.zoom || 16;
+  const maxDist = opts.maxDistanceMeters || 15000;
+
+  // In-memory caching: round coordinates to 3 decimals (~100m)
+  const roundLat = (lat && !isNaN(lat)) ? Number(lat).toFixed(3) : 'none';
+  const roundLon = (lon && !isNaN(lon)) ? Number(lon).toFixed(3) : 'none';
+  const cacheKey = `${cleanQuery.toLowerCase()}_${roundLat}_${roundLon}_${zoom}`;
+
+  const cached = _spatialCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp) < SPATIAL_CACHE_TTL_MS) {
+    return cached.data.slice(0, limit);
+  }
+
+  try {
+    const payload = {
+      q: cleanQuery,
+      gl: opts.gl || 'id',
+      hl: opts.hl || 'id'
+    };
+
+    if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
+      payload.ll = `@${lat},${lon},${zoom}z`;
+    }
+
+    const response = await axios.post('https://google.serper.dev/maps', payload, {
+      headers: {
+        'X-API-KEY': env.SERPER_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      timeout: opts.timeout || 7000
+    });
+
+    const places = response.data?.places || [];
+    if (!Array.isArray(places) || places.length === 0) return [];
+
+    const results = [];
+    for (const p of places) {
+      const pLat = parseFloat(p.latitude);
+      const pLon = parseFloat(p.longitude);
+      let dist = 0;
+      if (lat && lon && !isNaN(pLat) && !isNaN(pLon)) {
+        dist = calculateHaversineDistance(lat, lon, pLat, pLon);
+        if (dist > maxDist) continue;
+      }
+
+      const gmapsNavUrl = (lat && lon && !isNaN(pLat) && !isNaN(pLon))
+        ? `https://www.google.com/maps/dir/?api=1&origin=${lat},${lon}&destination=${pLat},${pLon}`
+        : (p.cid ? `https://www.google.com/maps?cid=${p.cid}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.title + ' ' + (p.address || ''))}`);
+
+      results.push({
+        name: p.title || cleanQuery,
+        address: p.address || 'Indonesia',
+        category: p.category || p.type || (Array.isArray(p.types) ? p.types[0] : 'Tempat'),
+        lat: pLat || null,
+        lon: pLon || null,
+        rating: p.rating || null,
+        ratingCount: p.ratingCount || 0,
+        openingHours: p.openingHours || null,
+        phoneNumber: p.phoneNumber || null,
+        distanceMeters: dist,
+        distanceText: formatDistance(dist),
+        gmapsUrl: gmapsNavUrl,
+        source: 'GOOGLE_MAPS'
+      });
+    }
+
+    if (lat && lon) {
+      results.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    }
+
+    _spatialCache.set(cacheKey, { timestamp: Date.now(), data: results });
+    return results.slice(0, limit);
+  } catch (err) {
+    console.warn('[LOCATION-ENGINE] Serper Google Maps search error:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Search places and local POIs around GPS coordinates (Tier 1: Serper Google Maps, Tier 2: Photon OSM)
  * @param {string} query - Keyword pencarian (e.g., "warkop", "kopi", "pom bensin", "atm mandiri", "makan")
  * @param {number} lat - Latitude pengguna
  * @param {number} lon - Longitude pengguna
@@ -55,10 +151,19 @@ async function searchNearbyPlaces(query, lat, lon, opts = {}) {
   if (!cleanQuery) return [];
 
   const limit = opts.limit || 5;
+
+  // 1. TIER 1: Serper Google Maps (Hyper-local, ratings, 24h hours, small street alleys)
+  if (env.SERPER_API_KEY) {
+    const serperPlaces = await searchSerperGoogleMaps(cleanQuery, lat, lon, opts);
+    if (serperPlaces && serperPlaces.length > 0) {
+      return serperPlaces.slice(0, limit);
+    }
+  }
+
   const maxDist = opts.maxDistanceMeters || 15000; // 15 km limit untuk pencarian lokal terdekat
   const results = [];
 
-  // 1. Nominatim Bounded Viewbox Search (~10 km radius dari titik GPS)
+  // 2. TIER 2: Nominatim Bounded Viewbox Search (~10 km radius dari titik GPS)
   if (lat && lon) {
     try {
       const d = 0.09; // ~10km bounding box
@@ -465,6 +570,7 @@ async function calculateMapboxRoute(origin, destination, profile = 'driving') {
 module.exports = {
   calculateHaversineDistance,
   formatDistance,
+  searchSerperGoogleMaps,
   searchNearbyPlaces,
   reverseGeocodeOsm,
   geocodeOsm,
