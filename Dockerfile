@@ -4,14 +4,14 @@
 # Port: 3000
 # ============================================================
 
-# Use Node.js 20 LTS slim variant — smaller image, faster build
-FROM node:20-slim
+# Use Node.js 22 LTS slim variant
+FROM node:22-slim
 
 # Set working directory inside the container
 WORKDIR /app
 
 # Install system dependencies required for network operations
-# node:20-slim strips curl, wget, and full CA certificates — causing TLS failures
+# node:22-slim strips curl, wget, and full CA certificates — causing TLS failures
 # to api.telegram.org. We MUST restore them for Vision Engine image downloads.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY package.json package-lock.json ./
 
 # Install ONLY production dependencies — no devDependencies
-# --omit=dev is the correct flag for npm v7+ (Node 20). --frozen-lockfile is implicit in npm ci.
+# --omit=dev is the correct flag for npm v7+ (Node 22). --frozen-lockfile is implicit in npm ci.
 RUN npm ci --omit=dev
 
 # Copy the rest of the application source code

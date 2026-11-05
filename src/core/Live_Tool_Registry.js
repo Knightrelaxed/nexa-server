@@ -614,7 +614,17 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 31. WINDOW MANAGEMENT: CLOSE WINDOW ───────────────────────
   {
     name: 'closeWindow',
-    description: 'Menutup jendela aplikasi aktif di layar laptop secara aman (graceful close via WM_CLOSE). Panggil saat Tuan meminta menutup jendela, menutup aplikasi, atau menutup tab/window yang sedang aktif saat ini.',
+    description: 'Menutup SELURUH jendela aplikasi aktif secara aman (graceful close via WM_CLOSE). Panggil HANYA saat Tuan secara eksplisit meminta menutup program/aplikasi, bukan saat menutup tab browser. Untuk menutup tab browser, gunakan closeTab.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {}
+    }
+  },
+
+  // ── 31-B. WINDOW MANAGEMENT: CLOSE TAB ────────────────────────
+  {
+    name: 'closeTab',
+    description: 'Menutup tab browser yang sedang aktif (Ctrl+W). Gunakan ini saat Tuan meminta "tutup tab", "tutup halaman ini", atau sejenisnya di dalam browser Chrome/Edge. Berbeda dengan closeWindow yang menutup seluruh program.',
     parameters: {
       type: 'OBJECT',
       properties: {}
@@ -1844,7 +1854,8 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
         if (args.target_hint || args.hint || args.target) {
           payload.target_hint = String(args.target_hint || args.hint || args.target);
         }
-        const res = await windowsBridge.sendCommand('DESKTOP_CLICK', payload, { timeoutMs: 5000 });
+        // K3 FIX: Dynamic timeout — click can take up to ~4.6s + FIFO queue
+        const res = await windowsBridge.sendCommand('DESKTOP_CLICK', payload, { timeoutMs: 9000 });
         return {
           status: res.success ? 'SUCCESS' : 'FAILED',
           action: 'desktopClick',
@@ -1861,7 +1872,8 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
         const payload = { direction, amount };
         if (args.x !== undefined && args.x !== null) payload.x = Number(args.x);
         if (args.y !== undefined && args.y !== null) payload.y = Number(args.y);
-        const res = await windowsBridge.sendCommand('DESKTOP_SCROLL', payload, { timeoutMs: 5000 });
+        // K3 FIX: Dynamic timeout for scroll
+        const res = await windowsBridge.sendCommand('DESKTOP_SCROLL', payload, { timeoutMs: 6000 });
         return {
           status: res.success ? 'SUCCESS' : 'FAILED',
           action: 'desktopScroll',
@@ -1875,10 +1887,12 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
       case 'desktopTypeText': {
         const text = String(args.text || '');
         if (!text) return { status: 'ERROR', message: 'Teks yang akan diketik tidak boleh kosong.' };
+        // K3 FIX: Dynamic timeout — 15ms per char + 4s base, capped at 20s
+        const typeTimeout = Math.min(4000 + text.length * 15, 20000);
         const res = await windowsBridge.sendCommand('DESKTOP_TYPE_TEXT', {
           text,
           press_enter: args.press_enter === true
-        }, { timeoutMs: 5000 });
+        }, { timeoutMs: typeTimeout });
         return {
           status: res.success ? 'SUCCESS' : 'FAILED',
           action: 'desktopTypeText',
@@ -1892,9 +1906,10 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
       case 'desktopPressKey': {
         const key = String(args.key || '').toUpperCase();
         if (!key) return { status: 'ERROR', message: 'Nama tombol tidak boleh kosong.' };
+        // K3 FIX: increased timeout for key press
         const res = await windowsBridge.sendCommand('DESKTOP_PRESS_KEY', {
           key
-        }, { timeoutMs: 5000 });
+        }, { timeoutMs: 6000 });
         return {
           status: res.success ? 'SUCCESS' : 'FAILED',
           action: 'desktopPressKey',
@@ -1921,7 +1936,7 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
           style: args.style || 'BOX',
           label: args.label || '',
           duration_ms: Number(args.duration_ms) || 4000
-        }, { timeoutMs: 5000 });
+        }, { timeoutMs: 6000 });
         return {
           status: res.success ? 'SUCCESS' : 'FAILED',
           action: 'highlightElement',
@@ -1981,13 +1996,28 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
       // ─────────────────────────────────────────────────────────────
       case 'closeWindow': {
         const res = await _withToolTimeout(
-          windowsBridge.sendCommand('CLOSE_WINDOW', {}, { timeoutMs: 5000 }),
-          6000
+          windowsBridge.sendCommand('CLOSE_WINDOW', {}, { timeoutMs: 6000 }),
+          7000
         );
         return {
-          status: res.success ? 'SUCCESS' : 'FAILED',
+          status: res?.success ? 'SUCCESS' : 'FAILED',
           action: 'closeWindow',
-          result: res.message || (res.success ? 'Jendela aktif berhasil ditutup.' : 'Gagal menutup jendela aktif.')
+          result: res?.message || (res?.success ? 'Jendela aktif berhasil ditutup.' : 'Gagal menutup jendela aktif.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 31-B. WINDOW MANAGEMENT: CLOSE TAB (T3 FIX)
+      // ─────────────────────────────────────────────────────────────
+      case 'closeTab': {
+        const res = await _withToolTimeout(
+          windowsBridge.sendCommand('CLOSE_TAB', {}, { timeoutMs: 6000 }),
+          7000
+        );
+        return {
+          status: res?.success ? 'SUCCESS' : 'FAILED',
+          action: 'closeTab',
+          result: res?.message || (res?.success ? 'Tab browser berhasil ditutup (Ctrl+W).' : 'Gagal menutup tab browser.')
         };
       }
 
