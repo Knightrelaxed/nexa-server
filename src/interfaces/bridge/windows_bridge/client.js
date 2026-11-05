@@ -163,6 +163,11 @@ function handleMessage(payload, ws) {
         if (session && typeof session.handleClientVideoStop === 'function') {
           session.handleClientVideoStop();
         }
+      } else if (eventName === 'SCREEN_SHARE_STARTED' || eventName === 'VIDEO_STARTED' || eventName === 'START_SCREEN_SHARE') {
+        const session = liveVoice.getActiveSessionForClient(ws);
+        if (session && typeof session.handleClientVideoStart === 'function') {
+          session.handleClientVideoStart();
+        }
       }
     } catch (e) {
       console.error('[BRIDGE-WINDOWS] Call event processing error:', e.message);

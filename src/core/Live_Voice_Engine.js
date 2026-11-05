@@ -1280,18 +1280,22 @@ class LiveVoiceSession {
    * @param {string} jpegBase64 - Base64-encoded JPEG frame captured from Android camera or screen
    */
   handleIncomingClientVideoFrame(jpegBase64) {
-    if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN || !this.isSetupComplete) {
-      return;
-    }
-
     this.lastClientInputTime = Date.now();
     if (!jpegBase64 || typeof jpegBase64 !== 'string') return;
+
+    if (!this.isScreenSharingActive) {
+      this.handleClientVideoStart();
+    }
 
     // Cache latest visual frame for turn-associated injection and freshness checks
     this.isScreenSharingActive = true;
     this.latestVisualFrame = jpegBase64;
     this.latestVisualTimestamp = Date.now();
     this.videoFramesReceived = (this.videoFramesReceived || 0) + 1;
+
+    if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN || !this.isSetupComplete) {
+      return;
+    }
 
     if (this.videoFramesReceived % 5 === 1) {
       console.log(`[LIVE-VOICE] 📹 Video frame stream active: #${this.videoFramesReceived} (~${Math.round(jpegBase64.length / 1024)} KB)`);
@@ -1311,6 +1315,37 @@ class LiveVoiceSession {
       this.googleWs.send(JSON.stringify(frameMsg));
     } catch (err) {
       console.error(`[LIVE-VOICE] Failed to forward video frame to Google:`, err.message);
+    }
+  }
+
+  /**
+   * Handle explicit screen share / video start event from client.
+   * Notifies Gemini Live session that visual feed is active and real-time.
+   */
+  handleClientVideoStart() {
+    console.log(`[LIVE-VOICE] 👁️ Screen sharing started by client for session [${this.sessionId}]`);
+    this.isScreenSharingActive = true;
+    this._visualTurnInjected = false;
+
+    // Explicitly notify Gemini Live session that visual feed is active and real-time
+    if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN && this.isSetupComplete) {
+      const payload = {
+        clientContent: {
+          turns: [{
+            role: 'user',
+            parts: [
+              { text: '[Status Sistem]: Fitur berbagi layar (screen sharing) laptop Tuan saat ini AKTIF dan terhubung secara real-time. Anda DAPAT melihat seluruh tampilan layar Tuan. Jangan katakan berbagi layar tidak aktif. Analisis dan jawab pertanyaan Tuan berdasarkan apa yang tampil pada layar.' }
+            ]
+          }],
+          turnComplete: false
+        }
+      };
+      try {
+        this.googleWs.send(JSON.stringify(payload));
+        console.log('[LIVE-VOICE] 📢 Dispatched screen share started notice to Gemini.');
+      } catch (err) {
+        console.warn('[LIVE-VOICE] Failed to dispatch video start notice to Gemini:', err.message);
+      }
     }
   }
 
@@ -1948,6 +1983,7 @@ function getActiveDeviceType() {
 }
 
 module.exports = {
+  LiveVoiceSession,
   startLiveSession,
   getLiveSession,
   getActiveSession,

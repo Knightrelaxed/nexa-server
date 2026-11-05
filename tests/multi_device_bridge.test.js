@@ -317,3 +317,31 @@ test('Bridge Gateway: Real WebSocket text JSON frame routing (Regression Test fo
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('Live Voice Engine: handleClientVideoStart, handleClientVideoStop, and frame auto-start synchronization', () => {
+  const { LiveVoiceSession } = require('../src/core/Live_Voice_Engine');
+  const session = new LiveVoiceSession('TEST_VISION_SESSION', null);
+
+  try {
+    // Initially screen sharing should be inactive
+    assert.equal(session.isScreenSharingActive, false);
+
+    // Explicit start event
+    session.handleClientVideoStart();
+    assert.equal(session.isScreenSharingActive, true);
+
+    // Explicit stop event
+    session.handleClientVideoStop();
+    assert.equal(session.isScreenSharingActive, false);
+    assert.equal(session.latestVisualFrame, null);
+    assert.equal(session.latestVisualTimestamp, 0);
+
+    // Frame arrival while stopped must automatically invoke handleClientVideoStart
+    session.handleIncomingClientVideoFrame('dummy_jpeg_base64');
+    assert.equal(session.isScreenSharingActive, true);
+    assert.equal(session.latestVisualFrame, 'dummy_jpeg_base64');
+    assert.ok(session.latestVisualTimestamp > 0);
+  } finally {
+    session.close();
+  }
+});
