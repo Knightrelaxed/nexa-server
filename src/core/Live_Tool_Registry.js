@@ -1857,10 +1857,10 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
         if (!targetHint) {
           const lastUserText = getLastUserTurnText();
           if (lastUserText) {
-            const m = lastUserText.match(/(?:klik|buka|pilih|tekan)\s+(?:folder|tombol|menu|ikon|tab|link)?\s*([a-zA-Z0-9_\-\. ]+)/i);
+            const m = lastUserText.match(/(?:klik|buka|pilih|tekan)\s+(?:folder|file|berkas|dokumen|tombol|menu|ikon|tab|link|aplikasi)?\s*([a-zA-Z0-9_\-\. ]+)/i);
             if (m && m[1]) {
               const candidate = m[1].trim();
-              if (candidate.length >= 2 && candidate.length <= 40) {
+              if (candidate.length >= 2 && candidate.length <= 60) {
                 targetHint = candidate;
                 console.log(`[LIVE-TOOL] 🎯 Auto-inferred target_hint '${targetHint}' from user turn: "${lastUserText}"`);
               }
@@ -1869,6 +1869,11 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
         }
 
         if (targetHint) {
+          // Clean conversational prefixes (e.g. "file Mind Map..." -> "Mind Map...", "folder Download" -> "Download")
+          const cleaned = targetHint.replace(/^(?:folder|file|berkas|dokumen|tombol|menu|ikon|tab|link|aplikasi)\s+/i, '').trim();
+          if (cleaned.length >= 2) {
+            targetHint = cleaned;
+          }
           payload.target_hint = targetHint;
         }
         // K3 FIX: Dynamic timeout — click can take up to ~4.6s + FIFO queue

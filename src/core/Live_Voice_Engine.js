@@ -567,7 +567,7 @@ class LiveVoiceSession {
         `Tuan Faqih saat ini terhubung langsung melalui Nexa Windows Bridge di laptop ThinkPad Windows miliknya.\n` +
         `Anda memiliki akses dan otoritas penuh untuk mengendalikan sistem Windows desktop secara otonom:\n` +
         `1. OTOMATISASI DESKTOP & NAVIGASI LAYAR (PANGGIL SEGERA SAAT TUAN MEMINTA):\n` +
-        `   - Klik mouse presisi pada tombol, link, FOLDER, menu, atau elemen layar -> desktopClick(x, y, button: "LEFT"|"RIGHT", double_click: false/true, target_hint: string). WAJIB sertakan target_hint dengan nama teks elemen (misal target_hint: "Downloads", "Documents", "Submit") agar UI Automation mengunci target secara 100% presisi tanpa meleset.\n` +
+        `   - Klik mouse presisi pada tombol, link, FOLDER, FILE, menu, atau elemen layar -> desktopClick(x, y, button: "LEFT"|"RIGHT", double_click: false/true, target_hint: string). WAJIB sertakan target_hint dengan nama murni teks elemen/file/folder (misal target_hint: "Downloads", "Mind Map Oogenesi_Nurul Azizah", "Documents", "Submit") TANPA awalan kata jenis seperti "file" atau "folder", agar UI Automation mengunci target secara 100% presisi tanpa meleset.\n` +
         `   - Gulir dokumen, web, atau jendela aktif -> desktopScroll(direction: "UP"|"DOWN", amount: 3, x?: number, y?: number).\n` +
         `   - Ketik teks atau pencarian -> desktopTypeText(text: "...", press_enter: true/false).\n` +
         `   - Tekan tombol keyboard atau shortcut khusus -> desktopPressKey(key: "ENTER"|"SPACE"|"ESCAPE"|"TAB"|"BACKSPACE"|"CTRL+C"|"CTRL+V"|"ALT+TAB"|"VOLUME_UP"|"VOLUME_DOWN"|"VOLUME_MUTE").\n` +
