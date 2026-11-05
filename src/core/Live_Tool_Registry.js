@@ -496,17 +496,17 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 23. DESKTOP AUTOMATION: CLICK SCREEN ──────────────────────
   {
     name: 'desktopClick',
-    description: 'Mengeklik elemen atau titik tertentu di layar laptop/PC desktop Tuan Faqih secara presisi. Panggil saat Tuan secara eksplisit meminta mengeklik tombol, link, atau area di layar.',
+    description: 'Mengeklik elemen, tombol, folder, link, atau menu tertentu di layar laptop/PC desktop Tuan Faqih secara presisi. Panggil saat Tuan secara eksplisit meminta mengeklik elemen di layar.',
     parameters: {
       type: 'OBJECT',
       properties: {
         x:            { type: 'NUMBER', description: 'Koordinat horizontal x ternormalisasi (0 - 1000). Contoh: 500 untuk tengah layar.' },
         y:            { type: 'NUMBER', description: 'Koordinat vertikal y ternormalisasi (0 - 1000). Contoh: 500 untuk tengah layar.' },
         button:       { type: 'STRING', description: 'Tombol mouse: "LEFT" (default), "RIGHT" (klik kanan/menu konteks), atau "MIDDLE".' },
-        double_click: { type: 'BOOLEAN', description: 'True jika ingin melakukan klik ganda (double click).' },
-        target_hint:  { type: 'STRING', description: 'Petunjuk label teks tombol persis di layar (misal: "Login", "Search", "Next"). Membantu akurasi presisi pada deretan tombol padat.' }
+        double_click: { type: 'BOOLEAN', description: 'True jika ingin melakukan klik ganda (double click), misal membuka folder/file.' },
+        target_hint:  { type: 'STRING', description: 'Nama label teks persis dari elemen/folder/tombol/menu yang ingin diklik (misal: "Downloads", "File", "Search", "Login", "Documents"). WAJIB diisi jika elemen memiliki nama teks agar sistem UI Automation mengunci target secara 100% akurat tanpa salah sasaran. Isi "" hanya jika mengeklik area kosong tanpa teks.' }
       },
-      required: ['x', 'y']
+      required: ['x', 'y', 'target_hint']
     }
   },
 
@@ -1851,8 +1851,25 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
           button: args.button || 'LEFT',
           double_click: args.double_click === true,
         };
-        if (args.target_hint || args.hint || args.target) {
-          payload.target_hint = String(args.target_hint || args.hint || args.target);
+        let targetHint = String(args.target_hint || args.hint || args.target || '').trim();
+
+        // Smart Fallback: If model omitted or gave empty target_hint, auto-infer from user's last turn!
+        if (!targetHint) {
+          const lastUserText = getLastUserTurnText();
+          if (lastUserText) {
+            const m = lastUserText.match(/(?:klik|buka|pilih|tekan)\s+(?:folder|tombol|menu|ikon|tab|link)?\s*([a-zA-Z0-9_\-\. ]+)/i);
+            if (m && m[1]) {
+              const candidate = m[1].trim();
+              if (candidate.length >= 2 && candidate.length <= 40) {
+                targetHint = candidate;
+                console.log(`[LIVE-TOOL] 🎯 Auto-inferred target_hint '${targetHint}' from user turn: "${lastUserText}"`);
+              }
+            }
+          }
+        }
+
+        if (targetHint) {
+          payload.target_hint = targetHint;
         }
         // K3 FIX: Dynamic timeout — click can take up to ~4.6s + FIFO queue
         const res = await windowsBridge.sendCommand('DESKTOP_CLICK', payload, { timeoutMs: 9000 });
