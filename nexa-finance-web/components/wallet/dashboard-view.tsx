@@ -13,7 +13,7 @@ import {
   Trash2, Plus, PiggyBank, WalletCards, Eye, EyeOff,
   Utensils, Bus, ShoppingBag, Film, Receipt, HeartPulse, Book,
   Briefcase, TrendingUp, Wifi, Wallet, MoreHorizontal, CreditCard,
-  Wine, Coffee, Cake, Percent, Lock, Unlock, Landmark, Banknote, type LucideIcon,
+  Wine, Coffee, Cake, Percent, Lock, Unlock, Landmark, Banknote, ArrowLeftRight, type LucideIcon,
 } from "lucide-react"
 import { formatIDR, formatIDRCompact } from "@/lib/wallet-data"
 import { useAccounts, useDashboardData, usePeriodComparison } from "@/hooks/use-finance-data"
@@ -566,15 +566,21 @@ export function DashboardView() {
           ) : (
             <ul className="divide-y divide-border/40">
               {recentTransactions.slice(0, 6).map((t) => {
-                const Icon = ICON_MAP[t.category_icon_key || "more-horizontal"] ?? MoreHorizontal
-                const isExpense = t.type === "expense"
+                const isTransfer = t.type === "transfer" || Boolean(t.isTransferGroup)
+                const isTransferIn = isTransfer && t.split_label === "transfer_in"
+                const isTransferOut = isTransfer && (t.split_label === "transfer_out" || (!t.split_label && t.type === "transfer"))
+                const Icon = isTransfer ? ArrowLeftRight : (ICON_MAP[t.category_icon_key || "more-horizontal"] ?? MoreHorizontal)
+                const isExpense = t.type === "expense" || isTransferOut
+                const displayCategory = isTransfer
+                  ? (isTransferIn ? "Transfer Masuk" : isTransferOut ? "Transfer Keluar" : "Transfer Antar-Akun")
+                  : t.category_name
                 return (
                   <li key={t.id} className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-muted/20 transition-colors">
-                    <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", t.category_icon_bg || "bg-gray-100", t.category_icon_color || "text-gray-500")}>
+                    <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", t.category_icon_bg || (isTransfer ? "bg-blue-50" : isExpense ? "bg-red-50" : "bg-green-50"), t.category_icon_color || (isTransfer ? "text-blue-500" : isExpense ? "text-red-500" : "text-green-500"))}>
                       <Icon className="h-3.5 w-3.5" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12px] font-semibold">{t.category_name}</p>
+                      <p className="truncate text-[12px] font-semibold">{displayCategory}</p>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <div className="flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: t.account_color || "#22d3ee" }} />

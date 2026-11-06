@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { ChevronLeft, Wallet, Banknote, CreditCard, PiggyBank, Search, Scissors, ChevronDown } from "lucide-react"
+import { ChevronLeft, Wallet, Banknote, CreditCard, PiggyBank, Search, Scissors, ChevronDown, ArrowLeftRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useAccounts, useTransactions } from "@/hooks/use-finance-data"
 import { formatIDR, ICON_MAP } from "@/lib/wallet-data"
@@ -528,9 +528,14 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                       return displayRows.map((row) => {
                         if (row.kind === 'single') {
                           const t = row.tx
-                          const isOutflow = t.type === "expense" || (t.type === "transfer" && t.split_label !== "transfer_in")
-                          const isTransfer = t.type === "transfer"
-                          const TxIcon = ICON_MAP[t.category_icon_key || "more-horizontal"] ?? Search
+                          const isTransfer = t.type === "transfer" || Boolean(t.isTransferGroup)
+                          const isTransferIn = isTransfer && t.split_label === "transfer_in"
+                          const isTransferOut = isTransfer && (t.split_label === "transfer_out" || (!t.split_label && t.type === "transfer"))
+                          const isOutflow = t.type === "expense" || isTransferOut
+                          const TxIcon = isTransfer ? ArrowLeftRight : (ICON_MAP[t.category_icon_key || "more-horizontal"] ?? Search)
+                          const displayCategory = isTransfer
+                            ? (isTransferIn ? "Transfer Masuk" : isTransferOut ? "Transfer Keluar" : "Transfer Antar-Akun")
+                            : t.category_name
                           return (
                             <div key={t.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors group border-b border-border/20 last:border-0">
                               <input type="checkbox" checked={selectedIds.has(t.id)} onChange={() => toggleSelect(t.id)} className="rounded border-gray-300 w-4 h-4 accent-[#10b981] shrink-0" />
@@ -538,7 +543,7 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
                                 <TxIcon className="h-4 w-4" />
                               </div>
                               <div className="w-[110px] sm:w-[130px] shrink-0 min-w-0">
-                                <p className="text-[13px] font-semibold truncate">{t.category_name}</p>
+                                <p className="text-[13px] font-semibold truncate">{displayCategory}</p>
                                 {t.payment_method && <p className="text-[11px] text-muted-foreground">{t.payment_method.toUpperCase()}</p>}
                               </div>
                               <div className="hidden sm:flex items-center gap-1.5 w-[140px] shrink-0 min-w-0">

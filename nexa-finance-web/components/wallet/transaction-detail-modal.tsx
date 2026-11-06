@@ -1,6 +1,6 @@
 "use client"
 
-import { X, Search } from "lucide-react"
+import { X, Search, ArrowLeftRight } from "lucide-react"
 import { formatIDR, ICON_MAP } from "@/lib/wallet-data"
 import { cn } from "@/lib/utils"
 
@@ -39,14 +39,19 @@ function getTailwindHex(twClass: string | null): string | null {
 export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete }: TransactionDetailModalProps) {
   if (!transaction) return null
 
-  const isOutflow = transaction.type === "expense" || (transaction.type === "transfer" && transaction.split_label === "transfer_out")
-  const isTransfer = transaction.type === "transfer"
-  const isTransferIn = transaction.type === "transfer" && transaction.split_label === "transfer_in"
-  const Icon = ICON_MAP[transaction.category_icon_key || "more-horizontal"] ?? Search
+  const isTransfer = transaction.type === "transfer" || Boolean(transaction.isTransferGroup)
+  const isTransferIn = isTransfer && transaction.split_label === "transfer_in"
+  const isTransferOut = isTransfer && (transaction.split_label === "transfer_out" || (!transaction.split_label && transaction.type === "transfer"))
+  const isOutflow = transaction.type === "expense" || isTransferOut
+  const Icon = isTransfer ? ArrowLeftRight : (ICON_MAP[transaction.category_icon_key || "more-horizontal"] ?? Search)
+
+  const displayCategoryName = isTransfer
+    ? (isTransferIn ? "Transfer Masuk" : isTransferOut ? "Transfer Keluar" : "Transfer Antar-Akun")
+    : (transaction.category_name || "-")
 
   // Use category hex color for header; fallback to parsing tailwind color, then type-based color
   const fallbackColor = isTransfer ? "#3b82f6" : isOutflow ? "#ef4444" : "#10b981"
-  const headerColor = transaction.category_color_hex || getTailwindHex(transaction.category_icon_color) || fallbackColor
+  const headerColor = isTransfer ? "#3b82f6" : (transaction.category_color_hex || getTailwindHex(transaction.category_icon_color) || fallbackColor)
 
   // transaction_date is "YYYY-MM-DD", add T00:00:00 to avoid UTC offset shifting the day
   const dateLabel = transaction.transaction_date
@@ -84,7 +89,7 @@ export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete 
             </div>
           </div>
           
-          <h2 className="text-white/90 text-xs sm:text-sm font-medium mb-0.5 sm:mb-1">{transaction.category_name}</h2>
+          <h2 className="text-white/90 text-xs sm:text-sm font-medium mb-0.5 sm:mb-1">{displayCategoryName}</h2>
           <p className="text-white text-2xl sm:text-3xl font-bold tracking-tight">
             {isOutflow ? "-" : isTransferIn ? "+" : isTransfer ? "" : "+"}{formatIDR(transaction.amount)}
           </p>
@@ -144,12 +149,15 @@ export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete 
               {onDelete && (
                 <button 
                   onClick={onDelete}
-                  className="flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm sm:text-base font-semibold transition-colors"
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm sm:text-base font-semibold transition-colors",
+                    isTransfer ? "w-full" : "flex-1"
+                  )}
                 >
                   Hapus
                 </button>
               )}
-              {onEdit && (
+              {onEdit && !isTransfer && (
                 <button 
                   onClick={onEdit}
                   className="flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm sm:text-base font-semibold transition-colors"

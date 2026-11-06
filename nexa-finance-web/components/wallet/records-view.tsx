@@ -5,7 +5,7 @@ import {
   Search, ChevronLeft, ChevronRight, Filter, ChevronDown,
   Settings2, Plus, X, SlidersHorizontal, RotateCcw,
   ListChecks, Pencil, Trash2, Copy, FileOutput, Scissors,
-  RefreshCw
+  RefreshCw, ArrowLeftRight
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -174,25 +174,22 @@ export function RecordsView() {
     const tx = Object.values(grouped).flat().find(t => t.id === id)
     if (!tx) return
 
-    // For transfer pairs, enrich with the sibling's account_id (to_account_id)
-    if (tx.type === 'transfer' && tx.split_group_id) {
-      const siblingLabel = tx.split_label === 'transfer_out' ? 'transfer_in' : 'transfer_out'
-      const { data: sibling } = await supabase
-        .from('transactions')
-        .select('account_id, split_label')
-        .eq('split_group_id', tx.split_group_id)
-        .eq('split_label', siblingLabel)
-        .single()
-
-      const outAccountId  = tx.split_label === 'transfer_out' ? tx.account_id : (sibling?.account_id ?? tx.account_id)
-      const inAccId = tx.split_label === 'transfer_out' ? (sibling?.account_id ?? '') : tx.account_id
-
-      setEditTx({ ...tx, account_id: outAccountId, transfer_to_account_id: inAccId })
-    } else {
-      setEditTx(tx)
+    if (tx.type === 'transfer' || tx.isTransferGroup) {
+      toast.info("Transfer antar-akun tidak dapat diedit untuk menjaga konsistensi saldo. Silakan hapus dan catat ulang jika ada kesalahan.")
+      return
     }
+
+    setEditTx(tx)
     setEditModalOpen(true)
   }
+
+  const selectedTx = useMemo(() => {
+    if (selectedIds.size !== 1) return null
+    const id = Array.from(selectedIds)[0]
+    return Object.values(grouped).flat().find(t => t.id === id) || null
+  }, [selectedIds, grouped])
+
+  const isSelectedTransfer = selectedTx?.type === 'transfer' || Boolean(selectedTx?.isTransferGroup)
 
   const handleDelete = async () => {
     if (selectedIds.size === 0) return
@@ -356,7 +353,7 @@ export function RecordsView() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-48 rounded-xl p-1.5 border-slate-100 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)]">
-                      <DropdownMenuItem onClick={handleEdit} disabled={selectedIds.size !== 1} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-slate-700">
+                      <DropdownMenuItem onClick={handleEdit} disabled={selectedIds.size !== 1 || isSelectedTransfer} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-slate-700">
                         <Pencil className="h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
@@ -379,7 +376,7 @@ export function RecordsView() {
 
                 {/* Desktop Inline Buttons (hidden on mobile, centered) */}
                 <div className="hidden sm:flex items-center gap-1.5 flex-1 justify-center">
-                  <Button onClick={handleEdit} size="sm" disabled={selectedIds.size !== 1} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", selectedIds.size === 1 ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
+                  <Button onClick={handleEdit} size="sm" disabled={selectedIds.size !== 1 || isSelectedTransfer} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", (selectedIds.size === 1 && !isSelectedTransfer) ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100 cursor-not-allowed")}>
                     Edit
                   </Button>
                   <Button onClick={() => toast.success("Fitur ekspor akan segera hadir")} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", isAnySelected ? "bg-[#f97316] hover:bg-[#ea580c] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
@@ -480,9 +477,15 @@ export function RecordsView() {
                         return displayRows.map((row) => {
                           if (row.kind === 'single') {
                             const t = row.tx
-                            const isOutflow = t.type === "expense" || (t.type === "transfer" && t.split_label !== "transfer_in")
-                            const isTransfer = t.type === "transfer"
-                            const Icon = ICON_MAP[t.category_icon_key || "more-horizontal"] ?? Search
+                            const isTransfer = t.type === "transfer" || Boolean(t.isTransferGroup)
+                            const isTransferIn = isTransfer && t.split_label === "transfer_in"
+                            const isTransferOut = isTransfer && (t.split_label === "transfer_out" || (!t.split_label && t.type === "transfer"))
+                            const isOutflow = t.type === "expense" || isTransferOut
+                            const Icon = isTransfer ? ArrowLeftRight : (ICON_MAP[t.category_icon_key || "more-horizontal"] ?? Search)
+
+                            const displayCategory = isTransfer
+                              ? (isTransferIn ? "Transfer Masuk" : isTransferOut ? "Transfer Keluar" : "Transfer Antar-Akun")
+                              : t.category_name
 
                             return (
                               <div 
@@ -511,7 +514,7 @@ export function RecordsView() {
 
                                 {/* Category + User */}
                                 <div className="flex-1 sm:flex-none sm:w-[130px] min-w-0">
-                                  <p className="text-[13px] font-semibold truncate">{t.category_name}</p>
+                                  <p className="text-[13px] font-semibold truncate">{displayCategory}</p>
                                   <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
                                     <span className="sm:hidden w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: t.account_color || "#22d3ee" }} />
                                     {t.account_name}
