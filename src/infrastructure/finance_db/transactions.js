@@ -342,6 +342,31 @@ async function deleteTransaction(uuid) {
 }
 
 /**
+ * Parse currency/number string or number safely into positive float.
+ * Handles IDR thousands (e.g. "500.000", "2.000"), comma decimals, or plain numbers.
+ */
+function _parseFlexibleNumber(val) {
+  if (typeof val === 'number') return isNaN(val) ? 0 : Math.abs(val);
+  if (!val) return 0;
+  const str = String(val).trim().replace(/^rp\.?\s*/i, '');
+  if (!str) return 0;
+  const dots = (str.match(/\./g) || []).length;
+  const commas = (str.match(/,/g) || []).length;
+  let cleaned = str;
+  if (dots > 0 && commas === 1) {
+    cleaned = str.replace(/\./g, '').replace(',', '.');
+  } else if (commas > 0 && dots === 1) {
+    cleaned = str.replace(/,/g, '');
+  } else if (dots > 0 && commas === 0) {
+    cleaned = str.replace(/\./g, '');
+  } else if (commas > 0 && dots === 0) {
+    cleaned = str.replace(/,/g, '');
+  }
+  const parsed = parseFloat(cleaned.replace(/[^0-9.-]/g, ''));
+  return isNaN(parsed) ? 0 : Math.abs(parsed);
+}
+
+/**
  * Tulis sepasang atau 3 blok transaksi transfer antar-akun (transfer_out, transfer_in, dan opsional admin_fee)
  * yang saling terikat dengan split_group_id yang sama ke Supabase Nexa Finance.
  * Masing-masing mutasi memiliki deskripsi mandiri yang kontekstual.
@@ -349,8 +374,8 @@ async function deleteTransaction(uuid) {
  * @param {object} params
  * @param {string} params.fromAccountName - Akun sumber pengirim (e.g. 'Bank Mandiri')
  * @param {string} params.toAccountName   - Akun tujuan penerima (e.g. 'Dana')
- * @param {number} params.nominal         - Nominal transfer (angka positif)
- * @param {number} [params.adminFee=0]    - Biaya admin jika ada (angka positif)
+ * @param {number|string} params.nominal  - Nominal transfer (angka positif)
+ * @param {number|string} [params.adminFee=0] - Biaya admin jika ada (angka positif)
  * @param {string} [params.description]   - Deskripsi / catatan transfer
  * @param {string} [params.dateISO]       - Tanggal transaksi (YYYY-MM-DD)
  * @param {string} [params.timeHHMM]      - Jam transaksi (HH:MM / HH.MM)
@@ -371,7 +396,12 @@ async function writeTransferPair({
     return { status: 'SKIPPED', reason: 'Supabase Finance tidak dikonfigurasi' };
   }
 
-  const cleanAdminFee = Number(adminFee) > 0 ? Number(adminFee) : 0;
+  const cleanNominal = _parseFlexibleNumber(nominal);
+  const cleanAdminFee = _parseFlexibleNumber(adminFee);
+
+  if (!cleanNominal || cleanNominal <= 0) {
+    return { status: 'SKIPPED', reason: `Nominal transfer tidak valid: "${nominal}"` };
+  }
 
   const [fromAccountId, toAccountId, categoryId, adminCategoryId] = await Promise.all([
     resolveAccountId(fromAccountName),
@@ -428,7 +458,7 @@ async function writeTransferPair({
     {
       account_id:       fromAccountId,
       category_id:      categoryId,
-      amount:           Math.abs(nominal),
+      amount:           cleanNominal,
       type:             'transfer',
       split_label:      'transfer_out',
       split_group_id:   pairId,
@@ -440,7 +470,7 @@ async function writeTransferPair({
     {
       account_id:       toAccountId,
       category_id:      categoryId,
-      amount:           Math.abs(nominal),
+      amount:           cleanNominal,
       type:             'transfer',
       split_label:      'transfer_in',
       split_group_id:   pairId,

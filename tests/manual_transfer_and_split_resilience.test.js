@@ -271,3 +271,72 @@ test('Finance_Handler & Confirmations: transfer with admin fee preview and confi
   // Cancel test pending
   await financeEngine.confirmPendingTransactions(false);
 });
+
+test('writeTransferPair: safely parses IDR dot-thousands string for nominal and adminFee', async () => {
+  const { writeTransferPair } = require('../src/infrastructure/finance_db/transactions');
+  const { supabaseFinance } = require('../src/infrastructure/finance_db/client');
+
+  let capturedRows = null;
+  const originalFrom = supabaseFinance.from;
+  supabaseFinance.from = (table) => {
+    if (table === 'transactions') {
+      return {
+        insert: (rows) => {
+          capturedRows = rows;
+          return {
+            select: () => Promise.resolve({
+              data: [
+                { id: 'tx-out-dot', split_label: 'transfer_out' },
+                { id: 'tx-in-dot', split_label: 'transfer_in' },
+                { id: 'tx-adm-dot', split_label: 'admin_fee' }
+              ],
+              error: null
+            })
+          };
+        }
+      };
+    }
+    return originalFrom.call(supabaseFinance, table);
+  };
+
+  try {
+    // Pass strings with dot-thousands formatting: "500.000" and "2.000"
+    const res = await writeTransferPair({
+      fromAccountName: 'Bank Mandiri',
+      toAccountName: 'Dana',
+      nominal: '500.000',
+      adminFee: '2.000'
+    });
+
+    assert.strictEqual(res.status, 'SUCCESS');
+    assert.strictEqual(capturedRows[0].amount, 500000, 'Nominal must parse to 500000, not 500');
+    assert.strictEqual(capturedRows[1].amount, 500000, 'Nominal must parse to 500000, not 500');
+    assert.strictEqual(capturedRows[2].amount, 2000, 'Admin fee must parse to 2000, not 2');
+  } finally {
+    supabaseFinance.from = originalFrom;
+  }
+});
+
+test('updatePendingTransaction: correctly switches from transfer to expense and zeroes adminFee when user cancels transfer intent', async () => {
+  const txData = {
+    nominal: 500000,
+    adminFee: 2000,
+    type: 'TRANSFER',
+    isSelfTransfer: true,
+    fromAccount: 'Bank Mandiri',
+    account: 'Dana',
+    destination: 'Dana'
+  };
+
+  const cKey = 'test_cancel_transfer_switch_key';
+  await financeEngine.requestTransactionConfirmation(txData, 'TRANSFER ANTAR-AKUN', cKey);
+
+  // User says "bukan transfer tapi beli tiket pesawat"
+  const reply = await financeEngine.updatePendingTransaction('bukan transfer tapi beli tiket pesawat', null, null, null, null, cKey);
+  assert.ok(reply, 'Must return card reply');
+  assert.ok(!reply.includes('TRANSFER ANTAR-AKUN'), 'Must no longer be transfer card');
+  assert.ok(reply.includes('Pengeluaran'), 'Must be classified as Pengeluaran');
+
+  // Cancel test pending
+  await financeEngine.confirmPendingTransactions(false, null, null, null, null, cKey);
+});

@@ -351,9 +351,14 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
     // ── DETEKSI PERUBAHAN KE TRANSFER ANTAR-AKUN / PEMBATALAN ─────────────────
     if (/\bbukan\s+(?:transfer|pindahan|tf)\b/i.test(newDescription)) {
       pending.tx.isSelfTransfer = false;
-      pending.tx.type = 'INCOME';
+      pending.tx.adminFee = 0;
       pending.tx.fromAccount = null;
-      pending.tx.description = newDescription.replace(/\bbukan\s+(?:transfer|pindahan|tf)[,\s]*/i, '').trim() || 'Pemasukan';
+      if (/\b(?:beli|bayar|belanja|keluar|pengeluaran|ongkir|makan|minum|kopi|nasi|tagihan)\b/i.test(newDescription)) {
+        pending.tx.type = 'EXPENSE';
+      } else {
+        pending.tx.type = 'INCOME';
+      }
+      pending.tx.description = newDescription.replace(/\bbukan\s+(?:transfer|pindahan|tf)[,\s]*/i, '').trim() || (pending.tx.type === 'EXPENSE' ? 'Pengeluaran' : 'Pemasukan');
     } else {
       // Mendukung variasi: "itu transfer dari dana", "tf dari dana", "dari dana", "pindahan dari gopay", "saldo dari dana", "tf dana"
       const transferMatch = (newDescription || '').match(/(?:(?:transfer|tf|pindahan|pindah|kirim(?:an)?|saldo)\s+)?(?:dari|dr)\s+([a-z0-9\s]+)/i) ||
@@ -575,6 +580,20 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
     const destBalStr = destMatched ? formatBalRp(destMatched.balance) : '-';
     const transferSaldoDisplay = `${fromAcc} (${sourceBalStr}) • ${toAcc} (${destBalStr})`;
 
+    let customNote = '';
+    if (tx.description && typeof tx.description === 'string') {
+      const trimmed = tx.description.trim();
+      if (/^Transfer\s+(?:dari|ke)\s+[^:]+:\s*(.+)$/i.test(trimmed)) {
+        customNote = trimmed.match(/^Transfer\s+(?:dari|ke)\s+[^:]+:\s*(.+)$/i)[1].trim();
+      } else if (/^Transfer\s+dari\s+.+?\s+ke\s+[^:]+:\s*(.+)$/i.test(trimmed)) {
+        customNote = trimmed.match(/^Transfer\s+dari\s+.+?\s+ke\s+[^:]+:\s*(.+)$/i)[1].trim();
+      } else if (/^Transfer\s+dari\s+.+?\s+ke\s+/i.test(trimmed)) {
+        customNote = trimmed.replace(/^Transfer\s+dari\s+.*?\s+ke\s+[^\s]+(?:\s*\(admin[^\)]*\))?\s*/i, '').trim();
+      } else if (!/^Transfer\b/i.test(trimmed) && trimmed !== '[Menunggu Detail User]' && trimmed !== '-') {
+        customNote = trimmed;
+      }
+    }
+
     const adminFeeNum = typeof tx.adminFee === 'number'
       ? tx.adminFee
       : (tx.adminFee ? _parseFlexibleCurrency(String(tx.adminFee)) : 0) || 0;
@@ -583,6 +602,9 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
       const adminFmt = `Rp${adminFeeNum.toLocaleString('id-ID')}`;
       const totalTerpotongNum = (nominalNum || 0) + adminFeeNum;
       const totalTerpotongFmt = `Rp${totalTerpotongNum.toLocaleString('id-ID')}`;
+      const adminNoteDisplay = customNote
+        ? `Biaya admin transfer ke ${toAcc} (${customNote}) (Biaya Admin / Layanan)`
+        : `Biaya admin transfer ke ${toAcc} (Biaya Admin / Layanan)`;
 
       return `🔄 <b>${headerLabel}</b>\n\n` +
         `<b>No:</b> [Auto]\n` +
@@ -591,6 +613,7 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
         `<b>Tipe:</b> Transfer Antar-Akun\n` +
         `<b>Sumber:</b> ${fromAcc}\n` +
         `<b>Tujuan:</b> ${toAcc}\n` +
+        (customNote ? `<b>Keterangan:</b> ${customNote}\n` : '') +
         `<b>Nominal Transfer (Rp):</b> ${nominalFmt}\n` +
         `<b>Biaya Admin (Rp):</b> ${adminFmt}\n` +
         `<b>Total Terpotong (Rp):</b> ${totalTerpotongFmt}\n` +
@@ -598,7 +621,7 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
         `🔄 <b>Terdeteksi transfer dari ${fromAcc} ke ${toAcc} sebesar ${nominalFmt} (biaya admin ${adminFmt}).</b>\n` +
         `• Saldo <b>${fromAcc}</b>: berkurang ${totalTerpotongFmt} (${nominalFmt} + admin ${adminFmt})\n` +
         `• Saldo <b>${toAcc}</b>: bertambah ${nominalFmt}\n` +
-        `• Catatan Admin: Biaya admin transfer ke ${toAcc} (Biaya Admin / Layanan)\n\n` +
+        `• Catatan Admin: ${adminNoteDisplay}\n\n` +
         `💡 <i>N.E.X.A akan menguncinya sebagai Transfer Antar-Akun dalam 5 menit jika tidak ada koreksi.</i>`;
     }
 
@@ -609,6 +632,7 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
       `<b>Tipe:</b> Transfer Antar-Akun\n` +
       `<b>Sumber:</b> ${fromAcc}\n` +
       `<b>Tujuan:</b> ${toAcc}\n` +
+      (customNote ? `<b>Keterangan:</b> ${customNote}\n` : '') +
       `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
       `<b>Saldo (Rp) Saat Ini:</b> ${transferSaldoDisplay}\n\n` +
       `🔄 <b>Terdeteksi pemindahan dana dari ${fromAcc} ke ${toAcc} sebesar ${nominalFmt}.</b>\n` +

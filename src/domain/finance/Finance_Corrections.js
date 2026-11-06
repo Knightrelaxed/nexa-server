@@ -85,7 +85,12 @@ async function requestDeleteConfirmation(keyword) {
     const uuidShort = tx.id ? tx.id.substring(0, 8) : 'N/A';
     const tanggal = tx.transaction_date || '-';
     const waktu = tx.transaction_time || '-';
-    const tipe = tx.type === 'income' ? 'Pemasukan' : 'Pengeluaran';
+    let tipe = 'Pengeluaran';
+    if (tx.type === 'income') {
+      tipe = 'Pemasukan';
+    } else if (tx.type === 'transfer') {
+      tipe = tx.split_label === 'transfer_in' ? 'Transfer (Masuk)' : (tx.split_label === 'transfer_out' ? 'Transfer (Keluar)' : 'Transfer Antar-Akun');
+    }
     const kategori = tx.categories?.name || '-';
     const catatan = tx.description || '-';
     const nominalFmt = `Rp${Math.abs(tx.amount || 0).toLocaleString('id-ID')}`;
@@ -105,6 +110,7 @@ async function requestDeleteConfirmation(keyword) {
       `<b>Tipe/Kategori:</b> ${tipe} - ${kategori}\n` +
       `<b>Catatan:</b> ${catatan}\n` +
       `<b>Nominal:</b> ${nominalFmt}\n\n` +
+      (tx.split_group_id ? `ℹ️ <i>Catatan: Transaksi ini terikat transfer antar-akun. Menghapus transaksi ini akan menghapus seluruh mutasi terkait (termasuk biaya admin jika ada).</i>\n\n` : '') +
       `❓ Apakah ini transaksi yang ingin Tuan hapus? (Balas <b>ya/hapus</b> atau <b>batal</b>)`;
 
     return { status: 'SUCCESS', message: msg };
@@ -142,7 +148,8 @@ async function confirmDeleteTransaction(isYes) {
         const catatan = pending.txData.description || '-';
         const nominalFmt = `Rp${Math.abs(pending.txData.amount || 0).toLocaleString('id-ID')}`;
 
-        return `🗑️ <b>TRANSAKSI DIHAPUS DARI DATABASE</b>\n\n"${catatan}" sebesar ${nominalFmt} telah dihapus sepenuhnya.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
+        const splitMsg = pending.txData.split_group_id ? ' (beserta seluruh mutasi transfer terkait)' : '';
+        return `🗑️ <b>TRANSAKSI DIHAPUS DARI DATABASE</b>\n\n"${catatan}" sebesar ${nominalFmt}${splitMsg} telah dihapus sepenuhnya.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
       } catch (error) {
         return `❌ Gagal menghapus transaksi dari database: ${error.message}`;
       }
