@@ -291,43 +291,77 @@ async function updateTransaction(uuid, patchData) {
 }
 
 /**
- * Menghapus transaksi berdasarkan UUID
+ * Menghapus transaksi berdasarkan UUID.
+ * Jika transaksi merupakan bagian dari split_group (transfer pair atau transfer dengan admin fee),
+ * seluruh baris mutasi dalam split group tersebut akan dihapus secara atomik.
+ * 
  * @param {string} uuid
  */
 async function deleteTransaction(uuid) {
   if (!supabaseFinance) return { status: 'ERROR', reason: 'Supabase tidak dikonfigurasi' };
-  
-  const { error } = await supabaseFinance
-    .from('transactions')
-    .delete()
-    .eq('id', uuid);
 
-  if (error) {
-    console.error('[SUPABASE_FINANCE] deleteTransaction error:', error.message);
-    return { status: 'ERROR', reason: error.message };
+  try {
+    const { data: row, error: fetchErr } = await supabaseFinance
+      .from('transactions')
+      .select('id, split_group_id')
+      .eq('id', uuid)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.warn('[SUPABASE_FINANCE] deleteTransaction fetch error:', fetchErr.message);
+    }
+
+    if (row && row.split_group_id) {
+      const { error } = await supabaseFinance
+        .from('transactions')
+        .delete()
+        .eq('split_group_id', row.split_group_id);
+
+      if (error) {
+        console.error('[SUPABASE_FINANCE] deleteTransaction split_group error:', error.message);
+        return { status: 'ERROR', reason: error.message };
+      }
+      return { status: 'SUCCESS' };
+    }
+
+    const { error } = await supabaseFinance
+      .from('transactions')
+      .delete()
+      .eq('id', uuid);
+
+    if (error) {
+      console.error('[SUPABASE_FINANCE] deleteTransaction error:', error.message);
+      return { status: 'ERROR', reason: error.message };
+    }
+
+    return { status: 'SUCCESS' };
+  } catch (err) {
+    console.error('[SUPABASE_FINANCE] deleteTransaction exception:', err.message);
+    return { status: 'ERROR', reason: err.message };
   }
-  
-  return { status: 'SUCCESS' };
 }
 
 /**
- * Tulis sepasang transaksi transfer antar-akun (transfer_out dan transfer_in)
+ * Tulis sepasang atau 3 blok transaksi transfer antar-akun (transfer_out, transfer_in, dan opsional admin_fee)
  * yang saling terikat dengan split_group_id yang sama ke Supabase Nexa Finance.
+ * Masing-masing mutasi memiliki deskripsi mandiri yang kontekstual.
  *
  * @param {object} params
- * @param {string} params.fromAccountName - Akun sumber pengirim (e.g. 'Dana')
- * @param {string} params.toAccountName   - Akun tujuan penerima (e.g. 'Bank Jago')
+ * @param {string} params.fromAccountName - Akun sumber pengirim (e.g. 'Bank Mandiri')
+ * @param {string} params.toAccountName   - Akun tujuan penerima (e.g. 'Dana')
  * @param {number} params.nominal         - Nominal transfer (angka positif)
- * @param {string} [params.description]   - Deskripsi transfer
+ * @param {number} [params.adminFee=0]    - Biaya admin jika ada (angka positif)
+ * @param {string} [params.description]   - Deskripsi / catatan transfer
  * @param {string} [params.dateISO]       - Tanggal transaksi (YYYY-MM-DD)
  * @param {string} [params.timeHHMM]      - Jam transaksi (HH:MM / HH.MM)
  * @param {string} [params.categoryName]  - Kategori transfer (default: 'Pengeluaran tidak tercatat ')
- * @returns {Promise<{status: 'SUCCESS'|'SKIPPED'|'ERROR', pairId?: string, outId?: string, inId?: string, reason?: string}>}
+ * @returns {Promise<{status: 'SUCCESS'|'SKIPPED'|'ERROR', pairId?: string, outId?: string, inId?: string, adminId?: string, reason?: string}>}
  */
 async function writeTransferPair({
   fromAccountName,
   toAccountName,
   nominal,
+  adminFee = 0,
   description,
   dateISO,
   timeHHMM,
@@ -337,10 +371,13 @@ async function writeTransferPair({
     return { status: 'SKIPPED', reason: 'Supabase Finance tidak dikonfigurasi' };
   }
 
-  const [fromAccountId, toAccountId, categoryId] = await Promise.all([
+  const cleanAdminFee = Number(adminFee) > 0 ? Number(adminFee) : 0;
+
+  const [fromAccountId, toAccountId, categoryId, adminCategoryId] = await Promise.all([
     resolveAccountId(fromAccountName),
     resolveAccountId(toAccountName),
-    resolveCategoryId(categoryName, 'EXPENSE')
+    resolveCategoryId(categoryName, 'EXPENSE'),
+    cleanAdminFee > 0 ? resolveCategoryId('Biaya Admin / Layanan', 'EXPENSE') : Promise.resolve(null)
   ]);
 
   if (!fromAccountId) {
@@ -366,7 +403,26 @@ async function writeTransferPair({
         hour12: false
       });
   const pairId = crypto.randomUUID();
-  const desc = description || `Transfer dari ${fromAccountName} ke ${toAccountName}`;
+
+  // Ekstraksi catatan custom pengguna jika disertakan
+  let customNote = '';
+  if (description && typeof description === 'string') {
+    const trimmed = description.trim();
+    if (/^Transfer\s+(?:dari|ke)\s+[^:]+:\s*(.+)$/i.test(trimmed)) {
+      customNote = trimmed.match(/^Transfer\s+(?:dari|ke)\s+[^:]+:\s*(.+)$/i)[1].trim();
+    } else if (/^Transfer\s+dari\s+.+?\s+ke\s+[^:]+:\s*(.+)$/i.test(trimmed)) {
+      customNote = trimmed.match(/^Transfer\s+dari\s+.+?\s+ke\s+[^:]+:\s*(.+)$/i)[1].trim();
+    } else if (/^Transfer\s+dari\s+.+?\s+ke\s+/i.test(trimmed)) {
+      customNote = trimmed.replace(/^Transfer\s+dari\s+.*?\s+ke\s+[^\s]+(?:\s*\(admin[^\)]*\))?\s*/i, '').trim();
+    } else if (!/^Transfer\b/i.test(trimmed)) {
+      customNote = trimmed;
+    }
+  }
+
+  // 3 Deskripsi mandiri dan kontekstual sesuai instruksi Tuan Faqih
+  const descOut = customNote ? `Transfer ke ${toAccountName}: ${customNote}` : `Transfer ke ${toAccountName}`;
+  const descIn = customNote ? `Transfer dari ${fromAccountName}: ${customNote}` : `Transfer dari ${fromAccountName}`;
+  const descAdmin = customNote ? `Biaya admin transfer ke ${toAccountName} (${customNote})` : `Biaya admin transfer ke ${toAccountName}`;
 
   const rows = [
     {
@@ -378,7 +434,7 @@ async function writeTransferPair({
       split_group_id:   pairId,
       transaction_date: cleanDate,
       transaction_time: cleanTime,
-      description:      desc,
+      description:      descOut,
       payment_method:   'Transfer bank',
     },
     {
@@ -390,10 +446,25 @@ async function writeTransferPair({
       split_group_id:   pairId,
       transaction_date: cleanDate,
       transaction_time: cleanTime,
-      description:      desc,
+      description:      descIn,
       payment_method:   'Transfer bank',
     }
   ];
+
+  if (cleanAdminFee > 0) {
+    rows.push({
+      account_id:       fromAccountId,
+      category_id:      adminCategoryId || categoryId,
+      amount:           cleanAdminFee,
+      type:             'expense',
+      split_label:      'admin_fee',
+      split_group_id:   pairId,
+      transaction_date: cleanDate,
+      transaction_time: cleanTime,
+      description:      descAdmin,
+      payment_method:   'Transfer bank',
+    });
+  }
 
   const { data, error } = await supabaseFinance
     .from('transactions')
@@ -407,12 +478,14 @@ async function writeTransferPair({
 
   const outRow = data?.find(r => r.split_label === 'transfer_out');
   const inRow = data?.find(r => r.split_label === 'transfer_in');
+  const adminRow = data?.find(r => r.split_label === 'admin_fee');
 
   return {
     status: 'SUCCESS',
     pairId,
     outId: outRow?.id,
-    inId: inRow?.id
+    inId: inRow?.id,
+    adminId: adminRow?.id
   };
 }
 

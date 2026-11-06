@@ -32,7 +32,9 @@ const DEFAULT_FALLBACK_ACCOUNTS = [
 // Default in-memory categories fallback saat Supabase offline / null client
 const DEFAULT_FALLBACK_CATEGORIES = [
   { id: '5cb57143-9cb0-42de-8e65-9f8f99e7f130', name: 'Lainnya', type: 'expense', group_name: 'Penyesuaian (Sistem)' },
-  { id: '00000000-0000-0000-0000-000000000003', name: 'Pendapatan (umum)', type: 'income', group_name: 'Pendapatan' }
+  { id: '00000000-0000-0000-0000-000000000003', name: 'Pendapatan (umum)', type: 'income', group_name: 'Pendapatan' },
+  { id: '0374dc85-b2f7-47e0-988e-a42b35be4a41', name: 'Biaya Admin / Layanan', type: 'expense', group_name: 'Tagihan & Kewajiban' },
+  { id: '54e0ad8f-b9d9-482f-870d-f2ebf01fdf76', name: 'Pengeluaran tidak tercatat ', type: 'expense', group_name: 'Penyesuaian (Sistem)' }
 ];
 
 // ── Private: Load & Cache Categories ─────────────────────────────────────────

@@ -66,7 +66,7 @@ function _detectCandidateDomains(textInput, runtimeHints = {}) {
   }
   const matched = new Set();
 
-  if (/\b(beli|bayar|uang|duit|rp|ribu|jt|juta|pengeluaran|pemasukan|belanja|saldo|transfer|tf|rekening|dompet|qris|cash|kas|finansial|biaya|ongkir|makan|kopi|nasi|tagihan|gaji|buku kas|split|indomaret|alfamart|top up|topup|ewallet|gopay|ovo|dana|shopeepay)\b/i.test(clean) || /\b\d+\s*(?:k|rb|ribu|jt|juta|rupiah)\b/i.test(clean)) {
+  if (/\b(beli|bayar|uang|duit|rp|ribu|jt|juta|pengeluaran|pemasukan|belanja|saldo|transfer|tf|rekening|dompet|qris|cash|kas|finansial|biaya|admin|adm|fee|ongkir|makan|kopi|nasi|tagihan|gaji|buku kas|split|indomaret|alfamart|top up|topup|ewallet|gopay|ovo|dana|shopeepay)\b/i.test(clean) || /\b\d+\s*(?:k|rb|ribu|jt|juta|rupiah)\b/i.test(clean)) {
     matched.add('FINANCE');
   }
 

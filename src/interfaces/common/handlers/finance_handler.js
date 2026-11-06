@@ -273,6 +273,9 @@ async function handleFinanceIntent(routingData, context = {}) {
 
     let fromAccName = ed.from_account || null;
     let toAccName = ed.to_account || null;
+    let adminFee = (ed.admin_fee !== undefined && ed.admin_fee !== null)
+      ? ed.admin_fee
+      : ((ed.adminFee !== undefined && ed.adminFee !== null) ? ed.adminFee : 0);
 
     if (isTransfer) {
       if (!fromAccName && ed.account) fromAccName = ed.account;
@@ -284,6 +287,17 @@ async function handleFinanceIntent(routingData, context = {}) {
         if (mFromTo) {
           if (!fromAccName) fromAccName = mFromTo[1].trim();
           if (!toAccName) toAccName = mFromTo[2].trim();
+        }
+      }
+
+      // Regex fallback extraction for admin fee if AI missed it
+      if (!adminFee) {
+        const mAdmin = textInput.match(/(?:biaya\s*admin(?:nya)?|biaya\s*transfer|admin(?:nya)?|biaya|adm|fee)\s*(?:sebesar|sejumlah|rp\.?)?\s*([0-9][0-9\.\,]*\s*(?:k|rb|ribu)?)/i);
+        if (mAdmin && mAdmin[1]) {
+          const parsedAdmin = require('../../../domain/finance/Finance_Helpers')._parseFlexibleCurrency(mAdmin[1]);
+          if (!isNaN(parsedAdmin) && parsedAdmin > 0) {
+            adminFee = parsedAdmin;
+          }
         }
       }
 
@@ -299,8 +313,16 @@ async function handleFinanceIntent(routingData, context = {}) {
       }
     }
 
+    const parsedNominal = typeof ed.nominal === 'number'
+      ? ed.nominal
+      : (ed.nominal ? require('../../../domain/finance/Finance_Helpers')._parseFlexibleCurrency(String(ed.nominal)) : 0);
+    const parsedAdminFee = typeof adminFee === 'number'
+      ? adminFee
+      : (adminFee ? require('../../../domain/finance/Finance_Helpers')._parseFlexibleCurrency(String(adminFee)) : 0);
+
     const txData = {
-      nominal: ed.nominal,
+      nominal: parsedNominal,
+      adminFee: parsedAdminFee > 0 ? parsedAdminFee : 0,
       type: isTransfer ? 'TRANSFER' : (ed.type || 'EXPENSE'),
       destination: isTransfer ? (toAccName || 'Transfer Antar-Akun') : (ed.destination || ed.merchant || 'Unknown'),
       category: isTransfer ? 'Pengeluaran tidak tercatat ' : (ed.category || 'Uncategorized'),

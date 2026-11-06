@@ -75,10 +75,15 @@ async function processTransaction(data, source) {
           ? data.description
           : `Transfer dari ${fromAcc} ke ${toAcc}`;
 
+        const adminFeeNum = typeof data.adminFee === 'number'
+          ? data.adminFee
+          : (data.adminFee ? _parseFlexibleCurrency(String(data.adminFee)) : 0) || 0;
+
         const pairResult = await supabaseFinance.writeTransferPair({
           fromAccountName: fromAcc,
           toAccountName: toAcc,
           nominal,
+          adminFee: adminFeeNum,
           description: desc,
           dateISO: txDateISO,
           timeHHMM: txTimeHHMM,
@@ -91,10 +96,13 @@ async function processTransaction(data, source) {
 
         await supabase.logTransactionKey(compositeKey, transactionTime, source);
         console.log(`[FINANCE] ✅ Transfer Pair Supabase berhasil disimpan (Pair ID: ${pairResult.pairId})`);
+        const msg = adminFeeNum > 0
+          ? `✅ Transfer Rp${nominal.toLocaleString('id-ID')} dari ${fromAcc} ke ${toAcc} (admin: Rp${adminFeeNum.toLocaleString('id-ID')}) berhasil dicatat.`
+          : `✅ Transfer Rp${nominal.toLocaleString('id-ID')} dari ${fromAcc} ke ${toAcc} berhasil dicatat.`;
         return {
           status: 'SUCCESS',
           pairId: pairResult.pairId,
-          message: `✅ Transfer Rp${nominal.toLocaleString('id-ID')} dari ${fromAcc} ke ${toAcc} berhasil dicatat.`
+          message: msg
         };
       }
     }

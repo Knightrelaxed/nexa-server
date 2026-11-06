@@ -215,6 +215,9 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
           const fromAcc = pending.tx.fromAccount || 'Dana';
           const toAcc = customAccount || pending.tx.account || pending.tx.suggestedAccount || 'Bank Jago';
           const nominalNum = typeof pending.tx.nominal === 'number' ? pending.tx.nominal : _parseFlexibleCurrency(String(pending.tx.nominal));
+          const adminFeeNum = typeof pending.tx.adminFee === 'number'
+            ? pending.tx.adminFee
+            : (pending.tx.adminFee ? _parseFlexibleCurrency(String(pending.tx.adminFee)) : 0) || 0;
           const txTime = new Date(pending.tx.time || Date.now());
           const dateISO = txTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
           const timeHHMM = txTime.toLocaleTimeString('id-ID', {
@@ -229,6 +232,7 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
             fromAccountName: fromAcc,
             toAccountName: toAcc,
             nominal: nominalNum,
+            adminFee: adminFeeNum,
             description: desc,
             dateISO,
             timeHHMM,
@@ -243,7 +247,13 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
           await supabase.logTransactionKey(key, txTime, source);
 
           const nominalFmt = isNaN(nominalNum) ? String(pending.tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
-          successMessages.push(`✅ <b>Transfer Antar-Akun Berhasil Dicatat!</b>\n\n• Sumber: <b>${fromAcc}</b> (-${nominalFmt})\n• Tujuan: <b>${toAcc}</b> (+${nominalFmt})\n• Keterangan: ${desc}`);
+          if (adminFeeNum > 0) {
+            const adminFmt = `Rp${adminFeeNum.toLocaleString('id-ID')}`;
+            const totalOutFmt = `Rp${(nominalNum + adminFeeNum).toLocaleString('id-ID')}`;
+            successMessages.push(`✅ <b>Transfer Antar-Akun Berhasil Dicatat!</b>\n\n• Sumber: <b>${fromAcc}</b> (-${totalOutFmt} termasuk admin ${adminFmt})\n• Tujuan: <b>${toAcc}</b> (+${nominalFmt})\n• Biaya Admin: <b>${adminFmt}</b> (Biaya Admin / Layanan)\n• Keterangan: ${desc}`);
+          } else {
+            successMessages.push(`✅ <b>Transfer Antar-Akun Berhasil Dicatat!</b>\n\n• Sumber: <b>${fromAcc}</b> (-${nominalFmt})\n• Tujuan: <b>${toAcc}</b> (+${nominalFmt})\n• Keterangan: ${desc}`);
+          }
           processedCount++;
           pendingConfirmations.delete(key);
           try { await supabase.deletePendingTransaction(key); } catch (_) {}
@@ -335,6 +345,7 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
   const key = resolvedKey;
 
   if (newDescription) {
+    const prevDesc = pending.tx.description;
     pending.tx.description = newDescription;
 
     // ── DETEKSI PERUBAHAN KE TRANSFER ANTAR-AKUN / PEMBATALAN ─────────────────
@@ -361,6 +372,27 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
           pending.tx.type = 'TRANSFER';
           pending.tx.category = 'Pengeluaran tidak tercatat ';
           pending.tx.description = `Transfer dari ${matchedSource.name} ke ${pending.tx.account || 'Bank Jago'}`;
+        }
+      }
+    }
+
+    // Cek perubahan biaya admin pada pending transfer
+    if (pending.tx.isSelfTransfer) {
+      const adminMatch = (newDescription || '').match(/(?:biaya\s*admin(?:nya)?|biaya\s*transfer|admin(?:nya)?|biaya|adm|fee)\s*(?:sebesar|sejumlah|rp\.?)?\s*([0-9][0-9\.\,]*\s*(?:k|rb|ribu)?)/i);
+      const noAdminMatch = /\b(?:tanpa\s*admin|bebas\s*admin|free\s*admin|admin(?:nya)?\s*0|gratis\s*admin)\b/i.test(newDescription || '');
+
+      if (noAdminMatch) {
+        pending.tx.adminFee = 0;
+        if (/^(?:tanpa\s*admin|bebas\s*admin|free\s*admin|admin(?:nya)?\s*0|gratis\s*admin)$/i.test(newDescription.trim())) {
+          pending.tx.description = prevDesc;
+        }
+      } else if (adminMatch) {
+        const parsedAdmin = _parseFlexibleCurrency(adminMatch[1]);
+        if (!isNaN(parsedAdmin)) {
+          pending.tx.adminFee = parsedAdmin;
+          if (/^(?:biaya\s*admin(?:nya)?|admin(?:nya)?|adm|fee)\s*(?:sebesar|sejumlah|rp\.?)?\s*[0-9][0-9\.\,]*\s*(?:k|rb|ribu)?$/i.test(newDescription.trim())) {
+            pending.tx.description = prevDesc;
+          }
         }
       }
     }
@@ -543,6 +575,33 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
     const destBalStr = destMatched ? formatBalRp(destMatched.balance) : '-';
     const transferSaldoDisplay = `${fromAcc} (${sourceBalStr}) • ${toAcc} (${destBalStr})`;
 
+    const adminFeeNum = typeof tx.adminFee === 'number'
+      ? tx.adminFee
+      : (tx.adminFee ? _parseFlexibleCurrency(String(tx.adminFee)) : 0) || 0;
+
+    if (adminFeeNum > 0) {
+      const adminFmt = `Rp${adminFeeNum.toLocaleString('id-ID')}`;
+      const totalTerpotongNum = (nominalNum || 0) + adminFeeNum;
+      const totalTerpotongFmt = `Rp${totalTerpotongNum.toLocaleString('id-ID')}`;
+
+      return `🔄 <b>${headerLabel}</b>\n\n` +
+        `<b>No:</b> [Auto]\n` +
+        `<b>Tanggal:</b> ${dateStr}\n` +
+        `<b>Waktu:</b> ${timeStr}\n` +
+        `<b>Tipe:</b> Transfer Antar-Akun\n` +
+        `<b>Sumber:</b> ${fromAcc}\n` +
+        `<b>Tujuan:</b> ${toAcc}\n` +
+        `<b>Nominal Transfer (Rp):</b> ${nominalFmt}\n` +
+        `<b>Biaya Admin (Rp):</b> ${adminFmt}\n` +
+        `<b>Total Terpotong (Rp):</b> ${totalTerpotongFmt}\n` +
+        `<b>Saldo (Rp) Saat Ini:</b> ${transferSaldoDisplay}\n\n` +
+        `🔄 <b>Terdeteksi transfer dari ${fromAcc} ke ${toAcc} sebesar ${nominalFmt} (biaya admin ${adminFmt}).</b>\n` +
+        `• Saldo <b>${fromAcc}</b>: berkurang ${totalTerpotongFmt} (${nominalFmt} + admin ${adminFmt})\n` +
+        `• Saldo <b>${toAcc}</b>: bertambah ${nominalFmt}\n` +
+        `• Catatan Admin: Biaya admin transfer ke ${toAcc} (Biaya Admin / Layanan)\n\n` +
+        `💡 <i>N.E.X.A akan menguncinya sebagai Transfer Antar-Akun dalam 5 menit jika tidak ada koreksi.</i>`;
+    }
+
     return `🔄 <b>${headerLabel}</b>\n\n` +
       `<b>No:</b> [Auto]\n` +
       `<b>Tanggal:</b> ${dateStr}\n` +
@@ -638,6 +697,9 @@ async function _autoSavePending(compositeKey, tx) {
       const fromAcc = tx.fromAccount || 'Dana';
       const toAcc = tx.account || tx.suggestedAccount || 'Bank Jago';
       const nominalNum = typeof tx.nominal === 'number' ? tx.nominal : _parseFlexibleCurrency(String(tx.nominal));
+      const adminFeeNum = typeof tx.adminFee === 'number'
+        ? tx.adminFee
+        : (tx.adminFee ? _parseFlexibleCurrency(String(tx.adminFee)) : 0) || 0;
       const dateISO = txTime.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
       const timeHHMM = txTime.toLocaleTimeString('id-ID', {
         timeZone: 'Asia/Jakarta',
@@ -653,6 +715,7 @@ async function _autoSavePending(compositeKey, tx) {
         fromAccountName: fromAcc,
         toAccountName: toAcc,
         nominal: nominalNum,
+        adminFee: adminFeeNum,
         description: desc,
         dateISO,
         timeHHMM,
@@ -671,7 +734,14 @@ async function _autoSavePending(compositeKey, tx) {
       await supabase.logTransactionKey(compositeKey, txTime, tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL');
 
       const nominalFmt = isNaN(nominalNum) ? String(tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
-      const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransfer <b>${nominalFmt}</b> dari <b>${fromAcc}</b> ke <b>${toAcc}</b> telah disimpan otomatis.\n\n• Saldo ${fromAcc}: -${nominalFmt}\n• Saldo ${toAcc}: +${nominalFmt}`;
+      let timeoutMsg;
+      if (adminFeeNum > 0) {
+        const adminFmt = `Rp${adminFeeNum.toLocaleString('id-ID')}`;
+        const totalOutFmt = `Rp${(nominalNum + adminFeeNum).toLocaleString('id-ID')}`;
+        timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransfer <b>${nominalFmt}</b> dari <b>${fromAcc}</b> ke <b>${toAcc}</b> (admin: ${adminFmt}) telah disimpan otomatis.\n\n• Saldo ${fromAcc}: -${totalOutFmt}\n• Saldo ${toAcc}: +${nominalFmt}\n• Biaya Admin: ${adminFmt} (Biaya Admin / Layanan)`;
+      } else {
+        timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransfer <b>${nominalFmt}</b> dari <b>${fromAcc}</b> ke <b>${toAcc}</b> telah disimpan otomatis.\n\n• Saldo ${fromAcc}: -${nominalFmt}\n• Saldo ${toAcc}: +${nominalFmt}`;
+      }
       try {
         const { sendTelegramOutbound } = require('../../interfaces/webhook');
         await sendTelegramOutbound(timeoutMsg);
@@ -735,6 +805,9 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
 
   const tx = {
     nominal,
+    adminFee: (typeof txData.adminFee === 'number' && txData.adminFee > 0)
+      ? txData.adminFee
+      : (txData.adminFee ? (_parseFlexibleCurrency(String(txData.adminFee)) || 0) : 0),
     type: txData.type || 'EXPENSE',
     destination,
     category: aiCategory,

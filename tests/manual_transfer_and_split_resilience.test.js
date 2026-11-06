@@ -123,3 +123,151 @@ test('Finance_Handler: handles manual transfer between accounts as Transfer Pair
   // Cancel test pending
   await financeEngine.confirmPendingTransactions(false);
 });
+
+test('writeTransferPair: creates 3 rows with distinct descriptions and shared split_group_id when adminFee > 0', async () => {
+  const { writeTransferPair } = require('../src/infrastructure/finance_db/transactions');
+  const { supabaseFinance } = require('../src/infrastructure/finance_db/client');
+
+  let insertedRows = null;
+  const originalFrom = supabaseFinance.from;
+  supabaseFinance.from = (table) => {
+    if (table === 'transactions') {
+      return {
+        insert: (rows) => {
+          insertedRows = rows;
+          return {
+            select: () => Promise.resolve({
+              data: [
+                { id: 'tx-out-1', split_label: 'transfer_out' },
+                { id: 'tx-in-1', split_label: 'transfer_in' },
+                { id: 'tx-admin-1', split_label: 'admin_fee' }
+              ],
+              error: null
+            })
+          };
+        }
+      };
+    }
+    return originalFrom.call(supabaseFinance, table);
+  };
+
+  try {
+    const res = await writeTransferPair({
+      fromAccountName: 'Bank Mandiri',
+      toAccountName: 'Dana',
+      nominal: 500000,
+      adminFee: 2000,
+      description: 'buat bayar kosan',
+      dateISO: '2026-11-06',
+      timeHHMM: '14:00'
+    });
+
+    assert.strictEqual(res.status, 'SUCCESS');
+    assert.ok(res.pairId, 'Should return pairId');
+    assert.strictEqual(res.outId, 'tx-out-1');
+    assert.strictEqual(res.inId, 'tx-in-1');
+    assert.strictEqual(res.adminId, 'tx-admin-1');
+
+    assert.ok(Array.isArray(insertedRows), 'Rows must be an array');
+    assert.strictEqual(insertedRows.length, 3, 'Must insert exactly 3 rows');
+
+    const rowOut = insertedRows.find(r => r.split_label === 'transfer_out');
+    const rowIn = insertedRows.find(r => r.split_label === 'transfer_in');
+    const rowAdmin = insertedRows.find(r => r.split_label === 'admin_fee');
+
+    // Verification of amounts
+    assert.strictEqual(rowOut.amount, 500000);
+    assert.strictEqual(rowIn.amount, 500000);
+    assert.strictEqual(rowAdmin.amount, 2000);
+
+    // Verification of types
+    assert.strictEqual(rowOut.type, 'transfer');
+    assert.strictEqual(rowIn.type, 'transfer');
+    assert.strictEqual(rowAdmin.type, 'expense');
+
+    // Verification of atomic split_group_id
+    assert.strictEqual(rowOut.split_group_id, res.pairId);
+    assert.strictEqual(rowIn.split_group_id, res.pairId);
+    assert.strictEqual(rowAdmin.split_group_id, res.pairId);
+
+    // Verification of distinct contextual descriptions
+    assert.strictEqual(rowOut.description, 'Transfer ke Dana: buat bayar kosan');
+    assert.strictEqual(rowIn.description, 'Transfer dari Bank Mandiri: buat bayar kosan');
+    assert.strictEqual(rowAdmin.description, 'Biaya admin transfer ke Dana (buat bayar kosan)');
+  } finally {
+    supabaseFinance.from = originalFrom;
+  }
+});
+
+test('deleteTransaction: atomically deletes all sibling transactions in the split_group', async () => {
+  const { deleteTransaction } = require('../src/infrastructure/finance_db/transactions');
+  const { supabaseFinance } = require('../src/infrastructure/finance_db/client');
+
+  let deletedBySplitGroupId = null;
+  const originalFrom = supabaseFinance.from;
+  supabaseFinance.from = (table) => {
+    if (table === 'transactions') {
+      return {
+        select: (cols) => ({
+          eq: (col, val) => ({
+            maybeSingle: () => Promise.resolve({
+              data: { id: val, split_group_id: 'pair-uuid-xyz-123' },
+              error: null
+            })
+          })
+        }),
+        delete: () => ({
+          eq: (col, val) => {
+            if (col === 'split_group_id') {
+              deletedBySplitGroupId = val;
+            }
+            return Promise.resolve({ error: null });
+          }
+        })
+      };
+    }
+    return originalFrom.call(supabaseFinance, table);
+  };
+
+  try {
+    const res = await deleteTransaction('tx-out-1');
+    assert.strictEqual(res.status, 'SUCCESS');
+    assert.strictEqual(deletedBySplitGroupId, 'pair-uuid-xyz-123', 'Must delete by split_group_id');
+  } finally {
+    supabaseFinance.from = originalFrom;
+  }
+});
+
+test('Finance_Handler & Confirmations: transfer with admin fee preview and confirmation flow', async () => {
+  const routingData = {
+    intent: 'FINANCE',
+    extracted_data: {
+      action: 'RECORD',
+      type: 'TRANSFER',
+      nominal: 500000,
+      admin_fee: 2000,
+      from_account: 'Bank Mandiri',
+      to_account: 'Dana',
+      destination: 'Dana'
+    }
+  };
+
+  const preview = await handleFinanceIntent(routingData, {
+    textInput: 'aku transfer 500.000 dari Bank Mandiri ke Dana dengan admin 2.000'
+  });
+
+  assert.ok(preview, 'Must return confirmation reply');
+  assert.ok(preview.includes('TRANSFER ANTAR-AKUN'), 'Must show TRANSFER header');
+  assert.ok(preview.includes('Nominal Transfer (Rp):</b> Rp500.000'), 'Must show nominal transfer');
+  assert.ok(preview.includes('Biaya Admin (Rp):</b> Rp2.000'), 'Must show admin fee');
+  assert.ok(preview.includes('Total Terpotong (Rp):</b> Rp502.000'), 'Must show total terpotong 502.000');
+  assert.ok(preview.includes('Biaya admin transfer ke Dana (Biaya Admin / Layanan)'), 'Must mention admin fee note and category');
+
+  // Test updating admin fee via updatePendingTransaction
+  const updated = await financeEngine.updatePendingTransaction('adminnya 2500');
+  assert.ok(updated.includes('Biaya Admin (Rp):</b> Rp2.500'), 'Admin fee should be updated to 2.500');
+  assert.ok(updated.includes('Total Terpotong (Rp):</b> Rp502.500'), 'Total terpotong should update to 502.500');
+
+  // Cancel test pending
+  await financeEngine.confirmPendingTransactions(false);
+});
