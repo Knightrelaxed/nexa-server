@@ -581,7 +581,8 @@ class LiveVoiceSession {
         `   - Kunci laptop Windows -> controlDeviceHardware(action: "LOCK_SCREEN").\n` +
         `   - Ambil tangkapan layar laptop -> controlDeviceHardware(action: "TAKE_SCREENSHOT").\n` +
         `   - Cek baterai atau status sistem laptop -> controlDeviceHardware(action: "GET_BATTERY_STATUS").\n` +
-        `3. ATURAN MUTLAK MENUTUP JENDELA & TAB:\n` +
+        `3. ATURAN MUTLAK MENUTUP JENDELA, TAB, & NAVIGASI KEMBALI:\n` +
+        `   - "kembali", "back", "superbeck", "balik ke halaman sebelumnya", "kembali ke pencarian" -> WAJIB panggil navigateBack() (mengirim Alt+Left di riwayat browser). JANGAN PERNAH panggil closeTab() atau closeWindow() jika Tuan hanya bermaksud kembali!\n` +
         `   - "tutup tab", "close tab", "tutup halaman ini" -> WAJIB panggil closeTab() (hanya menutup satu tab, Ctrl+W).\n` +
         `   - "tutup aplikasi", "tutup program", "tutup seluruh Chrome/jendela" -> WAJIB panggil closeWindow() (menutup seluruh jendela).\n` +
         `   - DILARANG KERAS mencoba mengira-ngira koordinat tombol silang (X) di pojok jendela menggunakan desktopClick! Koordinat tombol silang sangat mudah meleset mengenai tab, panel, atau HUD Nexa Bridge.\n` +
@@ -991,7 +992,7 @@ class LiveVoiceSession {
         const DESKTOP_SERIAL_TOOLS = new Set([
           'desktopClick', 'desktopScroll', 'desktopTypeText', 'desktopPressKey',
           'highlightElement', 'clearHighlights', 'pointCursor',
-          'closeWindow', 'closeTab', 'taskView'
+          'closeWindow', 'closeTab', 'navigateBack', 'taskView'
         ]);
         const hasDesktopTool = functionCalls.some(fc => DESKTOP_SERIAL_TOOLS.has(fc.name));
         const needsSerial    = hasDesktopTool && functionCalls.length > 1;

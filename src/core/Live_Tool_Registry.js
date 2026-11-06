@@ -631,6 +631,16 @@ const LIVE_TOOL_DECLARATIONS = [
     }
   },
 
+  // ── 31-C. BROWSER & APP NAVIGATION: NAVIGATE BACK ──────────────
+  {
+    name: 'navigateBack',
+    description: 'Kembali ke halaman atau layar sebelumnya di browser web atau aplikasi aktif (mengirim pintasan keyboard ALT+LEFT). Panggil saat Tuan meminta "kembali", "back", "superbeck", "balik", atau saat ingin kembali dari link/halaman web yang salah ke hasil pencarian. JANGAN gunakan closeTab jika maksudnya kembali ke halaman sebelumnya.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {}
+    }
+  },
+
   // ── 32. WINDOW MANAGEMENT: GET OPEN WINDOWS ───────────────────
   {
     name: 'getOpenWindows',
@@ -2040,6 +2050,21 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
           status: res?.success ? 'SUCCESS' : 'FAILED',
           action: 'closeTab',
           result: res?.message || (res?.success ? 'Tab browser berhasil ditutup (Ctrl+W).' : 'Gagal menutup tab browser.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 31-C. BROWSER & APP NAVIGATION: NAVIGATE BACK
+      // ─────────────────────────────────────────────────────────────
+      case 'navigateBack': {
+        const res = await _withToolTimeout(
+          windowsBridge.sendCommand('NAVIGATE_BACK', {}, { timeoutMs: 5000 }),
+          6000
+        );
+        return {
+          status: res?.success ? 'SUCCESS' : 'FAILED',
+          action: 'navigateBack',
+          result: res?.message || (res?.success ? 'Berhasil kembali ke halaman sebelumnya (ALT+LEFT).' : 'Gagal kembali ke halaman sebelumnya.')
         };
       }
 

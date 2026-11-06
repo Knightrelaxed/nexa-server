@@ -40,12 +40,14 @@ test('AUDIT BUG 3: callAI must respect options and JSON requests without strippi
   assert.ok(typeof plainRes === 'string' && plainRes.length > 0);
 });
 
-test('AUDIT LIVE TOOLS: closeWindow, getOpenWindows, and taskView declarations and execution parity', async () => {
+test('AUDIT LIVE TOOLS: closeWindow, closeTab, navigateBack, getOpenWindows, and taskView declarations and execution parity', async () => {
   const { LIVE_TOOL_DECLARATIONS, executeLiveTool } = require('../src/core/Live_Tool_Registry');
   const windowsBridge = require('../src/interfaces/bridge').windows.client;
 
   const names = new Set(LIVE_TOOL_DECLARATIONS.map(t => t.name));
   assert.ok(names.has('closeWindow'), 'closeWindow must be in LIVE_TOOL_DECLARATIONS');
+  assert.ok(names.has('closeTab'), 'closeTab must be in LIVE_TOOL_DECLARATIONS');
+  assert.ok(names.has('navigateBack'), 'navigateBack must be in LIVE_TOOL_DECLARATIONS');
   assert.ok(names.has('getOpenWindows'), 'getOpenWindows must be in LIVE_TOOL_DECLARATIONS');
   assert.ok(names.has('taskView'), 'taskView must be in LIVE_TOOL_DECLARATIONS');
 
@@ -65,6 +67,14 @@ test('AUDIT LIVE TOOLS: closeWindow, getOpenWindows, and taskView declarations a
     assert.equal(resClose.status, 'SUCCESS');
     assert.equal(resClose.action, 'closeWindow');
 
+    const resCloseTab = await executeLiveTool('closeTab', {}, {});
+    assert.equal(resCloseTab.status, 'SUCCESS');
+    assert.equal(resCloseTab.action, 'closeTab');
+
+    const resBack = await executeLiveTool('navigateBack', {}, {});
+    assert.equal(resBack.status, 'SUCCESS');
+    assert.equal(resBack.action, 'navigateBack');
+
     const resOpen = await executeLiveTool('getOpenWindows', {}, {});
     assert.equal(resOpen.status, 'SUCCESS');
     assert.equal(resOpen.count, 2);
@@ -74,10 +84,12 @@ test('AUDIT LIVE TOOLS: closeWindow, getOpenWindows, and taskView declarations a
     assert.equal(resTask.status, 'SUCCESS');
     assert.equal(resTask.action, 'taskView');
 
-    assert.equal(recorded.length, 3);
+    assert.equal(recorded.length, 5);
     assert.equal(recorded[0].action, 'CLOSE_WINDOW');
-    assert.equal(recorded[1].action, 'GET_OPEN_WINDOWS');
-    assert.equal(recorded[2].action, 'TASK_VIEW');
+    assert.equal(recorded[1].action, 'CLOSE_TAB');
+    assert.equal(recorded[2].action, 'NAVIGATE_BACK');
+    assert.equal(recorded[3].action, 'GET_OPEN_WINDOWS');
+    assert.equal(recorded[4].action, 'TASK_VIEW');
   } finally {
     windowsBridge.sendCommand = originalSendCommand;
   }
