@@ -381,8 +381,8 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
       }
     }
 
-    // Cek perubahan biaya admin pada pending transfer
-    if (pending.tx.isSelfTransfer) {
+    // Cek perubahan biaya admin pada pending transfer / pengeluaran
+    if (pending.tx.isSelfTransfer || (pending.tx.type || '').toUpperCase() === 'EXPENSE') {
       const adminMatch = (newDescription || '').match(/(?:biaya\s*admin(?:nya)?|biaya\s*transfer|admin(?:nya)?|biaya|adm|fee)\s*(?:sebesar|sejumlah|rp\.?)?\s*([0-9][0-9\.\,]*\s*(?:k|rb|ribu)?)/i);
       const noAdminMatch = /\b(?:tanpa\s*admin|bebas\s*admin|free\s*admin|admin(?:nya)?\s*0|gratis\s*admin)\b/i.test(newDescription || '');
 
@@ -672,6 +672,37 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
   }
 
   const displayCategory = (tx.category && tx.category !== 'Lainnya' && tx.category !== '[Menunggu Kategori AI/User]') ? `${tx.category} [Auto-AI]` : 'Lainnya [Auto-AI]';
+
+  const adminFeeNum = typeof tx.adminFee === 'number'
+    ? tx.adminFee
+    : (tx.adminFee ? _parseFlexibleCurrency(String(tx.adminFee)) : 0) || 0;
+
+  if (adminFeeNum > 0 && !tx.isSelfTransfer) {
+    const adminFmt = `Rp${adminFeeNum.toLocaleString('id-ID')}`;
+    const totalTerpotongNum = (nominalNum || 0) + adminFeeNum;
+    const totalTerpotongFmt = `Rp${totalTerpotongNum.toLocaleString('id-ID')}`;
+    const targetDest = tx.destination && tx.destination !== 'Unknown' ? tx.destination : 'Tujuan';
+    const adminNoteDisplay = `Biaya admin transfer ke ${targetDest}`;
+
+    return `💸 <b>${sourceLabel}</b>\n\n` +
+      `<b>No:</b> [Auto]\n` +
+      `<b>Tanggal:</b> ${dateStr}\n` +
+      `<b>Waktu:</b> ${timeStr}\n` +
+      `<b>Tipe:</b> Pengeluaran (Transfer Keluar)\n` +
+      `<b>Tujuan:</b> ${targetDest}\n` +
+      `<b>Kategori:</b> ${displayCategory}\n` +
+      `<b>Akun:</b> ${tx.account || 'Belum dipilih'}\n` +
+      `<b>Metode:</b> ${tx.payment_method || 'Transfer bank'}\n` +
+      `<b>Deskripsi:</b> ${displayDesc}\n` +
+      `<b>Nominal Transfer (Rp):</b> ${nominalFmt}\n` +
+      `<b>Biaya Admin (Rp):</b> ${adminFmt}\n` +
+      `<b>Total Terpotong (Rp):</b> ${totalTerpotongFmt}\n` +
+      `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldo}\n\n` +
+      `🔄 <b>N.E.X.A akan mencatat 2 blok mutasi terpisah:</b>\n` +
+      `• Pengeluaran: <b>${displayDesc}</b> (${nominalFmt})\n` +
+      `• Biaya Admin: <b>${adminNoteDisplay}</b> (${adminFmt})\n\n` +
+      `${proactiveQuestion}`;
+  }
 
   return `💸 <b>${sourceLabel}</b>\n\n` +
     `<b>No:</b> [Auto]\n` +

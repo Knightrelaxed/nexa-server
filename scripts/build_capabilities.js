@@ -44,7 +44,7 @@ function buildCapabilities(options = {}) {
   const manifestChars = manifestContent.length;
   const manifestTokens = Math.round(manifestChars / 4);
 
-  fs.writeFileSync(MANIFEST_PATH, manifestContent, 'utf-8');
+  fs.writeFileSync(MANIFEST_PATH, manifestContent.replace(/\r\n/g, '\n'), 'utf-8');
 
   // 2. Generate Tier 1 Structured Cards
   const timestamp = new Date().toISOString();

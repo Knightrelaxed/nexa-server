@@ -3,6 +3,7 @@
  * Finance_Ledger - Core transaction write path and read queries.
  * Extracted from Finance_Engine.js (finance split). Behaviour is unchanged; Finance_Engine.js remains the public facade.
  */
+const crypto = require('crypto');
 const supabase = require('../../infrastructure/Supabase_Memories');
 const supabaseFinance = require('../../infrastructure/Supabase_Finance');
 const { _autoCategorizeMerchant, _formatTxAsCard, _normalizePaymentMethod, _parseFlexibleCurrency, _parseRelativeDateFilter } = require('./Finance_Helpers');
@@ -156,6 +157,12 @@ async function processTransaction(data, source) {
       finalDesc = dest ? `${tipe} ${prep} ${dest}` : '-';
     }
 
+    const adminFeeNum = typeof data.adminFee === 'number'
+      ? data.adminFee
+      : (data.adminFee ? _parseFlexibleCurrency(String(data.adminFee)) : 0) || 0;
+
+    const pairId = (adminFeeNum > 0 && !isIncome) ? crypto.randomUUID() : null;
+
     const sfResult = await supabaseFinance.writeTransaction({
       txType:        isIncome ? 'INCOME' : 'EXPENSE',
       nominal,
@@ -164,11 +171,32 @@ async function processTransaction(data, source) {
       description:   finalDesc,
       dateISO:       txDateISO,
       timeHHMM:      txTimeHHMM,
-      paymentMethod: paymentMethod,
+      paymentMethod: paymentMethod || (adminFeeNum > 0 ? 'Transfer bank' : null),
+      splitGroupId:  pairId,
     });
 
     if (sfResult.status !== 'SUCCESS') {
       throw new Error(`Supabase Finance gagal: ${sfResult.reason}`);
+    }
+
+    if (adminFeeNum > 0 && !isIncome) {
+      const targetDest = dest || (finalDesc.replace(/^Transfer\s+ke\s+/i, '') || 'tujuan');
+      const adminDesc = `Biaya admin transfer ke ${targetDest}`;
+      const adminResult = await supabaseFinance.writeTransaction({
+        txType:        'EXPENSE',
+        nominal:       adminFeeNum,
+        categoryName:  'Biaya Admin / Layanan',
+        accountName:   akunName,
+        description:   adminDesc,
+        dateISO:       txDateISO,
+        timeHHMM:      txTimeHHMM,
+        paymentMethod: paymentMethod || 'Transfer bank',
+        splitGroupId:  pairId,
+        splitLabel:    'admin_fee',
+      });
+      if (adminResult.status !== 'SUCCESS') {
+        console.warn(`[FINANCE] ⚠️ Gagal mencatat biaya admin terpisah: ${adminResult.reason}`);
+      }
     }
 
     console.log(`[FINANCE] ✅ Transaksi Supabase berhasil disimpan (ID: ${sfResult.id})`);
@@ -209,9 +237,12 @@ async function processTransaction(data, source) {
 
     const nominalFormatted = `Rp${nominal.toLocaleString('id-ID')}`;
     const paymentMethodLine = paymentMethod ? `\n💳 <b>Metode:</b> ${paymentMethod}` : '';
+    const adminMsgLine = (adminFeeNum > 0 && !isIncome)
+      ? `\nℹ️ <i>Biaya admin Rp${adminFeeNum.toLocaleString('id-ID')} dicatat terpisah dan terhubung secara otomatis.</i>`
+      : '';
     return {
       status: 'SUCCESS',
-      message: `✅ Transaksi <b>${tipeLabel}</b> sebesar <b>${nominalFormatted}</b> berhasil dicatat ke database Supabase (Akun: ${akunName}).${paymentMethodLine}`
+      message: `✅ Transaksi <b>${tipeLabel}</b> sebesar <b>${nominalFormatted}</b> berhasil dicatat ke database Supabase (Akun: ${akunName}).${paymentMethodLine}${adminMsgLine}`
     };
   } catch (error) {
     console.error('[FINANCE] Failed to record transaction:', error.message);

@@ -277,6 +277,21 @@ async function handleFinanceIntent(routingData, context = {}) {
       ? ed.admin_fee
       : ((ed.adminFee !== undefined && ed.adminFee !== null) ? ed.adminFee : 0);
 
+    // Regex fallback extraction for admin fee if AI missed it (applicable to ANY transfer/expense)
+    if (!adminFee) {
+      const mAdmin = textInput.match(/(?:biaya\s*admin(?:nya)?|biaya\s*transfer|admin(?:nya)?|biaya|adm|fee)\s*(?:sebesar|sejumlah|rp\.?)?\s*([0-9][0-9\.\,]*\s*(?:k|rb|ribu)?)/i);
+      if (mAdmin && mAdmin[1]) {
+        const parsedAdmin = require('../../../domain/finance/Finance_Helpers')._parseFlexibleCurrency(mAdmin[1]);
+        if (!isNaN(parsedAdmin) && parsedAdmin > 0) {
+          adminFee = parsedAdmin;
+        }
+      }
+    }
+
+    let isSelfTransfer = false;
+    let fromAccountResolved = null;
+    let toAccountResolved = null;
+
     if (isTransfer) {
       if (!fromAccName && ed.account) fromAccName = ed.account;
       if (!toAccName && ed.destination) toAccName = ed.destination;
@@ -290,26 +305,28 @@ async function handleFinanceIntent(routingData, context = {}) {
         }
       }
 
-      // Regex fallback extraction for admin fee if AI missed it
-      if (!adminFee) {
-        const mAdmin = textInput.match(/(?:biaya\s*admin(?:nya)?|biaya\s*transfer|admin(?:nya)?|biaya|adm|fee)\s*(?:sebesar|sejumlah|rp\.?)?\s*([0-9][0-9\.\,]*\s*(?:k|rb|ribu)?)/i);
-        if (mAdmin && mAdmin[1]) {
-          const parsedAdmin = require('../../../domain/finance/Finance_Helpers')._parseFlexibleCurrency(mAdmin[1]);
-          if (!isNaN(parsedAdmin) && parsedAdmin > 0) {
-            adminFee = parsedAdmin;
-          }
-        }
-      }
-
       // Canonical account resolution via Supabase finance
       const supabaseFinance = require('../../../infrastructure/Supabase_Finance');
-      if (fromAccName) {
-        const resolvedFrom = await supabaseFinance.resolveAccount(fromAccName);
-        if (resolvedFrom) fromAccName = resolvedFrom.name;
-      }
-      if (toAccName) {
-        const resolvedTo = await supabaseFinance.resolveAccount(toAccName);
-        if (resolvedTo) toAccName = resolvedTo.name;
+      const accountsList = await supabaseFinance.getAccountsList();
+
+      const matchAccountStrict = (name) => {
+        if (!name || typeof name !== 'string') return null;
+        const raw = name.toLowerCase().trim();
+        for (const acc of accountsList || []) {
+          const accName = acc.name.toLowerCase();
+          const cleanAccName = accName.replace(/^(bank|dompet)\s+/i, '').trim();
+          if (raw === accName || raw === cleanAccName) return acc.name;
+          if (cleanAccName.length >= 3 && (raw.includes(cleanAccName) || cleanAccName.includes(raw))) return acc.name;
+        }
+        return null;
+      };
+
+      if (fromAccName) fromAccountResolved = matchAccountStrict(fromAccName);
+      if (toAccName) toAccountResolved = matchAccountStrict(toAccName);
+
+      // Self-transfer antar-wallet pribadi HANYA berlaku jika akun asal dan akun tujuan keduanya adalah akun terdaftar milik Tuan dan berbeda
+      if (fromAccountResolved && toAccountResolved && fromAccountResolved !== toAccountResolved) {
+        isSelfTransfer = true;
       }
     }
 
@@ -320,23 +337,70 @@ async function handleFinanceIntent(routingData, context = {}) {
       ? adminFee
       : (adminFee ? require('../../../domain/finance/Finance_Helpers')._parseFlexibleCurrency(String(adminFee)) : 0);
 
-    const txData = {
-      nominal: parsedNominal,
-      adminFee: parsedAdminFee > 0 ? parsedAdminFee : 0,
-      type: isTransfer ? 'TRANSFER' : (ed.type || 'EXPENSE'),
-      destination: isTransfer ? (toAccName || 'Transfer Antar-Akun') : (ed.destination || ed.merchant || 'Unknown'),
-      category: isTransfer ? 'Pengeluaran tidak tercatat ' : (ed.category || 'Uncategorized'),
-      description: ed.description && ed.description !== '-'
+    let txData;
+    let cardTitle;
+
+    if (isSelfTransfer) {
+      txData = {
+        nominal: parsedNominal,
+        adminFee: parsedAdminFee > 0 ? parsedAdminFee : 0,
+        type: 'TRANSFER',
+        destination: toAccountResolved || 'Transfer Antar-Akun',
+        category: 'Pengeluaran tidak tercatat ',
+        description: ed.description && ed.description !== '-'
+          ? ed.description
+          : `Transfer dari ${fromAccountResolved || 'Akun'} ke ${toAccountResolved || 'Tujuan'}`,
+        time: ed.time || new Date().toISOString(),
+        account: toAccountResolved || null,
+        suggestedAccount: toAccountResolved || null,
+        fromAccount: fromAccountResolved || null,
+        isSelfTransfer: true,
+        payment_method: ed.payment_method || 'Transfer bank'
+      };
+      cardTitle = 'TRANSFER ANTAR-AKUN';
+    } else if (isTransfer) {
+      // Transfer ke orang lain / pihak eksternal (toAccName bukan akun wallet milik Tuan)
+      const externalDest = toAccName || ed.destination || ed.merchant || 'Pihak Luar';
+      const sourceAccount = fromAccountResolved || fromAccName || ed.account || null;
+      const desc = ed.description && ed.description !== '-'
         ? ed.description
-        : (isTransfer ? `Transfer dari ${fromAccName || 'Akun'} ke ${toAccName || 'Tujuan'}` : '-'),
-      time: ed.time || new Date().toISOString(),
-      account: isTransfer ? (toAccName || null) : (ed.account || null),
-      suggestedAccount: isTransfer ? (toAccName || null) : null,
-      fromAccount: isTransfer ? (fromAccName || null) : null,
-      isSelfTransfer: isTransfer,
-      payment_method: ed.payment_method || (isTransfer ? 'Transfer bank' : null)
-    };
-    const cardTitle = isTransfer ? 'TRANSFER ANTAR-AKUN' : 'PENCATATAN KEUANGAN BARU';
+        : `Transfer ke ${externalDest}`;
+
+      txData = {
+        nominal: parsedNominal,
+        adminFee: parsedAdminFee > 0 ? parsedAdminFee : 0,
+        type: 'EXPENSE',
+        destination: externalDest,
+        category: ed.category || 'Uncategorized',
+        description: desc,
+        time: ed.time || new Date().toISOString(),
+        account: sourceAccount,
+        suggestedAccount: null,
+        fromAccount: sourceAccount,
+        isSelfTransfer: false,
+        payment_method: ed.payment_method || 'Transfer bank'
+      };
+      cardTitle = parsedAdminFee > 0 ? 'PENGELUARAN TRANSFER DENGAN BIAYA ADMIN' : 'PENCATATAN KEUANGAN BARU';
+    } else {
+      // Transaksi pengeluaran/pemasukan biasa (opsional dengan biaya admin)
+      txData = {
+        nominal: parsedNominal,
+        adminFee: parsedAdminFee > 0 ? parsedAdminFee : 0,
+        type: ed.type || 'EXPENSE',
+        destination: ed.destination || ed.merchant || 'Unknown',
+        category: ed.category || 'Uncategorized',
+        description: ed.description && ed.description !== '-' ? ed.description : '-',
+        time: ed.time || new Date().toISOString(),
+        account: ed.account || null,
+        suggestedAccount: null,
+        fromAccount: null,
+        isSelfTransfer: false,
+        payment_method: ed.payment_method || (parsedAdminFee > 0 ? 'Transfer bank' : null)
+      };
+      cardTitle = (parsedAdminFee > 0 && txData.type === 'EXPENSE')
+        ? 'PENGELUARAN DENGAN BIAYA ADMIN'
+        : 'PENCATATAN KEUANGAN BARU';
+    }
     const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, cardTitle);
     if (confirmMsg) {
       const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');

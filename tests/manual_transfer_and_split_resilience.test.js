@@ -340,3 +340,89 @@ test('updatePendingTransaction: correctly switches from transfer to expense and 
   // Cancel test pending
   await financeEngine.confirmPendingTransactions(false, null, null, null, null, cKey);
 });
+
+test('External Transfer with Admin Fee: routes to 2-block expense and handles admin fee updates', async () => {
+  const routingData = {
+    intent: 'FINANCE',
+    extracted_data: {
+      action: 'RECORD',
+      type: 'TRANSFER',
+      nominal: 150000,
+      admin_fee: 2500,
+      from_account: 'Bank Mandiri',
+      to_account: 'Budi',
+      destination: 'Budi'
+    }
+  };
+
+  const preview = await handleFinanceIntent(routingData, {
+    textInput: 'aku transfer 150.000 ke Budi dari Bank Mandiri admin 2.500'
+  });
+
+  assert.ok(preview, 'Must return confirmation reply');
+  assert.ok(preview.includes('PENGELUARAN TRANSFER DENGAN BIAYA ADMIN'), 'Must show external transfer header');
+  assert.ok(preview.includes('Nominal Transfer (Rp):</b> Rp150.000'), 'Must show nominal transfer 150.000');
+  assert.ok(preview.includes('Biaya Admin (Rp):</b> Rp2.500'), 'Must show admin fee 2.500');
+  assert.ok(preview.includes('Total Terpotong (Rp):</b> Rp152.500'), 'Must show total terpotong 152.500');
+  assert.ok(preview.includes('N.E.X.A akan mencatat 2 blok mutasi terpisah:'), 'Must explain 2 separate blocks');
+  assert.ok(preview.includes('Biaya admin transfer ke Budi'), 'Must display admin note for Budi');
+
+  // Test updating admin fee on external transfer
+  const updated = await financeEngine.updatePendingTransaction('adminnya 3000');
+  assert.ok(updated.includes('Biaya Admin (Rp):</b> Rp3.000'), 'Admin fee should be updated to 3.000');
+  assert.ok(updated.includes('Total Terpotong (Rp):</b> Rp153.000'), 'Total terpotong should update to 153.000');
+
+  // Test removing admin fee
+  const noAdmin = await financeEngine.updatePendingTransaction('tanpa admin');
+  assert.ok(!noAdmin.includes('Biaya Admin (Rp):'), 'Admin fee should be removed');
+  assert.ok(noAdmin.includes('Nominal (Rp):</b> Rp150.000'), 'Nominal should stay 150.000');
+
+  // Cancel test pending
+  await financeEngine.confirmPendingTransactions(false);
+});
+
+test('Finance_Ledger processTransaction: saves 2 linked rows in Supabase for expense with admin fee', async () => {
+  const { processTransaction } = require('../src/domain/finance/Finance_Ledger');
+  const supabaseFinance = require('../src/infrastructure/Supabase_Finance');
+
+  const writtenRows = [];
+  const originalWrite = supabaseFinance.writeTransaction;
+  supabaseFinance.writeTransaction = async (params) => {
+    writtenRows.push(params);
+    return { status: 'SUCCESS', id: `mock-tx-${writtenRows.length}` };
+  };
+
+  try {
+    const txData = {
+      nominal: 150000,
+      adminFee: 2500,
+      type: 'EXPENSE',
+      destination: 'Budi',
+      account: 'Bank Mandiri',
+      category: 'Keluarga',
+      description: 'Transfer ke Budi'
+    };
+
+    const res = await processTransaction(txData, 'TEST_SOURCE');
+    assert.strictEqual(res.status, 'SUCCESS');
+    assert.strictEqual(writtenRows.length, 2, 'Must write exactly 2 rows');
+
+    // Row 1: Main transfer to Budi
+    assert.strictEqual(writtenRows[0].nominal, 150000);
+    assert.strictEqual(writtenRows[0].txType, 'EXPENSE');
+    assert.strictEqual(writtenRows[0].accountName, 'Bank Mandiri');
+    assert.strictEqual(writtenRows[0].description, 'Transfer ke Budi');
+    assert.ok(writtenRows[0].splitGroupId, 'Must have splitGroupId');
+
+    // Row 2: Admin fee
+    assert.strictEqual(writtenRows[1].nominal, 2500);
+    assert.strictEqual(writtenRows[1].txType, 'EXPENSE');
+    assert.strictEqual(writtenRows[1].accountName, 'Bank Mandiri');
+    assert.strictEqual(writtenRows[1].categoryName, 'Biaya Admin / Layanan');
+    assert.strictEqual(writtenRows[1].description, 'Biaya admin transfer ke Budi');
+    assert.strictEqual(writtenRows[1].splitGroupId, writtenRows[0].splitGroupId, 'Must share identical splitGroupId');
+    assert.strictEqual(writtenRows[1].splitLabel, 'admin_fee', 'Must have splitLabel admin_fee');
+  } finally {
+    supabaseFinance.writeTransaction = originalWrite;
+  }
+});

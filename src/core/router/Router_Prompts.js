@@ -26,7 +26,7 @@ function getCapabilitiesManifest() {
   try {
     const manifestPath = path.resolve(__dirname, '../../../data/capabilities_manifest.txt');
     if (fs.existsSync(manifestPath)) {
-      _cachedManifest = fs.readFileSync(manifestPath, 'utf-8').trim();
+      _cachedManifest = fs.readFileSync(manifestPath, 'utf-8').replace(/\r\n/g, '\n').trim();
       return _cachedManifest;
     }
   } catch (_) {}

@@ -110,7 +110,7 @@ async function requestDeleteConfirmation(keyword) {
       `<b>Tipe/Kategori:</b> ${tipe} - ${kategori}\n` +
       `<b>Catatan:</b> ${catatan}\n` +
       `<b>Nominal:</b> ${nominalFmt}\n\n` +
-      (tx.split_group_id ? `ℹ️ <i>Catatan: Transaksi ini terikat transfer antar-akun. Menghapus transaksi ini akan menghapus seluruh mutasi terkait (termasuk biaya admin jika ada).</i>\n\n` : '') +
+      (tx.split_group_id ? `ℹ️ <i>Catatan: Transaksi ini memiliki mutasi terkait (termasuk biaya admin jika ada). Menghapus transaksi ini akan menghapus seluruh mutasi terkait secara bersamaan.</i>\n\n` : '') +
       `❓ Apakah ini transaksi yang ingin Tuan hapus? (Balas <b>ya/hapus</b> atau <b>batal</b>)`;
 
     return { status: 'SUCCESS', message: msg };
@@ -148,7 +148,7 @@ async function confirmDeleteTransaction(isYes) {
         const catatan = pending.txData.description || '-';
         const nominalFmt = `Rp${Math.abs(pending.txData.amount || 0).toLocaleString('id-ID')}`;
 
-        const splitMsg = pending.txData.split_group_id ? ' (beserta seluruh mutasi transfer terkait)' : '';
+        const splitMsg = pending.txData.split_group_id ? ' (beserta seluruh mutasi terkait)' : '';
         return `🗑️ <b>TRANSAKSI DIHAPUS DARI DATABASE</b>\n\n"${catatan}" sebesar ${nominalFmt}${splitMsg} telah dihapus sepenuhnya.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
       } catch (error) {
         return `❌ Gagal menghapus transaksi dari database: ${error.message}`;
