@@ -15,6 +15,8 @@ Dokumen ini mencatat secara menyeluruh hasil riset, uji coba *deployment*, serta
 | **Serv00.com** | FreeBSD Shell / Hosting | Verifikasi keamanan CAPTCHA dinamis menolak jawaban nama perusahaan induk (*hostUNO/MyDevil*). | ❌ Gagal Registrasi |
 | **Microsoft Azure (Cloud VPS)** | Enterprise Cloud VPS | Lingkungan runtime sangat stabil & optimal (2 vCPU, 1 GB RAM), namun merupakan layanan enterprise berbayar komersial setelah kredit habis. | ⚠️ Aktif (Tantangan Biaya Enterprise) |
 | **Back4App Containers** | Docker Container PaaS | *Free Plan* hanya memberikan **Temporary URL (kedaluwarsa dalam 60 menit)**; butuh upgrade berbayar untuk URL permanen. | ❌ Tidak Viable untuk Webhook |
+| **Oracle Cloud (Always Free)** | Enterprise Cloud VPS | Validasi 2-Tahap: Lolos verifikasi bank ($1), namun gagal di *Oracle Policy Validation* karena kartu debit tabungan murni tanpa limit kredit diblokir. Wajib Kartu Kredit fisik. | ❌ Terkendala Kebijakan Kartu Kredit |
+| **InstaBox (instabox.sh)** | MicroVM Sandbox | Spesifikasi besar (4 vCPU / 8 GiB RAM), namun dibatasi mati paksa maksimal 8 jam (*max-run limit*) dan hukuman *cooldown* bertingkat hingga 2+ jam. | ❌ Tidak Viable untuk 24/7 Server |
 
 ---
 
@@ -65,7 +67,7 @@ Dokumen ini mencatat secara menyeluruh hasil riset, uji coba *deployment*, serta
 ---
 
 ### 6. Microsoft Azure (Enterprise Cloud VPS)
-* **Karakteristik Asli:** Layanan cloud VPS enterprise kelas dunia (`Standard_B2ats_v2` — 2 vCPU, 1 GB RAM).
+* **Karakteristik Asli:** Layanan cloud VPS enterprise kelas dunia (`Standard_B2ats_v2`: 2 vCPU, 1 GB RAM).
 * **Keberhasilan & Kecocokan Lingkungan:**
   * Lingkungan runtime terbukti **sangat cocok, stabil, dan optimal** untuk N.E.X.A Server.
   * Alokasi memori PM2 (`max_memory_restart: '650M'` dan heap V8 512MB) berjalan sangat mulus tanpa kebocoran memori.
@@ -81,15 +83,39 @@ Dokumen ini mencatat secara menyeluruh hasil riset, uji coba *deployment*, serta
 * **Keberhasilan:** Berhasil melakukan build image Docker Node.js 20 dan menjalankan server Express N.E.X.A (`DEPLOYMENT READY`).
 * **Kendala Fatal untuk Production:**
   1. **Temporary URL (Limitasi 60 Menit):** Back4App Free Tier hanya memberikan URL subdomain publik aktif selama **60 menit**:
-     > *"Temporary URL Active — URL is temporary and will be live for 60 minutes. Upgrade for a Permanent URL."*
+     > *"Temporary URL Active: URL is temporary and will be live for 60 minutes. Upgrade for a Permanent URL."*
   2. **Inkompatibilitas Webhook:** Karena URL berubah/mati setiap 60 menit, Webhook Telegram dan Nexa Mobile Bridge tidak dapat mempertahankan koneksi permanen.
   3. **Manajemen Environment Variables:** Tidak tersedianya endpoint REST API terbuka untuk *bulk upload* puluhan kunci API sekaligus dari terminal lokal (harus diinput satu per satu atau via prompt AI chat).
 
 ---
 
+### 8. Oracle Cloud Infrastructure (Always Free Tier)
+* **Karakteristik Asli:** Platform enterprise cloud dengan alokasi Always Free sangat besar (Ampere ARM64 4 OCPU, 24 GB RAM, 200 GB Storage).
+* **Temuan Hasil Investigasi Teknis (Live Support Oracle - November 2026):**
+  1. **Sistem Verifikasi 2-Tahap**:
+     * *Tahap 1 (Bank Validation)*: Otorisasi saldo sementara $1 USD (~Rp 20.361) berhasil ditarik dan memunculkan centang hijau pada kartu Debit Visa Bank Jago fisik.
+     * *Tahap 2 (Oracle Policy Validation)*: Sistem keamanan CyberSource memeriksa nomor BIN kartu ke jaringan Visa/Mastercard.
+  2. **Kendala Fatal**:
+     * Konfirmasi resmi staf teknis Oracle (George): *"A Debit card isn't eligible for Free trial registration. The Debit card must have a Credit function enabled. Meaning, a pre approved credit limit from the bank."*
+     * Kartu debit tabungan murni tanpa limit kredit otomatis digagalkan dengan pesan *"Oops, we're sorry, an error occurred while creating your account"*.
+  3. **Solusi yang Valid**: Memerlukan Kartu Kredit fisik murni, *Secured Credit Card* beragunan deposito (BCA / CIMB Niaga), atau kartu kredit fintech resmi (Honest Card / YUP).
+
+---
+
+### 9. InstaBox (instabox.sh)
+* **Karakteristik Asli:** Cloud sandbox microVM (Firecracker) berbasis Debian 13 untuk AI coding agents dan CI/CD.
+* **Keunggulan:** Spesifikasi Free Tier sangat besar (4 vCPU, 8 GiB RAM, 20 GiB disk) tanpa kartu kredit.
+* **Kendala Fatal untuk Production Server 24/7:**
+  1. **Auto-Pause 30 Menit**: Mesin otomatis tertidur jika idle 30 menit. Akibatnya, internal *node-cron* NEXA berhenti berjalan dan *cold-start wake* (hingga 45 detik) memicu *timeout* pada webhook Telegram (ambang 5-10 detik).
+  2. **Hard Max-Run 8 Jam (480 Menit)**: Meskipun diberi *traffic* terus-menerus via cron, mesin dipaksa mati setiap 8 jam.
+  3. **Hukuman Cooldown Lockout Bertingkat**: Setelah mati paksa 8 jam, mesin terkunci total (`409 machine_cooldown`) selama 15-20 menit (siklus 1), 60-75 menit (siklus 2), dan 120-135 menit (siklus 3+). Selama masa ini, webhook Telegram mati total.
+  4. **Status Kelayakan**: Sangat bagus sebagai lab sandbox eksperimen, namun tidak layak sebagai server produksi 24/7.
+
+---
+
 ## 📊 Kesimpulan Engineering & Realita Cloud 2026
 
-1. **Pengetatan Free-Tier Global:** Sejak 2024–2026, hampir seluruh penyedia infrastruktur cloud global (PaaS/VPS) telah menutup akses *pure-anonymous free tier* untuk mencegah botnet dan penyalahgunaan AI scraping. Kartu debit/kredit dijadikan instrumen utama verifikasi identitas (KYC).
+1. **Pengetatan Free-Tier Global:** Sejak 2024-2026, hampir seluruh penyedia infrastruktur cloud global (PaaS/VPS) telah menutup akses *pure-anonymous free tier* untuk mencegah botnet dan penyalahgunaan AI scraping. Kartu debit/kredit dijadikan instrumen utama verifikasi identitas (KYC).
 2. **Kebutuhan Nyata N.E.X.A:**
    * N.E.X.A Core **hanya membutuhkan daya komputasi ringan** (~70MB RAM, 0.1 vCPU).
    * Namun N.E.X.A **memerlukan URL HTTPS Statis Permanen** agar webhook dua arah (Telegram Bot, Nexa Mobile Bridge Android, dan Cron Health Check) dapat bekerja tanpa putus.
@@ -99,8 +125,8 @@ Dokumen ini mencatat secara menyeluruh hasil riset, uji coba *deployment*, serta
 ## 🛣️ Rekomendasi Solusi Berkelanjutan
 
 Jika ingin mendapatkan server/VPS permanen tanpa terbentur limitasi gratisan yang tidak stabil:
-1. **Opsi Kartu Debit Virtual (VCC / Bank Digital):** Menggunakan kartu debit bank digital Indonesia (seperti Bank Jago, Jenius BTPN, atau Seabank) yang memiliki saldo minimal Rp 20.000–50.000 untuk melewati verifikasi otorisasi $1 di platform kelas dunia seperti **Render.com** atau **Oracle Cloud Always Free (4 Core, 24GB RAM Gratis Selamanya)**.
-2. **Opsi Dedicated VPS Murah / Lokal:** Menyewa VPS Linux unmanaged termurah (misal: IDCloudHost, DomaiNesia, RackNerd seharga ~Rp 15.000–30.000/bulan) via pembayaran QRIS/GoPay/DANA tanpa memerlukan kartu kredit.
+1. **Opsi Kartu Kredit Agunan Deposito (Secured CC):** Menggunakan Secured Credit Card bank resmi (BCA / CIMB Niaga) atau kartu kredit fintech resmi (Honest Card) untuk membuka akses Oracle Cloud Always Free selamanya.
+2. **Opsi Dedicated VPS Murah / Lokal:** Menyewa VPS Linux unmanaged termurah (misal: IDCloudHost, DomaiNesia, RackNerd seharga ~Rp 15.000-30.000/bulan) via pembayaran QRIS/GoPay/DANA tanpa memerlukan kartu kredit.
 3. **Opsi KVM Community VPS:** Memanfaatkan layanan KVM berbasis autentikasi Telegram murni seperti **Hax.co.id** dengan konfigurasi *Cloudflare Tunnel* untuk routing IPv4.
 
 ---

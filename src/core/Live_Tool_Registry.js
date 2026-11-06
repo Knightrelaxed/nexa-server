@@ -518,7 +518,7 @@ const LIVE_TOOL_DECLARATIONS = [
       type: 'OBJECT',
       properties: {
         direction: { type: 'STRING', description: 'Arah gulir: "DOWN" (gulir ke bawah) atau "UP" (gulir ke atas).' },
-        amount:    { type: 'NUMBER', description: 'Jumlah ketukan putaran roda mouse (default: 3).' },
+        amount:    { type: 'NUMBER', description: 'Jumlah ketukan putaran roda mouse (default: 6 untuk setengah layar web, 10-12 untuk satu layar penuh, 3 untuk sedikit).' },
         x:         { type: 'NUMBER', description: 'Koordinat horizontal (0-1000) target area yang ingin digulir (opsional).' },
         y:         { type: 'NUMBER', description: 'Koordinat vertikal (0-1000) target area yang ingin digulir (opsional).' }
       },
@@ -614,10 +614,13 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 31. WINDOW MANAGEMENT: CLOSE WINDOW ───────────────────────
   {
     name: 'closeWindow',
-    description: 'Menutup SELURUH jendela aplikasi aktif secara aman (graceful close via WM_CLOSE). Panggil HANYA saat Tuan secara eksplisit meminta menutup program/aplikasi, bukan saat menutup tab browser. Untuk menutup tab browser, gunakan closeTab.',
+    description: 'Menutup jendela aplikasi secara aman (graceful close via WM_CLOSE). Dapat menutup jendela aktif saat ini, jendela aplikasi spesifik berdasarkan nama/judul (misal: "Chrome", "Notepad"), atau menutup semua jendela aplikasi sekaligus kecuali aplikasi tertentu (misal: "tutup semua kecuali File Explorer"). Jangan gunakan ini untuk menutup tab browser tunggal (gunakan closeTab).',
     parameters: {
       type: 'OBJECT',
-      properties: {}
+      properties: {
+        target: { type: 'STRING', description: 'Judul atau nama aplikasi yang ingin ditutup (contoh: "Chrome", "Notepad", atau "ALL" jika ingin menutup semua jendela aplikasi).' },
+        except: { type: 'STRING', description: 'Nama jendela/aplikasi yang dikecualikan agar TIDAK ditutup saat menutup banyak jendela (contoh: "File Explorer", "Explorer", "Chrome").' }
+      }
     }
   },
 
@@ -2027,14 +2030,18 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
       // 31. WINDOW MANAGEMENT: CLOSE WINDOW
       // ─────────────────────────────────────────────────────────────
       case 'closeWindow': {
+        const payload = {};
+        if (args?.target) payload.target = String(args.target).trim();
+        if (args?.except) payload.except = String(args.except).trim();
+
         const res = await _withToolTimeout(
-          windowsBridge.sendCommand('CLOSE_WINDOW', {}, { timeoutMs: 6000 }),
+          windowsBridge.sendCommand('CLOSE_WINDOW', payload, { timeoutMs: 6000 }),
           7000
         );
         return {
           status: res?.success ? 'SUCCESS' : 'FAILED',
           action: 'closeWindow',
-          result: res?.message || (res?.success ? 'Jendela aktif berhasil ditutup.' : 'Gagal menutup jendela aktif.')
+          result: res?.message || (res?.success ? 'Jendela berhasil ditutup.' : 'Gagal menutup jendela.')
         };
       }
 

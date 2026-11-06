@@ -62,20 +62,37 @@ Sebelum memulai proses migrasi, pastikan hal-hal berikut telah siap:
 
 ---
 
-## 4. Panduan Registrasi Akun OCI & Kartu Debit
+## 4. Panduan Registrasi Akun OCI & Kebijakan Kartu Pembayaran
 
-### A. Rekomendasi Kartu Bank Indonesia yang Terbukti Berhasil
-1. **Bank Jago (Debit Visa):** Aktifkan fitur pembayaran internasional di aplikasi Jago.
-2. **Jenius BTPN (m-Card Visa):** Pastikan limit transaksi e-Commerce internasional aktif.
-3. **BCA (Debit Mastercard):** Pastikan fitur transaksi debit online internasional sudah aktif di aplikasi myBCA / BCA Mobile.
-4. **Bank Mandiri (Debit Visa/Mastercard):** Pastikan fitur online payment aktif.
+### A. Kebijakan Resmi Verifikasi 2-Tahap OCI (Hasil Konfirmasi Tim Support Oracle)
+Berdasarkan verifikasi langsung dengan staf teknis Oracle (November 2026), pendaftaran OCI Free Tier menerapkan sistem verifikasi **2 tahap beruntun**:
 
-### B. Tips Registrasi Penting
-* **Kesesuaian Data Identitas:** Nama lengkap, alamat rumah, kota, dan kode pos pada form pendaftaran Oracle **wajib sama persis** dengan data identitas buku tabungan / rekening bank Anda.
-* **Saldo Minimal:** Siapkan saldo minimal Rp 30.000 di dalam rekening untuk proses verifikasi otorisasi $1.
-* **Pemilihan Home Region:**  
-  PILIH **Singapore (`ap-singapore-1`)** atau **Tokyo / Sydney**.  
-  *Catatan:* Region Singapore memiliki latensi tercepat ke Indonesia (~15 hingga 25 ms), sangat mendekati latensi lokal Azure Jakarta.
+1. **Tahap 1: Validasi Bank (Bank Validation)**:
+   * Sistem mendebit dana otorisasi sementara $1 USD (~Rp 20.361).
+   * Kartu apa pun yang aktif dan memiliki saldo (termasuk Debit Bank Jago fisik) akan **lolos** dan memunculkan centang hijau.
+2. **Tahap 2: Validasi Kebijakan Oracle (Oracle Policy Validation)**:
+   * Sistem internal CyberSource memvalidasi tipe kartu ke jaringan Visa/Mastercard.
+   * **Aturan Mutlak**: Kartu debit tabungan murni tanpa fasilitas pinjaman/kredit (*pre-approved credit limit*) **DITOLAK OTOMATIS** dengan error *"Oops, we're sorry, an error occurred while creating your account"*.
+   * Kartu **WAJIB** berupa Kartu Kredit fisik murni (*Credit Card*) atau kartu yang memiliki fungsi kredit aktif dari bank.
+
+### B. Alternatif Kartu yang Terbukti Lolos di Indonesia
+1. **Secured Credit Card (Kartu Kredit Jaminan Deposito)**:
+   * Paling direkomendasikan untuk mahasiswa / freelancer tanpa slip gaji.
+   * Contoh: **BCA Everyday Card (Secured)** atau **CIMB Niaga**. Cukup tempatkan saldo jaminan deposito (Rp 1-3 juta), bank langsung menerbitkan Kartu Kredit fisik resmi atas nama Anda. Nomor BIN terdaftar 100% sebagai *True Credit Card*.
+2. **Kartu Kredit Fintech Resmi OJK**:
+   * **Honest Card (Mastercard)**: Pendaftaran full digital via aplikasi HP, diterbitkan kartu kredit fisik resmi terdaftar OJK.
+   * **YUP Card**: Kartu fisik dengan fasilitas limit kredit perbankan (*pre-approved credit line*).
+3. **Kartu Kredit Keluarga / Orang Tua**:
+   * Menggunakan kartu kredit utama keluarga (BCA, Mandiri, BRI, BNI), dengan syarat nama akun Oracle disesuaikan dengan nama pemilik kartu.
+
+### C. Format Standar Alamat (Address Matching)
+Sistem Address Verification System (AVS) internasional mewajibkan alamat pada form Oracle cocok dengan data korespondensi bank tanpa karakter khusus:
+* **Address Line 1**: `Sered` (atau nama desa/jalan singkat tanpa simbol garis miring `/`)
+* **Address Line 2**: `Madukara` (Kecamatan, atau kosongkan)
+* **City**: `Banjarnegara` (Kabupaten bertindak sebagai "City")
+* **Province**: `Jawa Tengah` (atau biarkan kosong jika opsional)
+* **Postal Code / ZIP**: `53482` (Kode pos 5 digit resmi)
+* **Home Region**: PILIH **Singapore (`ap-singapore-1`)** untuk latensi terendah ke Indonesia (~15-25 ms).
 
 ---
 
