@@ -447,8 +447,19 @@ export function RecordsView() {
                         > = []
                         const processedGroupIds = new Set<string>()
 
+                        const isTransferGroup = (groupId: string) => {
+                          return items.some(x => 
+                            x.split_group_id === groupId && (
+                              x.type === 'transfer' ||
+                              x.split_label === 'transfer_out' ||
+                              x.split_label === 'transfer_in' ||
+                              x.split_label === 'admin_fee'
+                            )
+                          )
+                        }
+
                         for (const t of items) {
-                          if (t.split_group_id && t.type !== 'transfer') {
+                          if (t.split_group_id && !isTransferGroup(t.split_group_id)) {
                             if (!processedGroupIds.has(t.split_group_id)) {
                               processedGroupIds.add(t.split_group_id)
                               const groupItems = items.filter(x => x.split_group_id === t.split_group_id)

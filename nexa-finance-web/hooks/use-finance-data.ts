@@ -255,12 +255,26 @@ export function useTransactions(filters?: TransactionFilters): UseTransactionsRe
     }, 0);
   }, [transactions, filters]);
 
-  // displayCount: split groups count as 1, not N
+  // displayCount: split groups count as 1, not N; transfers & admin fees count individually
   const displayCount = useMemo(() => {
+    const transferGroupIds = new Set<string>();
+    for (const tx of transactions) {
+      if (
+        tx.split_group_id && (
+          tx.type === 'transfer' ||
+          tx.split_label === 'transfer_out' ||
+          tx.split_label === 'transfer_in' ||
+          tx.split_label === 'admin_fee'
+        )
+      ) {
+        transferGroupIds.add(tx.split_group_id);
+      }
+    }
+
     const seenGroups = new Set<string>();
     let count = 0;
     for (const tx of transactions) {
-      if (tx.split_group_id && tx.type !== 'transfer') {
+      if (tx.split_group_id && !transferGroupIds.has(tx.split_group_id)) {
         if (!seenGroups.has(tx.split_group_id)) {
           seenGroups.add(tx.split_group_id);
           count++;

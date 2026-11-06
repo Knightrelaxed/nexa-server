@@ -293,6 +293,24 @@ export async function deleteTransaction(txId: string): Promise<void> {
 export async function deleteTransactions(txIds: string[]): Promise<void> {
   if (txIds.length === 0) return;
 
+  // Find if any selected transaction has a split_group_id
+  const { data: rows } = await supabase
+    .from('transactions')
+    .select('id, split_group_id')
+    .in('id', txIds);
+
+  const groupIds = (rows ?? [])
+    .map(r => r.split_group_id)
+    .filter((g): g is string => Boolean(g));
+
+  if (groupIds.length > 0) {
+    const { error: groupErr } = await supabase
+      .from('transactions')
+      .delete()
+      .in('split_group_id', groupIds);
+    if (groupErr) throw groupErr;
+  }
+
   const { error } = await supabase
     .from('transactions')
     .delete()
