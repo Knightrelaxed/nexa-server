@@ -577,7 +577,7 @@ export function DashboardView() {
                       <p className="truncate text-[12px] font-semibold">{t.category_name}</p>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <div className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#22d3ee] shrink-0" />
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: t.account_color || "#22d3ee" }} />
                           <span className="text-[10px] text-muted-foreground truncate">{t.account_name}</span>
                         </div>
                         {t.payment_method && (() => {

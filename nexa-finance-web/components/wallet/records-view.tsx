@@ -512,12 +512,15 @@ export function RecordsView() {
                                 {/* Category + User */}
                                 <div className="flex-1 sm:flex-none sm:w-[130px] min-w-0">
                                   <p className="text-[13px] font-semibold truncate">{t.category_name}</p>
-                                  <p className="text-[11px] text-muted-foreground truncate">{t.account_name}</p>
+                                  <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
+                                    <span className="sm:hidden w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: t.account_color || "#22d3ee" }} />
+                                    {t.account_name}
+                                  </p>
                                 </div>
 
                                 {/* Account */}
                                 <div className="hidden sm:flex items-center gap-1.5 w-[140px] shrink-0 min-w-0">
-                                  <span className="w-2 h-2 rounded-full bg-[#22d3ee] shrink-0" />
+                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.account_color || "#22d3ee" }} />
                                   <span className="text-[12px] text-muted-foreground truncate">{t.account_name}</span>
                                 </div>
 
@@ -593,9 +596,12 @@ export function RecordsView() {
                                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700 shrink-0">
                                         ✂️ {groupItems.length} item
                                       </span>
-                                      <p className="text-[11px] text-muted-foreground truncate">
-                                        {firstTx.account_name}
-                                      </p>
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: firstTx.account_color || "#22d3ee" }} />
+                                        <p className="text-[11px] text-muted-foreground truncate">
+                                          {firstTx.account_name}
+                                        </p>
+                                      </div>
                                     </div>
                                   </div>
 

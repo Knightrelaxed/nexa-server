@@ -167,7 +167,7 @@ export async function fetchTransactions(
     .select(
       `
       *,
-      accounts!transactions_account_id_fkey ( name ),
+      accounts!transactions_account_id_fkey ( name, color ),
       categories!transactions_category_id_fkey ( name, icon_key, icon_bg, icon_color, color_hex, group_name )
       `
     );
@@ -234,6 +234,7 @@ export async function fetchTransactions(
     payment_method: row.payment_method ?? null,
     created_at: row.created_at,
     account_name: row.accounts?.name ?? '',
+    account_color: row.accounts?.color ?? null,
     category_name: row.categories?.name ?? '',
     category_icon_key: row.categories?.icon_key ?? '',
     category_icon_bg: row.categories?.icon_bg ?? null,

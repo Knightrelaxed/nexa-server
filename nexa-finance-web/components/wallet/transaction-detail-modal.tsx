@@ -111,7 +111,7 @@ export function TransactionDetailModal({ transaction, onClose, onEdit, onDelete 
             <div className="flex flex-col gap-1">
               <span className="text-slate-500">Akun</span>
               <span className="font-semibold text-slate-800 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#22d3ee] shrink-0" />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: transaction.account_color || "#22d3ee" }} />
                 {transaction.account_name}
               </span>
             </div>

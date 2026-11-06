@@ -62,6 +62,7 @@ export interface AccountWithBalance extends DbAccount {
 /** Transaction row joined with account and category details */
 export interface TransactionWithDetails extends DbTransaction {
   account_name: string;
+  account_color?: string | null;
   category_name: string;
   category_icon_key: string;
   category_icon_bg: string | null;
