@@ -681,15 +681,26 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
     const adminFmt = `Rp${adminFeeNum.toLocaleString('id-ID')}`;
     const totalTerpotongNum = (nominalNum || 0) + adminFeeNum;
     const totalTerpotongFmt = `Rp${totalTerpotongNum.toLocaleString('id-ID')}`;
-    const targetDest = tx.destination && tx.destination !== 'Unknown' ? tx.destination : 'Tujuan';
-    const adminNoteDisplay = `Biaya admin transfer ke ${targetDest}`;
+    let targetDest = (tx.destination && tx.destination !== 'Unknown' && tx.destination !== 'Tujuan')
+      ? tx.destination
+      : null;
+
+    if (!targetDest && (displayDesc || tx.description)) {
+      const srcText = displayDesc || tx.description || '';
+      const mDest = srcText.match(/(?:ke|kpd|kepada)\s+([a-zA-Z0-9\s]+?)(?:\s+(?:untuk|buat|pake|via|sebesar|dari)|$)/i);
+      if (mDest && mDest[1]) {
+        targetDest = mDest[1].trim();
+      }
+    }
+    const finalDest = targetDest || 'Pihak Luar';
+    const adminNoteDisplay = targetDest ? `Biaya admin transfer ke ${targetDest}` : `Biaya admin transaksi`;
 
     return `💸 <b>${sourceLabel}</b>\n\n` +
       `<b>No:</b> [Auto]\n` +
       `<b>Tanggal:</b> ${dateStr}\n` +
       `<b>Waktu:</b> ${timeStr}\n` +
       `<b>Tipe:</b> Pengeluaran (Transfer Keluar)\n` +
-      `<b>Tujuan:</b> ${targetDest}\n` +
+      `<b>Tujuan:</b> ${finalDest}\n` +
       `<b>Kategori:</b> ${displayCategory}\n` +
       `<b>Akun:</b> ${tx.account || 'Belum dipilih'}\n` +
       `<b>Metode:</b> ${tx.payment_method || 'Transfer bank'}\n` +

@@ -180,8 +180,16 @@ async function processTransaction(data, source) {
     }
 
     if (adminFeeNum > 0 && !isIncome) {
-      const targetDest = dest || (finalDesc.replace(/^Transfer\s+ke\s+/i, '') || 'tujuan');
-      const adminDesc = `Biaya admin transfer ke ${targetDest}`;
+      let targetDest = (dest && dest !== 'Unknown' && dest !== 'Tujuan' && dest !== 'tujuan') ? dest : null;
+      if (!targetDest && finalDesc) {
+        const mDest = finalDesc.match(/(?:ke|kpd|kepada)\s+([a-zA-Z0-9\s]+?)(?:\s+(?:untuk|buat|pake|via|sebesar|dari)|$)/i);
+        if (mDest && mDest[1]) {
+          targetDest = mDest[1].trim();
+        } else if (finalDesc !== '-') {
+          targetDest = finalDesc.replace(/^Transfer\s+ke\s+/i, '').trim();
+        }
+      }
+      const adminDesc = targetDest ? `Biaya admin transfer ke ${targetDest}` : `Biaya admin transaksi`;
       const adminResult = await supabaseFinance.writeTransaction({
         txType:        'EXPENSE',
         nominal:       adminFeeNum,
