@@ -5,7 +5,7 @@ import {
   Search, ChevronLeft, ChevronRight, Filter, ChevronDown,
   Settings2, Plus, X, SlidersHorizontal, RotateCcw,
   ListChecks, Pencil, Trash2, Copy, FileOutput, Scissors,
-  RefreshCw, ArrowLeftRight
+  RefreshCw, ArrowLeftRight, FileSpreadsheet, FileCode
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -89,7 +89,7 @@ export function RecordsView() {
   }
 
 
-  const { loading, grouped, totalAmount, displayCount, refetch } = useTransactions(filters)
+  const { loading, transactions = [], grouped, totalAmount, displayCount, refetch } = useTransactions(filters)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const handleRefresh = async () => {
@@ -126,8 +126,8 @@ export function RecordsView() {
   }, [filters])
 
   const allRecordIds = useMemo(() => {
-    return Object.values(grouped).flat().map(t => t.id)
-  }, [grouped])
+    return (transactions || []).map(t => t.id)
+  }, [transactions])
 
   const isAllSelected = allRecordIds.length > 0 && selectedIds.size === allRecordIds.length
   const isAnySelected = selectedIds.size > 0
@@ -171,7 +171,7 @@ export function RecordsView() {
   const handleEdit = async () => {
     if (selectedIds.size !== 1) return
     const id = Array.from(selectedIds)[0]
-    const tx = Object.values(grouped).flat().find(t => t.id === id)
+    const tx = (transactions || []).find(t => t.id === id)
     if (!tx) return
 
     if (tx.type === 'transfer' || tx.isTransferGroup) {
@@ -186,8 +186,8 @@ export function RecordsView() {
   const selectedTx = useMemo(() => {
     if (selectedIds.size !== 1) return null
     const id = Array.from(selectedIds)[0]
-    return Object.values(grouped).flat().find(t => t.id === id) || null
-  }, [selectedIds, grouped])
+    return (transactions || []).find(t => t.id === id) || null
+  }, [selectedIds, transactions])
 
   const isSelectedTransfer = selectedTx?.type === 'transfer' || Boolean(selectedTx?.isTransferGroup)
 
@@ -212,7 +212,7 @@ export function RecordsView() {
     }
 
     // Ambil data transaksi yang dipilih
-    const allTxs = Object.values(grouped).flat()
+    const allTxs = transactions || []
     const selectedTxs = allTxs.filter(t => selectedIds.has(t.id))
     
     if (selectedTxs.length < 2) return
@@ -246,6 +246,186 @@ export function RecordsView() {
         toast.error("Gagal mengatasi duplikasi")
       }
     }, "Lanjutkan")
+  }
+
+  const handleExport = (format: 'csv' | 'json') => {
+    const allTxs = transactions || []
+    if (allTxs.length === 0) {
+      toast.error("Tidak ada catatan untuk diekspor")
+      return
+    }
+
+    // Jika ada catatan yang dicentang, ekspor catatan terpilih.
+    // Jika tidak ada yang dicentang, otomatis ekspor SELURUH catatan pada tampilan/filter saat ini!
+    const isSelectedOnly = selectedIds.size > 0
+    const targetTxs = isSelectedOnly
+      ? allTxs.filter(t => selectedIds.has(t.id))
+      : allTxs
+
+    if (targetTxs.length === 0) return
+
+    // Urutkan transaksi dari yang paling baru secara stabil (tanggal + waktu normalisasi)
+    const exportTxs = [...targetTxs].sort((a, b) => {
+      const ta = (a.transaction_time || '00:00:00').replace('.', ':')
+      const tb = (b.transaction_time || '00:00:00').replace('.', ':')
+      const da = `${a.transaction_date} ${ta}`
+      const db = `${b.transaction_date} ${tb}`
+      return db.localeCompare(da)
+    })
+
+    const periodLabel = (period?.label || 'Semua').replace(/[^\w\d-_]/g, '_')
+    const scopeTag = isSelectedOnly ? `${exportTxs.length}_terpilih` : `${exportTxs.length}_semua`
+    const fileName = `NEXA_Catatan_${periodLabel}_${scopeTag}.${format}`
+
+    if (format === 'csv') {
+      const BOM = '\uFEFF' // UTF-8 Byte Order Mark agar Microsoft Excel di Windows membaca pemisah kolom & teks Indonesia secara sempurna
+      const headers = [
+        'No',
+        'Tanggal',
+        'Waktu',
+        'Tipe',
+        'Akun',
+        'Kategori',
+        'Grup Kategori',
+        'Deskripsi',
+        'Metode Pembayaran',
+        'Nominal (IDR)',
+        'Arus Kas (IDR)',
+        'Status Split',
+        'ID Transaksi',
+        'ID Grup Split'
+      ]
+
+      const escapeCsv = (val: unknown, isNumeric = false): string => {
+        if (val === null || val === undefined) return ''
+        let str = String(val).trim()
+        if (str === '') return ''
+        // Mitigasi keamanan OWASP: cegah eksekusi formula injection di Excel untuk cell teks
+        if (!isNumeric && str.length > 1 && (str.startsWith('=') || str.startsWith('+') || str.startsWith('-') || str.startsWith('@') || str.startsWith('\t') || str.startsWith('\r'))) {
+          str = `'${str}`
+        }
+        if (str.includes(',') || str.includes(';') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+          return `"${str.replace(/"/g, '""')}"`
+        }
+        return str
+      }
+
+      const rows = exportTxs.map((t, idx) => {
+        const isTransfer = t.type === 'transfer' || Boolean(t.isTransferGroup)
+        const isTransferIn = isTransfer && t.split_label === 'transfer_in'
+        const isTransferOut = isTransfer && (t.split_label === 'transfer_out' || (!t.split_label && t.type === 'transfer'))
+        const typeLabel = isTransfer
+          ? (isTransferIn ? 'Transfer Masuk' : isTransferOut ? 'Transfer Keluar' : 'Transfer Antar-Akun')
+          : (t.type === 'income' ? 'Pemasukan' : 'Pengeluaran')
+        
+        const categoryLabel = isTransfer
+          ? (isTransferIn ? 'Transfer Masuk' : isTransferOut ? 'Transfer Keluar' : 'Transfer Antar-Akun')
+          : (t.category_name || '')
+
+        const categoryGroup = isTransfer ? 'Transfer' : (t.category_group || '')
+
+        let desc = t.description || ''
+        if (t.split_label && t.description && t.split_label !== t.description) {
+          desc = `${t.description} (${t.split_label})`
+        } else if (t.split_label && !t.description) {
+          desc = t.split_label
+        }
+
+        const rawAmount = Math.abs(Number(t.amount) || 0)
+        const signedAmount = (t.type === 'expense' || isTransferOut) ? -rawAmount : rawAmount
+        const splitStatus = t.split_group_id ? (t.split_label || 'Split Item') : ''
+        const formattedTime = t.transaction_time ? t.transaction_time.replace('.', ':').slice(0, 5) : ''
+
+        return [
+          escapeCsv(idx + 1, true),
+          escapeCsv(t.transaction_date),
+          escapeCsv(formattedTime),
+          escapeCsv(typeLabel),
+          escapeCsv(t.account_name || ''),
+          escapeCsv(categoryLabel),
+          escapeCsv(categoryGroup),
+          escapeCsv(desc),
+          escapeCsv(t.payment_method || ''),
+          escapeCsv(rawAmount, true),
+          escapeCsv(signedAmount, true),
+          escapeCsv(splitStatus),
+          escapeCsv(t.id),
+          escapeCsv(t.split_group_id || '')
+        ].join(',')
+      })
+
+      const csvContent = BOM + [headers.join(','), ...rows].join('\r\n')
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast.success(`Berhasil mengekspor ${exportTxs.length} catatan (${isSelectedOnly ? 'terpilih' : 'seluruh halaman'}) ke CSV`)
+    } else if (format === 'json') {
+      const jsonRows = exportTxs.map((t, idx) => {
+        const isTransfer = t.type === 'transfer' || Boolean(t.isTransferGroup)
+        const isTransferIn = isTransfer && t.split_label === 'transfer_in'
+        const isTransferOut = isTransfer && (t.split_label === 'transfer_out' || (!t.split_label && t.type === 'transfer'))
+        const typeLabel = isTransfer
+          ? (isTransferIn ? 'Transfer Masuk' : isTransferOut ? 'Transfer Keluar' : 'Transfer Antar-Akun')
+          : (t.type === 'income' ? 'Pemasukan' : 'Pengeluaran')
+
+        const categoryLabel = isTransfer
+          ? (isTransferIn ? 'Transfer Masuk' : isTransferOut ? 'Transfer Keluar' : 'Transfer Antar-Akun')
+          : (t.category_name || null)
+
+        const categoryGroup = isTransfer ? 'Transfer' : (t.category_group || null)
+
+        let desc = t.description || ''
+        if (t.split_label && t.description && t.split_label !== t.description) {
+          desc = `${t.description} (${t.split_label})`
+        } else if (t.split_label && !t.description) {
+          desc = t.split_label
+        }
+
+        const rawAmount = Math.abs(Number(t.amount) || 0)
+        const signedAmount = (t.type === 'expense' || isTransferOut) ? -rawAmount : rawAmount
+        const formattedTime = t.transaction_time ? t.transaction_time.replace('.', ':').slice(0, 5) : null
+
+        return {
+          no: idx + 1,
+          id: t.id,
+          tanggal: t.transaction_date,
+          waktu: formattedTime,
+          tipe: typeLabel,
+          tipe_sistem: t.type,
+          akun_id: t.account_id,
+          akun: t.account_name,
+          kategori_id: t.category_id,
+          kategori: categoryLabel,
+          grup_kategori: categoryGroup,
+          deskripsi: desc || null,
+          metode_pembayaran: t.payment_method || null,
+          nominal: rawAmount,
+          arus_kas: signedAmount,
+          split_group_id: t.split_group_id || null,
+          split_label: t.split_label || null
+        }
+      })
+
+      const jsonContent = JSON.stringify(jsonRows, null, 2)
+      const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast.success(`Berhasil mengekspor ${exportTxs.length} catatan (${isSelectedOnly ? 'terpilih' : 'seluruh halaman'}) ke JSON`)
+    }
   }
 
   return (
@@ -344,28 +524,36 @@ export function RecordsView() {
                 <div className="flex sm:hidden flex-1 justify-start">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button size="sm" disabled={!isAnySelected} className={cn(
+                      <Button size="sm" disabled={allRecordIds.length === 0} className={cn(
                         "h-8 px-3.5 gap-1.5 rounded-full shadow-sm shrink-0 transition-all",
-                        isAnySelected ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 cursor-not-allowed hover:bg-slate-100"
+                        isAnySelected ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                       )}>
                         <ListChecks className="h-4 w-4" />
                         <ChevronDown className="h-3 w-3 opacity-70" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-48 rounded-xl p-1.5 border-slate-100 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)]">
+                    <DropdownMenuContent align="start" className="w-52 rounded-xl p-1.5 border-slate-100 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)]">
+                      <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {isAnySelected ? `${selectedIds.size} Catatan Terpilih` : `Semua (${allRecordIds.length} Catatan)`}
+                      </div>
+                      <DropdownMenuSeparator className="my-1 bg-slate-100" />
                       <DropdownMenuItem onClick={handleEdit} disabled={selectedIds.size !== 1 || isSelectedTransfer} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-slate-700">
                         <Pencil className="h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toast.success("Fitur ekspor akan segera hadir")} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-orange-500 hover:text-orange-600 hover:bg-orange-50 focus:text-orange-600 focus:bg-orange-50">
-                        <FileOutput className="h-4 w-4" />
-                        Ekspor
+                      <DropdownMenuItem onClick={() => handleExport('csv')} disabled={allRecordIds.length === 0} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 focus:text-emerald-700 focus:bg-emerald-50">
+                        <FileSpreadsheet className="h-4 w-4" />
+                        Export as CSV
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExport('json')} disabled={allRecordIds.length === 0} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 focus:text-blue-700 focus:bg-blue-50">
+                        <FileCode className="h-4 w-4" />
+                        Export as JSON
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="my-1 mx-2 bg-slate-100" />
                       <DropdownMenuItem onClick={handleDelete} disabled={!isAnySelected} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 focus:text-red-600 focus:bg-red-50">
                         <Trash2 className="h-4 w-4" />
                         Hapus
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator className="my-1 mx-2 bg-slate-100" />
                       <DropdownMenuItem onClick={handleDuplicate} disabled={selectedIds.size < 2} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-blue-500 hover:text-blue-600 hover:bg-blue-50 focus:text-blue-600 focus:bg-blue-50">
                         <Copy className="h-4 w-4" />
                         Atasi Duplikasi
@@ -379,9 +567,35 @@ export function RecordsView() {
                   <Button onClick={handleEdit} size="sm" disabled={selectedIds.size !== 1 || isSelectedTransfer} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", (selectedIds.size === 1 && !isSelectedTransfer) ? "bg-[#10b981] hover:bg-[#059669] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100 cursor-not-allowed")}>
                     Edit
                   </Button>
-                  <Button onClick={() => toast.success("Fitur ekspor akan segera hadir")} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", isAnySelected ? "bg-[#f97316] hover:bg-[#ea580c] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
-                    Ekspor
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" disabled={allRecordIds.length === 0} className={cn(
+                        "h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors gap-1", 
+                        isAnySelected 
+                          ? "bg-[#f97316] hover:bg-[#ea580c] text-white shadow-sm" 
+                          : (allRecordIds.length > 0 
+                              ? "bg-slate-100 hover:bg-slate-200 text-slate-700" 
+                              : "bg-slate-100 text-slate-400 hover:bg-slate-100 cursor-not-allowed")
+                      )}>
+                        <span>Ekspor</span>
+                        <ChevronDown className="h-3 w-3 opacity-80" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center" className="w-52 rounded-xl p-1.5 border-slate-100 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)]">
+                      <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {isAnySelected ? `${selectedIds.size} Catatan Terpilih` : `Semua (${allRecordIds.length} Catatan)`}
+                      </div>
+                      <DropdownMenuSeparator className="my-1 bg-slate-100" />
+                      <DropdownMenuItem onClick={() => handleExport('csv')} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-50 focus:bg-slate-50">
+                        <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                        Export as CSV
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleExport('json')} className="gap-2.5 py-2 px-3 cursor-pointer rounded-lg text-[13px] font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-50 focus:bg-slate-50">
+                        <FileCode className="h-4 w-4 text-blue-600" />
+                        Export as JSON
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <Button onClick={handleDelete} size="sm" disabled={!isAnySelected} className={cn("h-7 px-3 text-[11px] font-semibold rounded-full shrink-0 transition-colors", isAnySelected ? "bg-[#ef4444] hover:bg-[#dc2626] text-white" : "bg-slate-100 text-slate-400 hover:bg-slate-100")}>
                     Hapus
                   </Button>
