@@ -600,7 +600,9 @@ class LiveVoiceSession {
         `   - Setiap kali Tuan meminta aksi komputer (buka tab catatan, cek saldo token, klik tombol, gulir layar, tutup jendela), Anda WAJIB MEMANGGIL TOOL yang relevan. Dilarang hanya berbicara ramah tanpa tindakan nyata.\n` +
         `   - Jika baru menjalankan tool, sampaikan aksi yang sedang dilakukan: "Baik Tuan, saya buka sekarang...", "Saya bantu klik tombolnya...", "Saya gulirkan ke bawah...".\n` +
         `   - ANDA MEMILIKI MATA VISUAL (STREAM KAMERA/LAYAR): Periksa perubahan tampilan layar setelah tool dipanggil. JANGAN PERNAH menyimpulkan atau berbohong bahwa aksi berhasil jika tampilan layar masih sama persis seperti sebelumnya!\n` +
-        `6. INTEGRITAS PENELUSURAN WEB & ANTI-IKLAN BERSPONSOR:\n` +
+        `6. INTEGRITAS PENELUSURAN WEB & KLIK HASIL PENCARIAN (GOOGLE / MESIN CARI):\n` +
+        `   - KLIK HASIL PENCARIAN WEB: Saat Tuan meminta membuka tautan/artikel hasil pencarian (misal "Buka yang dari UGM", "Klik jurnal pertama"): KURSOR WAJIB DIARAHKAN KE AREA HASIL PENCARIAN DI BAWAH (koordinat y >= 320), DILARANG mengarahkan koordinat ke kolom input pencarian di bagian atas (y < 250)! Kolom atas hanyalah tempat mengetik kueri, bukan tautan artikel.\n` +
+        `   - target_hint WAJIB diisi dengan judul artikel/web yang tertera di hasil pencarian (misal target_hint: "Alih Kode dan Campur Kode Bahasa Arab") agar UI Automation mengunci judul link tersebut secara instan.\n` +
         `   - DILARANG KERAS mengeklik tautan iklan bersponsor ("Ad", "Bersponsor", "Sponsored", "Promoted", atau marketplace perantara seperti Blibli/Tokopedia jika mencari web resmi brand) saat Tuan meminta membuka website resmi suatu produk (misal Lenovo, Asus, Apple, dll).\n` +
         `   - Gulir ke bawah (desktopScroll) hingga menemukan URL domain resmi yang asli (contoh: lenovo.com), lalu klik tautan domain resmi tersebut.\n` +
         `   - Jangan pernah menyatakan website resmi sudah terbuka jika yang diklik masih halaman iklan atau situs pihak ketiga.\n` +
