@@ -1857,7 +1857,7 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
         if (!targetHint) {
           const lastUserText = getLastUserTurnText();
           if (lastUserText) {
-            const m = lastUserText.match(/(?:klik|buka|pilih|tekan)\s+(?:folder|file|berkas|dokumen|tombol|menu|ikon|tab|link|aplikasi)?\s*([a-zA-Z0-9_\-\. ]+)/i);
+            const m = lastUserText.match(/(?:klik|buka|pilih|tekan|akses|unduh|download|baca|lihat|tampilkan)\s+(?:folder|file|berkas|dokumen|tombol|menu|ikon|tab|link|aplikasi)?\s*([a-zA-Z0-9_\-\. ]+)/i);
             if (m && m[1]) {
               const candidate = m[1].trim();
               if (candidate.length >= 2 && candidate.length <= 60) {
