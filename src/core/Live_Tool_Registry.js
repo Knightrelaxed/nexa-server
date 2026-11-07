@@ -529,12 +529,13 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 25. DESKTOP AUTOMATION: TYPE TEXT ─────────────────────────
   {
     name: 'desktopTypeText',
-    description: 'Mengetikkan teks secara otomatis ke kotak input atau dokumen yang sedang aktif di PC laptop Tuan.',
+    description: 'Mengetikkan teks secara otomatis ke kotak input atau dokumen yang sedang aktif di PC laptop Tuan. Secara default membersihkan teks lama di dalam kotak input (Ctrl+A + Backspace) sebelum mengetik agar kueri baru tidak tercampur dengan ketikan sebelumnya.',
     parameters: {
       type: 'OBJECT',
       properties: {
         text:        { type: 'STRING', description: 'Teks yang akan diketikkan.' },
-        press_enter: { type: 'BOOLEAN', description: 'True jika ingin langsung menekan tombol Enter setelah teks diketik.' }
+        press_enter: { type: 'BOOLEAN', description: 'True jika ingin langsung menekan tombol Enter setelah teks diketik.' },
+        clear_first: { type: 'BOOLEAN', description: 'True (default) untuk menghapus seluruh isi kotak input yang ada sebelum mengetik teks baru. Isi false hanya jika ingin menyambung/menambahkan teks di akhir ketikan lama.' }
       },
       required: ['text']
     }
@@ -543,11 +544,11 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 26. DESKTOP AUTOMATION: PRESS KEY ─────────────────────────
   {
     name: 'desktopPressKey',
-    description: 'Menekan tombol khusus pada keyboard di PC laptop Tuan (seperti Enter, Space, Escape, Tab, Backspace).',
+    description: 'Menekan tombol khusus atau pintasan pada keyboard di PC laptop Tuan (seperti Enter, Space, Escape, Tab, Backspace, Clear_All untuk menghapus seluruh isi kotak teks, Ctrl+J untuk membuka Downloads browser).',
     parameters: {
       type: 'OBJECT',
       properties: {
-        key: { type: 'STRING', description: 'Nama tombol khusus: "ENTER", "SPACE", "ESCAPE", "TAB", "BACKSPACE", "UP", "DOWN", "LEFT", "RIGHT".' }
+        key: { type: 'STRING', description: 'Nama tombol khusus: "ENTER", "SPACE", "ESCAPE", "TAB", "BACKSPACE", "CLEAR_ALL" (Ctrl+A lalu Backspace untuk mengosongkan kolom input), "CTRL+A", "CTRL+C", "CTRL+V", "CTRL+J", "CTRL+L", "UP", "DOWN", "LEFT", "RIGHT".' }
       },
       required: ['key']
     }
@@ -1922,11 +1923,13 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
       case 'desktopTypeText': {
         const text = String(args.text || '');
         if (!text) return { status: 'ERROR', message: 'Teks yang akan diketik tidak boleh kosong.' };
+        const clearFirst = args.clear_first !== undefined ? Boolean(args.clear_first) : true;
         // K3 FIX: Dynamic timeout — 15ms per char + 4s base, capped at 20s
         const typeTimeout = Math.min(4000 + text.length * 15, 20000);
         const res = await windowsBridge.sendCommand('DESKTOP_TYPE_TEXT', {
           text,
-          press_enter: args.press_enter === true
+          press_enter: args.press_enter === true,
+          clear_first: clearFirst
         }, { timeoutMs: typeTimeout });
         return {
           status: res.success ? 'SUCCESS' : 'FAILED',
@@ -1939,8 +1942,17 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
       // 26. DESKTOP AUTOMATION: PRESS KEY
       // ─────────────────────────────────────────────────────────────
       case 'desktopPressKey': {
-        const key = String(args.key || '').toUpperCase();
+        let key = String(args.key || '').toUpperCase().trim();
         if (!key) return { status: 'ERROR', message: 'Nama tombol tidak boleh kosong.' };
+        // Bila model mengirim BACKSPACE/DELETE tunggal saat Tuan meminta menghapus/membersihkan teks pencarian,
+        // otomatis tingkatkan menjadi CTRL+A+BACKSPACE agar seluruh teks di kolom input terhapus tuntas.
+        if (key === 'BACKSPACE' || key === 'DELETE') {
+          const lastUserText = getLastUserTurnText();
+          if (/\b(hapus|bersihkan|kosongkan|ulang|kecampur|salah|ganti|semua)\b/i.test(lastUserText)) {
+            console.log(`[LIVE-TOOL] 🧹 Upgrading single ${key} to CTRL+A+BACKSPACE based on user intent: "${lastUserText}"`);
+            key = 'CTRL+A+BACKSPACE';
+          }
+        }
         // K3 FIX: increased timeout for key press
         const res = await windowsBridge.sendCommand('DESKTOP_PRESS_KEY', {
           key

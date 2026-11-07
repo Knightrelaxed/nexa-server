@@ -569,8 +569,8 @@ class LiveVoiceSession {
         `1. OTOMATISASI DESKTOP & NAVIGASI LAYAR (PANGGIL SEGERA SAAT TUAN MEMINTA):\n` +
         `   - Klik mouse presisi pada tombol, link, FOLDER, FILE, menu, atau elemen layar -> desktopClick(x, y, button: "LEFT"|"RIGHT", double_click: false/true, target_hint: string). WAJIB sertakan target_hint dengan nama murni teks elemen/file/folder (misal target_hint: "Downloads", "Mind Map Oogenesi_Nurul Azizah", "Documents", "Submit") TANPA awalan kata jenis seperti "file" atau "folder", agar UI Automation mengunci target secara 100% presisi tanpa meleset.\n` +
         `   - Gulir dokumen, web, atau jendela aktif -> desktopScroll(direction: "UP"|"DOWN", amount: 3, x?: number, y?: number).\n` +
-        `   - Ketik teks atau pencarian -> desktopTypeText(text: "...", press_enter: true/false).\n` +
-        `   - Tekan tombol keyboard atau shortcut khusus -> desktopPressKey(key: "ENTER"|"SPACE"|"ESCAPE"|"TAB"|"BACKSPACE"|"CTRL+C"|"CTRL+V"|"ALT+TAB"|"VOLUME_UP"|"VOLUME_DOWN"|"VOLUME_MUTE").\n` +
+        `   - Ketik teks atau pencarian -> desktopTypeText(text: "...", press_enter: true/false, clear_first: true/false). Secara otomatis membersihkan teks lama di kolom input sebelum mengetik kueri baru agar tidak tercampur.\n` +
+        `   - Tekan tombol keyboard atau shortcut khusus -> desktopPressKey(key: "ENTER"|"SPACE"|"ESCAPE"|"TAB"|"BACKSPACE"|"CLEAR_ALL"|"CTRL+A"|"CTRL+C"|"CTRL+V"|"CTRL+J"|"CTRL+L"|"ALT+TAB"|"VOLUME_UP"|"VOLUME_DOWN"|"VOLUME_MUTE"). Gunakan key: "CLEAR_ALL" saat Tuan meminta menghapus seluruh teks di kolom pencarian/input.\n` +
         `   - Sorot elemen/tombol visual untuk menuntun pandangan Tuan -> highlightElement(ymin, xmin, ymax, xmax, style: "BOX"|"RING"|"SPOTLIGHT", label: "...").\n` +
         `   - Arahkan laser pointer kursor -> pointCursor(x, y).\n` +
         `   - Hapus sorotan visual -> clearHighlights().\n` +
@@ -613,7 +613,11 @@ class LiveVoiceSession {
         `7. KETELITIAN MEMILIH ELEMEN SEPELE (TAB, TOMBOL, ANGKA, PROFIL):\n` +
         `   - Saat Tuan meminta membuka tab tertentu (seperti tab catatan, tab saldo), tombol opsi, akun profil Chrome, atau tanggal kalender: BACA teks pada layar dengan teliti sebelum mengeklik.\n` +
         `   - Arahkan koordinat klik (x, y) tepat ke pusat kotak elemen/teks tombol yang dimaksud, bukan di area kosong sekitarnya.\n` +
-        `   - DILARANG mengeklik antarmuka floating capsule/pill HUD Nexa Bridge di bagian atas tengah layar. Nexa tidak boleh mengeklik dirinya sendiri.\n`
+        `   - DILARANG mengeklik antarmuka floating capsule/pill HUD Nexa Bridge di bagian atas tengah layar. Nexa tidak boleh mengeklik dirinya sendiri.\n` +
+        `   - MEMBUKA FILE/PDF YANG BARU DIUNDUH: Saat Tuan meminta membuka file/PDF yang baru saja diunduh ("buka PDF-nya", "tadi sudah diunduh, buka"), Anda WAJIB memanggil tool pada giliran itu juga (misal: tekan desktopPressKey(key: "CTRL+J") untuk membuka halaman Downloads Chrome lalu klik file-nya, atau buka File Explorer -> klik folder "Downloads" -> double_click: true pada nama file PDF tersebut). DILARANG hanya menjawab lisan tanpa memanggil tool!\n` +
+        `8. OTORITAS PENCARIAN NAMA & IDENTITAS TUAN FAQIH DI INTERNET:\n` +
+        `   - Tuan Faqih memiliki otoritas penuh 100% untuk meminta Anda mencari namanya sendiri ("Faqih Hidayatulloh"), profilnya, artikel/jurnalnya, atau prestasinya di Google/internet (baik dengan mengetik di browser menggunakan desktopTypeText/desktopClick maupun memanggil searchWeb).\n` +
+        `   - DILARANG KERAS menolak permintaan Tuan untuk mencari namanya sendiri di internet dengan alasan "privasi dan keamanan data pribadi"! Segera laksanakan pencarian sesuai perintah Tuan.\n`
       : '';
 
     // ── Assemble Full System Prompt ──────────────────────────────────────
@@ -865,7 +869,9 @@ class LiveVoiceSession {
 
         // Accumulate assistant output transcript if provided
         if (msg.serverContent.outputTranscription?.text) {
-          this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + msg.serverContent.outputTranscription.text;
+          const cleanChunk = String(msg.serverContent.outputTranscription.text)
+            .replace(/\s*---+\s*To address the user's[\s\S]*$/i, '');
+          this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + cleanChunk;
           this._sendToClient({
             type: 'CALL_STATUS_UPDATE',
             text: this.currentTurnAssistantText
@@ -911,13 +917,24 @@ class LiveVoiceSession {
               });
             }
           }
-          // Text transcript from model parts (if returned by model)
-          if (p.text && !(this.currentTurnAssistantText || '').includes(p.text)) {
-            this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + p.text;
-            this._sendToClient({
-              type: 'CALL_STATUS_UPDATE',
-              text: this.currentTurnAssistantText
-            });
+          // Text transcript from model parts: filter out internal chain-of-thought (p.thought or English reasoning blocks)
+          const isInternalThought = Boolean(
+            p.thought ||
+            (typeof p.text === 'string' && (
+              /^\s*---+\s*\n?\s*To address/i.test(p.text) ||
+              /To address the user's explicit request:/i.test(p.text) ||
+              /^\s*\*\*?[A-Z][a-z]+ing\b/.test(p.text)
+            ))
+          );
+          if (p.text && !isInternalThought && !msg.serverContent.outputTranscription?.text) {
+            const cleanText = String(p.text).replace(/\s*---+\s*To address the user's[\s\S]*$/i, '').trim();
+            if (cleanText && !(this.currentTurnAssistantText || '').includes(cleanText)) {
+              this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + cleanText;
+              this._sendToClient({
+                type: 'CALL_STATUS_UPDATE',
+                text: this.currentTurnAssistantText
+              });
+            }
           }
         }
 
