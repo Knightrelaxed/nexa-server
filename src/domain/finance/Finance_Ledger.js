@@ -223,8 +223,9 @@ async function processTransaction(data, source) {
       });
     } catch (_) { /* Never let behavior logging crash the finance flow */ }
 
-    // [BUDGET ENGINE] Check limits and alert if exceeding thresholds
-    if (!isIncome) {
+    // [BUDGET ENGINE] Check limits and alert if exceeding thresholds (silenced during tests)
+    const isTest = process.env.NODE_ENV === 'test' || (typeof source === 'string' && source.startsWith('TEST'));
+    if (!isIncome && !isTest) {
       try {
         const budgetEngine = require('../Budget_Engine');
         const alertMsg = await budgetEngine.checkAndAlertBudget({

@@ -252,12 +252,12 @@ async function handleFinanceIntent(routingData, context = {}) {
         account: tx.account || null,
         payment_method: tx.payment_method || null
       };
-      const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU');
+      const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU', null, { telegramSent: true });
       if (confirmMsg) {
         replies.push(confirmMsg);
         const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
         const cKey = `${txData.nominal}_${cleanMerch}`;
-        supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
+        await supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
       } else {
         replies.push(`⚠️ Transaksi ${txData.nominal} ke ${txData.destination} tampaknya sudah dicatat atau tertunda.`);
       }
@@ -401,11 +401,11 @@ async function handleFinanceIntent(routingData, context = {}) {
         ? 'PENGELUARAN DENGAN BIAYA ADMIN'
         : 'PENCATATAN KEUANGAN BARU';
     }
-    const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, cardTitle);
+    const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, cardTitle, null, { telegramSent: true });
     if (confirmMsg) {
       const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
       const cKey = `${txData.nominal}_${cleanMerch}`;
-      supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
+      await supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
       return confirmMsg;
     }
     return '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya (duplikat) atau sedang menunggu konfirmasi.';

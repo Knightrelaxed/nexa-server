@@ -109,6 +109,7 @@ async function checkAndAlertBudget(newTransactionData) {
     for (const gid of Object.keys(groups)) {
       const group = groups[gid];
       let alertTriggered = false;
+      let hasOverMilestone = false;
       let statuses = {};
 
       for (const budget of group.budgets) {
@@ -120,17 +121,31 @@ async function checkAndAlertBudget(newTransactionData) {
         const spent = await supabaseFinance.getExpenseSumByCategories(group.categoryIds, start, end);
         const percentage = (spent / budgetAmount) * 100;
         
+        // Reconstruct spend before this transaction to determine if this transaction caused a state transition
+        const prevSpent = Math.max(0, spent - Number(newTransactionData?.nominal || 0));
+        const prevPercentage = budgetAmount > 0 ? (prevSpent / budgetAmount) * 100 : 0;
+
+        // Anti-spam threshold crossing:
+        // Only trigger an alert if this transaction caused the spend to cross into warning (>=80%) or over budget (>=100%)
+        const justCrossedWarning = prevPercentage < 80 && percentage >= 80;
+        const justCrossedOver = prevPercentage < 100 && percentage >= 100;
+
+        if (justCrossedOver) {
+          hasOverMilestone = true;
+          alertTriggered = true;
+        } else if (justCrossedWarning) {
+          alertTriggered = true;
+        }
+
         statuses[budget.period] = {
           spent,
           amount: budgetAmount,
           percentage,
           isOver: percentage >= 100,
-          isWarning: percentage >= 80 && percentage < 100
+          isWarning: percentage >= 80 && percentage < 100,
+          justCrossedWarning,
+          justCrossedOver
         };
-
-        if (percentage >= 80) {
-          alertTriggered = true;
-        }
       }
 
       if (alertTriggered) {
@@ -138,8 +153,12 @@ async function checkAndAlertBudget(newTransactionData) {
         let title = group.groupName === 'GLOBAL' ? '🚨 ALERT ANGGARAN GLOBAL' : `🚨 ALERT ANGGARAN — ${group.groupName.toUpperCase()}`;
         let msg = `${title}\n`;
         
-        const txDesc = newTransactionData.description || newTransactionData.categoryName;
-        msg += `Tuan, setelah transaksi tadi (${formatRp(newTransactionData.nominal)} - ${txDesc}), jatah Anda mencapai batas peringatan.\n\n`;
+        const txDesc = newTransactionData.description || newTransactionData.categoryName || '-';
+        if (hasOverMilestone) {
+          msg += `Tuan, setelah transaksi tadi (${formatRp(newTransactionData.nominal)} - ${txDesc}), pengeluaran Anda telah MELEBIHI batas anggaran (100%)!\n\n`;
+        } else {
+          msg += `Tuan, setelah transaksi tadi (${formatRp(newTransactionData.nominal)} - ${txDesc}), jatah Anda mencapai batas peringatan (80%).\n\n`;
+        }
 
         // Format Daily
         if (statuses['daily']) {

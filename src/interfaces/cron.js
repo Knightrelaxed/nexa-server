@@ -570,8 +570,8 @@ function initCronJobs() {
             }
             console.log(`[WATCHDOG] Tx ${compositeKey} expired (${Math.round(ageMs/60000)}m old). Auto-saving...`);
             await financeEngine.autoSaveFromWatchdog(compositeKey, tx);
-          } else if (!row.telegram_sent) {
-            // Not yet sent to Telegram AND still within 5-min window — resend
+          } else if (!row.telegram_sent && ageMs >= 60 * 1000) {
+            // Not yet sent to Telegram AND grace period elapsed (>= 60s) to prevent race condition with primary sender — rescue resend
             const msg = await financeEngine.buildConfirmationMessage(tx, 'SINKRONISASI KEUANGAN TERBARU');
             await notifyProactive({
               kind: 'pending_transaction_alert',

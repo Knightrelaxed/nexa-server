@@ -1,4 +1,5 @@
 'use strict';
+process.env.NODE_ENV = 'test';
 /**
  * tests/manual_transfer_and_split_resilience.test.js
  * ─────────────────────────────────────────────────────────────────────────────
@@ -424,5 +425,91 @@ test('Finance_Ledger processTransaction: saves 2 linked rows in Supabase for exp
     assert.strictEqual(writtenRows[1].splitLabel, 'admin_fee', 'Must have splitLabel admin_fee');
   } finally {
     supabaseFinance.writeTransaction = originalWrite;
+  }
+});
+
+test('Budget_Engine: Anti-spam milestone crossing alert logic', async () => {
+  const budgetEngine = require('../src/domain/Budget_Engine');
+  const supabaseFinance = require('../src/infrastructure/Supabase_Finance');
+
+  // Mock getBudgets
+  const originalGetBudgets = supabaseFinance.getBudgets;
+  const originalGetExpenseSum = supabaseFinance.getExpenseSumByCategories;
+  const originalGetCategoriesList = supabaseFinance.getCategoriesList;
+
+  supabaseFinance.getBudgets = async () => [
+    {
+      id: 'mock-b-1',
+      period: 'daily',
+      amount: 100000,
+      budget_group_id: null
+    }
+  ];
+  supabaseFinance.getCategoriesList = async () => [];
+
+  try {
+    // Case 1: Transaction takes spend from 50k to 85k (crosses 80% milestone) -> MUST alert
+    supabaseFinance.getExpenseSumByCategories = async () => 85000;
+    const alert80 = await budgetEngine.checkAndAlertBudget({
+      nominal: 35000,
+      description: 'Makan Siang',
+      categoryName: 'Makanan & Minuman'
+    });
+    assert.ok(alert80, 'Should trigger alert when crossing 80%');
+    assert.ok(alert80.includes('batas peringatan (80%)'), 'Should specify warning milestone');
+
+    // Case 2: Transaction takes spend from 85k to 105k (crosses 100% milestone) -> MUST alert
+    supabaseFinance.getExpenseSumByCategories = async () => 105000;
+    const alert100 = await budgetEngine.checkAndAlertBudget({
+      nominal: 20000,
+      description: 'Ngopi',
+      categoryName: 'Makanan & Minuman'
+    });
+    assert.ok(alert100, 'Should trigger alert when crossing 100%');
+    assert.ok(alert100.includes('MELEBIHI batas anggaran (100%)'), 'Should specify exceeded milestone');
+
+    // Case 3: Already over budget at 105k, subsequent transaction of 15k takes spend to 120k -> MUST NOT alert (Anti-spam!)
+    supabaseFinance.getExpenseSumByCategories = async () => 120000;
+    const alertSpam = await budgetEngine.checkAndAlertBudget({
+      nominal: 15000,
+      description: 'Grab Food',
+      categoryName: 'Makanan & Minuman'
+    });
+    assert.strictEqual(alertSpam, null, 'Should NOT spam alerts when already over budget');
+  } finally {
+    supabaseFinance.getBudgets = originalGetBudgets;
+    supabaseFinance.getExpenseSumByCategories = originalGetExpenseSum;
+    supabaseFinance.getCategoriesList = originalGetCategoriesList;
+  }
+});
+
+test('Finance_Confirmations: requestTransactionConfirmation respects telegramSent option', async () => {
+  const { requestTransactionConfirmation } = require('../src/domain/finance/Finance_Confirmations');
+  const supabase = require('../src/infrastructure/Supabase_Memories');
+
+  let savedRow = null;
+  const originalSave = supabase.savePendingTransaction;
+  supabase.savePendingTransaction = async (key, tx, telegramSent) => {
+    savedRow = { key, tx, telegramSent };
+  };
+
+  try {
+    const txData = {
+      nominal: 25000,
+      destination: 'Test Cafe',
+      category: 'Makanan & Minuman',
+      type: 'EXPENSE',
+      time: new Date().toISOString()
+    };
+
+    // When called from manual chat with { telegramSent: true }
+    await requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU', 'test_key_ts_1', { telegramSent: true });
+    assert.ok(savedRow, 'Must save pending row');
+    assert.strictEqual(savedRow.telegramSent, true, 'telegramSent must be true when passed in options');
+
+    // Clean up memory
+    await financeEngine.confirmPendingTransactions(false);
+  } finally {
+    supabase.savePendingTransaction = originalSave;
   }
 });

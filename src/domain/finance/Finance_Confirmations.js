@@ -857,7 +857,8 @@ async function _autoSavePending(compositeKey, tx) {
  * Does NOT send to Telegram itself — the caller (webhook.js) handles delivery.
  * Waits 5 minutes before auto-saving.
  */
-async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN KEUANGAN BARU', customKey = null) {
+async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN KEUANGAN BARU', customKey = null, options = {}) {
+  const isTelegramSent = typeof options === 'boolean' ? options : !!options.telegramSent;
   const nominal = txData.nominal;
   const destination = txData.destination || 'Unknown';
 
@@ -907,8 +908,8 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
     } catch (_) {}
   }
 
-  // 2. Persist to Supabase FIRST (telegram_sent = false)
-  await supabase.savePendingTransaction(compositeKey, tx, false);
+  // 2. Persist to Supabase FIRST
+  await supabase.savePendingTransaction(compositeKey, tx, isTelegramSent);
 
   // 3. Build message
   const msg = await _buildConfirmationMessage(tx, sourceLabel);
