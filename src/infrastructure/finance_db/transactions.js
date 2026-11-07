@@ -93,7 +93,7 @@ async function writeTransaction({ txType, nominal, categoryName, accountName, de
   // Resolve secara paralel untuk efisiensi
   const [accountId, categoryId] = await Promise.all([
     resolveAccountId(accountName),
-    resolveCategoryId(categoryName, txType)
+    resolveCategoryId(categoryName, txType, description)
   ]);
 
   if (!accountId) {
@@ -406,7 +406,7 @@ async function writeTransferPair({
   const [fromAccountId, toAccountId, categoryId, adminCategoryId] = await Promise.all([
     resolveAccountId(fromAccountName),
     resolveAccountId(toAccountName),
-    resolveCategoryId(categoryName, 'EXPENSE'),
+    resolveCategoryId(categoryName, 'EXPENSE', description),
     cleanAdminFee > 0 ? resolveCategoryId('Biaya Admin / Layanan', 'EXPENSE') : Promise.resolve(null)
   ]);
 

@@ -96,6 +96,7 @@ INTERNAL ANALYSIS RULES (DO NOT INCLUDE IN YOUR OUTPUT):
 CRITICAL DISAMBIGUATION RULES (SUPER STRICT):
 1. EXACT NAME MATCHING: You MUST ONLY copy one category name from the list above EXACTLY (case-sensitive, spaces, symbols). IT IS STRICTLY FORBIDDEN to invent new categories (forbidden examples: "Makanan & Minuman", "Perawatan & Kecantikan", etc., if they are not in the list).
 2. SEMANTIC REASONING: If the purchased item/service lacks an exact category, find the CLOSEST match from the active list.
+   - Debt & Loans examples: Paying debt / bayar hutang / cicilan → "Cicilan / Hutang". Lending money / pinjamkan uang → "Memberi Pinjaman / Piutang".
    - Food examples: Nasi ayam, sate, etc. → "Makan Berat / Makan Luar". Kopi, boba, camilan → "Jajan / Ngopi / Kafe".
    - Service examples: Paying for laundry/cuci baju → "Jasa Laundry".
    - Transportation examples: Grab/Gojek → "Ojek / Taksi Online" or "Transportasi Umum".

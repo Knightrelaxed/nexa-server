@@ -131,15 +131,20 @@ function _fuzzyScore(query, target) {
   const qTokens = qNorm.split(' ').filter(t => t.length > 1);
   const tTokens = tNorm.split(' ').filter(t => t.length > 1);
 
+  // Hapus kata kerja umum / stopword dari query saat mencocokkan kategori agar tidak mendilusi skor
+  const STOPWORDS = new Set(['bayar', 'beli', 'pembayaran', 'pembelian', 'biaya', 'ongkos', 'untuk', 'dan', 'ke', 'dari', 'keperluan']);
+  const significantQTokens = qTokens.filter(t => !STOPWORDS.has(t));
+  const tokensToMatch = significantQTokens.length > 0 ? significantQTokens : qTokens;
+
   let matched = 0;
-  for (const qt of qTokens) {
+  for (const qt of tokensToMatch) {
     if (tTokens.some(tt => tt.includes(qt) || qt.includes(tt))) {
       matched++;
     }
   }
 
-  if (qTokens.length === 0) return 0;
-  return Math.round((matched / qTokens.length) * 60);
+  if (tokensToMatch.length === 0) return 0;
+  return Math.round((matched / tokensToMatch.length) * 60);
 }
 
 /**
@@ -213,22 +218,78 @@ async function resolveAccount(accountName) {
  * @param {string} txType       - "INCOME" atau "EXPENSE"
  * @returns {Promise<string|null>} UUID kategori, atau null jika tidak ditemukan
  */
-async function resolveCategoryId(categoryName, txType) {
-  if (!categoryName) return null;
+async function resolveCategoryId(categoryName, txType, description = '') {
+  if (!categoryName && !description) return null;
   const categories = await _loadCategories();
   if (!categories.length) return null;
 
   const dbType = (txType || '').toUpperCase() === 'INCOME' ? 'income' : 'expense';
-
-  // Filter hanya kategori dengan tipe yang sesuai
   const filtered = categories.filter(c => c.type === dbType);
 
-  // Cari skor terbaik di kategori yang relevan
+  const normCat = _normalize(categoryName);
+  const normDesc = _normalize(description);
+  const combined = `${normCat} ${normDesc}`.trim();
+
+  // 1. Heuristik Semantik Khusus (Hutang / Piutang / Cicilan / Pinjaman)
+  if (/\b(hutang|utang|cicil|cicilan|kredit|pinjam|pinjaman|pinjem|pinjemin|piutang)\b/i.test(combined)) {
+    if (dbType === 'expense') {
+      if (/\b(pinjam|pinjaman|pinjem|pinjemin|piutang|kasih\s*pinjam)\b/i.test(combined) && !/\b(bayar|lunas|cicil|cicilan)\b/i.test(combined)) {
+        const catPinjam = filtered.find(c => c.name.toLowerCase().includes('memberi pinjaman'));
+        if (catPinjam) {
+          console.log(`[SUPABASE_FINANCE] resolveCategoryId (Hutang/Piutang Heuristic): "${categoryName}" → "${catPinjam.name}"`);
+          return catPinjam.id;
+        }
+      }
+      const catHutang = filtered.find(c => c.name.toLowerCase().includes('hutang') || c.name.toLowerCase().includes('cicilan'));
+      if (catHutang) {
+        console.log(`[SUPABASE_FINANCE] resolveCategoryId (Hutang/Cicilan Heuristic): "${categoryName}" → "${catHutang.name}"`);
+        return catHutang.id;
+      }
+    } else {
+      const catKembali = filtered.find(c => c.name.toLowerCase().includes('pengembalian hutang'));
+      if (catKembali) {
+        console.log(`[SUPABASE_FINANCE] resolveCategoryId (Kembali Hutang Heuristic): "${categoryName}" → "${catKembali.name}"`);
+        return catKembali.id;
+      }
+    }
+  }
+
+  // 2. Cari skor terbaik di kategori yang relevan berdasarkan categoryName
   let best = { score: 0, id: null, name: null };
   for (const cat of filtered) {
     const score = _fuzzyScore(categoryName, cat.name);
     if (score > best.score) {
       best = { score, id: cat.id, name: cat.name };
+    }
+  }
+
+  // 3. Jika skor belum cukup dan description tersedia, coba cocokkan via description
+  if (best.score < 40 && description) {
+    for (const cat of filtered) {
+      const scoreDesc = _fuzzyScore(description, cat.name);
+      if (scoreDesc > best.score) {
+        best = { score: scoreDesc, id: cat.id, name: cat.name };
+      }
+    }
+  }
+
+  // 4. Jika categoryName yang dikirim ternyata nama group_name (misal AI memilih "Administrasi & Kewajiban")
+  if (best.score < 40 && normCat) {
+    const inGroup = filtered.filter(c => c.group_name && _normalize(c.group_name) === normCat);
+    if (inGroup.length > 0) {
+      if (description) {
+        let bestInGroup = { score: 0, id: null, name: null };
+        for (const cat of inGroup) {
+          const s = _fuzzyScore(description, cat.name);
+          if (s > bestInGroup.score) {
+            bestInGroup = { score: s, id: cat.id, name: cat.name };
+          }
+        }
+        if (bestInGroup.score >= 30) {
+          console.log(`[SUPABASE_FINANCE] resolveCategoryId (Group Match + Desc): "${categoryName}" ("${description}") → "${bestInGroup.name}"`);
+          return bestInGroup.id;
+        }
+      }
     }
   }
 
