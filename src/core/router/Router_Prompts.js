@@ -205,20 +205,10 @@ CRITICAL ROUTING RULES:
 9. REPLY LABELS: [KONTEKS_AKSI] = user wants to act on the referenced item, determine action from their words. [KONTEKS_REFERENSI] = quoted message is reference only, route by user's own words (usually NORMAL_CHAT).
 10. SEMANTIC CATEGORY MAPPING (FINANCE):
     WAJIB DAN HARUS HANYA MENGGUNAKAN nama kategori yang terdaftar pada blok [KATEGORI TRANSAKSI AKTIF] di bawah nanti. DILARANG KERAS mengarang atau menggunakan nama kategori lain.
-11. PAYMENT METHOD, ACCOUNT & NOMINAL EXTRACTION (STRICT: EXPLICIT ONLY, DILARANG MENEBAK):
-    - DILARANG KERAS MENEBAK, MENGARANG, ATAU MENGASUMSIKAN payment_method ATAU account!
-    - HANYA isi jika user secara EKSPLISIT menyebutkannya dalam teks pesan saat ini:
-      * "pakai QRIS/scan QR/qris" -> payment_method="QRIS"
-      * "transfer/TF/via BCA/Mandiri/bank" -> payment_method="Transfer bank"
-      * "kartu kredit/gesek/cicil/cc" -> payment_method="Kartu Kredit"
-      * "tunai/cash/uang fisik/kontan" -> payment_method="Tunai"
-      * "direct debit/dd/kantong/autodebit" -> payment_method="Direct Debit"
-    - Jika user TIDAK menyebut metode pembayaran dalam teks: WAJIB set payment_method=null! DILARANG MENEBAK "Tunai" hanya karena tempatnya warung/toko/pasar/kaki lima!
-    - Jika user TIDAK menyebut nama akun/bank/dompet dalam teks: WAJIB set account=null! DILARANG MENEBAK akun dari transaksi sebelumnya atau riwayat!
-    - NOMINAL EXTRACTION & ANTI-HALLUCINATION:
-      * Nilai "nominal" HARUS bersumber langsung dari angka atau kata nominal harga yang ditulis user dalam pesan saat ini (misal: "5500", "50rb", "10 ribu", "14.200", "dua puluh ribu").
-      * JIKA USER TIDAK MENYEBUTKAN HARGA/NOMINAL SAMA SEKALI (contoh: "aku tadi beli es teh dua pake shopee dd", "beli rokok surya di warung madura", "barusan isi bensin"):
-        WAJIB SET nominal=null! DILARANG KERAS MENGARANG, MENGHITUNG, ATAU MENGAMBIL NOMINAL DARI MEMORI/RIWAYAT OBROLAN/TRANSAKSI MASA LALU!
+11. FINANCE EXTRACTION (EXPLICIT ONLY, DILARANG MENEBAK): payment_method, account, nominal HANYA boleh diisi jika user menyebutkannya EKSPLISIT di pesan saat ini. Jika tidak disebut, WAJIB null. DILARANG mengisi dari tempat/merchant (misal warung != "Tunai"), riwayat, memori, atau transaksi lalu, dan DILARANG menghitung nominal dari harga lama (misal "es teh dua" tanpa harga -> nominal=null).
+    - payment_method: QRIS/scan QR -> "QRIS"; transfer/TF/via bank -> "Transfer bank"; kartu kredit/gesek/cicil/cc -> "Kartu Kredit"; tunai/cash/kontan -> "Tunai"; direct debit/dd/kantong/autodebit -> "Direct Debit".
+    - account: hanya jika user menyebut nama bank/dompet.
+    - nominal: angka/kata harga dari pesan (5500, 50rb, 10 ribu, 14.200, dua puluh ribu).
 12. TELEGRAM FORMATTING RULE: DILARANG menyebar karakter asterisk/bintang (*) berlebihan dalam reply_message. Gunakan bahasa Indonesia natural yang bersih, atau tag HTML <b>teks</b> jika ingin penekanan kata.
 13. MOOD EXTRACTION (EMPATHY & INTENSITY SENSITIVITY):
     WAJIB evaluasi nada emosi dari pesan Tuan Faqih. Pilih 1 dari: "HAPPY|EXCITED|MOTIVATED|FOCUSED|POSITIVE|NEUTRAL|CALM|TIRED|BORED|STRESSED|NEGATIVE|ANXIOUS|ANGRY|SAD".
@@ -244,10 +234,7 @@ const DOMAIN_SCHEMAS = {
     //   - Triggers: "nyalakan senter", "matikan senter", "kunci HP", "ke home screen", "buka recent apps", "cek baterai HP", "cek wifi/sinyal HP", "di mana HP-ku", "ucapkan suara di HP", "foto kamera depan/belakang", "screenshot HP", "buka youtube/chrome di HP", "salin ke clipboard", "bunyikan alarm HP / cari HP", "munculkan pop up di HP", "telepon HP-ku", "call aku"`,
 
   FINANCE: `    // FINANCE: { action: "RECORD|RECORD_MULTIPLE|READ_LATEST|READ_ANALYTICS|EDIT|DELETE|UNDO_DELETE|IMPORT_FROM_EMAIL|CONFIRM_TRANSACTION|UPDATE_PENDING|CANCEL_TRANSACTION|CATEGORY_BREAKDOWN|PERIOD_COMPARISON|TOP_EXPENSES|ACCOUNT_BALANCES|DAILY_TREND|SMART_SUMMARY|MONTHLY_SUMMARY|SAVING_RATE|BALANCE_TREND", nominal: number, admin_fee: number, type: "INCOME|EXPENSE|TRANSFER", from_account: string, to_account: string, destination: string, category: string, description: string, time: "ISO+07:00", account: string, payment_method: string, search_keyword: string, date_text: string, limit: number, transactions: [],
-    //   STRICT ANTI-HALLUCINATION & EXPLICIT-ONLY RULES:
-    //   - Jika user TIDAK menyebut nominal/harga sama sekali dalam pesan: WAJIB set nominal=null. DILARANG menghitung atau mengambil harga dari transaksi masa lalu!
-    //   - Jika user TIDAK menyebut metode pembayaran dalam pesan: WAJIB set payment_method=null. DILARANG menebak "Tunai"!
-    //   - Jika user TIDAK menyebut nama akun/bank/dompet dalam pesan: WAJIB set account=null. DILARANG menebak akun dari transaksi sebelumnya!
+    //   EXPLICIT-ONLY (lihat Rule 11): nominal/payment_method/account = null jika tidak disebut user di pesan ini.
     //   is_split: boolean (true jika pengeluaran mengandung BEBERAPA item dengan kategori berbeda),
     //   store_name: string (nama toko/merchant jika disebutkan, e.g. "Indomaret", "Alfamart"),
     //   items: [{label: string, nominal: number, category: string}] (array rincian item split, WAJIB diisi jika is_split=true)
