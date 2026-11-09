@@ -17,10 +17,17 @@ const { PLAIN_TEXT_SYSTEM_PROMPT } = require('./Router_Prompts');
 const { _classifyMemoryCategory: _classifyWithCognitiveEngine } = require('./Memory_Classifier');
 
 async function callAI(prompt, options = {}) {
-  const isJson = options.jsonMode === true ||
-    (typeof options.systemInstruction === 'string' && options.systemInstruction.includes('JSON')) ||
-    (typeof options.systemPrompt === 'string' && options.systemPrompt.includes('JSON')) ||
-    /\b(output\s+(hanya|harus|format|tepat:?)\s*json|json\s*array|format\s+json)\b/i.test(prompt);
+  const hasNegativeJson = /(?:jangan|tanpa|bukan|tidak|no|don't|not)\s+(?:gunakan\s+)?(?:dalam\s+)?(?:bentuk\s+|format\s+)?json/i.test(prompt);
+
+  const isJson = options.jsonMode === true ? true : (
+    options.jsonMode === false ? false : (
+      !hasNegativeJson && (
+        (typeof options.systemInstruction === 'string' && /\b(output\s+json|return\s+json|format\s+json)\b/i.test(options.systemInstruction)) ||
+        (typeof options.systemPrompt === 'string' && /\b(output\s+json|return\s+json|format\s+json)\b/i.test(options.systemPrompt)) ||
+        /\b(output\s+(?:hanya|harus|format|tepat:?)\s*json|json\s*array|(?:dalam|berupa)\s+format\s+json)\b/i.test(prompt)
+      )
+    )
+  );
 
   const systemInstruction = options.systemPrompt || options.systemInstruction || (isJson
     ? 'You are an AI specialized in structured data extraction. Output ONLY valid, parseable JSON matching the requested schema without markdown wrapping or conversational commentary.'
@@ -34,11 +41,19 @@ async function callAI(prompt, options = {}) {
     return text;
   }
 
-  // If the model wrapped its answer in JSON anyway, extract the first string value
+  // If the model wrapped its answer in JSON anyway (with or without markdown fence), extract the inner message string
   try {
-    const parsed = JSON.parse(text);
-    const firstVal = Object.values(parsed).find(v => typeof v === 'string');
-    if (firstVal) text = firstVal;
+    let cleanJson = text.trim();
+    if (cleanJson.startsWith('```')) {
+      cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    }
+    if (cleanJson.startsWith('{') && cleanJson.endsWith('}')) {
+      const parsed = JSON.parse(cleanJson);
+      if (parsed && typeof parsed === 'object') {
+        const candidate = parsed.message || parsed.reply || parsed.text || parsed.response || parsed.content || Object.values(parsed).find(v => typeof v === 'string');
+        if (typeof candidate === 'string') text = candidate;
+      }
+    }
   } catch (_) { /* Not JSON, already plain text — good */ }
   return _cleanEmDashes(text);
 }

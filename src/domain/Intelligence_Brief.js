@@ -344,17 +344,17 @@ async function generateEveningBriefing() {
 
   // Susun pesan Evening Briefing — Reflective Diary
   const message = [
-    '🌙 *Refleksi Malam, Tuan Faqih.*',
+    '🌙 <b>Refleksi Malam, Tuan Faqih.</b>',
     '',
-    `📅 *Persiapan Esok:*\n${tomorrowAgenda}`,
+    `📅 <b>Persiapan Esok:</b>\n${tomorrowAgenda}`,
     '',
     'Sebelum beristirahat, boleh saya bertanya sejenak?',
     '',
-    '✨ Apa *satu hal* yang paling membanggakan dari hari ini?',
+    '✨ Apa <i>satu hal</i> yang paling membanggakan dari hari ini?',
     '🧠 Apakah ada hal yang masih mengganjal di pikiran?',
     '',
-    '_Ceritakan saja apa adanya — saya akan menyimpannya sebagai bagian dari perjalanan Anda._',
-    '_Atau balas "Tidak ada" jika ingin langsung istirahat._'
+    '<i>Ceritakan saja apa adanya, saya akan menyimpannya sebagai bagian dari perjalanan Anda.</i>',
+    '<i>Atau balas "Tidak ada" jika ingin langsung istirahat.</i>'
   ].join('\n');
 
   // Log ke behavior log

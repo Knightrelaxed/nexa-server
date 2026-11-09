@@ -35,6 +35,25 @@ test('AUDIT BUG 2: _detectCandidateDomains must detect DISCIPLINE for godmode in
 test('AUDIT BUG 3: callAI must respect options and JSON requests without stripping or conflicting prompts', async () => {
   const { callAI } = require('../src/core/router/Router_Utilities');
   assert.equal(typeof callAI, 'function', 'callAI must be an exported function');
+
+  const { formatTelegramHtml } = require('../src/utils/telegram_network');
+
+  // 1. Italic and bold markdown conversions
+  const sampleMarkdown = '_Ceritakan saja apa adanya, saya akan menyimpannya sebagai bagian dari perjalanan Anda._';
+  const formattedItalic = formatTelegramHtml(sampleMarkdown);
+  assert.strictEqual(formattedItalic, '<i>Ceritakan saja apa adanya, saya akan menyimpannya sebagai bagian dari perjalanan Anda.</i>');
+
+  // Must preserve snake_case variables like user_id and split_group_id
+  const snakeCaseSample = 'Data split_group_id dan user_profile_id harus utuh.';
+  assert.strictEqual(formatTelegramHtml(snakeCaseSample), 'Data split_group_id dan user_profile_id harus utuh.');
+
+  // 2. Accidental JSON curly braces from LLM responses must be cleaned
+  const jsonLeakedMessage = `🌙 <b>Persiapan untuk Besok</b>\n\n📅 <b>Agenda:</b> 4 event\n\n{\n"message": "Selamat malam Tuan Faqih, berikut adalah persiapan untuk besok."\n}`;
+  const cleanedTelegram = formatTelegramHtml(jsonLeakedMessage);
+  assert.ok(!cleanedTelegram.includes('{'), 'Must not contain opening curly brace');
+  assert.ok(!cleanedTelegram.includes('}'), 'Must not contain closing curly brace');
+  assert.ok(!cleanedTelegram.includes('"message":'), 'Must not contain JSON key "message"');
+  assert.ok(cleanedTelegram.includes('Selamat malam Tuan Faqih, berikut adalah persiapan untuk besok.'));
 });
 
 test('AUDIT LIVE TOOLS: closeWindow, closeTab, navigateBack, getOpenWindows, and taskView declarations and execution parity', async () => {

@@ -266,6 +266,37 @@ function formatTelegramHtml(text) {
   if (!text) return '';
   let str = String(text);
 
+  // -1. Clean accidental raw JSON leaks from LLM responses (e.g. { "message": "..." })
+  if (str.trim().startsWith('{') && str.trim().endsWith('}')) {
+    try {
+      const parsed = JSON.parse(str.trim());
+      if (parsed && typeof parsed === 'object') {
+        const candidate = parsed.message || parsed.reply || parsed.text || parsed.response || parsed.content || Object.values(parsed).find(v => typeof v === 'string');
+        if (typeof candidate === 'string') str = candidate;
+      }
+    } catch (_) {}
+  }
+
+  // Handle JSON wrapped inside markdown code blocks
+  str = str.replace(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/gi, (match, jsonBlock) => {
+    try {
+      const parsed = JSON.parse(jsonBlock);
+      const inner = parsed.message || parsed.reply || parsed.text || parsed.response || parsed.content;
+      if (typeof inner === 'string') return inner.trim();
+    } catch (_) {}
+    return match;
+  });
+
+  // Handle embedded standalone JSON object containing message / reply / text / response
+  str = str.replace(/(\{[\s\r\n]*"(?:message|reply|text|response|content)"\s*:[\s\S]*?\})/gi, (match) => {
+    try {
+      const parsed = JSON.parse(match);
+      const inner = parsed.message || parsed.reply || parsed.text || parsed.response || parsed.content;
+      if (typeof inner === 'string') return inner.trim();
+    } catch (_) {}
+    return match;
+  });
+
   // 0. Eliminate artificial AI em-dashes (— and –) to keep output natural
   str = str
     .replace(/\s*[—–]\s*/g, ', ')
@@ -283,7 +314,9 @@ function formatTelegramHtml(text) {
 
   // 2. Convert standard markdown syntax to Telegram HTML
   str = str.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  str = str.replace(/(?:^|(?<=[^a-zA-Z0-9]))__([^_\n\r]+)__(?=[^a-zA-Z0-9]|$)/g, '<b>$1</b>');
   str = str.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+  str = str.replace(/(?:^|(?<=[^a-zA-Z0-9]))_([^_ \n\r](?:[^\n\r_]*?[^_ \n\r])?)_(?=[^a-zA-Z0-9]|$)/g, '<i>$1</i>');
   str = str.replace(/`([^`]+)`/g, '<code>$1</code>');
 
   // 3. Protect allowed Telegram HTML tags using temporary placeholders

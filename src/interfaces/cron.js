@@ -833,8 +833,19 @@ Instruksi:
           `Berikan gambaran agenda besok, ingatkan tentang tugas jika ada, dan beri 1 kalimat rekomendasi prioritas. ` +
           `Nada: Chief of Staff yang cerdas dan peduli. Jangan gunakan format JSON atau markdown **bold**.`;
 
-        const prepText = await aiRouter.callAI(prompt);
+        const prepText = await aiRouter.callAI(prompt, { jsonMode: false });
         if (prepText) {
+          let cleanPrep = String(prepText).trim();
+          if (cleanPrep.startsWith('```')) {
+            cleanPrep = cleanPrep.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+          }
+          if (cleanPrep.startsWith('{') && cleanPrep.endsWith('}')) {
+            try {
+              const parsed = JSON.parse(cleanPrep);
+              cleanPrep = parsed.message || parsed.reply || parsed.text || Object.values(parsed).find(v => typeof v === 'string') || cleanPrep;
+            } catch (_) {}
+          }
+
           let header = `🌙 <b>Persiapan untuk Besok</b>\n\n`;
           if (events.length > 0) {
             header += `📅 <b>Agenda:</b> ${events.length} event\n`;
@@ -847,7 +858,7 @@ Instruksi:
             priority: 'P1',
             isScheduled: true,
             dedupeKey: `tomorrow_prep:${todayKey}`,
-            text: header + `\n${prepText}`
+            text: header + `\n${cleanPrep}`
           });
         }
       } catch (e) {
