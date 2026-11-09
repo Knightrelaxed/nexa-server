@@ -226,9 +226,14 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'UPDATE_PENDING') {
-    const dtInfo = require('../../../domain/finance/Finance_Helpers')._parseDateTimeExpression(ed.time || ed.date_text || textInput);
-    const dateISO = dtInfo?.dateISO || null;
-    const timeHHMM = dtInfo?.timeHHMM || null;
+    const cleanUserText = textInput.replace(/\[KONTEKS_[A-Z]+[\s\S]*?"\s*\]\s*/gi, '').replace(/\[KONTEKS_[^\]]*\]/gi, '').trim();
+    let dateISO = null;
+    let timeHHMM = null;
+    if (ed.time || ed.date_text || /(?:tanggal|tgl|kemarin|tadi malam|hari ini|jam|pukul|\d{1,2}[\/\-]\d{1,2})/i.test(cleanUserText)) {
+      const dtInfo = require('../../../domain/finance/Finance_Helpers')._parseDateTimeExpression(ed.time || ed.date_text || cleanUserText);
+      dateISO = dtInfo?.dateISO || null;
+      timeHHMM = dtInfo?.timeHHMM || null;
+    }
 
     const updatedMsg = await financeEngine.updatePendingTransaction(
       ed.description || null,
@@ -244,24 +249,28 @@ async function handleFinanceIntent(routingData, context = {}) {
 
     // Fallback: If pending confirmation timed out (already saved) or user quoted a previous message, edit committed transaction
     let kw = ed.search_keyword;
-    if (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|\s)*$/i.test(String(kw).trim())) {
-      const replyMsgText = context.message?.reply_to_message?.text || null;
-      if (replyMsgText) {
-        const cMatch = replyMsgText.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
-        const nLabelMatch = replyMsgText.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
-        const nRpMatch = replyMsgText.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
-        if (cMatch && cMatch[1] && cMatch[1].trim().length > 1) {
-          kw = cMatch[1].trim();
-        } else if (nLabelMatch && nLabelMatch[1]) {
-          kw = nLabelMatch[1].replace(/[^0-9]/g, '');
-        } else if (nRpMatch && nRpMatch[1]) {
-          kw = nRpMatch[1].replace(/[^0-9]/g, '');
-        } else {
-          kw = 'latest';
-        }
+    const replyMsgText = context.message?.reply_to_message?.text ||
+      (textInput.match(/\[KONTEKS_AKSI[\s\S]*?Menanggapi[\s\S]*?"([\s\S]+?)"\s*\]/)?.[1] || null);
+
+    if (replyMsgText && (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|latest|\s)*$/i.test(String(kw).trim()))) {
+      const idMatch = replyMsgText.match(/(?:No|ID)\s*:\s*(?:#)?([a-f0-9\-]{4,36}|\d+)/i);
+      const cMatch = replyMsgText.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+      const nLabelMatch = replyMsgText.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
+      const nRpMatch = replyMsgText.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+
+      if (idMatch && idMatch[1] && idMatch[1].toLowerCase() !== 'auto') {
+        kw = idMatch[1].trim();
+      } else if (cMatch && cMatch[1] && cMatch[1].trim().length > 1 && !cMatch[1].startsWith('[')) {
+        kw = cMatch[1].trim();
+      } else if (nLabelMatch && nLabelMatch[1]) {
+        kw = nLabelMatch[1].replace(/[^0-9]/g, '');
+      } else if (nRpMatch && nRpMatch[1]) {
+        kw = nRpMatch[1].replace(/[^0-9]/g, '');
       } else {
         kw = 'latest';
       }
+    } else if (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|\s)*$/i.test(String(kw).trim())) {
+      kw = 'latest';
     }
     const editRes = await financeEngine.editTransaction(
       kw || 'latest',
@@ -286,29 +295,38 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'EDIT') {
-    const dtInfo = require('../../../domain/finance/Finance_Helpers')._parseDateTimeExpression(ed.time || ed.date_text || textInput);
-    const dateISO = dtInfo?.dateISO || null;
-    const timeHHMM = dtInfo?.timeHHMM || null;
+    const cleanUserText = textInput.replace(/\[KONTEKS_[A-Z]+[\s\S]*?"\s*\]\s*/gi, '').replace(/\[KONTEKS_[^\]]*\]/gi, '').trim();
+    let dateISO = null;
+    let timeHHMM = null;
+    if (ed.time || ed.date_text || /(?:tanggal|tgl|kemarin|tadi malam|hari ini|jam|pukul|\d{1,2}[\/\-]\d{1,2})/i.test(cleanUserText)) {
+      const dtInfo = require('../../../domain/finance/Finance_Helpers')._parseDateTimeExpression(ed.time || ed.date_text || cleanUserText);
+      dateISO = dtInfo?.dateISO || null;
+      timeHHMM = dtInfo?.timeHHMM || null;
+    }
 
     let kw = ed.search_keyword;
-    if (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|\s)*$/i.test(String(kw).trim())) {
-      const replyMsgText = context.message?.reply_to_message?.text || null;
-      if (replyMsgText) {
-        const cMatch = replyMsgText.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
-        const nLabelMatch = replyMsgText.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
-        const nRpMatch = replyMsgText.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
-        if (cMatch && cMatch[1] && cMatch[1].trim().length > 1) {
-          kw = cMatch[1].trim();
-        } else if (nLabelMatch && nLabelMatch[1]) {
-          kw = nLabelMatch[1].replace(/[^0-9]/g, '');
-        } else if (nRpMatch && nRpMatch[1]) {
-          kw = nRpMatch[1].replace(/[^0-9]/g, '');
-        } else {
-          kw = 'latest';
-        }
+    const replyMsgText = context.message?.reply_to_message?.text ||
+      (textInput.match(/\[KONTEKS_AKSI[\s\S]*?Menanggapi[\s\S]*?"([\s\S]+?)"\s*\]/)?.[1] || null);
+
+    if (replyMsgText && (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|latest|\s)*$/i.test(String(kw).trim()))) {
+      const idMatch = replyMsgText.match(/(?:No|ID)\s*:\s*(?:#)?([a-f0-9\-]{4,36}|\d+)/i);
+      const cMatch = replyMsgText.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+      const nLabelMatch = replyMsgText.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
+      const nRpMatch = replyMsgText.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+
+      if (idMatch && idMatch[1] && idMatch[1].toLowerCase() !== 'auto') {
+        kw = idMatch[1].trim();
+      } else if (cMatch && cMatch[1] && cMatch[1].trim().length > 1 && !cMatch[1].startsWith('[')) {
+        kw = cMatch[1].trim();
+      } else if (nLabelMatch && nLabelMatch[1]) {
+        kw = nLabelMatch[1].replace(/[^0-9]/g, '');
+      } else if (nRpMatch && nRpMatch[1]) {
+        kw = nRpMatch[1].replace(/[^0-9]/g, '');
       } else {
         kw = 'latest';
       }
+    } else if (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|\s)*$/i.test(String(kw).trim())) {
+      kw = 'latest';
     }
     const result = await financeEngine.editTransaction(
       kw,

@@ -52,6 +52,26 @@ test('Telegram Module: follow_up_resolver detection and routing', () => {
   });
   assert.strictEqual(followUpRouting?.intent, 'FINANCE');
   assert.strictEqual(followUpRouting?.extracted_data?.action, 'DELETE');
+
+  // Follow-up acknowledgment must NOT trigger READ_LATEST spam
+  const ackRouting = followUpResolver.buildGlobalFollowUpRouting('ok', {
+    intent: 'FINANCE',
+    askedAt: Date.now()
+  });
+  assert.strictEqual(ackRouting?.intent, 'NORMAL_CHAT', 'ok after FINANCE must resolve to NORMAL_CHAT');
+  assert.ok(ackRouting?.reply_message?.includes('Siap, Tuan'), 'Reply must politely acknowledge user');
+
+  const ackTaskRouting = followUpResolver.buildGlobalFollowUpRouting('oke', {
+    intent: 'TASK',
+    askedAt: Date.now()
+  });
+  assert.strictEqual(ackTaskRouting?.intent, 'NORMAL_CHAT', 'oke after TASK must resolve to NORMAL_CHAT');
+
+  const ackTidakRouting = followUpResolver.buildGlobalFollowUpRouting('tidak', {
+    intent: 'FINANCE',
+    askedAt: Date.now()
+  });
+  assert.strictEqual(ackTidakRouting?.intent, 'NORMAL_CHAT', 'tidak after FINANCE must resolve to NORMAL_CHAT');
 });
 
 test('Telegram Module: vault_handler metadata parsing and normalization', () => {

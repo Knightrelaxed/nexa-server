@@ -559,3 +559,44 @@ test('Finance_Handler: resets hallucinated payment method and account to null wh
   // Clean up pending transaction created by test
   await financeEngine.confirmPendingTransactions(false);
 });
+
+test('Finance_Handler: correctly targets quoted transaction on edit without corrupting date/time', async () => {
+  const quotedInput = `[KONTEKS_AKSI – Menanggapi pesan N.E.X.A: "💸 PENCATATAN KEUANGAN BARU\nNo: [Auto]\nTanggal: 7 November 2026\nWaktu: 19.36\nTipe: Pengeluaran\nKategori: Jajan / Ngopi / Kafe [Auto-AI]\nAkun: Shopee Pay\nMetode: Direct Debit\nDeskripsi: Beli es teh dua\nNominal (Rp): Rp16.002\nSaldo (Rp) Saat Ini: Rp18.882\n💡 Transaksi ini siap dikunci."]\nedit transaksi ini menjadi nominal 9300`;
+
+  let targetedKeyword = null;
+  let passedNominal = null;
+  let passedDateISO = null;
+  let passedTimeHHMM = null;
+
+  const originalEdit = financeEngine.editTransaction;
+  financeEngine.editTransaction = async (kw, nominal, desc, cat, acc, method, type, dateISO, timeHHMM) => {
+    targetedKeyword = kw;
+    passedNominal = nominal;
+    passedDateISO = dateISO;
+    passedTimeHHMM = timeHHMM;
+    return {
+      status: 'SUCCESS',
+      message: 'Transaksi berhasil diubah',
+      transaction: { id: 'd5b991e9', description: 'Beli es teh dua', amount: 9300 }
+    };
+  };
+
+  try {
+    const routingData = {
+      domain: 'FINANCE',
+      extracted_data: {
+        action: 'EDIT',
+        search_keyword: 'LATEST',
+        nominal: 9300
+      }
+    };
+
+    const reply = await handleFinanceIntent(routingData, { textInput: quotedInput });
+    assert.strictEqual(targetedKeyword, 'Beli es teh dua', 'Must resolve keyword to quoted description, not latest');
+    assert.strictEqual(passedNominal, 9300);
+    assert.strictEqual(passedDateISO, null, 'Must NOT parse date from quoted header text');
+    assert.strictEqual(passedTimeHHMM, null, 'Must NOT parse time from quoted header text');
+  } finally {
+    financeEngine.editTransaction = originalEdit;
+  }
+});

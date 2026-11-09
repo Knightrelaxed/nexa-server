@@ -40,6 +40,14 @@ function _findBestTransactionMatch(rows, keyword) {
     const nominalKw = kw.replace(/[^0-9]/g, '');
 
     let score = 0;
+
+    // Direct ID / No match (Highest Priority)
+    if (r.id && (r.id.toLowerCase().startsWith(kw) || (kw.length >= 8 && kw.startsWith(r.id.slice(0, 8).toLowerCase())))) {
+      score += 200;
+    }
+    if (r.no && (String(r.no) === kw.replace(/^#/, '') || kw === `#${r.no}`)) {
+      score += 200;
+    }
     
     if (nominalKw && nominalRaw && nominalRaw === nominalKw) score += 50;
     else if (nominalKw && nominalKw.length > 3 && nominalRaw.includes(nominalKw)) score += 20;
