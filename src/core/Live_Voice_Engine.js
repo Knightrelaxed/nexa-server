@@ -125,6 +125,7 @@ Anda memiliki akses langsung ke seluruh infrastruktur backend Nexa. Eksekusi seg
 3. Proteksi Tutup Panggilan: DILARANG memanggil endCall jika ucapan Tuan tidak jelas atau hanya mirip (seperti "daftar panggilan", "catat panggilan"). Hanya panggil endCall jika Tuan Faqih jelas-jelas ingin menutup telepon ("tutup telepon", "matikan panggilannya", "sampai jumpa", "bye nexa").
 4. Konfirmasi Tindakan Berisiko Tinggi: Untuk tindakan destruktif atau eksternal berisiko seperti mengirim email keluar (sendEmail) atau menghapus jadwal/tugas (deleteCalendarEvent, deleteTask), sebutkan detail target secara eksplisit dan minta persetujuan singkat sebelum mengeksekusi jika ada keraguan.
 5. Larangan Frasa CS: Tetap teguh pada identitas Chief of Staff. Jangan pernah mengeluarkan kalimat robotik template call center.
+6. Integritas Jadwal & Kalender: Saat Tuan menanyakan jadwal atau tugas untuk hari/tanggal berbeda (misal "besok", "lusa", "hari Selasa", "hari Rabu"), WAJIB panggil queryCalendarAgenda (dengan parameter date atau timeframe yang sesuai) dan BACA label hari/tanggal pada setiap item jadwal dengan teliti. DILARANG KERAS menebak, mengarang, atau mencampuradukkan jadwal antarhari (misal menyebut jadwal Selasa sebagai jadwal Rabu) tanpa mengecek data kalender hari tersebut!
 `;
 
 
@@ -1798,6 +1799,7 @@ ${conversationText}
 TUGAS: Ekstrak fakta-fakta baru atau perubahan status tentang TUAN FAQIH (si manusia pengguna) dari percakapan di atas.
 Fokus pada: kebiasaan baru, preferensi, kondisi kesehatan, status proyek/skripsi, perubahan hidup, informasi personal.
 ABAIKAN hal-hal yang sudah umum diketahui atau tidak mengandung informasi baru.
+ABAIKAN jadwal kuliah harian/kalender rutin, daftar tugas harian yang sudah ada di Google Calendar/Tasks, atau klaim N.E.X.A yang dibantah/dikoreksi oleh Tuan Faqih.
 
 Balas HANYA dengan JSON array string. Contoh:
 ["Tuan Faqih sekarang rutin olahraga lari pagi", "Tuan Faqih sedang mengerjakan skripsi bab 3"]
@@ -1831,7 +1833,9 @@ Jika tidak ada fakta baru, balas dengan: []`;
       .filter(t => t.role === 'user' && t.text)
       .map(t => t.text)
       .join(' ');
-    const hasExplicitDirective = DIRECTIVE_KEYWORDS_RE.test(userTurnTexts) || DIRECTIVE_KEYWORDS_RE.test(conversationText);
+    const hasExplicitDirective = userTurnTexts.length > 0
+      ? DIRECTIVE_KEYWORDS_RE.test(userTurnTexts)
+      : DIRECTIVE_KEYWORDS_RE.test(conversationText);
 
     if (!hasExplicitDirective) {
       console.log(`[LIVE-VOICE] CORE_IDENTITY extraction skipped: no explicit directive keywords found in user turns.`);
@@ -1841,10 +1845,11 @@ Jika tidak ada fakta baru, balas dengan: []`;
 
 ${conversationText}
 
-TUGAS: Ekstrak instruksi, koreksi, atau aturan baru yang Tuan Faqih berikan kepada N.E.X.A (sistem AI) dalam percakapan ini.
-Fokus pada: cara N.E.X.A harus berperilaku, format respons, batasan, kemampuan yang disebutkan, atau koreksi atas respons N.E.X.A.
+TUGAS: Ekstrak instruksi, koreksi, atau aturan permanen baru yang Tuan Faqih berikan kepada N.E.X.A (sistem AI) dalam percakapan ini.
+Fokus pada: cara N.E.X.A harus berperilaku secara permanen, format respons, batasan, atau kemampuan baru.
 ABAIKAN percakapan biasa yang tidak berisi instruksi untuk N.E.X.A.
 ABAIKAN jika instruksi berasal dari konteks yang ambigu atau tidak jelas.
+ABAIKAN teguran sesaat akibat kesalahan teknis/halusinasi jadwal atau permintaan mengecek ulang kesalahan sesi ini (misal "apa kekeliruanmu", "catat kesalahanmu", "jangan mengada-ngada").
 
 Balas HANYA dengan JSON array string. Contoh:
 ["Saat di telepon, N.E.X.A harus berbicara lebih singkat", "N.E.X.A sudah bisa mencatat keuangan via suara telepon"]
@@ -1854,9 +1859,10 @@ Jika tidak ada, balas dengan: []`;
         const coreIds = parseLearnedFacts(coreIdRaw);
 
         if (coreIds.length > 0) {
-          // Double-check: each extracted fact must itself contain a directive-like keyword
+          // Double-check: each extracted fact must itself contain a directive-like keyword and not be a session-error narrative
+          const SESSION_ERROR_RE = /\b(kekeliruan|kesalahan|keliru|meminta\s+N\.?E\.?X\.?A\s+untuk\s+mencatat\s+rincian)\b/i;
           const validCoreIds = coreIds.filter(fact =>
-            DIRECTIVE_KEYWORDS_RE.test(fact) || /\b(N\.?E\.?X\.?A|nexa)\b/i.test(fact)
+            DIRECTIVE_KEYWORDS_RE.test(fact) && !SESSION_ERROR_RE.test(fact)
           );
           if (validCoreIds.length > 0) {
             console.log(`[LIVE-VOICE] Passive Learning: ${validCoreIds.length}/${coreIds.length} N.E.X.A identity facts passed validation. Saving...`);

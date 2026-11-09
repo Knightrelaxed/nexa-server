@@ -584,12 +584,15 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         dateLabel = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
         dashboardTitle = 'DASHBOARD HARI INI';
       } else if (action === 'READ_TOMORROW') {
-        const tmrw = new Date(now.getTime() + 86400000);
-        const s = new Date(tmrw.setHours(0, 0, 0, 0)).toISOString();
-        const e = new Date(tmrw.setHours(23, 59, 59, 999)).toISOString();
+        const todayJktStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const tmrwAnchor = new Date(`${todayJktStr}T12:00:00+07:00`);
+        tmrwAnchor.setUTCDate(tmrwAnchor.getUTCDate() + 1);
+        const tmrwDateStr = tmrwAnchor.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const s = `${tmrwDateStr}T00:00:00+07:00`;
+        const e = `${tmrwDateStr}T23:59:59+07:00`;
         events = await googleWorkspace.getEventsByDateRange(s, e);
         tasks = await googleTasks.getTasksDueTomorrow();
-        dateLabel = tmrw.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
+        dateLabel = tmrwAnchor.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
         dashboardTitle = 'DASHBOARD BESOK';
       } else if (action === 'READ_UPCOMING') {
         events = await googleWorkspace.getUpcomingEvents(7 * 24 * 60, 20);
@@ -604,10 +607,10 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         dateLabel = sDate === eDate ? sDate : `${sDate} – ${eDate}`;
       } else if (start) {
         const sD = new Date(start);
-        const eD = new Date(sD);
-        eD.setHours(23, 59, 59, 999);
-        events = await googleWorkspace.getEventsByDateRange(start, eD.toISOString());
-        tasks = await googleTasks.getTasksByDateRange(start, eD.toISOString());
+        const startDateStr = sD.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const dayEnd = `${startDateStr}T23:59:59+07:00`;
+        events = await googleWorkspace.getEventsByDateRange(start, dayEnd);
+        tasks = await googleTasks.getTasksByDateRange(start, dayEnd);
         dateLabel = sD.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' });
       }
 
@@ -635,13 +638,17 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         const lines = events.map((e, idx) => {
           const sRaw = e.start?.dateTime || e.start?.date;
           const eRaw = e.end?.dateTime || e.end?.date;
+          const dayLabel = sRaw
+            ? new Date(sRaw).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' })
+            : '';
           let timeLabel = 'Sepanjang hari';
           if (e.start?.dateTime && e.end?.dateTime) {
             const sT = new Date(sRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
             const eT = new Date(eRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
             timeLabel = `${sT}–${eT}`;
           }
-          let itemLine = `   <b>${idx + 1}.</b> [${timeLabel}] <b>${escapeHtml(e.summary || '(Tanpa Judul)')}</b>`;
+          const whenLabel = dayLabel ? `${dayLabel} | ${timeLabel}` : timeLabel;
+          let itemLine = `   <b>${idx + 1}.</b> [${whenLabel}] <b>${escapeHtml(e.summary || '(Tanpa Judul)')}</b>`;
           if (e.location) itemLine += `\n      📍 ${escapeHtml(e.location)}`;
           if (e.hangoutLink) itemLine += `\n      🎥 <a href="${e.hangoutLink}">Google Meet</a>`;
           return itemLine;

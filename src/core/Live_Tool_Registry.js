@@ -225,12 +225,12 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 5. CALENDAR: QUERY AGENDA ─────────────────────────────────
   {
     name: 'queryCalendarAgenda',
-    description: 'Mengecek jadwal kalender Tuan Faqih untuk hari ini, besok, atau minggu ini.',
+    description: 'Mengecek jadwal kalender dan tugas jatuh tempo Tuan Faqih untuk hari ini, besok, lusa, hari tertentu (misal Selasa/Rabu), tanggal spesifik, atau 7 hari ke depan.',
     parameters: {
       type: 'OBJECT',
       properties: {
-        timeframe: { type: 'STRING', description: '"today" untuk hari ini, "tomorrow"/"besok" untuk besok, "this_week"/"upcoming" untuk minggu ini.' },
-        date:      { type: 'STRING', description: 'Tanggal spesifik jika ingin mengecek hari tertentu (YYYY-MM-DD).' }
+        timeframe: { type: 'STRING', description: '"today" untuk hari ini, "tomorrow"/"besok" untuk besok, "lusa" untuk lusa, nama hari ("senin".."minggu"), atau "this_week"/"upcoming" untuk 7 hari ke depan.' },
+        date:      { type: 'STRING', description: 'Tanggal atau hari spesifik jika ingin mengecek hari tertentu (format YYYY-MM-DD, "besok", "lusa", atau nama hari seperti "selasa", "rabu").' }
       }
     }
   },
@@ -925,13 +925,31 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
       // 5. CALENDAR: QUERY AGENDA
       // ─────────────────────────────────────────────────────────────
       case 'queryCalendarAgenda': {
-        const timeframe = String(args.timeframe || 'today').toLowerCase();
-        let action = 'READ_TODAY';
-        if (timeframe === 'tomorrow' || timeframe === 'besok') action = 'READ_TOMORROW';
-        else if (timeframe === 'upcoming' || timeframe === 'this_week' || timeframe === 'minggu_ini') action = 'READ_UPCOMING';
+        const rawDate = String(args.date || '').trim();
+        const timeframe = String(args.timeframe || (rawDate ? 'date' : 'today')).toLowerCase().trim();
+
+        const isUpcoming = !rawDate && (timeframe === 'upcoming' || timeframe === 'this_week' || timeframe === 'minggu_ini');
+        const isTomorrow = !rawDate && (timeframe === 'tomorrow' || timeframe === 'besok');
+        const isToday    = !rawDate && (timeframe === 'today' || timeframe === 'hari_ini' || timeframe === 'hari ini');
+
+        let intentPayload;
+        if (isUpcoming) {
+          intentPayload = { action: 'READ_UPCOMING' };
+        } else if (isTomorrow) {
+          intentPayload = { action: 'READ_TOMORROW' };
+        } else if (isToday) {
+          intentPayload = { action: 'READ_TODAY' };
+        } else {
+          const targetDateISO = _parseDateFromVoice(rawDate || timeframe);
+          intentPayload = {
+            action: 'READ',
+            start: `${targetDateISO}T00:00:00+07:00`,
+            end: `${targetDateISO}T23:59:59+07:00`
+          };
+        }
 
         const res = await _withToolTimeout(
-          agendaManager.handleCalendarIntent({ action }, ''),
+          agendaManager.handleCalendarIntent(intentPayload, ''),
           8000
         );
 
@@ -941,7 +959,7 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
 
         return {
           status: 'SUCCESS',
-          timeframe,
+          timeframe: rawDate || timeframe,
           agenda_details: cleanMessage
         };
       }
