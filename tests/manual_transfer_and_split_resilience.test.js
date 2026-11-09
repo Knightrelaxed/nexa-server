@@ -513,3 +513,49 @@ test('Finance_Confirmations: requestTransactionConfirmation respects telegramSen
     supabase.savePendingTransaction = originalSave;
   }
 });
+
+test('Finance_Handler: rejects recording when nominal is missing and prompts user for price', async () => {
+  const input = 'aku 7 nov jam 19.36 beli es teh dua pake shopee dd';
+  const routingData = {
+    domain: 'FINANCE',
+    extracted_data: {
+      action: 'RECORD',
+      nominal: 16002, // Hallucinated by LLM from memory
+      description: 'Beli es teh dua',
+      destination: 'es teh',
+      category: 'Jajan / Ngopi / Kafe',
+      payment_method: 'Direct Debit',
+      account: 'Shopee Pay'
+    }
+  };
+
+  const reply = await handleFinanceIntent(routingData, { textInput: input });
+  assert.ok(reply.includes('Berapa nominal atau harga untuk transaksi'), 'Should ask user for nominal/price');
+  assert.ok(!reply.includes('PENCATATAN KEUANGAN BARU'), 'Should NOT generate confirmation card');
+  assert.ok(!reply.includes('Rp16.002'), 'Should NOT contain hallucinated nominal');
+});
+
+test('Finance_Handler: resets hallucinated payment method and account to null when absent in textInput', async () => {
+  const input = 'kemudian malamnya aku beli rokok surya dua batang harga total 5500 di warung madura asyifa';
+  const routingData = {
+    domain: 'FINANCE',
+    extracted_data: {
+      action: 'RECORD',
+      nominal: 5500,
+      description: 'Rokok Surya 2 batang di warung Madura Asyifa',
+      destination: 'Warung Madura Asyifa',
+      category: 'Jajan / Ngopi / Kafe',
+      payment_method: 'Tunai', // Inferred/hallucinated by LLM
+      account: 'Dana'          // Hallucinated by LLM
+    }
+  };
+
+  const reply = await handleFinanceIntent(routingData, { textInput: input });
+  assert.ok(reply.includes('PENCATATAN KEUANGAN BARU'), 'Should generate confirmation card');
+  assert.ok(reply.includes('<b>Akun:</b> Belum dipilih'), 'Account must be reset to Belum dipilih');
+  assert.ok(reply.includes('<b>Metode:</b> -'), 'Payment method must be reset to -');
+  assert.ok(reply.includes('Mohon informasikan akun yang digunakan dan metode pembayarannya'), 'Must ask user for missing account and payment method');
+
+  // Clean up pending transaction created by test
+  await financeEngine.confirmPendingTransactions(false);
+});
