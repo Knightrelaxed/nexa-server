@@ -30,12 +30,11 @@ const gmailClient          = require('../infrastructure/Gmail_Client');
 // HELPER: Per-tool timeout wrapper (prevents API hanging)
 // ────────────────────────────────────────────────────────────────────────────
 function _withToolTimeout(promise, ms = 5000) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Tool timed out after ${ms}ms`)), ms)
-    )
-  ]);
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Tool timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -544,11 +543,11 @@ const LIVE_TOOL_DECLARATIONS = [
   // ── 26. DESKTOP AUTOMATION: PRESS KEY ─────────────────────────
   {
     name: 'desktopPressKey',
-    description: 'Menekan tombol khusus atau pintasan pada keyboard di PC laptop Tuan (seperti Enter, Space, Escape, Tab, Backspace, Clear_All untuk menghapus seluruh isi kotak teks, Ctrl+J untuk membuka Downloads browser).',
+    description: 'Menekan tombol khusus atau pintasan pada keyboard di PC laptop Tuan (seperti Enter, Space, Escape, Tab, Backspace, Clear_All untuk menghapus seluruh isi kotak teks, Ctrl+T untuk membuka tab baru browser, Ctrl+W untuk menutup tab, Ctrl+J untuk membuka Downloads browser, Ctrl+L untuk memfokuskan bilah alamat browser).',
     parameters: {
       type: 'OBJECT',
       properties: {
-        key: { type: 'STRING', description: 'Nama tombol khusus: "ENTER", "SPACE", "ESCAPE", "TAB", "BACKSPACE", "CLEAR_ALL" (Ctrl+A lalu Backspace untuk mengosongkan kolom input), "CTRL+A", "CTRL+C", "CTRL+V", "CTRL+J", "CTRL+L", "UP", "DOWN", "LEFT", "RIGHT".' }
+        key: { type: 'STRING', description: 'Nama tombol khusus: "ENTER", "SPACE", "ESCAPE", "TAB", "BACKSPACE", "CLEAR_ALL" (Ctrl+A lalu Backspace untuk mengosongkan kolom input), "CTRL+T" (buka tab baru), "CTRL+W" (tutup tab), "CTRL+SHIFT+T" (buka kembali tab tertutup), "CTRL+TAB" (pindah tab), "CTRL+A", "CTRL+C", "CTRL+V", "CTRL+J", "CTRL+L", "UP", "DOWN", "LEFT", "RIGHT".' }
       },
       required: ['key']
     }
@@ -621,6 +620,18 @@ const LIVE_TOOL_DECLARATIONS = [
       properties: {
         target: { type: 'STRING', description: 'Judul atau nama aplikasi yang ingin ditutup (contoh: "Chrome", "Notepad", atau "ALL" jika ingin menutup semua jendela aplikasi).' },
         except: { type: 'STRING', description: 'Nama jendela/aplikasi yang dikecualikan agar TIDAK ditutup saat menutup banyak jendela (contoh: "File Explorer", "Explorer", "Chrome").' }
+      }
+    }
+  },
+
+  // ── 31-A. BROWSER & APP NAVIGATION: OPEN NEW TAB ─────────────
+  {
+    name: 'openNewTab',
+    description: 'Membuka tab baru di browser web yang sedang aktif (mengirim pintasan keyboard CTRL+T). Opsional dapat langsung mengetikkan URL atau kata kunci pencarian di tab baru tersebut. WAJIB panggil saat Tuan meminta "buka tab baru", "tambah tab baru", "buat tab baru", atau "new tab".',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        url: { type: 'STRING', description: 'URL web atau kata kunci pencarian yang ingin langsung dibuka di tab baru (opsional). Kosongkan jika hanya ingin membuka halaman tab baru.' }
       }
     }
   },
@@ -2054,6 +2065,25 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
           status: res?.success ? 'SUCCESS' : 'FAILED',
           action: 'closeWindow',
           result: res?.message || (res?.success ? 'Jendela berhasil ditutup.' : 'Gagal menutup jendela.')
+        };
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 31-A. BROWSER & APP NAVIGATION: OPEN NEW TAB
+      // ─────────────────────────────────────────────────────────────
+      case 'openNewTab': {
+        const payload = {};
+        if (args?.url && String(args.url).trim()) {
+          payload.url = String(args.url).trim();
+        }
+        const res = await _withToolTimeout(
+          windowsBridge.sendCommand('OPEN_NEW_TAB', payload, { timeoutMs: 7000 }),
+          8000
+        );
+        return {
+          status: res?.success ? 'SUCCESS' : 'FAILED',
+          action: 'openNewTab',
+          result: res?.message || (res?.success ? 'Tab baru berhasil dibuka (Ctrl+T).' : 'Gagal membuka tab baru.')
         };
       }
 

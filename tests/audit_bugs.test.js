@@ -43,6 +43,7 @@ test('AUDIT LIVE TOOLS: closeWindow, closeTab, navigateBack, getOpenWindows, and
 
   const names = new Set(LIVE_TOOL_DECLARATIONS.map(t => t.name));
   assert.ok(names.has('closeWindow'), 'closeWindow must be in LIVE_TOOL_DECLARATIONS');
+  assert.ok(names.has('openNewTab'), 'openNewTab must be in LIVE_TOOL_DECLARATIONS');
   assert.ok(names.has('closeTab'), 'closeTab must be in LIVE_TOOL_DECLARATIONS');
   assert.ok(names.has('navigateBack'), 'navigateBack must be in LIVE_TOOL_DECLARATIONS');
   assert.ok(names.has('getOpenWindows'), 'getOpenWindows must be in LIVE_TOOL_DECLARATIONS');
@@ -68,6 +69,10 @@ test('AUDIT LIVE TOOLS: closeWindow, closeTab, navigateBack, getOpenWindows, and
     assert.equal(resCloseTarget.status, 'SUCCESS');
     assert.equal(resCloseTarget.action, 'closeWindow');
 
+    const resNewTab = await executeLiveTool('openNewTab', { url: 'https://ugm.ac.id' }, {});
+    assert.equal(resNewTab.status, 'SUCCESS');
+    assert.equal(resNewTab.action, 'openNewTab');
+
     const resCloseTab = await executeLiveTool('closeTab', {}, {});
     assert.equal(resCloseTab.status, 'SUCCESS');
     assert.equal(resCloseTab.action, 'closeTab');
@@ -85,15 +90,17 @@ test('AUDIT LIVE TOOLS: closeWindow, closeTab, navigateBack, getOpenWindows, and
     assert.equal(resTask.status, 'SUCCESS');
     assert.equal(resTask.action, 'taskView');
 
-    assert.equal(recorded.length, 6);
+    assert.equal(recorded.length, 7);
     assert.equal(recorded[0].action, 'CLOSE_WINDOW');
     assert.deepEqual(recorded[0].params, {});
     assert.equal(recorded[1].action, 'CLOSE_WINDOW');
     assert.deepEqual(recorded[1].params, { target: 'ALL', except: 'File Explorer' });
-    assert.equal(recorded[2].action, 'CLOSE_TAB');
-    assert.equal(recorded[3].action, 'NAVIGATE_BACK');
-    assert.equal(recorded[4].action, 'GET_OPEN_WINDOWS');
-    assert.equal(recorded[5].action, 'TASK_VIEW');
+    assert.equal(recorded[2].action, 'OPEN_NEW_TAB');
+    assert.deepEqual(recorded[2].params, { url: 'https://ugm.ac.id' });
+    assert.equal(recorded[3].action, 'CLOSE_TAB');
+    assert.equal(recorded[4].action, 'NAVIGATE_BACK');
+    assert.equal(recorded[5].action, 'GET_OPEN_WINDOWS');
+    assert.equal(recorded[6].action, 'TASK_VIEW');
   } finally {
     windowsBridge.sendCommand = originalSendCommand;
   }

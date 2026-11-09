@@ -570,7 +570,7 @@ class LiveVoiceSession {
         `   - Klik mouse presisi pada tombol, link, FOLDER, FILE, menu, atau elemen layar -> desktopClick(x, y, button: "LEFT"|"RIGHT", double_click: false/true, target_hint: string). WAJIB sertakan target_hint dengan nama murni teks elemen/file/folder (misal target_hint: "Downloads", "Mind Map Oogenesi_Nurul Azizah", "Documents", "Submit") TANPA awalan kata jenis seperti "file" atau "folder", agar UI Automation mengunci target secara 100% presisi tanpa meleset.\n` +
         `   - Gulir dokumen, web, atau jendela aktif -> desktopScroll(direction: "UP"|"DOWN", amount: 3, x?: number, y?: number).\n` +
         `   - Ketik teks atau pencarian -> desktopTypeText(text: "...", press_enter: true/false, clear_first: true/false). Secara otomatis membersihkan teks lama di kolom input sebelum mengetik kueri baru agar tidak tercampur.\n` +
-        `   - Tekan tombol keyboard atau shortcut khusus -> desktopPressKey(key: "ENTER"|"SPACE"|"ESCAPE"|"TAB"|"BACKSPACE"|"CLEAR_ALL"|"CTRL+A"|"CTRL+C"|"CTRL+V"|"CTRL+J"|"CTRL+L"|"ALT+TAB"|"VOLUME_UP"|"VOLUME_DOWN"|"VOLUME_MUTE"). Gunakan key: "CLEAR_ALL" saat Tuan meminta menghapus seluruh teks di kolom pencarian/input.\n` +
+        `   - Tekan tombol keyboard atau shortcut khusus -> desktopPressKey(key: "ENTER"|"SPACE"|"ESCAPE"|"TAB"|"BACKSPACE"|"CLEAR_ALL"|"CTRL+T"|"CTRL+W"|"CTRL+SHIFT+T"|"CTRL+TAB"|"CTRL+A"|"CTRL+C"|"CTRL+V"|"CTRL+J"|"CTRL+L"|"ALT+TAB"|"VOLUME_UP"|"VOLUME_DOWN"|"VOLUME_MUTE"). Gunakan key: "CLEAR_ALL" saat Tuan meminta menghapus seluruh teks di kolom pencarian/input.\n` +
         `   - Sorot elemen/tombol visual untuk menuntun pandangan Tuan -> highlightElement(ymin, xmin, ymax, xmax, style: "BOX"|"RING"|"SPOTLIGHT", label: "...").\n` +
         `   - Arahkan laser pointer kursor -> pointCursor(x, y).\n` +
         `   - Hapus sorotan visual -> clearHighlights().\n` +
@@ -581,7 +581,8 @@ class LiveVoiceSession {
         `   - Kunci laptop Windows -> controlDeviceHardware(action: "LOCK_SCREEN").\n` +
         `   - Ambil tangkapan layar laptop -> controlDeviceHardware(action: "TAKE_SCREENSHOT").\n` +
         `   - Cek baterai atau status sistem laptop -> controlDeviceHardware(action: "GET_BATTERY_STATUS").\n` +
-        `3. ATURAN MUTLAK MENUTUP JENDELA, TAB, & NAVIGASI KEMBALI:\n` +
+        `3. ATURAN MUTLAK MEMBUKA/MENUTUP JENDELA, TAB, & NAVIGASI KEMBALI:\n` +
+        `   - "buka tab baru", "tambah tab baru", "buat tab baru", "new tab" -> WAJIB panggil openNewTab() (atau openNewTab(url: "...") jika sekaligus diminta membuka situs/pencarian di tab baru). DILARANG KERAS mengatakan tidak bisa membuka tab baru!\n` +
         `   - "kembali", "back", "superbeck", "balik ke halaman sebelumnya", "kembali ke pencarian" -> WAJIB panggil navigateBack() (mengirim Alt+Left di riwayat browser). JANGAN PERNAH panggil closeTab() atau closeWindow() jika Tuan hanya bermaksud kembali!\n` +
         `   - "tutup tab", "close tab", "tutup halaman ini" -> WAJIB panggil closeTab() (hanya menutup satu tab, Ctrl+W).\n` +
         `   - "tutup aplikasi", "tutup program", "tutup seluruh Chrome/jendela" -> WAJIB panggil closeWindow() (menutup jendela aktif).\n` +
@@ -1017,7 +1018,7 @@ class LiveVoiceSession {
         const DESKTOP_SERIAL_TOOLS = new Set([
           'desktopClick', 'desktopScroll', 'desktopTypeText', 'desktopPressKey',
           'highlightElement', 'clearHighlights', 'pointCursor',
-          'closeWindow', 'closeTab', 'navigateBack', 'taskView'
+          'closeWindow', 'openNewTab', 'closeTab', 'navigateBack', 'taskView'
         ]);
         const hasDesktopTool = functionCalls.some(fc => DESKTOP_SERIAL_TOOLS.has(fc.name));
         const needsSerial    = hasDesktopTool && functionCalls.length > 1;
