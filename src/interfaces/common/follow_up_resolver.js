@@ -18,6 +18,48 @@
 // ============================================================
 
 /**
+ * Extracts a numeric nominal value from raw text (e.g. "6000", "6rb", "Rp 15.000", "15k", "1.5jt").
+ * Supports Indonesian suffixes: k, rb, ribu (*1000) and jt, juta, m, miliar (*1000000).
+ * @param {string} text
+ * @returns {number|null}
+ */
+function extractNominalFromText(text) {
+  if (typeof text !== 'string') return null;
+  const str = text.trim().toLowerCase();
+
+  const regex = /(?:rp\.?\s*)?(\d+(?:[.,]\d+)?)\s*(k|rb|ribu|jt|juta|m|miliar)?(?:\s*(?:rupiah|perak))?/i;
+  const match = str.match(regex);
+  if (!match) return null;
+
+  let baseNumStr = match[1];
+  const unit = (match[2] || '').toLowerCase();
+
+  let val;
+  if (unit === 'k' || unit === 'rb' || unit === 'ribu') {
+    baseNumStr = baseNumStr.replace(',', '.');
+    val = parseFloat(baseNumStr) * 1000;
+  } else if (unit === 'jt' || unit === 'juta' || unit === 'm' || unit === 'miliar') {
+    baseNumStr = baseNumStr.replace(',', '.');
+    val = parseFloat(baseNumStr) * 1000000;
+  } else {
+    const dots = (baseNumStr.match(/\./g) || []).length;
+    const commas = (baseNumStr.match(/,/g) || []).length;
+    if (dots > 0 && commas === 0) {
+      val = parseFloat(baseNumStr.replace(/\./g, ''));
+    } else if (commas > 0 && dots === 0) {
+      val = parseFloat(baseNumStr.replace(/,/g, ''));
+    } else if (dots > 0 && commas === 1) {
+      val = parseFloat(baseNumStr.replace(/\./g, '').replace(',', '.'));
+    } else {
+      val = parseFloat(baseNumStr);
+    }
+  }
+
+  if (isNaN(val) || val <= 0) return null;
+  return Math.round(val);
+}
+
+/**
  * Returns true if the text is an ambiguous short-form follow-up
  * that needs context resolution (e.g. "hapus itu", "lanjut").
  * Superset of both Telegram and CLI patterns.
@@ -25,6 +67,12 @@
 function isAmbiguousFollowUp(text) {
   const norm = String(text || '').toLowerCase().trim();
   if (!norm) return false;
+
+  // Undo / cancel patterns
+  if (/^(?:undo|batalkan(?:\s+hapus|\s+edit|\s+perubahan)?)$/i.test(norm)) return true;
+
+  // Bare numbers, currency, or short nominal expressions (e.g. "6000", "6rb", "Rp 15.000", "15k", "tadi 6000")
+  if (/^(?:tadi\s+|nominalnya\s+|sebesar\s+|cuma\s+)?(?:rp\.?\s*)?\d+(?:[.,]\d+)?\s*(?:k|rb|ribu|jt|juta)?(?:\s*(?:rupiah|perak|aja|saja))*$/i.test(norm)) return true;
 
   // Generic continuation words
   if (/^(lanjut|lanjutkan|teruskan|next|berikutnya|ada lagi|cek lagi|lihat lagi)$/.test(norm)) return true;
@@ -87,17 +135,94 @@ function isGenericContinuation(text) {
  */
 function resolveFollowUp(textInput, conversationContext) {
   if (!conversationContext || !conversationContext.intent) return null;
-  const isAffirmativeOrAck = /^(?:iya|ya|boleh|silakan|carikan|gas|coba|tolong|ok|oke|siap|mau|tidak|nggak|enggak|tidak ada|ga ada|gak ada|cukup|makasih|terima kasih|sudah|udah|mantap|itu aja|itu saja|cukup itu|ga usah|tidak perlu)(?:\s+(?:dong|deh|aja|saja|carikan|tolong|coba|tuan|nex|nexa|kok|dulu))*$/i.test(String(textInput || '').toLowerCase().trim());
-  if (!isAmbiguousFollowUp(textInput) || (hasStrongNewIntentCue(textInput) && !isAffirmativeOrAck)) return null;
+  const norm = String(textInput || '').toLowerCase().trim();
+  const isAffirmativeOrAck = /^(?:iya|ya|boleh|silakan|carikan|gas|coba|tolong|ok|oke|siap|mau|tidak|nggak|enggak|tidak ada|ga ada|gak ada|cukup|makasih|terima kasih|sudah|udah|mantap|itu aja|itu saja|cukup itu|ga usah|tidak perlu)(?:\s+(?:dong|deh|aja|saja|carikan|tolong|coba|tuan|nex|nexa|kok|dulu))*$/i.test(norm);
+  const isUndoOrNominal = /^(?:undo|batalkan(?:\s+hapus|\s+edit|\s+perubahan)?)$/i.test(norm) ||
+                          /^(?:tadi\s+|nominalnya\s+|sebesar\s+|cuma\s+)?(?:rp\.?\s*)?\d+(?:[.,]\d+)?\s*(?:k|rb|ribu|jt|juta)?(?:\s*(?:rupiah|perak|aja|saja))*$/i.test(norm);
+  if (!isAmbiguousFollowUp(textInput) || (hasStrongNewIntentCue(textInput) && !isAffirmativeOrAck && !isUndoOrNominal)) return null;
 
   const ctxAgeMs = Date.now() - (conversationContext.askedAt || 0);
   if (ctxAgeMs >= 10 * 60 * 1000) return null; // context expired after 10 minutes
 
-  const norm = textInput.toLowerCase().trim();
   const ctx = conversationContext;
+  const lastReply = String(ctx.lastAssistantReply || '').toLowerCase();
+
+  // 1. Handle Undo across intents (especially FINANCE)
+  if (/^(?:undo|batalkan(?:\s+hapus|\s+edit|\s+perubahan)?)$/i.test(norm)) {
+    if (ctx.intent === 'FINANCE') {
+      const undoRes = {
+        intent: 'FINANCE',
+        extracted_data: { action: 'UNDO_DELETE' },
+        reply_message: '',
+        god_mode_trigger: false
+      };
+      console.log(`[FOLLOW-UP] Ambiguous follow-up resolved: "${textInput}" → FINANCE (undo)`);
+      return undoRes;
+    }
+  }
+
+  // 2. Handle missing nominal clarification follow-up
+  if (ctx.intent === 'FINANCE') {
+    const askedForNominal = lastReply.includes('nominal transaksi belum valid') ||
+                            lastReply.includes('sebutkan angka positifnya') ||
+                            lastReply.includes('berapa nominal');
+
+    if (askedForNominal || (ctx.extractedData?.action === 'RECORD' && (!ctx.extractedData?.nominal || parseFloat(ctx.extractedData.nominal) <= 0))) {
+      const extractedNominal = extractNominalFromText(textInput);
+      if (extractedNominal && extractedNominal > 0) {
+        const mergedData = {
+          ...(ctx.extractedData || {}),
+          action: 'RECORD',
+          nominal: extractedNominal
+        };
+
+        // If user also mentioned payment method or account in this follow-up message:
+        if (norm.includes('qris')) mergedData.payment_method = 'QRIS';
+        if (norm.includes('cash') || norm.includes('tunai')) mergedData.payment_method = 'Cash';
+        if (norm.includes('debit') || norm.includes('direct debit')) mergedData.payment_method = 'Direct Debit';
+        if (norm.includes('shopee pay') || norm.includes('shopeepay')) mergedData.account = 'Shopee Pay';
+        if (norm.includes('dana')) mergedData.account = 'Dana';
+        if (norm.includes('gopay')) mergedData.account = 'Gopay';
+        if (norm.includes('jago')) mergedData.account = 'Bank Jago';
+        if (norm.includes('mandiri')) mergedData.account = 'Bank Mandiri';
+
+        const recordRes = {
+          intent: 'FINANCE',
+          extracted_data: mergedData,
+          reply_message: '',
+          god_mode_trigger: false
+        };
+        console.log(`[FOLLOW-UP] Resolved missing nominal clarification: "${textInput}" → nominal ${extractedNominal}`);
+        return recordRes;
+      }
+    }
+  }
+
+  // 3. Handle missing task name clarification
+  if (ctx.intent === 'TASK' && lastReply.includes('nama tugas yang ingin dibuat apa')) {
+    const taskRes = {
+      intent: 'TASK',
+      extracted_data: { action: 'CREATE', title: textInput.trim() },
+      reply_message: '',
+      god_mode_trigger: false
+    };
+    console.log(`[FOLLOW-UP] Resolved missing task title clarification: "${textInput}"`);
+    return taskRes;
+  }
+
+  // 4. Handle missing calendar summary clarification
+  if (ctx.intent === 'CALENDAR' && lastReply.includes('nama agendanya apa')) {
+    const calRes = {
+      intent: 'CALENDAR',
+      extracted_data: { action: 'CREATE', summary: textInput.trim() },
+      reply_message: '',
+      god_mode_trigger: false
+    };
+    console.log(`[FOLLOW-UP] Resolved missing calendar summary clarification: "${textInput}"`);
+    return calRes;
+  }
 
   // Handle proactive location assistance confirmation (e.g. from NORMAL_CHAT offer)
-  const lastReply = String(ctx.lastAssistantReply || '').toLowerCase();
   const isAffirmativeInput = /^(?:iya|ya|boleh|silakan|carikan|gas|coba|tolong|ok|oke|siap|mau)(?:\s+(?:dong|deh|aja|saja|carikan|tolong|coba))*$/i.test(norm);
 
   if (isAffirmativeInput && (lastReply.includes('carikan') || lastReply.includes('spbu') || lastReply.includes('tempat') || lastReply.includes('cafe') || lastReply.includes('warkop') || lastReply.includes('makan') || lastReply.includes('kelapa') || lastReply.includes('tambal') || lastReply.includes('bengkel'))) {
@@ -306,6 +431,7 @@ module.exports = {
   isEmailHistoryFollowUp,
   isGenericContinuation,
   resolveFollowUp,
+  extractNominalFromText,
   // Backward-compat aliases (adapters can migrate gradually)
   resolveAmbiguousFollowUp,
   buildGlobalFollowUpRouting,
@@ -313,5 +439,6 @@ module.exports = {
   // Underscore aliases used in existing tests
   _isAmbiguousFollowUp: isAmbiguousFollowUp,
   _hasStrongNewIntentCue: hasStrongNewIntentCue,
-  _getClarificationMessage: getClarificationMessage
+  _getClarificationMessage: getClarificationMessage,
+  _extractNominalFromText: extractNominalFromText
 };

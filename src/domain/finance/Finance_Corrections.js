@@ -9,8 +9,8 @@ const { _autoCategorizeMerchant, _parseFlexibleCurrency } = require('./Finance_H
 // In-memory cache for deletion confirmations
 const pendingDeletions = new Map();
 
-// In-memory undo cache: { deletedRow, deletedIndex, expireTimerId }
-let lastDeletedTransaction = null;
+// In-memory undo cache: { type: 'DELETE'|'EDIT', ... }
+let lastUndoableAction = null;
 
 /**
  * Finds the best matching transaction row based on robust multi-attribute token scoring.
@@ -147,11 +147,11 @@ async function confirmDeleteTransaction(isYes) {
         }
 
         // Simpan data lengkap untuk undo
-        if (lastDeletedTransaction?.expireTimerId) clearTimeout(lastDeletedTransaction.expireTimerId);
+        if (lastUndoableAction?.expireTimerId) clearTimeout(lastUndoableAction.expireTimerId);
         const expireTimerId = setTimeout(() => {
-          lastDeletedTransaction = null;
+          lastUndoableAction = null;
         }, 10 * 60 * 1000);
-        lastDeletedTransaction = { deletedTx: pending.txData, expireTimerId };
+        lastUndoableAction = { type: 'DELETE', deletedTx: pending.txData, expireTimerId };
 
         const catatan = pending.txData.description || '-';
         const nominalFmt = `Rp${Math.abs(pending.txData.amount || 0).toLocaleString('id-ID')}`;
@@ -168,16 +168,53 @@ async function confirmDeleteTransaction(isYes) {
 }
 
 /**
- * Undo the last deleted transaction (within 10-minute window).
- * Re-inserts the transaction to Supabase.
+ * Undo the last deleted or edited transaction (within 10-minute window).
+ * Re-inserts deleted transaction or restores previous state for edited transaction.
  */
 async function undoDeleteTransaction() {
-  if (!lastDeletedTransaction) {
+  if (!lastUndoableAction) {
     return { status: 'FAILED', message: '⚠️ Tidak ada transaksi yang bisa di-undo. Mungkin sudah lebih dari 10 menit atau belum ada penghapusan.' };
   }
 
+  if (lastUndoableAction.type === 'EDIT') {
+    try {
+      const { txId, previousData, expireTimerId } = lastUndoableAction;
+      clearTimeout(expireTimerId);
+
+      const sfResult = await supabaseFinance.updateTransaction(txId, {
+        nominal: previousData.nominal,
+        description: previousData.description,
+        categoryName: previousData.categoryName,
+        accountName: previousData.accountName,
+        paymentMethod: previousData.paymentMethod,
+        txType: previousData.txType,
+        dateISO: previousData.dateISO,
+        timeHHMM: previousData.timeHHMM
+      });
+
+      if (sfResult.status !== 'SUCCESS') {
+        return { status: 'FAILED', message: `⚠️ Gagal membatalkan edit di database: ${sfResult.reason}` };
+      }
+
+      lastUndoableAction = null; // Clear undo cache
+      const nominalFmt = `Rp${previousData.nominal.toLocaleString('id-ID')}`;
+
+      return {
+        status: 'SUCCESS',
+        message: `↩️ <b>Perubahan Transaksi Dibatalkan!</b>\n\nTransaksi "<b>${previousData.description}</b>" telah dipulihkan ke data semula:\n` +
+          `- <b>Nominal:</b> ${nominalFmt}\n` +
+          `- <b>Kategori:</b> ${previousData.categoryName}\n` +
+          `- <b>Akun:</b> ${previousData.accountName}\n` +
+          `- <b>Metode:</b> ${previousData.paymentMethod}`
+      };
+    } catch (error) {
+      console.error('[FINANCE] Failed to undo edit:', error.message);
+      return { status: 'FAILED', message: `Gagal membatalkan edit transaksi: ${error.message}` };
+    }
+  }
+
   try {
-    const { deletedTx, expireTimerId } = lastDeletedTransaction;
+    const { deletedTx, expireTimerId } = lastUndoableAction;
     clearTimeout(expireTimerId);
     
     // Tulis ulang ke Supabase
@@ -198,7 +235,7 @@ async function undoDeleteTransaction() {
     const catatan = deletedTx.description || '-';
     const nominalFmt = `Rp${Math.abs(deletedTx.amount || 0).toLocaleString('id-ID')}`;
 
-    lastDeletedTransaction = null; // Clear undo cache
+    lastUndoableAction = null; // Clear undo cache
 
     return { status: 'SUCCESS', message: `↩️ <b>Transaksi dikembalikan!</b>\n\n"${catatan}" sebesar <b>${nominalFmt}</b> telah dipulihkan ke database Supabase.` };
   } catch (error) {
@@ -283,6 +320,27 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
     if (newTime) {
       patchData.timeHHMM = newTime;
     }
+
+    // Save undo snapshot before modifying database
+    if (lastUndoableAction?.expireTimerId) clearTimeout(lastUndoableAction.expireTimerId);
+    const expireTimerId = setTimeout(() => {
+      lastUndoableAction = null;
+    }, 10 * 60 * 1000);
+    lastUndoableAction = {
+      type: 'EDIT',
+      txId: tx.id,
+      previousData: {
+        nominal: Math.abs(tx.amount || 0),
+        description: tx.description || '-',
+        categoryName: tx.categories?.name || 'Lainnya',
+        accountName: tx.accounts?.name || 'Bank Mandiri',
+        paymentMethod: tx.payment_method || 'QRIS',
+        txType: tx.type ? tx.type.toUpperCase() : 'EXPENSE',
+        dateISO: tx.transaction_date || null,
+        timeHHMM: tx.transaction_time ? tx.transaction_time.slice(0, 5) : null
+      },
+      expireTimerId
+    };
     
     // Update the Supabase record
     const result = await supabaseFinance.updateTransaction(tx.id, patchData);
@@ -345,5 +403,6 @@ module.exports = {
   requestDeleteConfirmation,
   confirmDeleteTransaction,
   undoDeleteTransaction,
+  undoLastTransaction: undoDeleteTransaction,
   editTransaction,
 };

@@ -600,3 +600,81 @@ test('Finance_Handler: correctly targets quoted transaction on edit without corr
     financeEngine.editTransaction = originalEdit;
   }
 });
+
+test('FollowUpResolver: Resolves nominal follow-up after clarification prompt to RECORD, not EDIT', () => {
+  const followUpResolver = require('../src/interfaces/common/follow_up_resolver');
+
+  // Verify bare nominal detection
+  assert.strictEqual(followUpResolver.isAmbiguousFollowUp('6000'), true);
+  assert.strictEqual(followUpResolver.isAmbiguousFollowUp('6rb'), true);
+  assert.strictEqual(followUpResolver.isAmbiguousFollowUp('Rp 6.000'), true);
+  assert.strictEqual(followUpResolver.isAmbiguousFollowUp('15k'), true);
+  assert.strictEqual(followUpResolver.isAmbiguousFollowUp('1.5jt'), true);
+  assert.strictEqual(followUpResolver.isAmbiguousFollowUp('undo'), true);
+
+  const pendingClarificationContext = {
+    intent: 'FINANCE',
+    extractedData: {
+      action: 'RECORD',
+      nominal: null,
+      description: 'Naik grab ojek ke kampus',
+      account: 'Shopee Pay',
+      payment_method: 'QRIS',
+      category: 'Ojek / Taksi Online'
+    },
+    lastUserText: 'Tadi pagi aku berangkat ke kampus pake grab ojek bayar pake qris shopee pay',
+    lastAssistantReply: '❓ Nominal transaksi belum valid. Mohon sebutkan angka positifnya, Tuan.',
+    askedAt: Date.now()
+  };
+
+  const resolved = followUpResolver.resolveFollowUp('6000', pendingClarificationContext);
+  assert.ok(resolved, 'Must resolve ambiguous 6000 follow up');
+  assert.strictEqual(resolved.intent, 'FINANCE');
+  assert.strictEqual(resolved.extracted_data.action, 'RECORD', 'Must be RECORD, not EDIT');
+  assert.strictEqual(resolved.extracted_data.nominal, 6000);
+  assert.strictEqual(resolved.extracted_data.description, 'Naik grab ojek ke kampus');
+  assert.strictEqual(resolved.extracted_data.account, 'Shopee Pay');
+  assert.strictEqual(resolved.extracted_data.payment_method, 'QRIS');
+  assert.strictEqual(resolved.extracted_data.category, 'Ojek / Taksi Online');
+});
+
+test('FollowUpResolver: Resolves "undo" after financial action to UNDO_DELETE', () => {
+  const followUpResolver = require('../src/interfaces/common/follow_up_resolver');
+
+  const context = {
+    intent: 'FINANCE',
+    extractedData: { action: 'EDIT', nominal: 6000 },
+    lastAssistantReply: '💸 TRANSAKSI DIEDIT...',
+    askedAt: Date.now()
+  };
+
+  const resolved = followUpResolver.resolveFollowUp('Undo', context);
+  assert.ok(resolved);
+  assert.strictEqual(resolved.intent, 'FINANCE');
+  assert.strictEqual(resolved.extracted_data.action, 'UNDO_DELETE');
+});
+
+test('Finance_Handler: UPDATE_PENDING does not overwrite latest committed transaction when no pending draft exists', async () => {
+  const routingData = {
+    domain: 'FINANCE',
+    extracted_data: {
+      action: 'UPDATE_PENDING',
+      nominal: 6000
+    }
+  };
+
+  let editCalled = false;
+  const originalEdit = financeEngine.editTransaction;
+  financeEngine.editTransaction = async () => {
+    editCalled = true;
+    return { status: 'SUCCESS', message: 'Overwritten' };
+  };
+
+  try {
+    const reply = await handleFinanceIntent(routingData, { textInput: '6000' });
+    assert.strictEqual(editCalled, false, 'Must NOT call editTransaction when no pending draft exists and user did not quote a message');
+    assert.ok(reply.includes('Tidak ada transaksi yang sedang menunggu konfirmasi'), 'Must return safe feedback');
+  } finally {
+    financeEngine.editTransaction = originalEdit;
+  }
+});

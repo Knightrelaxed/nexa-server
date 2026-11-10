@@ -215,7 +215,7 @@ async function handleFinanceIntent(routingData, context = {}) {
     return result.message;
   }
 
-  if (action === 'UNDO_DELETE') {
+  if (action === 'UNDO_DELETE' || action === 'UNDO') {
     const result = await financeEngine.undoDeleteTransaction();
     return result.message;
   }
@@ -247,7 +247,7 @@ async function handleFinanceIntent(routingData, context = {}) {
     );
     if (updatedMsg) return updatedMsg;
 
-    // Fallback: If pending confirmation timed out (already saved) or user quoted a previous message, edit committed transaction
+    // Fallback: ONLY if user quoted a previous message or provided search_keyword
     let kw = ed.search_keyword;
     const replyMsgText = context.message?.reply_to_message?.text ||
       (textInput.match(/\[KONTEKS_AKSI[\s\S]*?Menanggapi[\s\S]*?"([\s\S]+?)"\s*\]/)?.[1] || null);
@@ -266,14 +266,15 @@ async function handleFinanceIntent(routingData, context = {}) {
         kw = nLabelMatch[1].replace(/[^0-9]/g, '');
       } else if (nRpMatch && nRpMatch[1]) {
         kw = nRpMatch[1].replace(/[^0-9]/g, '');
-      } else {
-        kw = 'latest';
       }
-    } else if (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|\s)*$/i.test(String(kw).trim())) {
-      kw = 'latest';
     }
+
+    if (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|\s)*$/i.test(String(kw).trim())) {
+      return '⚠️ Tidak ada transaksi yang sedang menunggu konfirmasi untuk diubah.';
+    }
+
     const editRes = await financeEngine.editTransaction(
-      kw || 'latest',
+      kw,
       ed.nominal,
       ed.description || ed.destination,
       ed.category,
@@ -286,7 +287,7 @@ async function handleFinanceIntent(routingData, context = {}) {
     if (editRes && editRes.status === 'SUCCESS') {
       return editRes.message;
     }
-    return '❌ Tidak ada transaksi yang tertunda atau cocok untuk diubah.';
+    return '❌ Tidak ada transaksi yang cocok untuk diubah.';
   }
 
   if (action === 'CANCEL_TRANSACTION') {
@@ -326,6 +327,10 @@ async function handleFinanceIntent(routingData, context = {}) {
         kw = 'latest';
       }
     } else if (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|\s)*$/i.test(String(kw).trim())) {
+      const hasEditIntent = /\b(ubah|edit|ganti|ralat|perbaiki|koreksi|sesuaikan|terakhir|tadi)\b/i.test(cleanUserText);
+      if (!hasEditIntent && !replyMsgText) {
+        return '❓ Transaksi mana yang ingin diedit, Tuan? Mohon sebutkan nama merchant, nomor transaksi, atau balas langsung pada pesan transaksinya.';
+      }
       kw = 'latest';
     }
     const result = await financeEngine.editTransaction(
