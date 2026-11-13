@@ -12,6 +12,17 @@ const pendingDeletions = new Map();
 // In-memory undo cache: { type: 'DELETE'|'EDIT', ... }
 let lastUndoableAction = null;
 
+// Track recently committed transaction in current session
+let lastCommittedTransaction = null;
+
+function recordCommittedTransaction(txId) {
+  if (!txId) return;
+  lastCommittedTransaction = {
+    id: txId,
+    committedAt: Date.now()
+  };
+}
+
 /**
  * Finds the best matching transaction row based on robust multi-attribute token scoring.
  * Works with Supabase transaction objects.
@@ -20,7 +31,23 @@ function _findBestTransactionMatch(rows, keyword) {
   const kw = keyword ? String(keyword).toLowerCase().trim() : '';
   
   if (kw === '' || kw === 'latest') {
-    return 0; // Supabase results are ordered newest first, so index 0 is newest
+    // 1. Prioritize transaction committed in this session within last 10 minutes
+    if (lastCommittedTransaction && (Date.now() - lastCommittedTransaction.committedAt < 10 * 60 * 1000)) {
+      const idx = rows.findIndex(r => r.id === lastCommittedTransaction.id);
+      if (idx !== -1) return idx;
+    }
+
+    // 2. Fallback: Find row with the newest created_at timestamp
+    let newestIdx = 0;
+    let newestTime = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const cTime = rows[i].created_at ? new Date(rows[i].created_at).getTime() : 0;
+      if (cTime > newestTime) {
+        newestTime = cTime;
+        newestIdx = i;
+      }
+    }
+    return newestIdx;
   }
   
   const tokens = kw.split(/\s+/).filter(t => t.length > 2 || /^\d+$/.test(t));
@@ -399,6 +426,7 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
 module.exports = {
   pendingDeletions,
   _findBestTransactionMatch,
+  recordCommittedTransaction,
   getPendingDeletionsContext,
   requestDeleteConfirmation,
   confirmDeleteTransaction,

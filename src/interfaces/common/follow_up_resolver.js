@@ -69,7 +69,7 @@ function isAmbiguousFollowUp(text) {
   if (!norm) return false;
 
   // Undo / cancel patterns
-  if (/^(?:undo|batalkan(?:\s+hapus|\s+edit|\s+perubahan)?)$/i.test(norm)) return true;
+  if (/^(?:undo|batal|batalin|batalkan(?:\s+hapus|\s+edit|\s+perubahan|\s+ini|\s+itu)?)$/i.test(norm)) return true;
 
   // Bare numbers, currency, or short nominal expressions (e.g. "6000", "6rb", "Rp 15.000", "15k", "tadi 6000")
   if (/^(?:tadi\s+|nominalnya\s+|sebesar\s+|cuma\s+)?(?:rp\.?\s*)?\d+(?:[.,]\d+)?\s*(?:k|rb|ribu|jt|juta)?(?:\s*(?:rupiah|perak|aja|saja))*$/i.test(norm)) return true;
@@ -137,7 +137,7 @@ function resolveFollowUp(textInput, conversationContext) {
   if (!conversationContext || !conversationContext.intent) return null;
   const norm = String(textInput || '').toLowerCase().trim();
   const isAffirmativeOrAck = /^(?:iya|ya|boleh|silakan|carikan|gas|coba|tolong|ok|oke|siap|mau|tidak|nggak|enggak|tidak ada|ga ada|gak ada|cukup|makasih|terima kasih|sudah|udah|mantap|itu aja|itu saja|cukup itu|ga usah|tidak perlu)(?:\s+(?:dong|deh|aja|saja|carikan|tolong|coba|tuan|nex|nexa|kok|dulu))*$/i.test(norm);
-  const isUndoOrNominal = /^(?:undo|batalkan(?:\s+hapus|\s+edit|\s+perubahan)?)$/i.test(norm) ||
+  const isUndoOrNominal = /^(?:undo|batal|batalin|batalkan(?:\s+hapus|\s+edit|\s+perubahan|\s+ini|\s+itu)?)$/i.test(norm) ||
                           /^(?:tadi\s+|nominalnya\s+|sebesar\s+|cuma\s+)?(?:rp\.?\s*)?\d+(?:[.,]\d+)?\s*(?:k|rb|ribu|jt|juta)?(?:\s*(?:rupiah|perak|aja|saja))*$/i.test(norm);
   if (!isAmbiguousFollowUp(textInput) || (hasStrongNewIntentCue(textInput) && !isAffirmativeOrAck && !isUndoOrNominal)) return null;
 
@@ -148,7 +148,7 @@ function resolveFollowUp(textInput, conversationContext) {
   const lastReply = String(ctx.lastAssistantReply || '').toLowerCase();
 
   // 1. Handle Undo across intents (especially FINANCE)
-  if (/^(?:undo|batalkan(?:\s+hapus|\s+edit|\s+perubahan)?)$/i.test(norm)) {
+  if (/^(?:undo|batal|batalin|batalkan(?:\s+hapus|\s+edit|\s+perubahan|\s+ini|\s+itu)?)$/i.test(norm)) {
     if (ctx.intent === 'FINANCE') {
       const undoRes = {
         intent: 'FINANCE',

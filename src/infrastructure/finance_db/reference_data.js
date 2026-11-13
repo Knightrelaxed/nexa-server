@@ -152,20 +152,41 @@ function _fuzzyScore(query, target) {
  *
  * Prioritas pencocokan:
  *   1. Exact match (case-insensitive)
- *   2. Fuzzy match (skor tertinggi dari semua akun)
+ *   2. Known aliases / typo tolerance (shoope, spay, shopee -> Shopee Pay, dll)
+ *   3. Fuzzy match (skor tertinggi dari semua akun)
  *
  * @param {string} accountName - Contoh: "Gopay", "BCA", "livin", "mandiri"
  * @returns {Promise<string|null>} UUID akun, atau null jika tidak ditemukan
  */
+const ACCOUNT_ALIASES = {
+  shoope: 'Shopee Pay',
+  shoppe: 'Shopee Pay',
+  shopee: 'Shopee Pay',
+  spay: 'Shopee Pay',
+  shopeepay: 'Shopee Pay',
+  jago: 'Bank Jago',
+  bankjago: 'Bank Jago',
+  mandiri: 'Bank Mandiri',
+  bankmandiri: 'Bank Mandiri',
+  livin: 'Bank Mandiri',
+  dana: 'Dana',
+  gopay: 'Gopay',
+  bca: 'Bank BCA',
+  bankbca: 'Bank BCA'
+};
+
 async function resolveAccountId(accountName) {
   if (!accountName) return null;
   const accounts = await _loadAccounts();
   if (!accounts.length) return null;
 
+  const cleanAlias = String(accountName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  const normalizedQuery = ACCOUNT_ALIASES[cleanAlias] || accountName;
+
   // Cari skor terbaik
   let best = { score: 0, id: null };
   for (const acc of accounts) {
-    const score = _fuzzyScore(accountName, acc.name);
+    const score = _fuzzyScore(normalizedQuery, acc.name);
     if (score > best.score) {
       best = { score, id: acc.id, name: acc.name };
     }
@@ -194,17 +215,18 @@ async function resolveAccount(accountName) {
   const accounts = await _loadAccounts();
   if (!accounts.length) return null;
 
+  const cleanAlias = String(accountName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  const normalizedQuery = ACCOUNT_ALIASES[cleanAlias] || accountName;
+
   let best = { score: 0, account: null };
   for (const acc of accounts) {
-    const score = _fuzzyScore(accountName, acc.name);
+    const score = _fuzzyScore(normalizedQuery, acc.name);
     if (score > best.score) {
       best = { score, account: acc };
     }
   }
 
-  if (best.score >= 30) {
-    return best.account;
-  }
+  if (best.score >= 30) return best.account;
   return accounts[0] || null;
 }
 

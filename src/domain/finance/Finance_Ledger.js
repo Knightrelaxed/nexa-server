@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const supabase = require('../../infrastructure/Supabase_Memories');
 const supabaseFinance = require('../../infrastructure/Supabase_Finance');
 const { _autoCategorizeMerchant, _formatTxAsCard, _normalizePaymentMethod, _parseFlexibleCurrency, _parseRelativeDateFilter } = require('./Finance_Helpers');
+const { recordCommittedTransaction } = require('./Finance_Corrections');
 
 /**
  * Handle a finance transaction (Deduplication & Recording)
@@ -178,6 +179,9 @@ async function processTransaction(data, source) {
     if (sfResult.status !== 'SUCCESS') {
       throw new Error(`Supabase Finance gagal: ${sfResult.reason}`);
     }
+
+    // Track this newly committed transaction so follow-up edits target it correctly
+    recordCommittedTransaction(sfResult.id);
 
     if (adminFeeNum > 0 && !isIncome) {
       let targetDest = (dest && dest !== 'Unknown' && dest !== 'Tujuan' && dest !== 'tujuan') ? dest : null;
