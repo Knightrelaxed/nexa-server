@@ -171,7 +171,11 @@ export function DashboardView() {
     balanceTrend, totalBalance, totalIncome, totalExpense,
     cashFlow, recentTransactions, expenseByCategory, dailyCategoryExpenses, dailyNeedsWants, loading: dashLoading,
   } = useDashboardData(period)
-  const { data: comparisonData, loading: comparisonLoading } = usePeriodComparison(period, compTab, accounts[0]?.id)
+  const { data: comparisonData, loading: comparisonLoading } = usePeriodComparison(
+    period,
+    compTab,
+    accounts.find((a) => !a.is_archived && !a.exclude_from_stats)?.id || accounts[0]?.id
+  )
 
   const [showBalance, setShowBalance] = useState<boolean>(true)
 
@@ -675,11 +679,6 @@ export function DashboardView() {
                 <p className="text-[11px] font-bold uppercase tracking-wider text-slate-300">Total Saldo</p>
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   {accounts.filter(a => !a.is_archived && !a.exclude_from_stats).length} Akun
-                  {accounts.some(a => !a.is_archived && a.exclude_from_stats) && (
-                    <span className="ml-1 text-amber-300/90 font-medium">
-                      (+{accounts.filter(a => !a.is_archived && a.exclude_from_stats).length} Vault)
-                    </span>
-                  )}
                 </span>
               </div>
               <p className="text-base sm:text-lg font-black tracking-tight truncate text-white mt-0.5">
@@ -697,8 +696,8 @@ export function DashboardView() {
           </button>
         </div>
 
-        {/* Individual Account Cards */}
-        {accounts.filter(a => !a.is_archived).map((acc, i) => {
+        {/* Individual Account Cards (Exclude Vault accounts from Dashboard for psychological focus) */}
+        {accounts.filter(a => !a.is_archived && !a.exclude_from_stats).map((acc, i) => {
           const Icon = getAccountIcon(acc)
           const cardBgStyle = acc.color
             ? { background: `linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0%, rgba(0, 0, 0, 0.22) 100%), ${acc.color}` }
