@@ -356,8 +356,8 @@ export function useDashboardData(period: { start: Date; end: Date }): UseDashboa
         fetchMonthlySummary(7),
       ]);
 
-      // Total balance across all accounts
-      const totalBal = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+      // Total balance across active liquid accounts (excluding vault/hidden savings)
+      const totalBal = accounts.reduce((sum, acc) => sum + (acc.exclude_from_stats ? 0 : acc.balance), 0);
       setTotalBalance(totalBal);
 
       // Income / expense aggregates from all transactions

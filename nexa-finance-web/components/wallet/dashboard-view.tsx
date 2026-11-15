@@ -195,7 +195,7 @@ export function DashboardView() {
   }
 
   const totalAllBalance = useMemo(() => {
-    return accounts.reduce((sum, acc) => sum + (acc.is_archived ? 0 : acc.balance), 0)
+    return accounts.reduce((sum, acc) => sum + (acc.is_archived || acc.exclude_from_stats ? 0 : acc.balance), 0)
   }, [accounts])
 
   const trendData = balanceTrend.map((b) => ({
@@ -674,7 +674,12 @@ export function DashboardView() {
               <div className="flex items-center gap-1.5">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-slate-300">Total Saldo</p>
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  {accounts.filter(a => !a.is_archived).length} Akun
+                  {accounts.filter(a => !a.is_archived && !a.exclude_from_stats).length} Akun
+                  {accounts.some(a => !a.is_archived && a.exclude_from_stats) && (
+                    <span className="ml-1 text-amber-300/90 font-medium">
+                      (+{accounts.filter(a => !a.is_archived && a.exclude_from_stats).length} Vault)
+                    </span>
+                  )}
                 </span>
               </div>
               <p className="text-base sm:text-lg font-black tracking-tight truncate text-white mt-0.5">
@@ -714,7 +719,15 @@ export function DashboardView() {
             >
               <Icon className="h-7 w-7 shrink-0" />
               <div className="min-w-0">
-                <p className="text-[13px] font-semibold truncate opacity-90">{acc.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-[13px] font-semibold truncate opacity-90">{acc.name}</p>
+                  {acc.exclude_from_stats && (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-black/30 text-amber-200 border border-amber-300/30" title="Akun Vault: Tidak dihitung di Total Saldo">
+                      <Lock className="h-2.5 w-2.5" />
+                      Vault
+                    </span>
+                  )}
+                </div>
                 <p className="text-base font-bold truncate">
                   {showBalance ? formatIDR(acc.balance) : "Rp ••••••••"}
                 </p>

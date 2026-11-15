@@ -305,7 +305,14 @@ export function AccountDetailView({ accountId, onBack }: AccountDetailViewProps)
         </div>
         <div>
           <p className="text-sm text-muted-foreground font-medium mb-0.5">Nama</p>
-          <h3 className="text-[16px] sm:text-[18px] font-bold text-slate-800 leading-tight mb-2">{account.name}</h3>
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="text-[16px] sm:text-[18px] font-bold text-slate-800 leading-tight">{account.name}</h3>
+            {account.exclude_from_stats && (
+              <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
+                Vault / Tabungan
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground font-medium mb-0.5">Tipe</p>
           <p className="text-[14px] font-semibold text-slate-800">{label}</p>
         </div>

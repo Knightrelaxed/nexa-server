@@ -254,9 +254,15 @@ export function AddAccountModal({ open, onClose, onSuccess, initialData }: AddAc
               onCheckedChange={setExcludeStats}
               id="exclude-stats"
             />
-            <label htmlFor="exclude-stats" className="text-sm font-medium text-slate-700 cursor-pointer flex items-center gap-1.5">
-              Kecualikan dari statistik
-              <Info className="h-4 w-4 text-slate-400" />
+            <label htmlFor="exclude-stats" className="text-sm font-medium text-slate-700 cursor-pointer flex flex-col">
+              <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                Keluarkan dari Total Saldo (Jadikan Vault / Tabungan)
+                <Info className="h-4 w-4 text-slate-400 shrink-0" />
+              </span>
+              <span className="text-xs text-slate-500 font-normal mt-0.5">
+                Saldo akun ini tidak akan dihitung di Total Saldo Dasbor, membantu psikologi agar fokus pada dana harian.
+              </span>
+
             </label>
           </div>
 

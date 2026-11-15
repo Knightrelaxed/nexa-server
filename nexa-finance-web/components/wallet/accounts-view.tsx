@@ -35,7 +35,7 @@ export function AccountsView() {
   const [addOpen, setAddOpen]           = useState(false)
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(paramAccountId)
   const { accounts, loading, refetch } = useAccounts()
-  const totalBalance = accounts.reduce((s, a) => s + a.balance, 0)
+  const totalBalance = accounts.reduce((s, a) => s + (a.exclude_from_stats ? 0 : a.balance), 0)
 
   useEffect(() => {
     setSelectedAccountId(paramAccountId)
@@ -147,7 +147,14 @@ export function AccountsView() {
                     </div>
 
                     <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-4 items-center">
-                      <h3 className="text-sm font-bold truncate">{account.name}</h3>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="text-sm font-bold truncate">{account.name}</h3>
+                        {account.exclude_from_stats && (
+                          <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                            Vault
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs font-medium text-muted-foreground">{label}</p>
                     </div>
 

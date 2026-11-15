@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Edit2, Archive, Loader2, Wallet, Plus } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import type { DbAccount } from "@/lib/supabase/types"
 import { formatIDR } from "@/lib/wallet-data"
@@ -21,12 +22,12 @@ export function SettingsAccounts() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingAcc, setEditingAcc] = useState<DbAccount | null>(null)
-  const [formData, setFormData] = useState({ name: "", type: "cash", initial_balance: 0 })
+  const [formData, setFormData] = useState({ name: "", type: "cash", initial_balance: 0, exclude_from_stats: false })
   const [isSaving, setIsSaving] = useState(false)
 
   const handleOpenEditModal = (acc: DbAccount) => {
     setEditingAcc(acc)
-    setFormData({ name: acc.name, type: acc.type, initial_balance: acc.initial_balance })
+    setFormData({ name: acc.name, type: acc.type, initial_balance: acc.initial_balance, exclude_from_stats: acc.exclude_from_stats ?? false })
     setIsEditModalOpen(true)
   }
 
@@ -87,7 +88,14 @@ export function SettingsAccounts() {
                       <Wallet className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="font-semibold text-slate-900">{acc.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-900">{acc.name}</p>
+                        {acc.exclude_from_stats && (
+                          <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-bold">
+                            Vault
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-xs bg-slate-100 px-2 py-0.5 rounded text-slate-600 capitalize">{acc.type}</span>
                         <span className="text-xs text-muted-foreground">Saldo Awal: {formatIDR(acc.initial_balance)}</span>
@@ -146,6 +154,18 @@ export function SettingsAccounts() {
                 onChange={(e) => setFormData({...formData, initial_balance: parseInt(e.target.value) || 0})} 
               />
               <p className="text-[11px] text-muted-foreground leading-tight mt-1">Ubah saldo awal ini jika perhitungan saldo saat ini tidak cocok dengan aslinya.</p>
+            </div>
+            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+              <Switch
+                id="edit-exclude-stats"
+                checked={formData.exclude_from_stats}
+                onCheckedChange={(checked) => setFormData({...formData, exclude_from_stats: checked})}
+                className="mt-0.5"
+              />
+              <Label htmlFor="edit-exclude-stats" className="text-xs cursor-pointer select-none">
+                <span className="font-semibold text-slate-800 block">Keluarkan dari Total Saldo (Vault)</span>
+                <span className="text-slate-500 font-normal">Saldo akun ini tidak akan dihitung di Total Saldo Dasbor.</span>
+              </Label>
             </div>
           </div>
           <DialogFooter>
