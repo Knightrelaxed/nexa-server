@@ -163,7 +163,7 @@ export function SettingsAccounts() {
                 className="mt-0.5"
               />
               <Label htmlFor="edit-exclude-stats" className="text-xs cursor-pointer select-none">
-                <span className="font-semibold text-slate-800 block">Keluarkan dari Total Saldo (Vault)</span>
+                <span className="font-semibold text-slate-800 block">Keluarkan dari Total Saldo</span>
                 <span className="text-slate-500 font-normal">Saldo akun ini tidak akan dihitung di Total Saldo Dasbor.</span>
               </Label>
             </div>

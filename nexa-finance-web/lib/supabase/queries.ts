@@ -80,7 +80,7 @@ export async function createAccount(data: { name: string; type: string; initial_
   notifyFinanceChanged();
 }
 
-export async function updateAccount(id: string, data: { name?: string; type?: string; initial_balance?: number }) {
+export async function updateAccount(id: string, data: { name?: string; type?: string; initial_balance?: number; exclude_from_stats?: boolean }) {
   const { error } = await supabase.from('accounts').update(data).eq('id', id);
   if (error) throw error;
   notifyFinanceChanged();
