@@ -278,7 +278,11 @@ export function RecordsView() {
     const fileName = `NEXA_Catatan_${periodLabel}_${scopeTag}.${format}`
 
     if (format === 'csv') {
-      const BOM = '\uFEFF' // UTF-8 Byte Order Mark agar Microsoft Excel di Windows membaca pemisah kolom & teks Indonesia secara sempurna
+      // SEP=; → wajib untuk Excel Windows locale Indonesia yang menggunakan titik koma (;) sebagai list separator.
+      // Tanpa ini, seluruh baris collapse jadi 1 kolom karena Excel Indonesia tidak mengenali koma sebagai delimiter.
+      const SEP = ';'
+      const BOM = '\uFEFF' // UTF-8 BOM agar Excel Windows membaca karakter Indonesia dengan benar
+      const SEP_HINT = `sep=${SEP}\r\n` // Hint eksplisit ke Excel tentang separator yang digunakan
       const headers = [
         'No',
         'Tanggal',
@@ -304,7 +308,7 @@ export function RecordsView() {
         if (!isNumeric && str.length > 1 && (str.startsWith('=') || str.startsWith('+') || str.startsWith('-') || str.startsWith('@') || str.startsWith('\t') || str.startsWith('\r'))) {
           str = `'${str}`
         }
-        if (str.includes(',') || str.includes(';') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        if (str.includes(';') || str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
           return `"${str.replace(/"/g, '""')}"`
         }
         return str
@@ -351,10 +355,10 @@ export function RecordsView() {
           escapeCsv(splitStatus),
           escapeCsv(t.id),
           escapeCsv(t.split_group_id || '')
-        ].join(',')
+        ].join(SEP)
       })
 
-      const csvContent = BOM + [headers.join(','), ...rows].join('\r\n')
+      const csvContent = BOM + SEP_HINT + [headers.join(SEP), ...rows].join('\r\n')
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
