@@ -189,6 +189,8 @@ class LiveVoiceSession {
     this.isReconnecting    = false;
     this.hasSentInitialGreeting = false;
     this.isEndingCall      = false;
+    this.hasFarewellOutput = false;
+    this._farewellSignaled = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 4;
     this.turnHistory       = [];   // { role: 'user'|'assistant', text: string }
@@ -837,7 +839,9 @@ class LiveVoiceSession {
       if (msg.serverContent) {
         if (msg.serverContent.interrupted) {
           const hasRecentVoice = this._lastVocalActivityTime && (Date.now() - this._lastVocalActivityTime < 1500);
-          if (!hasRecentVoice || (this._lastUserAudioRms || 0) < 40) {
+          if (this.isEndingCall) {
+            console.log('[LIVE-VOICE] Ignored barge-in signal while delivering farewell speech.');
+          } else if (!hasRecentVoice || (this._lastUserAudioRms || 0) < 40) {
             console.log(`[LIVE-VOICE] ⚠️ Ignored spurious barge-in without user vocal energy (RMS: ${(this._lastUserAudioRms || 0).toFixed(0)})`);
           } else {
             console.log('[LIVE-VOICE] Barge-in / turn transition detected.');
@@ -922,6 +926,9 @@ class LiveVoiceSession {
         if (msg.serverContent.outputTranscription?.text) {
           this._pendingResponseSince = 0;
           this._strongSpeechStreak = 0;
+          if (this.isEndingCall) {
+            this.hasFarewellOutput = true;
+          }
           const cleanChunk = String(msg.serverContent.outputTranscription.text)
             .replace(/\s*---+\s*To address the user's[\s\S]*$/i, '');
           this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + cleanChunk;
@@ -938,6 +945,9 @@ class LiveVoiceSession {
           if (p.inlineData && p.inlineData.data) {
             this._pendingResponseSince = 0;
             this._strongSpeechStreak = 0;
+            if (this.isEndingCall) {
+              this.hasFarewellOutput = true;
+            }
             if (this._toolSafetyTimer) {
               clearTimeout(this._toolSafetyTimer);
               this._toolSafetyTimer = null;
@@ -964,7 +974,7 @@ class LiveVoiceSession {
               type: 'CALL_AUDIO_PLAY',
               pcm_chunk: p.inlineData.data
             });
-            // Update HUD to Mentransmisikan.. only on onset of speaking burst
+            // Update HUD to Speaking only on onset of speaking burst
             if (!wasAssistantSpeaking) {
               this._sendToClient({
                 type: 'CALL_STATUS_UPDATE',
@@ -1034,21 +1044,33 @@ class LiveVoiceSession {
           }
         }
 
-        // If turnComplete is reached AND call is marked to end:
-        if (msg.serverContent.turnComplete && this.isEndingCall) {
-          console.log(`[LIVE-VOICE] Farewell speech turn completed. Signaling client to finish cleanly after audio playback.`);
-          this._sendToClient({
-            type: 'CALL_STATUS_UPDATE',
-            status: 'DISCONNECTING'
-          });
-          this._sendToClient({ type: 'CALL_REPLY_COMPLETE' });
-
-          // Clean up server session in background
-          setTimeout(() => {
-            if (this.isActive) {
-              this.close();
+        // If turnComplete is reached AND call is marked to end, ONLY close after farewell speech was actually generated.
+        // Ignore the pre-tool turnComplete that Gemini emits immediately after invoking endCall.
+        if (msg.serverContent.turnComplete && this.isEndingCall && !this._farewellSignaled) {
+          const isStillWaitingForFarewell = this.isExecutingTool || hasToolCall || this.isWaitingToolReply || !this.hasFarewellOutput;
+          if (isStillWaitingForFarewell) {
+            console.log(`[LIVE-VOICE] Ignoring pre-farewell turnComplete (isExecutingTool=${this.isExecutingTool}, isWaitingToolReply=${this.isWaitingToolReply}, hasFarewellOutput=${this.hasFarewellOutput}). Waiting for farewell speech.`);
+          } else {
+            this._farewellSignaled = true;
+            cancelEndCallSafetyTimer();
+            if (this._toolSafetyTimer) {
+              clearTimeout(this._toolSafetyTimer);
+              this._toolSafetyTimer = null;
             }
-          }, 3000);
+            console.log(`[LIVE-VOICE] Farewell speech turn completed. Signaling client to finish cleanly after audio playback.`);
+            this._sendToClient({
+              type: 'CALL_STATUS_UPDATE',
+              status: 'DISCONNECTING'
+            });
+            this._sendToClient({ type: 'CALL_REPLY_COMPLETE' });
+
+            // Clean up server session in background after client has received all PCM chunks
+            setTimeout(() => {
+              if (this.isActive) {
+                this.close();
+              }
+            }, 3000);
+          }
         }
       }
 
@@ -1157,6 +1179,7 @@ class LiveVoiceSession {
         if (this._toolSafetyTimer) clearTimeout(this._toolSafetyTimer);
         // Tool gating safety release: after 10 seconds max, unblock mic and return to LISTENING if Google stays silent
         this._toolSafetyTimer = setTimeout(() => {
+          if (this.isEndingCall) return;
           if (this.isExecutingTool || this.isWaitingToolReply) {
             console.log('[LIVE-VOICE] Tool response timeout safety triggered (10s). Resetting to LISTENING.');
             this.isExecutingTool = false;
@@ -1206,6 +1229,10 @@ class LiveVoiceSession {
    * @param {string} pcmBase64 - Base64 encoded 16kHz 16-bit Mono PCM
    */
   handleIncomingClientAudio(pcmBase64) {
+    if (this.isEndingCall) {
+      // Drop uplink mic audio while delivering farewell so echo/noise cannot barge-in and cut off speech
+      return;
+    }
     if (!this.googleWs || this.googleWs.readyState !== WebSocket.OPEN || !this.isSetupComplete) {
       this._droppedAudioCount = (this._droppedAudioCount || 0) + 1;
       if (this._droppedAudioCount === 1 || this._droppedAudioCount % 50 === 0) {
@@ -1718,11 +1745,14 @@ class LiveVoiceSession {
     const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
     console.log(`[LIVE-VOICE] Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);
 
-    // Clear keepalive, watchdog, and tool safety intervals on close
+    // Clear keepalive, watchdog, tool safety, and endCall fallback timers on close
     if (this.keepaliveInterval) { clearInterval(this.keepaliveInterval); this.keepaliveInterval = null; }
     if (this.watchdogInterval)  { clearInterval(this.watchdogInterval);  this.watchdogInterval  = null; }
     if (this._toolSafetyTimer)  { clearTimeout(this._toolSafetyTimer);   this._toolSafetyTimer  = null; }
     if (this._assistantSpeechDecayTimer) { clearTimeout(this._assistantSpeechDecayTimer); this._assistantSpeechDecayTimer = null; }
+    if (this.isEndingCall) {
+      cancelEndCallSafetyTimer();
+    }
 
     if (this.googleWs) {
       try { this.googleWs.close(1000, 'Session Closed'); } catch (_) {}
@@ -2128,20 +2158,24 @@ function closeLiveSession(sessionId) {
 }
 
 function markEndingCall() {
-  console.log('[LIVE-VOICE] Marking active live sessions to end after current speech turn finishes...');
+  console.log('[LIVE-VOICE] Marking active live sessions to end after farewell speech turn finishes...');
   for (const session of activeSessions.values()) {
     session.isEndingCall = true;
+    session.hasFarewellOutput = false;
+    session._farewellSignaled = false;
   }
 }
 
 function closeAllLiveSessions() {
   console.log(`[LIVE-VOICE] Closing all active live voice sessions (${activeSessions.size} active)...`);
+  cancelEndCallSafetyTimer();
   for (const timer of disconnectTimers.values()) {
     clearTimeout(timer);
   }
   disconnectTimers.clear();
   for (const [id, session] of activeSessions.entries()) {
     try {
+      session._sendToClient({ type: 'CALL_STATUS_UPDATE', status: 'DISCONNECTING' });
       session._sendToClient({ type: 'CALL_REPLY_COMPLETE' });
       session.close();
     } catch (_) {}

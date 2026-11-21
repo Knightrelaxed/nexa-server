@@ -1730,7 +1730,7 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
         }
 
         if (action === 'END_CALL' || action === 'HANGUP') {
-          return await executeLiveTool('endCall', args);
+          return await executeLiveTool('endCall', args, context);
         }
 
         // Strict Security Allow-list for Mobile Device Bridge Hardware Actions
@@ -1879,7 +1879,7 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
           const liveVoice = require('./Live_Voice_Engine');
           liveVoice.markEndingCall();
 
-          // Safety fallback: ensure session terminates after 8 seconds even if turnComplete is delayed
+          // Safety fallback: ensure session terminates after 14 seconds even if Gemini stays silent after toolResponse
           cancelEndCallSafetyTimer();
           _endCallSafetyTimer = setTimeout(() => {
             mobileBridgeWs.sendCommand('END_CALL', { reason: args.reason || 'User requested hangup' }, { timeoutMs: 3000 }).catch(() => {});
@@ -1888,7 +1888,7 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
             }
             liveVoice.closeAllLiveSessions();
             _endCallSafetyTimer = null;
-          }, 8000);
+          }, 14000);
         } catch (e) {
           console.warn('[LIVE-TOOL] Failed to schedule live session close:', e.message);
         }
