@@ -22,7 +22,7 @@ const {
   FinanceStepUpService,
   buildCanonicalActionSignMessage
 } = require('../src/core/auth/finance_stepup_service');
-const { createMobileChatHandler } = require('../src/interfaces/bridge/mobile_chat/handler');
+const { createMobileChatHandler } = require('../src/interfaces/bridge/mobile_bridge/chat_handler');
 const financeEngine = require('../src/domain/Finance_Engine');
 const supabaseFinance = require('../src/infrastructure/Supabase_Finance');
 const supabaseMemories = require('../src/infrastructure/Supabase_Memories');

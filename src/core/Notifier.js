@@ -302,7 +302,7 @@ function getNotifier() {
 
         try {
           const mobileClient = require('../interfaces/bridge/mobile_bridge/client');
-          const { stripHtmlForMobile } = require('../interfaces/bridge/mobile_chat/handler');
+          const { stripHtmlForMobile } = require('../interfaces/bridge/mobile_bridge/chat_handler');
           const plainText = typeof stripHtmlForMobile === 'function' ? stripHtmlForMobile(text) : String(text || '');
           const res = mobileClient.sendProactiveMessage({
             text: plainText,

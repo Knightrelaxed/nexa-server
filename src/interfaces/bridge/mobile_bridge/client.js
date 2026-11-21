@@ -86,7 +86,7 @@ function setClient(ws) {
     liveVoice.rebindClientWs(ws);
   } catch (_) {}
   try {
-    const { getMobileChatHandler } = require('../mobile_chat/handler');
+    const { getMobileChatHandler } = require('./chat_handler');
     const chatHandler = getMobileChatHandler();
     if (chatHandler && typeof chatHandler.rebindClientWs === 'function') {
       chatHandler.rebindClientWs(ws);
@@ -229,7 +229,7 @@ function handleMessage(payload, ws) {
   if (pType === 'CHAT_SEND' || pType === 'CHAT_VOICE_SEND' || pType === 'CHAT_RESUME' || pType === 'CHAT_STOP' ||
       pType === 'ACTION_AUTH' || pType === 'ACTION_CANCEL') {
     try {
-      const { getMobileChatHandler } = require('../mobile_chat/handler');
+      const { getMobileChatHandler } = require('./chat_handler');
       getMobileChatHandler().handleMessage(payload, ws);
     } catch (e) {
       console.error('[BRIDGE-CHAT] Chat WS routing error:', e.message);

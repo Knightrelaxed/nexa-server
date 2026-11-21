@@ -30,7 +30,7 @@ const {
 } = require('../src/core/auth/finance_stepup_service');
 const { resolveTrustedClientIp } = require('../src/interfaces/bridge/gateway');
 const mobileClient = require('../src/interfaces/bridge/mobile_bridge/client');
-const { stripHtmlForMobile } = require('../src/interfaces/bridge/mobile_chat/handler');
+const { stripHtmlForMobile } = require('../src/interfaces/bridge/mobile_bridge/chat_handler');
 const { handleFinanceIntent } = require('../src/interfaces/common/handlers/finance_handler');
 const { handleEmailIntent } = require('../src/interfaces/common/handlers/email_handler');
 const financeEngine = require('../src/domain/Finance_Engine');

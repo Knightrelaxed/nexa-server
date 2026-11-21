@@ -6,7 +6,7 @@ const {
   createMobileChatHandler,
   splitIntoStreamChunks,
   stripHtmlForMobile
-} = require('../src/interfaces/bridge/mobile_chat/handler');
+} = require('../src/interfaces/bridge/mobile_bridge/chat_handler');
 
 test('splitIntoStreamChunks and stripHtmlForMobile preserve full message cleanly', () => {
   const html = '<b>Halo Tuan!</b><br>Baterai HP saat ini <code>84%</code> &amp; aman.';

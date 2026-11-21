@@ -208,7 +208,7 @@ if (require.main === module) {
         require('./core/auth/finance_stepup_service').getFinanceStepUpService().destroy();
       } catch (_) {}
       try {
-        require('./interfaces/bridge/mobile_chat/handler').getMobileChatHandler().destroy();
+        require('./interfaces/bridge/mobile_bridge/chat_handler').getMobileChatHandler().destroy();
       } catch (_) {}
       server.close(() => {
         console.log('[LIFECYCLE] ✅ Server HTTP/WS closed cleanly.');

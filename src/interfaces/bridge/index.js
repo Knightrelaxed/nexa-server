@@ -7,6 +7,7 @@
 const gateway = require('./gateway');
 const mobileClient = require('./mobile_bridge/client');
 const mobileAdapter = require('./mobile_bridge/adapter');
+const mobileChatHandler = require('./mobile_bridge/chat_handler');
 const windowsClient = require('./windows_bridge/client');
 const windowsAdapter = require('./windows_bridge/adapter');
 
@@ -19,7 +20,8 @@ module.exports = {
   // Device submodules
   mobile: {
     client: mobileClient,
-    adapter: mobileAdapter
+    adapter: mobileAdapter,
+    chatHandler: mobileChatHandler
   },
   windows: {
     client: windowsClient,
@@ -29,6 +31,7 @@ module.exports = {
   // Direct accessors
   mobileClient,
   mobileAdapter,
+  mobileChatHandler,
   windowsClient,
   windowsAdapter,
 

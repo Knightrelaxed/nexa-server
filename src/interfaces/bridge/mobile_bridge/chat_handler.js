@@ -146,7 +146,7 @@ function createMobileChatHandler(deps = {}) {
   const getAiRouter = () => deps.aiRouter || require('../../../core/AI_Router');
   const getDomainDispatcher = () => deps.executeDomainIntent || require('../../common/domain_dispatcher').executeDomainIntent;
   const getSaveChatMemory = () => deps.saveChatMemory || require('../../../infrastructure/Supabase_Memories').saveChatMemory;
-  const getLatestTelemetry = () => deps.getLatestTelemetry || require('../mobile_bridge/client').getLatestTelemetry;
+  const getLatestTelemetry = () => deps.getLatestTelemetry || require('./client').getLatestTelemetry;
   const getFinanceStepUpService = () => deps.financeStepUpService || require('../../../core/auth/finance_stepup_service').getFinanceStepUpService();
   const getVoiceEngine = () => deps.voiceEngine || require('../../../core/Voice_Engine');
   const nowFn = deps.nowFn || (() => Date.now());

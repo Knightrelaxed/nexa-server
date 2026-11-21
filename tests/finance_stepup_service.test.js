@@ -20,7 +20,7 @@ const {
   FinanceStepUpService,
   buildCanonicalActionSignMessage
 } = require('../src/core/auth/finance_stepup_service');
-const { createMobileChatHandler } = require('../src/interfaces/bridge/mobile_chat/handler');
+const { createMobileChatHandler } = require('../src/interfaces/bridge/mobile_bridge/chat_handler');
 
 function createTempStoreWithDevice(deviceId = 'samsung-a33-tuan') {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexa-stepup-'));
