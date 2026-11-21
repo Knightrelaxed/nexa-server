@@ -77,6 +77,9 @@ function setClient(ws) {
   activeClient = ws;
   ws.deviceType = 'mobile';
 
+  // Catch-up: deliver proactive messages queued while the phone was offline (coalesced on the client)
+  _scheduleProactiveFlush(ws);
+
   // Immediately rebind active Live Voice Session and in-flight Mobile Chat stream to the new socket
   try {
     const liveVoice = require('../../../core/Live_Voice_Engine');
@@ -207,6 +210,17 @@ function handleMessage(payload, ws) {
       handleWsAuthMessage(payload, ws);
     } catch (e) {
       console.error('[NEXA-AUTH] Auth WS routing error:', e.message);
+    }
+    return;
+  }
+
+  // 0.55 Notification "Mark as read" / chat opened on phone -> record engagement for Notifier analytics
+  if (pType === 'CHAT_READ') {
+    try {
+      const { getNotifier } = require('../../../core/Notifier');
+      Promise.resolve(getNotifier().markEngaged('NOTIF_READ')).catch(() => {});
+    } catch (e) {
+      console.warn('[BRIDGE-MOBILE] CHAT_READ engagement warning:', e.message);
     }
     return;
   }
@@ -421,30 +435,146 @@ function handleMessage(payload, ws) {
 }
 
 /**
- * Push a proactive N.E.X.A notification/chat message over /ws when mobile is connected (N-01 / UC5).
- * @param {{ text: string, kind?: string, priority?: string, clientMsgId?: string }} msg
- * @returns {boolean}
+ * Proactive message delivery with bounded offline catch-up queue (N-01 / UC5).
+ * - Connected: sent immediately as CHAT_PROACTIVE.
+ * - Offline (Doze / network handoff): queued (max 30, TTL 24h, dedupe by client_msg_id) and flushed on reconnect.
  */
-function sendProactiveMessage({ text, kind = 'PROACTIVE', priority = 'P1', clientMsgId = '' }) {
-  if (!activeClient || activeClient.readyState !== WebSocket.OPEN) return false;
-  const cleanText = String(text || '').trim();
-  if (!cleanText) return false;
-  const id = clientMsgId || `proactive_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+const PROACTIVE_QUEUE_MAX = 30;
+const PROACTIVE_QUEUE_TTL_MS = 24 * 3600_000;
+const PROACTIVE_FLUSH_DELAY_MS = 800;
+let pendingProactive = [];
+let proactiveFlushTimer = null;
+
+function _proactiveQueuePath() {
+  if (process.env.NEXA_PROACTIVE_QUEUE_PATH) return process.env.NEXA_PROACTIVE_QUEUE_PATH;
+  if (process.env.NODE_ENV === 'production') {
+    return require('path').join(process.cwd(), 'data', 'pending_mobile_proactive.json');
+  }
+  return null; // persistence disabled in dev/test unless explicitly configured
+}
+
+function _persistProactiveQueue() {
+  const file = _proactiveQueuePath();
+  if (!file) return;
   try {
-    activeClient.send(JSON.stringify({
-      type: 'CHAT_PROACTIVE',
-      client_msg_id: id,
-      kind: String(kind || 'PROACTIVE'),
-      priority: String(priority || 'P1'),
-      content: cleanText,
-      ts: Date.now()
-    }));
+    const fs = require('fs');
+    const tmp = `${file}.tmp.${process.pid}`;
+    fs.mkdirSync(require('path').dirname(file), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(pendingProactive), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    console.warn('[BRIDGE-MOBILE] Failed persisting proactive queue:', err.message);
+  }
+}
+
+function _loadProactiveQueue() {
+  const file = _proactiveQueuePath();
+  if (!file) return;
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(file)) return;
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (Array.isArray(parsed)) {
+      const now = Date.now();
+      pendingProactive = parsed
+        .filter(m => m && typeof m.client_msg_id === 'string' && typeof m.content === 'string' && now - Number(m.ts || 0) < PROACTIVE_QUEUE_TTL_MS)
+        .slice(-PROACTIVE_QUEUE_MAX);
+    }
+  } catch (err) {
+    console.warn('[BRIDGE-MOBILE] Failed loading proactive queue (starting empty):', err.message);
+    pendingProactive = [];
+  }
+}
+
+function _prunePendingProactive() {
+  const now = Date.now();
+  pendingProactive = pendingProactive.filter(m => now - m.ts < PROACTIVE_QUEUE_TTL_MS);
+  while (pendingProactive.length > PROACTIVE_QUEUE_MAX) pendingProactive.shift();
+}
+
+function _sendProactiveFrame(frame) {
+  if (!activeClient || activeClient.readyState !== WebSocket.OPEN) return false;
+  try {
+    activeClient.send(JSON.stringify(frame));
     return true;
   } catch (err) {
     console.warn('[BRIDGE-MOBILE] Failed pushing CHAT_PROACTIVE:', err.message);
     return false;
   }
 }
+
+/**
+ * Push a proactive N.E.X.A message to the phone, queueing it while offline.
+ * @param {{ text: string, kind?: string, priority?: string, clientMsgId?: string }} msg
+ * @returns {{ status: 'SENT'|'QUEUED'|'DROPPED', id: string }}
+ */
+function sendProactiveMessage({ text, kind = 'PROACTIVE', priority = 'P1', clientMsgId = '' }) {
+  const cleanText = String(text || '').trim();
+  const id = clientMsgId || `proactive_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  if (!cleanText) return { status: 'DROPPED', id };
+
+  const frame = {
+    type: 'CHAT_PROACTIVE',
+    client_msg_id: id,
+    kind: String(kind || 'PROACTIVE'),
+    priority: String(priority || 'P1'),
+    content: cleanText.slice(0, 4000),
+    ts: Date.now()
+  };
+
+  if (_sendProactiveFrame(frame)) return { status: 'SENT', id };
+
+  _prunePendingProactive();
+  if (!pendingProactive.some(m => m.client_msg_id === id)) {
+    pendingProactive.push(frame);
+    _prunePendingProactive();
+    _persistProactiveQueue();
+  }
+  return { status: 'QUEUED', id };
+}
+
+function isProactivePending(clientMsgId) {
+  return pendingProactive.some(m => m.client_msg_id === clientMsgId);
+}
+
+/** Remove a queued proactive message (e.g. already delivered via Telegram fallback). */
+function dropPendingProactive(clientMsgId) {
+  const before = pendingProactive.length;
+  pendingProactive = pendingProactive.filter(m => m.client_msg_id !== clientMsgId);
+  if (pendingProactive.length !== before) _persistProactiveQueue();
+  return before !== pendingProactive.length;
+}
+
+function getPendingProactiveCount() {
+  return pendingProactive.length;
+}
+
+function _scheduleProactiveFlush(ws) {
+  if (proactiveFlushTimer) clearTimeout(proactiveFlushTimer);
+  if (pendingProactive.length === 0) return;
+  proactiveFlushTimer = setTimeout(() => {
+    proactiveFlushTimer = null;
+    if (activeClient !== ws || !activeClient || activeClient.readyState !== WebSocket.OPEN) return;
+    _prunePendingProactive();
+    const batch = pendingProactive.slice();
+    let delivered = 0;
+    for (const frame of batch) {
+      if (_sendProactiveFrame({ ...frame, caught_up: true })) {
+        delivered += 1;
+        pendingProactive = pendingProactive.filter(m => m.client_msg_id !== frame.client_msg_id);
+      } else {
+        break;
+      }
+    }
+    if (delivered > 0) {
+      console.log(`[BRIDGE-MOBILE] Flushed ${delivered} queued proactive message(s) after reconnect.`);
+      _persistProactiveQueue();
+    }
+  }, PROACTIVE_FLUSH_DELAY_MS);
+  if (typeof proactiveFlushTimer.unref === 'function') proactiveFlushTimer.unref();
+}
+
+_loadProactiveQueue();
 
 /**
  * Handle mobile socket disconnect.
@@ -491,6 +621,9 @@ module.exports = {
   isConnected,
   sendCommand,
   sendProactiveMessage,
+  isProactivePending,
+  dropPendingProactive,
+  getPendingProactiveCount,
   signExecuteCommand,
   handleMessage,
   handleDisconnect,

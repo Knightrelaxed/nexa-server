@@ -483,4 +483,58 @@ describe('Server Deep Audit Waves 1-3 Regression Suite', () => {
     sess.isClosed = true;
     sess.isActive = false;
   });
+
+  it('[NOTIF] proactive messages queue while phone is offline, dedupe, and flush with caught_up on reconnect', async () => {
+    const tmpDir = makeTmpDir('nexa-proactive-queue-');
+    const prevPath = process.env.NEXA_PROACTIVE_QUEUE_PATH;
+    process.env.NEXA_PROACTIVE_QUEUE_PATH = path.join(tmpDir, 'pending.json');
+
+    const WebSocket = require('ws');
+    const frames = [];
+    const fakeWs = { readyState: WebSocket.OPEN, send: (m) => frames.push(JSON.parse(m)), terminate: () => {} };
+
+    try {
+      assert.equal(mobileClient.getClient(), null);
+      const before = mobileClient.getPendingProactiveCount();
+
+      // Offline -> QUEUED, never lost
+      const r1 = mobileClient.sendProactiveMessage({ text: 'Briefing pagi\nJadwal 3', kind: 'SCHEDULED_MORNING', priority: 'P1', clientMsgId: 'proactive_t1' });
+      assert.equal(r1.status, 'QUEUED');
+      assert.equal(mobileClient.isProactivePending('proactive_t1'), true);
+
+      // Duplicate id must not double-queue
+      mobileClient.sendProactiveMessage({ text: 'Briefing pagi\nJadwal 3', kind: 'SCHEDULED_MORNING', priority: 'P1', clientMsgId: 'proactive_t1' });
+      assert.equal(mobileClient.getPendingProactiveCount(), before + 1);
+
+      // Queue is persisted atomically
+      const persisted = JSON.parse(fs.readFileSync(process.env.NEXA_PROACTIVE_QUEUE_PATH, 'utf8'));
+      assert.ok(persisted.some(m => m.client_msg_id === 'proactive_t1'));
+
+      // Telegram-fallback hook can drop an undelivered message
+      mobileClient.sendProactiveMessage({ text: 'Akan dialihkan ke Telegram', priority: 'P1', clientMsgId: 'proactive_t2' });
+      assert.equal(mobileClient.dropPendingProactive('proactive_t2'), true);
+      assert.equal(mobileClient.isProactivePending('proactive_t2'), false);
+
+      // Reconnect -> flushed (after short delay) with caught_up flag, queue emptied
+      mobileClient.setClient(fakeWs);
+      await new Promise(r => setTimeout(r, 1200));
+      const caught = frames.filter(f => f.type === 'CHAT_PROACTIVE' && f.client_msg_id === 'proactive_t1');
+      assert.equal(caught.length, 1);
+      assert.equal(caught[0].caught_up, true);
+      assert.equal(caught[0].priority, 'P1');
+      assert.equal(mobileClient.isProactivePending('proactive_t1'), false);
+
+      // Connected -> immediate SENT (no queueing)
+      const r3 = mobileClient.sendProactiveMessage({ text: 'Langsung', priority: 'P0', clientMsgId: 'proactive_t3' });
+      assert.equal(r3.status, 'SENT');
+      assert.equal(frames.filter(f => f.client_msg_id === 'proactive_t3').length, 1);
+
+      // CHAT_READ must be accepted without throwing
+      assert.doesNotThrow(() => mobileClient.handleMessage({ type: 'CHAT_READ' }, fakeWs));
+    } finally {
+      mobileClient.handleDisconnect(fakeWs);
+      if (prevPath === undefined) delete process.env.NEXA_PROACTIVE_QUEUE_PATH;
+      else process.env.NEXA_PROACTIVE_QUEUE_PATH = prevPath;
+    }
+  });
 });

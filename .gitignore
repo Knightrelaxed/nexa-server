@@ -54,3 +54,6 @@ skills-lock.json
 # Nested Windows Bridge repository (managed independently)
 nexa-windows-bridge/
 
+
+data/pending_mobile_proactive.json
+data/pending_mobile_proactive.json.tmp.*

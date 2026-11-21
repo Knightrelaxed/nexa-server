@@ -293,21 +293,55 @@ function getNotifier() {
     let sendFn;
     try {
       const { sendTelegramOutbound } = require('../interfaces/telegram/actions');
+      const envCfg = require('../config/env');
       sendFn = async (text, meta = {}) => {
-        // N-01 / UC5: Deliver proactive messages to Mobile Bridge (/ws) in parallel when connected
+        const mode = envCfg.NEXA_PROACTIVE_CHANNEL_MODE === 'both' ? 'both' : 'mobile_primary';
+        const isUrgent = String(meta.priority || '').toUpperCase() === 'P0';
+        let mobileStatus = null;
+        let mobileId = '';
+
         try {
           const mobileClient = require('../interfaces/bridge/mobile_bridge/client');
-          if (mobileClient && typeof mobileClient.isConnected === 'function' && mobileClient.isConnected()) {
-            const { stripHtmlForMobile } = require('../interfaces/bridge/mobile_chat/handler');
-            const plainText = typeof stripHtmlForMobile === 'function' ? stripHtmlForMobile(text) : String(text || '');
-            mobileClient.sendProactiveMessage({
-              text: plainText,
-              kind: meta.kind || 'PROACTIVE',
-              priority: meta.priority || 'P1',
-              clientMsgId: meta.id ? `proactive_${meta.id}` : ''
-            });
-          }
+          const { stripHtmlForMobile } = require('../interfaces/bridge/mobile_chat/handler');
+          const plainText = typeof stripHtmlForMobile === 'function' ? stripHtmlForMobile(text) : String(text || '');
+          const res = mobileClient.sendProactiveMessage({
+            text: plainText,
+            kind: meta.kind || 'PROACTIVE',
+            priority: meta.priority || 'P1',
+            clientMsgId: meta.id ? `proactive_${meta.id}` : ''
+          });
+          mobileStatus = res && res.status;
+          mobileId = (res && res.id) || '';
         } catch (_) {}
+
+        // Legacy / transition mode: always mirror to Telegram too
+        if (mode === 'both') return sendTelegramOutbound(text, false);
+
+        // mobile_primary: delivered straight to the phone -> no Telegram duplicate
+        if (mobileStatus === 'SENT') return { channel: 'mobile' };
+
+        // Phone offline: message is queued for catch-up on reconnect
+        if (mobileStatus === 'QUEUED') {
+          if (isUrgent) {
+            // P0 must never wait: also alert via Telegram right now
+            return sendTelegramOutbound(text, false);
+          }
+          const delayMs = Math.max(1, Number(envCfg.NEXA_PROACTIVE_TELEGRAM_FALLBACK_MIN) || 5) * 60_000;
+          const timer = setTimeout(() => {
+            try {
+              const mobileClient = require('../interfaces/bridge/mobile_bridge/client');
+              // Still undelivered after the grace window -> Telegram fallback and drop from catch-up queue
+              if (mobileClient.isProactivePending(mobileId)) {
+                mobileClient.dropPendingProactive(mobileId);
+                Promise.resolve(sendTelegramOutbound(text, false)).catch(() => {});
+              }
+            } catch (_) {}
+          }, delayMs);
+          if (typeof timer.unref === 'function') timer.unref();
+          return { channel: 'mobile_queued' };
+        }
+
+        // Mobile path unavailable/failed (e.g. empty text, module error): keep Telegram as safety net
         return sendTelegramOutbound(text, false);
       };
     } catch (_) {

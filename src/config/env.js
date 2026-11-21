@@ -13,6 +13,13 @@ module.exports = {
   // ============================================================
   PORT: process.env.PORT || 3000,
 
+  // Proactive notification routing: 'mobile_primary' (Mobile first, Telegram fallback) | 'both'
+  NEXA_PROACTIVE_CHANNEL_MODE: String(process.env.NEXA_PROACTIVE_CHANNEL_MODE || 'mobile_primary').trim().toLowerCase(),
+  // Minutes to wait for the phone to come back before falling back to Telegram (non-P0 only)
+  NEXA_PROACTIVE_TELEGRAM_FALLBACK_MIN: Number(process.env.NEXA_PROACTIVE_TELEGRAM_FALLBACK_MIN) > 0
+    ? Number(process.env.NEXA_PROACTIVE_TELEGRAM_FALLBACK_MIN)
+    : 5,
+
   // ============================================================
   // 2. TELEGRAM BOT & RELAY WEBHOOKS
   // ============================================================
