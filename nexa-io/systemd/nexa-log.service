@@ -1,0 +1,23 @@
+# /etc/systemd/system/nexa-log.service
+# PRD Lampiran A / FR-SRV-02..04: Sandboxed on-demand log streamer worker (exits after 90s idle)
+[Unit]
+Description=N.E.X.A Log Streamer Worker
+Requires=nexa-log.socket
+
+[Service]
+User=nexa-log
+SupplementaryGroups=systemd-journal
+ExecStart=/opt/nexa/bin/nexa-io --mode=logs
+LoadCredential=ticket-pub.pem:/etc/nexa/ticket-pub.pem
+Restart=no
+KillMode=control-group
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=-/var/log/nexa
+InaccessiblePaths=-/opt/nexa/server /etc/nexa -/home/nexa/nexa-server
+MemoryHigh=36M
+MemoryMax=48M
+TasksMax=32
+CPUQuota=20%

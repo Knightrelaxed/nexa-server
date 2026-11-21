@@ -152,12 +152,35 @@ async function callGroqWhisper(groqClient, tmpFilePath, retries = 3) {
 // GEMINI NATIVE AUDIO CALLER (Tier 5-6 Fallback)
 // Sends raw OGG binary via inlineData — no Whisper needed
 // ============================================================
-async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
+function resolveAudioMimeType(filePath, explicitMime) {
+  if (explicitMime && typeof explicitMime === 'string') {
+    const clean = explicitMime.split(';')[0].trim().toLowerCase();
+    if (clean === 'audio/ogg' || clean === 'audio/wav' || clean === 'audio/mp4' || clean === 'audio/m4a' || clean === 'audio/webm') {
+      return clean === 'audio/m4a' ? 'audio/mp4' : clean;
+    }
+  }
+  const lower = String(filePath || '').toLowerCase();
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  if (lower.endsWith('.m4a') || lower.endsWith('.mp4')) return 'audio/mp4';
+  if (lower.endsWith('.webm')) return 'audio/webm';
+  return 'audio/ogg';
+}
+
+function resolveAudioExt(explicitExt, explicitMime) {
+  const ext = String(explicitExt || '').replace(/^\./, '').trim().toLowerCase();
+  if (ext === 'ogg' || ext === 'wav' || ext === 'm4a' || ext === 'webm') return ext;
+  const mime = resolveAudioMimeType('', explicitMime);
+  if (mime === 'audio/wav') return 'wav';
+  if (mime === 'audio/mp4') return 'm4a';
+  if (mime === 'audio/webm') return 'webm';
+  return 'ogg';
+}
+
+async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3, explicitMime = null) {
   // Read audio file and encode to base64 at Node level
-  // Audio files are small enough (usually <500KB) to be safe
   const audioBuffer = fs.readFileSync(tmpFilePath);
   const base64Audio = audioBuffer.toString('base64');
-  const mimeType = tmpFilePath.endsWith('.wav') ? 'audio/wav' : 'audio/ogg';
+  const mimeType = resolveAudioMimeType(tmpFilePath, explicitMime);
 
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
   const payload = {
@@ -211,12 +234,12 @@ async function callGeminiNativeAudio(apiKey, tmpFilePath, retries = 3) {
 // ============================================================
 // HUGGING FACE WHISPER TURBO CALLER (Safety Net Tier 7)
 // ============================================================
-async function callHuggingFaceWhisper(tmpFilePath, retries = 2) {
+async function callHuggingFaceWhisper(tmpFilePath, retries = 2, explicitMime = null) {
   const token = env.HF_INFERENCE_TOKEN;
   if (!token) throw new Error('No HF_INFERENCE_TOKEN configured');
 
   const audioBuffer = fs.readFileSync(tmpFilePath);
-  const contentType = tmpFilePath.endsWith('.wav') ? 'audio/wav' : 'audio/ogg';
+  const contentType = resolveAudioMimeType(tmpFilePath, explicitMime);
   const url = 'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo';
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -231,8 +254,15 @@ async function callHuggingFaceWhisper(tmpFilePath, retries = 2) {
         timeout: 45000
       });
 
-      const text = typeof response.data === 'string' ? response.data : (response.data.text || JSON.stringify(response.data));
-      if (!text || text.trim().length < 1) throw new Error('Hugging Face Whisper returned empty transcription');
+      const text = typeof response.data === 'string'
+        ? response.data
+        : (typeof response.data?.text === 'string' ? response.data.text : '');
+      if (!text || text.trim().length < 1) {
+        const errDetail = response.data && typeof response.data === 'object' && response.data.error
+          ? `: ${response.data.error}`
+          : '';
+        throw new Error(`Hugging Face Whisper returned empty or invalid transcription${errDetail}`);
+      }
       return text.trim();
     } catch (e) {
       if (attempt < retries) {
@@ -479,9 +509,71 @@ async function transcribePcmBase64(pcmBase64, opts = {}) {
   }
 }
 
+// ============================================================
+// GENERIC AUDIO BUFFER TRANSCRIBER (Mobile Voice Notes: OGG/Opus, M4A, WAV)
+// Reuses the 12-Tier God Mode STT pipeline (HF Whisper -> Gemini Audio -> Groq Whisper)
+// ============================================================
+async function transcribeAudioBuffer(audioBuffer, opts = {}) {
+  if (!Buffer.isBuffer(audioBuffer)) {
+    throw new Error('Invalid audio buffer');
+  }
+  if (audioBuffer.length < 128) {
+    console.warn('[VOICE-MOBILE] Audio buffer too short or empty.');
+    return '';
+  }
+
+  const ext = resolveAudioExt(opts.ext, opts.mimeType);
+  const mimeType = resolveAudioMimeType('.' + ext, opts.mimeType);
+  const tmpAudioPath = path.join(
+    os.tmpdir(),
+    'mobile_voice_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7) + '.' + ext
+  );
+  fs.writeFileSync(tmpAudioPath, audioBuffer);
+
+  try {
+    const tiers = [
+      ...Array.from({ length: 4 }).map((_, i) => ({
+        name: 'Tier ' + (i + 1) + ' (HuggingFace Whisper Large v3 Turbo Slot ' + (i + 1) + ')',
+        fn: () => callHuggingFaceWhisper(tmpAudioPath, 2, mimeType)
+      })),
+      ...GEMINI_NATIVE_KEYS.map((key, i) => ({
+        name: 'Tier ' + (i + 5) + ' (Gemini 2.5 Flash Native Audio Key ' + (i + 1) + ')',
+        fn: () => callGeminiNativeAudio(key, tmpAudioPath, 3, mimeType)
+      })),
+      ...GROQ_CLIENTS.map((client, i) => ({
+        name: 'Tier ' + (i + 5 + GEMINI_NATIVE_KEYS.length) + ' (Groq Whisper Key ' + (i + 1) + ')',
+        fn: () => callGroqWhisper(client, tmpAudioPath)
+      }))
+    ];
+
+    for (const tier of tiers) {
+      try {
+        console.log('[VOICE-MOBILE] Transcribing (' + mimeType + ', ' + audioBuffer.length + 'B) via ' + tier.name + '...');
+        const result = await tier.fn();
+        if (result && result.trim().length > 0) {
+          console.log('[VOICE-MOBILE] ' + tier.name + ' SUCCESS (len=' + result.trim().length + ').');
+          return result.trim();
+        }
+      } catch (err) {
+        console.warn('[VOICE-MOBILE] ' + tier.name + ' failed: ' + err.message);
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+
+    throw new Error('All voice transcription tiers failed for mobile voice note');
+  } finally {
+    try {
+      if (fs.existsSync(tmpAudioPath)) {
+        fs.unlinkSync(tmpAudioPath);
+      }
+    } catch (_) {}
+  }
+}
+
 module.exports = {
   transcribeTelegramVoice,
   transcribePcmBase64,
+  transcribeAudioBuffer,
   pcmToWavBuffer
 };
 

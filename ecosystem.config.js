@@ -1,6 +1,7 @@
 // ============================================================
-// N.E.X.A 3.2 — PM2 ECOSYSTEM CONFIGURATION
-// Optimized for Azure VPS (Standard_B2ats_v2 - 2 vCPU, 1 GB RAM)
+// N.E.X.A 3.4 - PM2 ECOSYSTEM CONFIGURATION
+// Calibrated for Azure VPS (Standard_B2ats_v2 - 892 MiB RAM + 2 GiB Swap)
+// Kept active during Mobile Bridge phases 1-4; systemd migration in Phase 5.
 // ============================================================
 
 module.exports = {
@@ -11,16 +12,15 @@ module.exports = {
     exec_mode: 'fork',
     autorestart: true,
     watch: false,
-    max_memory_restart: '650M', // Graceful restart if RAM exceeds 650MB on 1GB VPS
-    node_args: '--max-old-space-size=512', // Allocate healthy V8 heap memory
+    max_memory_restart: '420M', // Safe ceiling on 892 MiB VPS (above 216 MiB measured RSS)
+    node_args: '--max-old-space-size=320', // Safe headroom above 173 MiB measured Used Heap
     env: {
       NODE_ENV: 'production',
-      PORT: process.env.PORT || 3000
+      PORT: process.env.PORT || 3000,
+      NEXA_SYSLOG_PREFIX: '1'
     },
-    error_file: './logs/err.log',
-    out_file: './logs/out.log',
-    merge_logs: true,
-    log_date_format: 'YYYY-MM-DD HH:mm:ss'
+    error_file: process.env.NEXA_PM2_ERR_LOG || '/var/log/nexa/err.log',
+    out_file: process.env.NEXA_PM2_OUT_LOG || '/var/log/nexa/out.log',
+    merge_logs: false
   }]
 };
-

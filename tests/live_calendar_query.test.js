@@ -92,3 +92,19 @@ test('queryCalendarAgenda resolves Indonesian weekday name ("rabu") to the upcom
   assert.match(res.agenda_details, /Rabu/);
 });
 
+test('handleCalendarIntent formats clean hyphen time ranges and detects overlapping events', async (t) => {
+  stubCalendar(t, CALL_TIME, {
+    range: () => [
+      ev('Bahasa Arab Lisan III', '2026-11-09T13:00:00+07:00', '2026-11-09T14:40:00+07:00'),
+      ev('Piket Takmir: Adzan Ashar', '2026-11-09T14:30:00+07:00', '2026-11-09T15:00:00+07:00'),
+    ]
+  });
+
+  const res = await executeLiveTool('queryCalendarAgenda', { date: '2026-11-09' }, {});
+  assert.ok(res.agenda_details.includes('13.00 - 14.40'), 'Must format time range with ASCII hyphen');
+  assert.ok(res.agenda_details.includes('14.30 - 15.00'), 'Must format time range with ASCII hyphen');
+  assert.ok(res.agenda_details.includes('PERINGATAN BENTROK JADWAL'), 'Must detect schedule collision');
+  assert.ok(res.agenda_details.includes('bertabrakan 10 menit'), 'Must calculate exact clash duration');
+});
+
+

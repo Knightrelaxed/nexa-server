@@ -1,0 +1,14 @@
+# /etc/systemd/system/nexa-term.socket
+# PRD Lampiran A / FR-SRV-02: Zero-idle socket activation for /io/term
+[Unit]
+Description=N.E.X.A Terminal Shell Socket
+
+[Socket]
+ListenStream=/run/nexa-term.sock
+SocketUser=root
+SocketGroup=caddy
+SocketMode=0660
+Accept=no
+
+[Install]
+WantedBy=sockets.target

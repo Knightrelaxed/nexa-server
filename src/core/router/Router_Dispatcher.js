@@ -539,6 +539,19 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
         lines.push(`- Pesan terakhir N.E.X.A: "${ctx.lastAssistantReply}"`);
       }
     }
+    if (runtimeHints.deviceContext && typeof runtimeHints.deviceContext === 'object') {
+      const dc = runtimeHints.deviceContext;
+      const parts = [];
+      if (dc.battery !== undefined && dc.battery !== null) parts.push(`baterai=${dc.battery}%`);
+      if (dc.battery_level !== undefined && dc.battery_level !== null && parts.length === 0) parts.push(`baterai=${dc.battery_level}%`);
+      if (dc.is_charging !== undefined) parts.push(dc.is_charging ? 'charging' : 'on-battery');
+      if (dc.geofence || dc.location_zone) parts.push(`zona=${dc.geofence || dc.location_zone}`);
+      if (dc.current_app || dc.foreground_app) parts.push(`app=${dc.current_app || dc.foreground_app}`);
+      if (dc.network_type) parts.push(`jaringan=${dc.network_type}`);
+      if (parts.length > 0) {
+        lines.push(`- Konteks Perangkat Mobile (FR-CHAT-12): ${parts.join(', ')}.`);
+      }
+    }
     if (lines.length > 0) {
       runtimeContextBlock = `\n[STATUS AKTIF N.E.X.A SAAT INI (SANGAT PENTING UNTUK FOLLOW-UP)]\n${lines.join('\n')}\n`;
     }

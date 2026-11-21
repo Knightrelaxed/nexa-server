@@ -211,6 +211,9 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'DELETE') {
+    if (context.source === 'mobile' && !context.stepUpAuthorized) {
+      return '❌ Penghapusan transaksi keuangan melalui mobile memerlukan otorisasi langsung di Telegram atau sesi terverifikasi demi keamanan ledger Tuan.';
+    }
     const result = await financeEngine.deleteTransaction(ed.search_keyword);
     return result.message;
   }
@@ -221,11 +224,22 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'CONFIRM_TRANSACTION') {
+    if (context.source === 'mobile' && !context.stepUpAuthorized) {
+      return '❌ Konfirmasi antrean transaksi tertunda dari mobile tidak diizinkan tanpa otorisasi biometrik. Silakan konfirmasi via Telegram atau buat instruksi baru.';
+    }
     const confirmationReply = await financeEngine.confirmPendingTransactions(true, ed.description || null, ed.category || null, null, null, null);
     return confirmationReply || '✅ Tidak ada transaksi yang tertunda. Kemungkinan transaksi telah disimpan otomatis karena melewati batas waktu 5 menit.';
   }
 
   if (action === 'UPDATE_PENDING') {
+    if (context.source === 'mobile' && !context.stepUpAuthorized) {
+      const isEscalatingTransfer = String(ed.type || '').toUpperCase() === 'TRANSFER' ||
+        ed.payment_method === 'Transfer bank' ||
+        (ed.nominal !== undefined && ed.nominal !== null);
+      if (isEscalatingTransfer) {
+        return '❌ Perubahan jenis ke transfer atau pengubahan nominal transaksi tertunda melalui mobile memerlukan otorisasi biometrik Step-Up baru.';
+      }
+    }
     const cleanUserText = textInput.replace(/\[KONTEKS_[A-Z]+[\s\S]*?"\s*\]\s*/gi, '').replace(/\[KONTEKS_[^\]]*\]/gi, '').trim();
     let dateISO = null;
     let timeHHMM = null;
@@ -296,6 +310,14 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'EDIT') {
+    if (context.source === 'mobile' && !context.stepUpAuthorized) {
+      const isSensitiveEdit = String(ed.type || '').toUpperCase() === 'TRANSFER' ||
+        ed.payment_method === 'Transfer bank' ||
+        (ed.nominal !== undefined && ed.nominal !== null);
+      if (isSensitiveEdit) {
+        return '❌ Pengubahan nominal atau jenis transfer pada riwayat transaksi melalui mobile memerlukan verifikasi biometrik atau konfirmasi via Telegram.';
+      }
+    }
     const cleanUserText = textInput.replace(/\[KONTEKS_[A-Z]+[\s\S]*?"\s*\]\s*/gi, '').replace(/\[KONTEKS_[^\]]*\]/gi, '').trim();
     let dateISO = null;
     let timeHHMM = null;
@@ -386,8 +408,13 @@ async function handleFinanceIntent(routingData, context = {}) {
   if (action === 'RECORD_MULTIPLE' && Array.isArray(ed.transactions)) {
     const replies = [];
     for (const tx of ed.transactions) {
+      const txNominal = typeof tx.nominal === 'number'
+        ? tx.nominal
+        : (tx.nominal ? require('../../../domain/finance/Finance_Helpers')._parseFlexibleCurrency(String(tx.nominal)) : 0);
+      const txAdminFee = typeof tx.admin_fee === 'number' ? tx.admin_fee : (typeof tx.adminFee === 'number' ? tx.adminFee : 0);
       const txData = {
-        nominal: tx.nominal,
+        nominal: txNominal,
+        adminFee: txAdminFee > 0 ? txAdminFee : 0,
         type: tx.type || 'EXPENSE',
         destination: tx.destination || tx.merchant || 'Unknown',
         category: tx.category || 'Uncategorized',
@@ -396,6 +423,46 @@ async function handleFinanceIntent(routingData, context = {}) {
         account: tx.account || null,
         payment_method: tx.payment_method || null
       };
+
+      const isMultiTransfer = String(txData.type || '').toUpperCase() === 'TRANSFER' ||
+        txData.payment_method === 'Transfer bank' ||
+        /\b(?:transfer|tf|trf|tranfer|trasnfer|kirim\s*uang|bayar\s*tagihan|pindah\s*saldo|top\s*up|bi-fast|bifast)\b/i.test(`${textInput} ${txData.description}`);
+
+      // N-C2: Never allow RECORD_MULTIPLE on mobile to bypass biometric Step-Up for transfers
+      if (context.source === 'mobile' && !context.stepUpAuthorized && isMultiTransfer) {
+        const stepUpService = context.financeStepUpService ||
+          require('../../../core/auth/finance_stepup_service').getFinanceStepUpService();
+        const totalAmount = txNominal + (txAdminFee > 0 ? txAdminFee : 0);
+        const pendingRes = stepUpService.createPendingAction({
+          clientMsgId: context.clientMsgId || '',
+          actionLabel: 'Transfer Dana',
+          amount: totalAmount,
+          recipient: txData.destination,
+          bank: tx.to_bank || tx.bank || null,
+          acctLast4: tx.acct_last4 || null,
+          executionDetails: txData,
+          executeFn: async (canonicalPending) => {
+            const committedTx = {
+              ...txData,
+              destination: canonicalPending.recipientFull,
+              nominal: canonicalPending.amount
+            };
+            await financeEngine.processTransaction(committedTx, 'MOBILE_STEPUP');
+            return `Transfer ${canonicalPending.amount} ke ${canonicalPending.recipientFull} (${canonicalPending.bank} •••• ${canonicalPending.acctLast4}) telah dieksekusi dan dicatat.`;
+          }
+        });
+
+        if (!pendingRes.ok) {
+          replies.push(`❌ ${pendingRes.message}`);
+        } else {
+          if (typeof context.onStepUpRequired === 'function') {
+            context.onStepUpRequired(pendingRes.pendingFrame);
+          }
+          replies.push(`Rincian transfer sebesar ${pendingRes.pendingFrame.formatted_amount} ke ${pendingRes.pendingFrame.recipient_full} telah disiapkan. Silakan konfirmasi rincian transfer di bawah dengan sidik jari Tuan.`);
+        }
+        continue;
+      }
+
       const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, 'PENCATATAN KEUANGAN BARU', null, { telegramSent: true });
       if (confirmMsg) {
         replies.push(confirmMsg);
@@ -409,7 +476,7 @@ async function handleFinanceIntent(routingData, context = {}) {
     return replies.join('\n\n---\n\n');
   }
 
-  if (ed.nominal || action === 'RECORD') {
+  if (ed.nominal || action === 'RECORD' || action === 'TRANSFER') {
     // 1. Strict Anti-Hallucination Guardrail for Nominal:
     // Verify whether user actually stated a price/nominal in their message.
     let parsedNominal = typeof ed.nominal === 'number'
@@ -575,14 +642,67 @@ async function handleFinanceIntent(routingData, context = {}) {
         ? 'PENGELUARAN DENGAN BIAYA ADMIN'
         : 'PENCATATAN KEUANGAN BARU';
     }
-    const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, cardTitle, null, { telegramSent: true });
-    if (confirmMsg) {
-      const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const cKey = `${txData.nominal}_${cleanMerch}`;
-      await supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
-      return confirmMsg;
+
+    const executeRecordOrTransfer = async () => {
+      const confirmMsg = await financeEngine.requestTransactionConfirmation(txData, cardTitle, null, { telegramSent: true });
+      if (confirmMsg) {
+        const cleanMerch = (txData.destination || txData.merchant || 'Unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cKey = `${txData.nominal}_${cleanMerch}`;
+        await supabaseMemories.markPendingTransactionSent(cKey).catch(() => {});
+        return confirmMsg;
+      }
+      return '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya (duplikat) atau sedang menunggu konfirmasi.';
+    };
+
+    // FR-AUTH-07 / FR-AUTH-08 / FR-CHAT-19: Hardware-Biometric Step-Up Gate at tool execution layer for mobile transfers
+    const requiresMobileStepUp = context.source === 'mobile' && !context.stepUpAuthorized && (
+      isTransfer ||
+      txData.payment_method === 'Transfer bank' ||
+      /\b(?:transfer|tf|trf|tranfer|trasnfer|kirim\s*uang|kirim\s+\d|bayar\s*tagihan|pindah\s*saldo|top\s*up|bi-fast|bifast|m-banking|mbanking)\b/i.test(textInput)
+    );
+
+    if (requiresMobileStepUp) {
+      const stepUpService = context.financeStepUpService ||
+        require('../../../core/auth/finance_stepup_service').getFinanceStepUpService();
+
+      // N-C2: Include admin fee in total amount checked against daily limit and signed by Keystore
+      const totalStepUpAmount = parsedNominal + (parsedAdminFee > 0 ? parsedAdminFee : 0);
+      // N-C1: Pass DESTINATION bank only (never source bank txData.account/fromAccount)
+      const destBank = isSelfTransfer ? toAccountResolved : (ed.to_bank || ed.destination_bank || ed.bank || null);
+
+      const pendingRes = stepUpService.createPendingAction({
+        clientMsgId: context.clientMsgId || '',
+        actionLabel: isSelfTransfer ? 'Transfer Antar-Akun' : 'Transfer Dana',
+        amount: totalStepUpAmount,
+        recipient: txData.destination,
+        bank: destBank,
+        acctLast4: ed.acct_last4 || null,
+        executionDetails: txData,
+        executeFn: async (canonicalPending) => {
+          // N-C1 + N-H1: Commit directly once using verified canonical destination and amount (never re-enter mutable 5-min Telegram queue)
+          const committedTx = {
+            ...txData,
+            destination: canonicalPending.recipientFull,
+            nominal: parsedNominal,
+            adminFee: parsedAdminFee > 0 ? parsedAdminFee : 0
+          };
+          await financeEngine.processTransaction(committedTx, 'MOBILE_STEPUP');
+          return `Otorisasi biometrik berhasil. ${canonicalPending.actionLabel} sebesar ${require('../../../core/auth/finance_stepup_service').formatRupiah(canonicalPending.amount)} ke ${canonicalPending.recipientFull} (${canonicalPending.bank} •••• ${canonicalPending.acctLast4}) telah dieksekusi dan dicatat.`;
+        }
+      });
+
+      if (!pendingRes.ok) {
+        return `❌ ${pendingRes.message}`;
+      }
+
+      if (typeof context.onStepUpRequired === 'function') {
+        context.onStepUpRequired(pendingRes.pendingFrame);
+      }
+
+      return `Rincian transfer sebesar ${pendingRes.pendingFrame.formatted_amount} ke ${pendingRes.pendingFrame.recipient_full} telah disiapkan. Silakan konfirmasi rincian transfer di bawah dengan sidik jari Tuan.`;
     }
-    return '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya (duplikat) atau sedang menunggu konfirmasi.';
+
+    return await executeRecordOrTransfer();
   }
 
   return domainReply;

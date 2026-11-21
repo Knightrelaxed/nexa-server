@@ -176,7 +176,7 @@ function evaluateAgendaPosition(events = [], nowMs = Date.now()) {
   if (ongoingEvent) {
     status = 'ONGOING';
     const locStr = ongoingEvent.location ? ` di ${ongoingEvent.location}` : '';
-    summaryText = `SEDANG BERLANGSUNG '${ongoingEvent.summary}'${locStr} (dimulai ${ongoingEvent.startHHMM} WIB, selesai ${ongoingEvent.endHHMM} WIB — TERSISA ~${ongoingEvent.remainingMins} MENIT LAGI).`;
+    summaryText = `SEDANG BERLANGSUNG '${ongoingEvent.summary}'${locStr} (dimulai ${ongoingEvent.startHHMM} WIB, selesai ${ongoingEvent.endHHMM} WIB, TERSISA ~${ongoingEvent.remainingMins} MENIT LAGI).`;
     if (nextUpcomingEvent) {
       const nextLoc = nextUpcomingEvent.location ? ` di ${nextUpcomingEvent.location}` : '';
       summaryText += ` Agenda berikutnya '${nextUpcomingEvent.summary}'${nextLoc} pukul ${nextUpcomingEvent.startHHMM} WIB (dimulai dalam ~${nextUpcomingEvent.startsInMins} menit lagi).`;
@@ -196,6 +196,38 @@ function evaluateAgendaPosition(events = [], nowMs = Date.now()) {
   } else {
     status = 'NO_EVENTS';
     summaryText = 'Tidak ada agenda terjadwal di kalender hari ini.';
+  }
+
+  if (timedEvents.length > 0) {
+    const morningCount = timedEvents.filter(e => {
+      const wibHour = parseInt(e.startHHMM.split(':')[0], 10);
+      return wibHour >= 5 && wibHour < 11;
+    }).length;
+
+    const middayCount = timedEvents.filter(e => {
+      const wibHour = parseInt(e.startHHMM.split(':')[0], 10);
+      return wibHour >= 11 && wibHour < 15;
+    }).length;
+
+    const afternoonCount = timedEvents.filter(e => {
+      const wibHour = parseInt(e.startHHMM.split(':')[0], 10);
+      return wibHour >= 15 && wibHour < 18;
+    }).length;
+
+    const eveningCount = timedEvents.filter(e => {
+      const wibHour = parseInt(e.startHHMM.split(':')[0], 10);
+      return wibHour >= 18 || wibHour < 5;
+    }).length;
+
+    const distParts = [];
+    if (morningCount > 0) distParts.push(`${morningCount} pagi`);
+    if (middayCount > 0) distParts.push(`${middayCount} siang`);
+    if (afternoonCount > 0) distParts.push(`${afternoonCount} sore`);
+    if (eveningCount > 0) distParts.push(`${eveningCount} malam`);
+
+    if (distParts.length > 0) {
+      summaryText += ` Distribusi agenda: ${distParts.join(', ')}.`;
+    }
   }
 
   return {

@@ -1,0 +1,24 @@
+# /etc/systemd/system/nexa-term.service
+# PRD Lampiran A / FR-SRV-02..04, FR-TERM-01, FR-TERM-18:
+# Sandboxed unprivileged inspection terminal (no sudo, no journal group, kill switch default OFF)
+[Unit]
+Description=N.E.X.A Terminal Shell Worker
+Requires=nexa-term.socket
+
+[Service]
+User=nexa-term
+StateDirectory=nexa-term
+Environment=HOME=/var/lib/nexa-term
+ExecStart=/opt/nexa/bin/nexa-io --mode=terminal
+LoadCredential=ticket-pub.pem:/etc/nexa/ticket-pub.pem
+Restart=no
+KillMode=control-group
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+InaccessiblePaths=-/opt/nexa/server /etc/nexa -/home/nexa/nexa-server
+MemoryHigh=128M
+MemoryMax=160M
+TasksMax=128
+CPUQuota=40%

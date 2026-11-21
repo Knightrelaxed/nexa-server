@@ -349,7 +349,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         const conflictList = conflicts.map(c => {
           const sTime = new Date(c.start).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
           const eTime = new Date(c.end).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-          return `   ⚠️ ${sTime}–${eTime}: <b>${escapeHtml(c.summary)}</b>${c.location ? ` (📍 ${escapeHtml(c.location)})` : ''}`;
+          return `   ⚠️ ${sTime} - ${eTime}: <b>${escapeHtml(c.summary)}</b>${c.location ? ` (📍 ${escapeHtml(c.location)})` : ''}`;
         }).join('\n');
         return {
           status: 'CONFLICT_DETECTED',
@@ -381,7 +381,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
 
       let successMsg = `✅ Jadwal '<b>${escapeHtml(summary)}</b>' berhasil dicatat di Kalender!\n` +
         `📅 <b>${sDateStr}</b>\n` +
-        `⏰ <b>${sTimeStr} – ${eTimeStr} WIB</b> (durasi <b>${durationMins} menit</b>)`;
+        `⏰ <b>${sTimeStr} - ${eTimeStr} WIB</b> (durasi <b>${durationMins} menit</b>)`;
 
       if (location) successMsg += `\n📍 Lokasi: ${escapeHtml(location)}`;
       if (recurrence) successMsg += `\n🔄 Terjadwal berulang.`;
@@ -483,7 +483,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
           const sTimeFmt = sDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
           const eTimeFmt = new Date(evEnd).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
 
-          createdResults.push(`   • 📅 <b>${escapeHtml(evSummary)}</b>: ${sDayName}, ${sTimeFmt}–${eTimeFmt} WIB${evLocation ? ` (📍 ${escapeHtml(evLocation)})` : ''}`);
+          createdResults.push(`   • 📅 <b>${escapeHtml(evSummary)}</b>: ${sDayName}, ${sTimeFmt} - ${eTimeFmt} WIB${evLocation ? ` (📍 ${escapeHtml(evLocation)})` : ''}`);
         } catch (e) {
           createdResults.push(`   • ❌ Gagal (${escapeHtml(ev.summary || 'Jadwal')}): ${e.message}`);
         }
@@ -604,7 +604,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
         tasks = await googleTasks.getTasksByDateRange(start, end);
         const sDate = new Date(start).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' });
         const eDate = new Date(end).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Jakarta' });
-        dateLabel = sDate === eDate ? sDate : `${sDate} – ${eDate}`;
+        dateLabel = sDate === eDate ? sDate : `${sDate} s.d. ${eDate}`;
       } else if (start) {
         const sD = new Date(start);
         const startDateStr = sD.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
@@ -645,7 +645,7 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
           if (e.start?.dateTime && e.end?.dateTime) {
             const sT = new Date(sRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
             const eT = new Date(eRaw).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-            timeLabel = `${sT}–${eT}`;
+            timeLabel = `${sT} - ${eT}`;
           }
           const whenLabel = dayLabel ? `${dayLabel} | ${timeLabel}` : timeLabel;
           let itemLine = `   <b>${idx + 1}.</b> [${whenLabel}] <b>${escapeHtml(e.summary || '(Tanpa Judul)')}</b>`;
@@ -654,6 +654,47 @@ async function handleCalendarIntent(extractedData, rawUserText = '') {
           return itemLine;
         });
         msg += lines.join('\n');
+
+        // Deteksi Bentrok Jadwal (Overlapping Events)
+        const timedEventsForClash = events
+          .filter(e => e.start?.dateTime && e.end?.dateTime)
+          .map((e, originalIdx) => ({
+            index: originalIdx + 1,
+            summary: e.summary || '(Tanpa Judul)',
+            startMs: new Date(e.start.dateTime).getTime(),
+            endMs: new Date(e.end.dateTime).getTime(),
+            startStr: new Date(e.start.dateTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }),
+            endStr: new Date(e.end.dateTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }),
+            dayStr: new Date(e.start.dateTime).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' })
+          }))
+          .filter(e => !isNaN(e.startMs) && !isNaN(e.endMs) && e.startMs < e.endMs)
+          .sort((a, b) => a.startMs - b.startMs);
+
+        const detectedClashes = [];
+        for (let i = 0; i < timedEventsForClash.length; i++) {
+          for (let j = i + 1; j < timedEventsForClash.length; j++) {
+            if (timedEventsForClash[j].startMs < timedEventsForClash[i].endMs) {
+              const overlapMins = Math.max(1, Math.round((Math.min(timedEventsForClash[i].endMs, timedEventsForClash[j].endMs) - timedEventsForClash[j].startMs) / 60000));
+              detectedClashes.push({
+                first: timedEventsForClash[i],
+                second: timedEventsForClash[j],
+                overlapMins
+              });
+            } else {
+              break;
+            }
+          }
+        }
+
+        if (detectedClashes.length > 0) {
+          msg += `\n\n⚠️ <b>PERINGATAN BENTROK JADWAL (${detectedClashes.length}):</b>\n`;
+          detectedClashes.forEach(c => {
+            const dayPrefix = action === 'READ_UPCOMING' ? `[${c.first.dayStr}] ` : '';
+            msg += `   • ${dayPrefix}'<b>${escapeHtml(c.first.summary)}</b>' (${c.first.startStr} - ${c.first.endStr}) bertabrakan ${c.overlapMins} menit dengan '<b>${escapeHtml(c.second.summary)}</b>' (${c.second.startStr} - ${c.second.endStr}).\n`;
+          });
+          const clashInfo = detectedClashes.map(c => `'${c.first.summary}' dan '${c.second.summary}' bertabrakan ${c.overlapMins} menit`).join('; ');
+          situationalSummary = (situationalSummary ? `${situationalSummary} ` : '') + `PERHATIAN: Ada bentrok jadwal (${clashInfo}).`;
+        }
       } else {
         msg += `\n📅 <b>JADWAL ACARA:</b> Tidak ada jadwal tercatat.\n`;
       }

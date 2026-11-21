@@ -1,5 +1,8 @@
+const path = require('path');
 require('dotenv').config();
 const { VERSION, MAJOR_MINOR, SYSTEM_TAG } = require('./version');
+
+const credentialsDir = process.env.CREDENTIALS_DIRECTORY || '';
 
 module.exports = {
   VERSION,
@@ -117,4 +120,20 @@ module.exports = {
   WHATSAPP_OWNER_NUMBER: process.env.WHATSAPP_OWNER_NUMBER,
   WHATSAPP_OWNER_JID: process.env.WHATSAPP_OWNER_JID,
   NEXA_WA_RELAY_URL: process.env.NEXA_WA_RELAY_URL || 'wss://peppy-horse-9232.knightrelaxed.deno.net',
+
+  // ============================================================
+  // 8. CONTROL CENTER & INFRASTRUCTURE (FR-SRV-04a, 05, TERM-18)
+  // ============================================================
+  NEXA_DOMAIN: process.env.NEXA_DOMAIN || 'nexa-server.indonesiacentral.cloudapp.azure.com',
+  NEXA_ALLOWED_ORIGINS: process.env.NEXA_ALLOWED_ORIGINS || '',
+  NEXA_TICKET_PRIV_PATH: process.env.NEXA_TICKET_PRIV_PATH ||
+    (credentialsDir ? path.join(credentialsDir, 'ticket-priv.pem') : '/etc/nexa/ticket-priv.pem'),
+  NEXA_TICKET_PUB_PATH: process.env.NEXA_TICKET_PUB_PATH ||
+    (credentialsDir ? path.join(credentialsDir, 'ticket-pub.pem') : '/etc/nexa/ticket-pub.pem'),
+  NEXA_ENROLLED_DEVICES_PATH: process.env.NEXA_ENROLLED_DEVICES_PATH || '/etc/nexa/enrolled_devices.json',
+  NEXA_TERM_ENABLED: ['true', '1', 'yes'].includes(
+    String(process.env.NEXA_TERM_ENABLED || process.env.NEXA_TERMINAL_ENABLED || 'false').trim().toLowerCase()
+  ),
+  NEXA_TERM_KILL_SWITCH_FILE: process.env.NEXA_TERM_KILL_SWITCH_FILE || '/opt/nexa/etc/terminal.enabled',
+  NEXA_WS_WATCHDOG_MS: Number(process.env.NEXA_WS_WATCHDOG_MS || 60000),
 };

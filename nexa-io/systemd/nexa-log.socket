@@ -1,0 +1,14 @@
+# /etc/systemd/system/nexa-log.socket
+# PRD Lampiran A / FR-SRV-02: Zero-idle socket activation for /io/logs
+[Unit]
+Description=N.E.X.A Log Streamer Socket
+
+[Socket]
+ListenStream=/run/nexa-log.sock
+SocketUser=root
+SocketGroup=caddy
+SocketMode=0660
+Accept=no
+
+[Install]
+WantedBy=sockets.target

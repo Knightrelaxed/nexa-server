@@ -110,6 +110,7 @@ function sendCommand(action, params = {}, options = {}) {
  * @param {WebSocket} ws 
  */
 function handleMessage(payload, ws) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
   const pType = String(payload.type || '').toUpperCase();
 
   // 0. Heartbeat Ping / Pong

@@ -117,6 +117,7 @@ function sendCommand(action, params = {}, options = {}) {
  * @param {WebSocket} ws 
  */
 function handleMessage(payload, ws) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
   const pType = String(payload.type || '').toUpperCase();
 
   // 0. Heartbeat Ping / Pong
@@ -124,6 +125,29 @@ function handleMessage(payload, ws) {
     try {
       ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
     } catch (_) {}
+    return;
+  }
+
+  // 0.5 Hardware-Backed Device Identity, Enrollment & Ed25519 Ticket Spine (FR-AUTH-01..10)
+  if (pType === 'TICKET_REQ' || pType === 'CHALLENGE_RESP' || pType === 'ENROLL_SUBMIT') {
+    try {
+      const { handleWsAuthMessage } = require('../../../core/auth/ws_auth_handler');
+      handleWsAuthMessage(payload, ws);
+    } catch (e) {
+      console.error('[NEXA-AUTH] Auth WS routing error:', e.message);
+    }
+    return;
+  }
+
+  // 0.6 Native Mobile AI Chat, Voice Notes & Finance Step-Up over JSON /ws (FR-CHAT-01..19, FR-AUTH-07/08)
+  if (pType === 'CHAT_SEND' || pType === 'CHAT_VOICE_SEND' || pType === 'CHAT_RESUME' || pType === 'CHAT_STOP' ||
+      pType === 'ACTION_AUTH' || pType === 'ACTION_CANCEL') {
+    try {
+      const { getMobileChatHandler } = require('../mobile_chat/handler');
+      getMobileChatHandler().handleMessage(payload, ws);
+    } catch (e) {
+      console.error('[BRIDGE-CHAT] Chat WS routing error:', e.message);
+    }
     return;
   }
 

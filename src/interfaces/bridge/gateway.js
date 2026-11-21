@@ -39,16 +39,16 @@ function resolveDeviceType(req) {
  * @param {import('http').Server} server 
  */
 function initWebSocket(server) {
+  // N-L3: Strict CLI isolation - /ws accepts only device/bridge secrets (never NEXA_CLI_SECRET)
   const validSecrets = [
     env.NEXA_DEVICE_SECRET,
     env.NEXA_BRIDGE_SECRET,
-    env.NEXA_CLI_SECRET,
   ].filter(Boolean).map(s => String(s).trim());
 
   wss = new WebSocket.Server({
     server,
     path: '/ws',
-    maxPayload: 1024 * 1024, // 1MB payload ceiling (Security Harden)
+    maxPayload: 2 * 1024 * 1024, // 2MB payload ceiling (accommodates up to 3-min OGG Opus voice note base64)
     verifyClient: (info, cb) => {
       // Handshake Authentication at HTTP Upgrade stage
       const authHeader = info.req.headers.authorization;
@@ -74,27 +74,52 @@ function initWebSocket(server) {
     }
   });
 
-  // Active Keepalive Watchdog (Runs every 25 seconds to prevent NAT / Proxy timeout)
+  // N-M6: Adaptive Keepalive Watchdog aligned with NFR-BAT-01 (60s screen-on / 120s screen-off)
+  const watchdogIntervalMs = Math.max(15000, Number(env.NEXA_WS_WATCHDOG_MS || 60000));
   if (!heartbeatInterval) {
     heartbeatInterval = setInterval(() => {
       if (!wss) return;
+      const now = Date.now();
+      const mobileTelemetry = typeof mobileClient.getLatestTelemetry === 'function'
+        ? mobileClient.getLatestTelemetry()
+        : null;
+      const mobileScreenOff = mobileTelemetry && mobileTelemetry.screen_on === false;
+
       wss.clients.forEach((ws) => {
-        if (ws.isAlive === false) {
-          console.warn(`[BRIDGE-GATEWAY] ⚠️ Dead socket detected on ${ws.deviceType || 'unknown'} by watchdog (No Pong). Terminating...`);
+        const lastSeen = ws.lastActivityAt || now;
+        const idleMs = now - lastSeen;
+        const isMobile = ws.deviceType === 'mobile';
+        const pingThresholdMs = (isMobile && mobileScreenOff) ? 115000 : Math.max(55000, watchdogIntervalMs - 5000);
+        const deadThresholdMs = (isMobile && mobileScreenOff) ? 260000 : Math.max(130000, watchdogIntervalMs * 2 + 10000);
+
+        if (idleMs > deadThresholdMs) {
+          console.warn(`[BRIDGE-GATEWAY] ⚠️ Dead socket detected on ${ws.deviceType || 'unknown'} by watchdog (idle ${Math.round(idleMs / 1000)}s). Terminating...`);
           return ws.terminate();
         }
-        ws.isAlive = false;
-        try {
-          ws.ping();
-        } catch (_) {}
+        if (idleMs >= pingThresholdMs) {
+          ws.isAlive = false;
+          try {
+            ws.ping();
+          } catch (_) {}
+        }
       });
-    }, 25000);
+    }, watchdogIntervalMs);
+    if (typeof heartbeatInterval.unref === 'function') {
+      heartbeatInterval.unref();
+    }
   }
 
   wss.on('connection', (ws, req) => {
     ws.isAlive = true;
+    ws.lastActivityAt = Date.now();
+    const xff = req && req.headers ? req.headers['x-forwarded-for'] : null;
+    ws.clientIp = (typeof xff === 'string' && xff.trim())
+      ? xff.split(',')[0].trim()
+      : (req && req.socket && req.socket.remoteAddress ? req.socket.remoteAddress : 'unknown');
+
     ws.on('pong', () => {
       ws.isAlive = true;
+      ws.lastActivityAt = Date.now();
     });
 
     const deviceType = resolveDeviceType(req);
@@ -102,7 +127,7 @@ function initWebSocket(server) {
 
     const deviceIcon = (deviceType === 'desktop') ? '💻' : '📱';
     const deviceLabel = (deviceType === 'desktop') ? 'Windows Bridge (ThinkPad)' : 'Nexa Bridge Android';
-    console.log(`[BRIDGE-GATEWAY] ${deviceIcon} ${deviceLabel} connected successfully (authenticated via verifyClient).`);
+    console.log(`[BRIDGE-GATEWAY] ${deviceIcon} ${deviceLabel} connected successfully (ip=${ws.clientIp}, authenticated via verifyClient).`);
 
     // Register into device-specific client manager
     if (deviceType === 'desktop') {
@@ -114,6 +139,7 @@ function initWebSocket(server) {
     // Message routing
     ws.on('message', (data, isBinary) => {
       ws.isAlive = true; // Mark socket alive on every incoming packet (audio chunk, video frame, or JSON control)
+      ws.lastActivityAt = Date.now();
 
       // Direct binary PCM audio stream handling (Live Gemini Multimodal voice session)
       // Only binary WebSocket frames (opcode 2, isBinary === true) are treated as raw audio chunks.
@@ -148,11 +174,21 @@ function initWebSocket(server) {
         return;
       }
 
-      // Route to appropriate device manager
-      if (ws.deviceType === 'desktop') {
-        windowsClient.handleMessage(payload, ws);
-      } else {
-        mobileClient.handleMessage(payload, ws);
+      // N-C3: Reject null, primitive, or array JSON payloads before dispatching
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        console.warn('[BRIDGE-GATEWAY] Non-object JSON payload ignored.');
+        return;
+      }
+
+      // Route to appropriate device manager inside crash-proof try/catch
+      try {
+        if (ws.deviceType === 'desktop') {
+          windowsClient.handleMessage(payload, ws);
+        } else {
+          mobileClient.handleMessage(payload, ws);
+        }
+      } catch (dispatchErr) {
+        console.error(`[BRIDGE-GATEWAY] Unhandled message dispatch error on [${ws.deviceType}]:`, dispatchErr.message);
       }
     });
 
@@ -184,6 +220,11 @@ function closeWebSocket() {
     heartbeatInterval = null;
   }
   if (wss) {
+    // N-M7: Close all active WS clients cleanly so http.Server.close() drains immediately
+    wss.clients.forEach((client) => {
+      try { client.close(1001, 'Server shutting down'); } catch (_) {}
+      try { client.terminate(); } catch (_) {}
+    });
     wss.close();
     wss = null;
     console.log('[BRIDGE-GATEWAY] Unified WebSocket Bridge Gateway closed.');

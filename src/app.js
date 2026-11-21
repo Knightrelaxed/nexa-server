@@ -44,16 +44,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// 2. Strict CORS Configuration
+// 2. Strict CORS Configuration (Dynamic NEXA_DOMAIN support - FR-SRV-05)
+const { buildAllowedOrigins } = require('./utils/cors_config');
+const allowedOrigins = buildAllowedOrigins(env);
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow non-browser clients (Telegram webhooks, CLI, mobile apps, curl)
     if (!origin) return callback(null, true);
-    const allowedOrigins = [
-      'https://nexa-server.indonesiacentral.cloudapp.azure.com',
-      'http://localhost:3000',
-      'http://127.0.0.1:3000'
-    ];
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
@@ -74,10 +72,10 @@ const apiLimiter = rateLimit({
 });
 app.use(apiLimiter);
 
-// Custom morgan token to mask sensitive query parameters (e.g., token, secret, key)
+// Custom morgan token to mask sensitive query parameters (e.g., token, secret, key, ticket)
 morgan.token('safe-url', (req) => {
   const url = req.originalUrl || req.url || '';
-  return url.replace(/([?&](?:token|secret|key)=)[^&]+/gi, '$1***MASKED***');
+  return url.replace(/([?&](?:token|secret|key|apikey|api_key|password|pass|auth|access_token|refresh_token|ticket)=)[^&]+/gi, '$1***MASKED***');
 });
 
 app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]', {
@@ -109,17 +107,14 @@ app.get('/health', (req, res) => {
   const memoryMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
   const timestampJakarta = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
 
-  let bridgeSnapshot = null;
-  let presenceSnapshot = null;
+  let bridgeOnline = false;
   try {
     const bridgeAdapter = require('./interfaces/bridge').mobile.adapter;
-    bridgeSnapshot = bridgeAdapter.getSnapshot();
-  } catch (_) {}
-  try {
-    const presenceModel = require('./domain/Presence_Model');
-    presenceSnapshot = presenceModel.snapshot();
+    const snap = bridgeAdapter.getSnapshot();
+    bridgeOnline = Boolean(snap && snap.is_online);
   } catch (_) {}
 
+  // N-M7: Do not expose personal location/presence/battery telemetry on unauthenticated /health
   res.status(200).json({
     status: 'ALIVE',
     service: 'N.E.X.A Cloud Core',
@@ -129,16 +124,23 @@ app.get('/health', (req, res) => {
     timestamp_jakarta: timestampJakarta,
     memory_mb: memoryMb,
     node_env: process.env.NODE_ENV || 'development',
-    device: bridgeSnapshot,
-    presence: presenceSnapshot
+    bridge_connected: bridgeOnline
   });
 });
 
 // ============================================================
-// WEBHOOK ROUTER — All /webhook/* routes
+// WEBHOOK ROUTER - All /webhook/* routes
 // ============================================================
 const webhookRouter = require('./interfaces/webhook');
 app.use('/webhook', webhookRouter);
+
+// N-M7: Return HTTP 403 on CORS violations instead of HTTP 500
+app.use((err, req, res, next) => {
+  if (err && err.message === 'CORS policy violation') {
+    return res.status(403).json({ error: 'Forbidden: CORS policy violation' });
+  }
+  return next(err);
+});
 
 // ============================================================
 // SERVER BOOT & WEBSOCKET MOBILE BRIDGE (NEXA 3.3)
@@ -188,6 +190,11 @@ if (require.main === module) {
 
     function gracefulShutdown(signal) {
       console.log(`[LIFECYCLE] 🛑 Received ${signal}. Draining connections and initiating clean shutdown...`);
+      try {
+        bridge.closeWebSocket();
+      } catch (e) {
+        console.warn('[LIFECYCLE] Error closing WebSocket bridge:', e.message);
+      }
       server.close(() => {
         console.log('[LIFECYCLE] ✅ Server HTTP/WS closed cleanly.');
         process.exit(0);
