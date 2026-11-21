@@ -21,6 +21,6 @@ module.exports = {
     },
     error_file: process.env.NEXA_PM2_ERR_LOG || '/var/log/nexa/err.log',
     out_file: process.env.NEXA_PM2_OUT_LOG || '/var/log/nexa/out.log',
-    merge_logs: false
+    merge_logs: true // Prevent PM2 from appending "-0" suffix (ensures exact /var/log/nexa/out.log & err.log for nexa-io)
   }]
 };

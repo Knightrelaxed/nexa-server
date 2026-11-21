@@ -106,6 +106,7 @@ test('ecosystem.config.js enforces calibrated V8 heap, PM2 memory guard, and sys
   assert.equal(app.node_args, '--max-old-space-size=320');
   assert.equal(app.max_memory_restart, '420M');
   assert.equal(app.env.NEXA_SYSLOG_PREFIX, '1');
+  assert.equal(app.merge_logs, true);
 });
 
 test('log filtering coverage: budget/dedup/step-up carry FINANCE, live-tool carries BRIDGE, multi-tag works', () => {
