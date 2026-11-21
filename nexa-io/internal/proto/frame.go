@@ -90,8 +90,9 @@ var (
 	ErrMalformedRecord = errors.New("malformed 13-byte log record")
 )
 
-var tokenSafetyRegex = regexp.MustCompile(`(?i)(Bearer\s+[A-Za-z0-9._~+/=-]{12,}|AIza[0-9A-Za-z_-]{20,}|gsk_[0-9A-Za-z_-]{16,}|sk-(?:proj-|ant-|live-|test-)?[0-9A-Za-z_-]{16,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{24,})`)
+var tokenSafetyRegex = regexp.MustCompile(`(?i)(Bearer\s+[A-Za-z0-9._~+/=-]{12,}|AIza[0-9A-Za-z_-]{20,}|gsk_[0-9A-Za-z_-]{16,}|sk-(?:proj-|ant-|live-|test-)?[0-9A-Za-z_-]{16,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{12,}(?:\.[A-Za-z0-9_-]{12,})?|[?&](?:ticket|token)=[^\s&"'<>]+)`)
 var pm2TimestampRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?:?\s+`)
+var leadingAnsiRegex = regexp.MustCompile(`^(?:\x1b\[[0-9;?]*[ -/]*[@-~]\s*)+`)
 
 // EncodeFrame packs [ch: u8][op: u8][payload: N bytes].
 func EncodeFrame(ch, op uint8, payload []byte) ([]byte, error) {
@@ -279,16 +280,18 @@ func StripPM2Timestamp(raw string) string {
 }
 
 // ParseSyslogPriorityAndCategory extracts an optional RFC 5424 <N> priority prefix (0..7)
-// and strips leading [cat=FINANCE|BRIDGE|AUTH] tags (FR-LOG-08).
+// and strips leading ANSI CSI codes and [cat=FINANCE|BRIDGE|AUTH] tags (FR-LOG-08, L1).
 // G-M3: SYNTHETIC cannot be injected from untrusted log text; only the sidecar sets CatSynthetic.
 func ParseSyslogPriorityAndCategory(raw string) (uint8, bool, uint8, string) {
 	trimmed := strings.TrimLeft(raw, " \t")
+	trimmed = leadingAnsiRegex.ReplaceAllString(trimmed, "")
 	var prio uint8
 	hasPrio := false
 	if len(trimmed) >= 3 && trimmed[0] == '<' && trimmed[2] == '>' && trimmed[1] >= '0' && trimmed[1] <= '7' {
 		prio = uint8(trimmed[1] - '0')
 		hasPrio = true
 		trimmed = strings.TrimLeft(trimmed[3:], " \t")
+		trimmed = leadingAnsiRegex.ReplaceAllString(trimmed, "")
 	}
 
 	var flags uint8

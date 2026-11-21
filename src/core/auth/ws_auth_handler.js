@@ -11,10 +11,25 @@
  */
 
 const { getTicketService } = require('./ticket_service');
+const { sanitizeLogToken } = require('../../utils/logger');
 
 const ENROLL_RATE_WINDOW_MS = 60_000;
 const MAX_ENROLL_SUBMIT_PER_MIN = 10;
+const MAX_ENROLL_BUCKETS = 256;
+const MAX_REQ_ID_LEN = 64;
 const enrollBuckets = new Map();
+
+const enrollSweepTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [k, list] of enrollBuckets.entries()) {
+    const active = list.filter(ts => now - ts < ENROLL_RATE_WINDOW_MS);
+    if (active.length === 0) enrollBuckets.delete(k);
+    else enrollBuckets.set(k, active);
+  }
+}, 60_000);
+if (typeof enrollSweepTimer.unref === 'function') {
+  enrollSweepTimer.unref();
+}
 
 function checkEnrollRateLimit(key) {
   const now = Date.now();
@@ -25,9 +40,14 @@ function checkEnrollRateLimit(key) {
     return false;
   }
   active.push(now);
-  if (enrollBuckets.size > 64) {
+  if (enrollBuckets.size >= MAX_ENROLL_BUCKETS && !enrollBuckets.has(key)) {
     for (const [k, list] of enrollBuckets.entries()) {
       if (list.every(ts => now - ts >= ENROLL_RATE_WINDOW_MS)) enrollBuckets.delete(k);
+    }
+    while (enrollBuckets.size >= MAX_ENROLL_BUCKETS) {
+      const oldestKey = enrollBuckets.keys().next().value;
+      if (oldestKey === undefined) break;
+      enrollBuckets.delete(oldestKey);
     }
   }
   enrollBuckets.set(key, active);
@@ -55,11 +75,12 @@ function safeSend(ws, obj) {
  */
 function handleWsAuthMessage(payload, ws, service = getTicketService()) {
   const pType = String(payload && payload.type ? payload.type : '').toUpperCase();
-  const reqId = payload && payload.req_id ? String(payload.req_id) : '';
-  const clientIp = (ws && ws.clientIp) ? String(ws.clientIp) : 'unknown';
+  const reqId = payload && payload.req_id ? String(payload.req_id).slice(0, MAX_REQ_ID_LEN) : '';
+  const clientIp = sanitizeLogToken((ws && ws.clientIp) ? String(ws.clientIp) : 'unknown', 64);
 
   if (pType === 'ENROLL_SUBMIT') {
-    if (!checkEnrollRateLimit(clientIp)) {
+    const devKey = `dev:${sanitizeLogToken(payload && payload.device_id, 64)}`;
+    if (!checkEnrollRateLimit(`ip:${clientIp}`) || !checkEnrollRateLimit(devKey)) {
       safeSend(ws, {
         type: 'ENROLL_ERR',
         req_id: reqId,

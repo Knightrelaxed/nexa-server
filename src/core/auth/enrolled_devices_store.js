@@ -89,12 +89,25 @@ function isValidDeviceId(cleanId) {
   return DEVICE_ID_RE.test(cleanId) && !FORBIDDEN_DEVICE_IDS.has(cleanId);
 }
 
+function resolveStoreFileMode() {
+  const raw = process.env.NEXA_STORE_FILE_MODE;
+  if (!raw || !String(raw).trim()) return 0o600;
+  // H-7: Parse strictly as octal (e.g. "0600" -> 0o600, NOT decimal 600 = 0o1130!)
+  const parsed = parseInt(String(raw).trim(), 8);
+  if (!Number.isFinite(parsed) || (parsed & 0o600) !== 0o600 || (parsed & 0o022) !== 0) {
+    console.warn(`[NEXA-AUTH] Ignoring unsafe/invalid NEXA_STORE_FILE_MODE="${raw}", falling back to 0600.`);
+    return 0o600;
+  }
+  return parsed & 0o660;
+}
+
 function atomicWriteJson0600(filePath, dataObj) {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  const randSuffix = crypto.randomBytes(6).toString('hex');
+  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}.${randSuffix}`;
   const content = JSON.stringify(dataObj, null, 2) + '\n';
-  const fileMode = Number(process.env.NEXA_STORE_FILE_MODE) || 0o600;
+  const fileMode = resolveStoreFileMode();
   fs.writeFileSync(tmpPath, content, { mode: fileMode, encoding: 'utf8' });
   try {
     fs.chmodSync(tmpPath, fileMode);
@@ -171,8 +184,10 @@ class EnrolledDevicesStore {
 
   getDevice(deviceId) {
     if (!deviceId || typeof deviceId !== 'string') return null;
+    const cleanId = deviceId.trim();
+    if (!isValidDeviceId(cleanId)) return null;
     this.reloadIfChanged();
-    return this._cache.get(deviceId.trim()) || null;
+    return this._cache.get(cleanId) || null;
   }
 
   listDevices() {
@@ -186,7 +201,7 @@ class EnrolledDevicesStore {
       throw new Error('INVALID_DEVICE_ID');
     }
 
-    const { fingerprintSha256 } = validateP256SpkiPublicKey(publicKeySpkiDerB64);
+    const { spkiDerBuf, fingerprintSha256 } = validateP256SpkiPublicKey(publicKeySpkiDerB64);
     const current = this._readRawJson(this.filePath);
     if (Object.prototype.hasOwnProperty.call(current, cleanId) && current[cleanId] && current[cleanId].status === 'ACTIVE' && !force) {
       throw new Error('DEVICE_ALREADY_ENROLLED');
@@ -195,7 +210,7 @@ class EnrolledDevicesStore {
     const enrolledAt = Math.floor(Date.now() / 1000);
     current[cleanId] = {
       deviceId: cleanId,
-      publicKeySpkiDerB64: publicKeySpkiDerB64.trim(),
+      publicKeySpkiDerB64: spkiDerBuf.toString('base64'),
       fingerprintSha256,
       enrolledAt,
       status: 'ACTIVE'
@@ -332,6 +347,7 @@ module.exports = {
   computeSha256Fingerprint,
   formatFingerprint4x8,
   validateP256SpkiPublicKey,
+  resolveStoreFileMode,
   DEFAULT_ENROLLED_PATH,
   ENROLL_CODE_TTL_MS
 };

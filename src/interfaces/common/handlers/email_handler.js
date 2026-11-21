@@ -31,13 +31,14 @@ async function handleEmailIntent(routingData, context = {}) {
   const textInput = context.textInput || '';
   const pendingEmail = _getPendingEmail(context);
   const isTelegram = context.platform === 'telegram' || context.isTelegram;
+  const isGeneralInboxPlatform = isTelegram || context.platform === 'mobile' || context.source === 'mobile';
 
   if (action === 'READ') {
     const searchKeyword = ed.search_keyword || '';
     const defaultQuery = context.emailDefaults?.defaultQuery !== undefined
       ? context.emailDefaults.defaultQuery
-      : (isTelegram ? '' : '(from:noreply.livin@bankmandiri.co.id OR from:noreply@jago.com OR livin)');
-    const defaultFetch = context.emailDefaults?.defaultFetch || (isTelegram ? 30 : 20);
+      : (isGeneralInboxPlatform ? '' : '(from:noreply.livin@bankmandiri.co.id OR from:noreply@jago.com OR livin)');
+    const defaultFetch = context.emailDefaults?.defaultFetch || (isGeneralInboxPlatform ? 30 : 20);
     const baseQuery = searchKeyword || defaultQuery;
     const requestedLimit = Math.min(parseInt(ed.max_results, 10) || 5, 10);
     const followUpPrevious = Boolean(ed.before_current);
@@ -122,6 +123,9 @@ async function handleEmailIntent(routingData, context = {}) {
   }
 
   if (action === 'SEND') {
+    if (!ed.to || !String(ed.to).trim() || !ed.subject || !String(ed.subject).trim() || !ed.content || !String(ed.content).trim()) {
+      return '❓ Mohon lengkapi alamat tujuan (to), subjek, dan isi email sebelum saya mengirimkannya, Tuan.';
+    }
     const success = await gmailClient.sendEmail(ed.to, ed.subject, ed.content);
     _setPendingEmail(context, null);
     const esc = isTelegram ? helpers.escapeHtml : (s) => String(s || '');
@@ -129,7 +133,10 @@ async function handleEmailIntent(routingData, context = {}) {
   }
 
   if (action === 'DELETE') {
-    const emails = await gmailClient.getLatestEmails(ed.search_keyword, 1);
+    if (!ed.search_keyword || !String(ed.search_keyword).trim()) {
+      return '❓ Email mana yang ingin dihapus, Tuan? Mohon sebutkan pengirim atau kata kunci subjek secara spesifik.';
+    }
+    const emails = await gmailClient.getLatestEmails(String(ed.search_keyword).trim(), 1);
     _setPendingEmail(context, null);
     if (emails.length > 0) {
       const success = await gmailClient.deleteEmail(emails[0].id);

@@ -14,6 +14,7 @@
 const util = require('util');
 
 const MAX_LOGS = 50;
+const MAX_LOG_ENTRY_CHARS = 2048;
 const systemLogs = [];
 
 const originalLog = console.log;
@@ -31,7 +32,24 @@ const SYSLOG_PRIORITY = {
 };
 
 const EXPLICIT_CAT_RE = /^\[cat=(FINANCE|BRIDGE|AUTH)\]\s*/i;
-const MULTI_EXPLICIT_CAT_RE = /^(?:\[cat=(FINANCE|BRIDGE|AUTH)\]\s*)+/i;
+const MULTI_EXPLICIT_CAT_RE = /^\s*(?:\[cat=(FINANCE|BRIDGE|AUTH)\]\s*)+/i;
+const VALID_CATEGORIES = new Set(['FINANCE', 'BRIDGE', 'AUTH']);
+
+/**
+ * Sanitize untrusted identifiers (device_id, IP, action_id, reason) before writing
+ * to single-line structured audit logs to prevent CRLF / field injection (H-8).
+ * @param {*} value
+ * @param {number} [maxLen=64]
+ * @returns {string}
+ */
+function sanitizeLogToken(value, maxLen = 64) {
+  const clean = String(value ?? '')
+    .replace(/[\r\n\t\x00-\x1f\x7f]+/g, ' ')
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9._:@/-]/g, '')
+    .slice(0, maxLen);
+  return clean || '-';
+}
 
 const FINANCE_PATTERNS = [
   /\[(?:SUPABASE[_-])?FINANCE[^\]]*\]/i,
@@ -50,7 +68,10 @@ const AUTH_PATTERNS = [
   /\[ENROLL[^\]]*\]/i,
   /\[CHALLENGE[^\]]*\]/i,
   /\[STEP[_-]UP[^\]]*\]/i,
-  /\[HMAC[^\]]*\]/i
+  /\[HMAC[^\]]*\]/i,
+  /\[SECURITY\]/i,
+  /\[GMAIL\s+WEBHOOK\]\s+Rejected/i,
+  /\[BRIDGE-GATEWAY\]\s+.*(?:Unauthorized|Forbidden|Rate limit)/i
 ];
 
 const BRIDGE_PATTERNS = [
@@ -90,10 +111,14 @@ function redactSecrets(input) {
     '[TICKET-REDACTED]'
   );
 
-  // 2c. Telegram bot API URLs containing bot token (/bot123456:AAH...)
+  // 2c. Telegram bot API URLs containing bot token (/bot123456:AAH...) & standalone raw bot tokens
   text = text.replace(
     /(\/bot)\d{6,15}:[A-Za-z0-9_-]{20,}/gi,
     '$1[BOT-TOKEN-REDACTED]'
+  );
+  text = text.replace(
+    /\b\d{6,15}:AA[A-Za-z0-9_-]{25,}\b/g,
+    '[BOT-TOKEN-REDACTED]'
   );
 
   // 3. Bearer / Authorization header values
@@ -114,26 +139,38 @@ function redactSecrets(input) {
     '[KEY-REDACTED]'
   );
 
-  // 6. JSON key-value secrets: "token": "...", "hmac_secret": "...", "ticket": "...", "enroll_code": "..."
+  // 6. JSON & JS util.inspect key-value secrets: "token": "...", token: '...', enroll_code: '...' (H-9)
   text = text.replace(
-    /("(?:[a-z0-9_]*(?:token|secret|password|api_?key|private_?key|passphrase|authorization|supabase_?key)|ticket|enroll_code|nonce|signature(?:_der_b64|_b64)?|sig)"\s*:\s*")([^"]*)(")/gi,
-    (_, prefix, value, suffix) => (value ? `${prefix}[REDACTED]${suffix}` : `${prefix}${suffix}`)
+    /((?:["']?)(?:[a-z0-9_]*(?:token|secret|password|api_?key|private_?key|passphrase|authorization|supabase_?key)|ticket|enroll_code|nonce|signature(?:_der_b64|_b64)?|sig)(?:["']?)\s*:\s*)(["'])([^"']*)(\2)/gi,
+    (_, prefix, quote, value, endQuote) => (value ? `${prefix}${quote}[REDACTED]${endQuote}` : `${prefix}${quote}${endQuote}`)
   );
 
-  // 7. Plain key=value secret assignments (case-insensitive, e.g. HMAC_SECRET=abc, token=abc, api_key=xyz)
+  // 7. Plain or quoted key=value secret assignments (e.g. HMAC_SECRET=abc, token="abc", api_key='xyz') (H-9)
   text = text.replace(
-    /\b([A-Za-z0-9_]*(?:token|secret|password|api_?key|private_?key|supabase_?key|enroll_code|ticket)\s*=\s*)([^\s,;'"}\]]+)/gi,
-    '$1[REDACTED]'
+    /\b([A-Za-z0-9_]*(?:token|secret|password|api_?key|private_?key|supabase_?key|enroll_code|ticket|authorization|nonce|signature|sig)\s*=\s*)(?:(["'])([^"']*)(\2)|([^\s,;'"}\]]+))/gi,
+    (_, prefix, quote, qVal, endQuote, bareVal) => {
+      if (quote) return qVal ? `${prefix}${quote}[REDACTED]${endQuote}` : `${prefix}${quote}${endQuote}`;
+      return `${prefix}[REDACTED]`;
+    }
   );
 
-  // 8. Bank account numbers preceded by account keywords (with optional bank name; preserve last 4 digits only)
+  // 8. Bank account numbers preceded by account/VA/bank keywords (preserve last 4 digits only) (H-9)
   text = text.replace(
-    /\b(rekening|rek\.?|account|acct|no\.?\s*rek)((?:\s+(?:bank|bca|bri|bni|mandiri|jago|bsi|cimb|permata|danamon|btn|ocbc|mega|panin|uob|hsbc))*\s*[:=#-]?\s*)(\d[\d\s-]{5,18}\d)\b/gi,
+    /\b(rekening|rek\.?|account|acct|no\.?\s*rek|virtual\s+account|va)((?:\s+(?:tujuan|penerima|pengirim|pribadi|milik|utama|bank|bca|bri|bni|mandiri|jago|bsi|cimb|permata|danamon|btn|ocbc|mega|panin|uob|hsbc))*\s*[:=#-]?\s*)(\d[\d\s-]{5,18}\d)\b/gi,
     (_, label, sep, rawNum) => {
       const digits = rawNum.replace(/\D/g, '');
       if (digits.length < 7) return `${label}${sep}${rawNum}`;
       const last4 = digits.slice(-4);
       return `${label}${sep}[ACC-****${last4}]`;
+    }
+  );
+  text = text.replace(
+    /\b((?:bank\s+)?(?:bca|bri|bni|mandiri|jago|bsi|cimb|permata|danamon|btn|ocbc|mega|panin|uob|hsbc))(\s*[:=#-]?\s*)(\d[\d\s-]{8,18}\d)\b/gi,
+    (_, bankLabel, sep, rawNum) => {
+      const digits = rawNum.replace(/\D/g, '');
+      if (digits.length < 10) return `${bankLabel}${sep}${rawNum}`;
+      const last4 = digits.slice(-4);
+      return `${bankLabel}${sep}[ACC-****${last4}]`;
     }
   );
 
@@ -264,7 +301,10 @@ function formatArgs(args) {
 
 function pushLog(level, redactedMessage) {
   const timestamp = new Date().toISOString();
-  systemLogs.push(`[${timestamp}] [${level}] ${redactedMessage}`);
+  const capped = redactedMessage.length > MAX_LOG_ENTRY_CHARS
+    ? redactedMessage.slice(0, MAX_LOG_ENTRY_CHARS) + '...[TRUNCATED]'
+    : redactedMessage;
+  systemLogs.push(`[${timestamp}] [${level}] ${capped}`);
   if (systemLogs.length > MAX_LOGS) {
     systemLogs.shift();
   }
@@ -272,7 +312,10 @@ function pushLog(level, redactedMessage) {
 
 function emitConsole(level, originalFn, args, forcedCategory = undefined) {
   if (isLogging) {
-    originalFn.apply(console, args);
+    try {
+      const fallbackText = redactSecrets(Array.from(args).map(a => String(a ?? '')).join(' '));
+      originalFn.call(console, fallbackText);
+    } catch (_) {}
     return;
   }
   isLogging = true;
@@ -308,12 +351,16 @@ console.debug = function () {
 
 function logCategory(category, level, ...args) {
   const normLevel = String(level || 'INFO').toUpperCase();
+  const normCategory = category ? String(category).toUpperCase() : null;
+  const safeCategory = normCategory && VALID_CATEGORIES.has(normCategory) ? normCategory : null;
   const fn = normLevel === 'ERROR'
     ? originalError
     : normLevel === 'WARN'
       ? originalWarn
-      : originalLog;
-  emitConsole(normLevel, fn, args, category);
+      : normLevel === 'DEBUG'
+        ? originalDebug
+        : originalLog;
+  emitConsole(normLevel, fn, args, safeCategory);
 }
 
 function getRecentLogs() {
@@ -323,6 +370,7 @@ function getRecentLogs() {
 module.exports = {
   getRecentLogs,
   redactSecrets,
+  sanitizeLogToken,
   detectCategory,
   detectCategories,
   formatLine,

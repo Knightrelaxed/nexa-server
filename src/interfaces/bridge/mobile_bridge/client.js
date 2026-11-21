@@ -5,11 +5,63 @@
 'use strict';
 
 const WebSocket = require('ws');
+const crypto = require('crypto');
+const env = require('../../../config/env');
 
 let activeClient = null;
 let latestTelemetry = null;
 let telemetryListener = null;
 const pendingCommands = new Map();
+
+const ALLOWED_TELEMETRY_KEYS = [
+  'type', 'battery_level', 'battery', 'charging', 'battery_charging', 'is_charging',
+  'screen_on', 'is_screen_on', 'screenOn', 'screen_state',
+  'network_type', 'network_strength', 'motion_state', 'geofence', 'location',
+  'timestamp', 'lux', 'ambient_lux', 'light_state'
+];
+
+function sanitizeTelemetryPayload(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const clean = {};
+  for (const key of ALLOWED_TELEMETRY_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(raw, key) && raw[key] !== undefined) {
+      clean[key] = raw[key];
+    }
+  }
+  return clean;
+}
+
+function updateLatestTelemetry(patch) {
+  if (!patch || typeof patch !== 'object') return latestTelemetry;
+  const nowIso = new Date().toISOString();
+  latestTelemetry = {
+    ...(latestTelemetry || {}),
+    ...sanitizeTelemetryPayload(patch),
+    updated_at: nowIso,
+    received_at: (latestTelemetry && latestTelemetry.received_at) ? latestTelemetry.received_at : nowIso
+  };
+  return latestTelemetry;
+}
+
+function signExecuteCommand(commandId, action, timestamp, params) {
+  const secret = String(env.NEXA_HMAC_SECRET || process.env.NEXA_HMAC_SECRET || '').trim();
+  if (!secret) return null;
+  const rawLevel = params && params.level !== undefined ? Number(params.level) : 3;
+  const level = Number.isFinite(rawLevel) ? Math.trunc(rawLevel) : 3;
+  // Matches Android HmacVerifier.kt v2 format: "${commandId}:${action}:${timestamp}:${level}"
+  const message = `${commandId}:${action}:${timestamp}:${level}`;
+  return crypto.createHmac('sha256', secret).update(message, 'utf8').digest('hex');
+}
+
+function clearPendingCommands(reason = 'Nexa Mobile Bridge disconnected') {
+  if (pendingCommands.size === 0) return;
+  console.warn(`[BRIDGE-MOBILE] Clearing ${pendingCommands.size} pending mobile command(s): ${reason}`);
+  for (const [, { resolve, timer }] of pendingCommands.entries()) {
+    clearTimeout(timer);
+    resolve({ success: false, status: 'DISCONNECTED', message: reason });
+  }
+  pendingCommands.clear();
+}
 
 /**
  * Register or replace the active mobile client socket.
@@ -18,15 +70,24 @@ const pendingCommands = new Map();
 function setClient(ws) {
   if (activeClient && activeClient !== ws) {
     console.log('[BRIDGE-MOBILE] Replacing existing mobile client connection.');
+    // M-2: Fail pending commands sent to the replaced socket immediately instead of hanging until timeout
+    clearPendingCommands('Nexa Mobile Bridge socket replaced');
     try { activeClient.terminate(); } catch (_) {}
   }
   activeClient = ws;
   ws.deviceType = 'mobile';
 
-  // Immediately rebind active Live Voice Session to the new socket connection
+  // Immediately rebind active Live Voice Session and in-flight Mobile Chat stream to the new socket
   try {
     const liveVoice = require('../../../core/Live_Voice_Engine');
     liveVoice.rebindClientWs(ws);
+  } catch (_) {}
+  try {
+    const { getMobileChatHandler } = require('../mobile_chat/handler');
+    const chatHandler = getMobileChatHandler();
+    if (chatHandler && typeof chatHandler.rebindClientWs === 'function') {
+      chatHandler.rebindClientWs(ws);
+    }
   } catch (_) {}
 }
 
@@ -90,6 +151,12 @@ function sendCommand(action, params = {}, options = {}) {
       timestamp: timestamp
     };
 
+    // C-4: Sign EXECUTE_COMMAND with HMAC-SHA256 when NEXA_HMAC_SECRET is configured
+    const sig = signExecuteCommand(commandId, action, timestamp, params);
+    if (sig) {
+      payload.signature = sig;
+    }
+
     const timer = setTimeout(() => {
       if (pendingCommands.has(commandId)) {
         pendingCommands.delete(commandId);
@@ -118,10 +185,15 @@ function sendCommand(action, params = {}, options = {}) {
  */
 function handleMessage(payload, ws) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
+  // M-2: Ignore stale buffered frames from a replaced/closing socket
+  if (activeClient && ws && activeClient !== ws) return;
   const pType = String(payload.type || '').toUpperCase();
 
-  // 0. Heartbeat Ping / Pong
+  // 0. Heartbeat Ping / Pong (also accepts optional screen_on hint for NFR-BAT-01 watchdog)
   if (pType === 'PING') {
+    if (typeof payload.screen_on === 'boolean') {
+      updateLatestTelemetry({ screen_on: payload.screen_on, is_screen_on: payload.screen_on, screen_state: payload.screen_on ? 'ON' : 'OFF' });
+    }
     try {
       ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
     } catch (_) {}
@@ -170,11 +242,15 @@ function handleMessage(payload, ws) {
     return;
   }
 
-  // 2. Telemetry Event Stream
+  // 2. Telemetry Event Stream (whitelisted fields only, L-4 / R-02)
   if (pType === 'TELEMETRY' || pType === 'TELEMETRY_REPORT') {
+    const cleanTel = sanitizeTelemetryPayload(payload);
+    const nowIso = new Date().toISOString();
     latestTelemetry = {
-      ...payload,
-      received_at: new Date().toISOString()
+      ...(latestTelemetry || {}),
+      ...cleanTel,
+      received_at: nowIso,
+      updated_at: nowIso
     };
     if (typeof telemetryListener === 'function') {
       telemetryListener(latestTelemetry);
@@ -315,12 +391,11 @@ function handleMessage(payload, ws) {
 
   if (pType === 'SCREEN_ON' || pType === 'SCREEN_OFF') {
     const isOn = (pType === 'SCREEN_ON');
-    if (latestTelemetry) {
-      latestTelemetry.screen_on = isOn;
-      latestTelemetry.is_screen_on = isOn;
-      latestTelemetry.screen_state = isOn ? 'ON' : 'OFF';
-      latestTelemetry.updated_at = new Date().toISOString();
-    }
+    updateLatestTelemetry({
+      screen_on: isOn,
+      is_screen_on: isOn,
+      screen_state: isOn ? 'ON' : 'OFF'
+    });
     try {
       const presenceModel = require('../../../domain/Presence_Model');
       presenceModel.isScreenOn = isOn;
@@ -346,6 +421,32 @@ function handleMessage(payload, ws) {
 }
 
 /**
+ * Push a proactive N.E.X.A notification/chat message over /ws when mobile is connected (N-01 / UC5).
+ * @param {{ text: string, kind?: string, priority?: string, clientMsgId?: string }} msg
+ * @returns {boolean}
+ */
+function sendProactiveMessage({ text, kind = 'PROACTIVE', priority = 'P1', clientMsgId = '' }) {
+  if (!activeClient || activeClient.readyState !== WebSocket.OPEN) return false;
+  const cleanText = String(text || '').trim();
+  if (!cleanText) return false;
+  const id = clientMsgId || `proactive_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  try {
+    activeClient.send(JSON.stringify({
+      type: 'CHAT_PROACTIVE',
+      client_msg_id: id,
+      kind: String(kind || 'PROACTIVE'),
+      priority: String(priority || 'P1'),
+      content: cleanText,
+      ts: Date.now()
+    }));
+    return true;
+  } catch (err) {
+    console.warn('[BRIDGE-MOBILE] Failed pushing CHAT_PROACTIVE:', err.message);
+    return false;
+  }
+}
+
+/**
  * Handle mobile socket disconnect.
  * @param {WebSocket} ws 
  */
@@ -360,16 +461,9 @@ function handleDisconnect(ws) {
 
   if (activeClient === ws) {
     activeClient = null;
+    latestTelemetry = null;
     console.log('[BRIDGE-MOBILE] Active mobile client unregistered.');
-
-    if (pendingCommands.size > 0) {
-      console.warn(`[BRIDGE-MOBILE] ⚠️ Clearing ${pendingCommands.size} pending mobile command(s) on disconnect.`);
-      for (const [cmdId, { resolve, timer }] of pendingCommands.entries()) {
-        clearTimeout(timer);
-        resolve({ success: false, status: 'DISCONNECTED', message: 'Nexa Mobile Bridge disconnected' });
-      }
-      pendingCommands.clear();
-    }
+    clearPendingCommands('Nexa Mobile Bridge disconnected');
   }
 }
 
@@ -396,9 +490,12 @@ module.exports = {
   getClient,
   isConnected,
   sendCommand,
+  sendProactiveMessage,
+  signExecuteCommand,
   handleMessage,
   handleDisconnect,
   setOnTelemetryListener,
   getLatestTelemetry,
+  updateLatestTelemetry,
   requestOverlay
 };

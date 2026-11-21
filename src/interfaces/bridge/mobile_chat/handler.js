@@ -12,7 +12,11 @@
  */
 
 const REPLAY_TTL_MS = 10 * 60 * 1000; // 10 minutes retention for CHAT_RESUME
+const CONTEXT_TTL_MS = 15 * 60 * 1000; // 15 minutes TTL so Reflex Fast-Path & Domain Gating stay active (R-03)
 const MAX_REPLAY_ENTRIES = 100;
+const MAX_CHAT_CONTENT_LEN = 16 * 1024; // 16 KiB max text input (H-10)
+const MAX_CLIENT_MSG_ID_LEN = 128;
+const TURN_TIMEOUT_MS = 120 * 1000; // 120s hard ceiling per turn (L-02)
 const DEFAULT_CHUNK_SIZE = 64;
 const MIN_VOICE_AUDIO_BYTES = 128;
 const MAX_VOICE_AUDIO_BYTES = 1500 * 1024; // 1.5 MB raw ceiling (comfortably fits 3-min 24kbps OGG/Opus)
@@ -79,12 +83,21 @@ function validateVoiceAudioBuffer(audioBuf, mimeType) {
 
 function stripHtmlForMobile(text) {
   return String(text || '')
+    // F-06: Preserve Google Maps, Google Meet, and other <a href="..."> URLs before stripping HTML tags
+    .replace(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, url, label) => {
+      const cleanLabel = String(label || '').replace(/<[^>]+>/g, '').trim();
+      const cleanUrl = String(url || '').trim();
+      if (!cleanUrl) return cleanLabel;
+      if (!cleanLabel || cleanLabel === cleanUrl) return cleanUrl;
+      return `${cleanLabel} (${cleanUrl})`;
+    })
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/?(?:b|strong|i|em|u|code|pre|a|span|div|p)[^>]*>/gi, '')
+    .replace(/<\/?(?:b|strong|i|em|u|s|del|code|pre|a|span|div|p)[^>]*>/gi, '')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&amp;/g, '&')
     .trim();
 }
 
@@ -140,18 +153,55 @@ function createMobileChatHandler(deps = {}) {
   const chunkSize = deps.chunkSize || DEFAULT_CHUNK_SIZE;
   const chunkDelayMs = deps.chunkDelayMs !== undefined ? deps.chunkDelayMs : 12;
 
-  // client_msg_id -> { state: 'RUNNING'|'FINAL'|'ABORTED', chunks: [{seq, chunk}], intent, error, updatedAt, aborted, pendingFrame }
+  // client_msg_id -> { state: 'RUNNING'|'FINAL'|'ABORTED', chunks: [{seq, chunk}], intent, error, updatedAt, aborted, abortController, pendingFrame }
   const replayStore = new Map();
   let lastConversationContext = null;
+  let activeVoiceInFlight = 0;
+  let sessionTurnQueue = Promise.resolve();
   const sessionKey = 'mobile-primary';
   const pendingEmail = new Map();
   const pendingCalendar = new Map();
   const pendingDatabase = new Map();
   const pendingVault = new Map();
+  let pendingConflictEvent = null;
+  let pendingProactiveTasks = null;
+
+  function getFreshMapEntry(map) {
+    const entry = map.get(sessionKey);
+    if (!entry) return null;
+    const ts = entry.askedAt || entry.updatedAt || entry.createdAt || 0;
+    if (ts > 0 && (nowFn() - ts) > CONTEXT_TTL_MS) {
+      map.delete(sessionKey);
+      return null;
+    }
+    return entry;
+  }
+
+  function getFreshConversationContext() {
+    if (!lastConversationContext) return null;
+    const ts = lastConversationContext.askedAt || lastConversationContext.updatedAt || 0;
+    if (ts > 0 && (nowFn() - ts) > CONTEXT_TTL_MS) {
+      lastConversationContext = null;
+      return null;
+    }
+    return lastConversationContext;
+  }
+
+  function rebindClientWs(newWs) {
+    if (!newWs) return;
+    for (const entry of replayStore.values()) {
+      if (entry.state === 'RUNNING') {
+        entry.ws = newWs;
+      }
+    }
+  }
 
   const sweepTimer = setInterval(() => {
     const now = nowFn();
     for (const [id, entry] of replayStore.entries()) {
+      // V-01 / H-10: Never evict RUNNING turns or entries holding an unexpired Finance Step-Up frame
+      if (entry.state === 'RUNNING') continue;
+      if (entry.pendingFrame && entry.pendingFrame.exp > now) continue;
       if (now - entry.updatedAt > REPLAY_TTL_MS) {
         replayStore.delete(id);
       }
@@ -162,9 +212,33 @@ function createMobileChatHandler(deps = {}) {
   }
 
   function pruneReplayCapacity() {
-    if (replayStore.size <= MAX_REPLAY_ENTRIES) return;
-    const oldestKey = replayStore.keys().next().value;
-    if (oldestKey) replayStore.delete(oldestKey);
+    if (replayStore.size < MAX_REPLAY_ENTRIES) return;
+    const now = nowFn();
+    for (const [key, entry] of replayStore.entries()) {
+      if (replayStore.size < MAX_REPLAY_ENTRIES) break;
+      if (entry.state === 'RUNNING') continue;
+      if (entry.pendingFrame && entry.pendingFrame.exp > now) continue;
+      replayStore.delete(key);
+    }
+  }
+
+  function enqueueSessionTurn(fn) {
+    const next = sessionTurnQueue.then(fn, fn);
+    sessionTurnQueue = next.catch(() => {});
+    return next;
+  }
+
+  function sanitizeClientError(err, fallbackMsg) {
+    try {
+      const { redactSecrets } = require('../../../utils/logger');
+      const raw = redactSecrets(String(err && err.message ? err.message : ''));
+      if (!raw || /ENOENT|ENOSPC|EACCES|ECONNREFUSED|All voice transcription tiers|\/tmp\//i.test(raw)) {
+        return fallbackMsg;
+      }
+      return fallbackMsg;
+    } catch (_) {
+      return fallbackMsg;
+    }
   }
 
   function replayFromSeq(ws, clientMsgId, entry, lastSeq) {
@@ -236,6 +310,12 @@ function createMobileChatHandler(deps = {}) {
     const replyCtx = extractSanitizedReplyContext(payload);
     const routedInput = buildReplyContextPrompt(content, replyCtx);
 
+    // N-01: Record user engagement on Mobile Chat so Notifier closed-loop engagement stays accurate
+    try {
+      const { getNotifier } = require('../../../core/Notifier');
+      Promise.resolve(getNotifier().markEngaged('REPLY')).catch(() => {});
+    } catch (_) {}
+
     const saveChatMemory = getSaveChatMemory();
     Promise.resolve(saveChatMemory('user', content, 'mobile')).catch(err => {
       console.warn('[BRIDGE-CHAT] Failed saving user chat memory:', err.message);
@@ -250,15 +330,42 @@ function createMobileChatHandler(deps = {}) {
         }
       } catch (_) {}
     }
+
+    // F-03: Check lightweight pending calendar conflict confirmation before invoking LLM router
+    if (pendingConflictEvent && (nowFn() - (pendingConflictEvent.createdAt || 0)) <= CONTEXT_TTL_MS) {
+      const lowerTrim = content.trim().toLowerCase();
+      if (/^(?:ya|iya|ok|oke|lanjut|tetap\s+buat|setuju|gas)$/i.test(lowerTrim)) {
+        const conflictData = pendingConflictEvent;
+        pendingConflictEvent = null;
+        try {
+          const agendaManager = require('../../../domain/Agenda_Manager');
+          if (typeof agendaManager.forceCreateEvent === 'function') {
+            const forced = await agendaManager.forceCreateEvent(conflictData.eventData || conflictData);
+            const replyText = stripHtmlForMobile(typeof forced === 'string' ? forced : (forced?.message || '✅ Jadwal berhasil dibuat.'));
+            await streamFinalReply(clientMsgId, entry, content, replyText, 'CALENDAR', saveChatMemory);
+            return;
+          }
+        } catch (confErr) {
+          console.warn('[BRIDGE-CHAT] Calendar conflict confirm error:', confErr.message);
+        }
+      } else if (/^(?:batal|tidak|jangan|cancel|gak)$/i.test(lowerTrim)) {
+        pendingConflictEvent = null;
+        await streamFinalReply(clientMsgId, entry, content, '❌ Pembuatan jadwal yang bentrok telah dibatalkan.', 'CALENDAR', saveChatMemory);
+        return;
+      }
+    } else {
+      pendingConflictEvent = null;
+    }
+
     const aiRouter = getAiRouter();
     const routingData = await aiRouter.routeUserMessage(routedInput, {
-      conversationContext: lastConversationContext,
+      conversationContext: getFreshConversationContext(),
       source: 'mobile',
       deviceContext: telemetry || undefined,
-      pendingEmailContext: pendingEmail.get(sessionKey) || null,
-      pendingCalendarContext: pendingCalendar.get(sessionKey) || null,
-      pendingDatabaseContext: pendingDatabase.get(sessionKey) || null,
-      pendingVaultContext: pendingVault.get(sessionKey) || null
+      pendingEmailContext: getFreshMapEntry(pendingEmail),
+      pendingCalendarContext: getFreshMapEntry(pendingCalendar),
+      pendingDatabaseContext: getFreshMapEntry(pendingDatabase),
+      pendingVaultContext: getFreshMapEntry(pendingVault)
     });
 
     if (entry.aborted) {
@@ -269,6 +376,15 @@ function createMobileChatHandler(deps = {}) {
     const normIntent = String(routingData?.intent || 'NORMAL_CHAT').toUpperCase();
     entry.intent = normIntent;
 
+    // F-04: Run shared clarification gate before executing destructive actions (e.g. EMAIL DELETE without keyword)
+    let clarificationMsg = null;
+    try {
+      const followUpResolver = require('../../common/follow_up_resolver');
+      if (typeof followUpResolver.getClarificationMessage === 'function') {
+        clarificationMsg = followUpResolver.getClarificationMessage(routingData, content);
+      }
+    } catch (_) {}
+
     const actions = Array.isArray(routingData?.actions) && routingData.actions.length > 0
       ? routingData.actions
       : [{ intent: normIntent, extracted_data: routingData?.extracted_data || {} }];
@@ -276,40 +392,64 @@ function createMobileChatHandler(deps = {}) {
     const executeDomainIntent = getDomainDispatcher();
     const replyParts = [];
 
-    for (const act of actions) {
-      if (entry.aborted) {
-        finalizeAborted(clientMsgId, entry, 'Dibatalkan oleh pengguna.');
-        return;
-      }
-      const actIntent = String(act?.intent || normIntent).toUpperCase();
-      if (actIntent === 'NORMAL_CHAT' || actIntent === 'UNKNOWN') {
-        if (routingData?.reply_message) replyParts.push(routingData.reply_message);
-        continue;
-      }
-      const resText = await executeDomainIntent(actIntent, {
-        ...routingData,
-        intent: actIntent,
-        extracted_data: act.extracted_data || routingData?.extracted_data || {}
-      }, {
-        source: 'mobile',
-        platform: 'mobile',
-        sessionKey,
-        pendingEmail,
-        pendingCalendar,
-        pendingDatabase,
-        pendingVault,
-        clientMsgId,
-        textInput: content,
-        replyTo: replyCtx || undefined,
-        message: replyCtx ? { reply_to_message: { text: replyCtx.preview } } : undefined,
-        deviceContext: telemetry || null,
-        financeStepUpService: getFinanceStepUpService(),
-        onStepUpRequired: (pendingFrame) => {
-          entry.pendingFrame = pendingFrame;
-          safeSend(entry.ws, pendingFrame);
+    if (clarificationMsg) {
+      replyParts.push(clarificationMsg);
+    } else {
+      for (const act of actions) {
+        if (entry.aborted) {
+          finalizeAborted(clientMsgId, entry, 'Dibatalkan oleh pengguna.');
+          return;
         }
-      });
-      if (resText) replyParts.push(resText);
+        const actIntent = String(act?.intent || normIntent).toUpperCase();
+        if (actIntent === 'NORMAL_CHAT' || actIntent === 'UNKNOWN') {
+          if (routingData?.reply_message) replyParts.push(routingData.reply_message);
+          continue;
+        }
+        const resText = await executeDomainIntent(actIntent, {
+          ...routingData,
+          intent: actIntent,
+          extracted_data: act.extracted_data || routingData?.extracted_data || {}
+        }, {
+          source: 'mobile',
+          platform: 'mobile',
+          sessionKey,
+          pendingEmail,
+          pendingCalendar,
+          pendingDatabase,
+          pendingVault,
+          emailDefaults: { defaultQuery: '', defaultFetch: 30 }, // F-07: General inbox parity with Telegram
+          pendingConflict: pendingConflictEvent,
+          setPendingConflictEvent: (val) => {
+            pendingConflictEvent = val ? { ...val, createdAt: nowFn() } : null;
+          },
+          setPendingProactiveTasks: (val) => {
+            pendingProactiveTasks = val ? { ...val, createdAt: nowFn() } : null;
+          },
+          notifyClient: (msg) => {
+            const clean = stripHtmlForMobile(msg);
+            if (clean) {
+              safeSend(entry.ws, {
+                type: 'CHAT_ACK',
+                client_msg_id: clientMsgId,
+                status: 'THINKING',
+                stage: clean.slice(0, 120),
+                ts: nowFn()
+              });
+            }
+          },
+          clientMsgId,
+          textInput: content,
+          replyTo: replyCtx || undefined,
+          message: replyCtx ? { reply_to_message: { text: replyCtx.preview } } : undefined,
+          deviceContext: telemetry || null,
+          financeStepUpService: getFinanceStepUpService(),
+          onStepUpRequired: (pendingFrame) => {
+            entry.pendingFrame = pendingFrame;
+            safeSend(entry.ws, pendingFrame);
+          }
+        });
+        if (resText) replyParts.push(resText);
+      }
     }
 
     const rawReply = replyParts.length > 0
@@ -318,15 +458,21 @@ function createMobileChatHandler(deps = {}) {
 
     const cleanReply = stripHtmlForMobile(rawReply);
 
-    // N-H2: Align conversationContext keys with Router_Dispatcher.js
+    // N-H2 / R-03: Align conversationContext keys with Router_Dispatcher.js + follow_up_resolver.js (askedAt)
+    const nowTs = nowFn();
     lastConversationContext = {
       intent: normIntent,
       extractedData: routingData?.extracted_data || {},
       lastAssistantReply: cleanReply.slice(0, 500),
       lastUserText: content.slice(0, 300),
-      updatedAt: nowFn()
+      askedAt: nowTs,
+      updatedAt: nowTs
     };
 
+    await streamFinalReply(clientMsgId, entry, content, cleanReply, normIntent, saveChatMemory);
+  }
+
+  async function streamFinalReply(clientMsgId, entry, _userContent, cleanReply, normIntent, saveChatMemory) {
     const chunks = splitIntoStreamChunks(cleanReply, chunkSize);
     let seq = 0;
 
@@ -376,7 +522,7 @@ function createMobileChatHandler(deps = {}) {
   }
 
   async function handleChatSend(payload, ws) {
-    const clientMsgId = String(payload.client_msg_id || '').trim();
+    const clientMsgId = String(payload.client_msg_id || '').trim().slice(0, MAX_CLIENT_MSG_ID_LEN);
     const content = String(payload.content || '').trim();
 
     if (!clientMsgId || !content) {
@@ -387,6 +533,18 @@ function createMobileChatHandler(deps = {}) {
         status: 'ERROR_ABORT',
         chunk: '',
         error: 'client_msg_id dan content wajib diisi.'
+      });
+      return;
+    }
+
+    if (content.length > MAX_CHAT_CONTENT_LEN) {
+      safeSend(ws, {
+        type: 'CHAT_CHUNK',
+        client_msg_id: clientMsgId,
+        seq: 1,
+        status: 'ERROR_ABORT',
+        chunk: '',
+        error: 'Pesan teks terlalu panjang (maksimal 16 KB).'
       });
       return;
     }
@@ -410,6 +568,7 @@ function createMobileChatHandler(deps = {}) {
     }
 
     pruneReplayCapacity();
+    const abortController = new AbortController();
     const entry = {
       state: 'RUNNING',
       chunks: [],
@@ -417,6 +576,7 @@ function createMobileChatHandler(deps = {}) {
       intent: 'NORMAL_CHAT',
       error: null,
       aborted: false,
+      abortController,
       ws,
       updatedAt: nowFn()
     };
@@ -430,16 +590,33 @@ function createMobileChatHandler(deps = {}) {
       ts: nowFn()
     });
 
-    try {
-      await executeAndStreamChat(clientMsgId, entry, content, payload);
-    } catch (err) {
-      console.error('[BRIDGE-CHAT] Error processing CHAT_SEND:', err.message);
-      finalizeAborted(clientMsgId, entry, `Gagal memproses pesan: ${err.message}`);
-    }
+    await enqueueSessionTurn(async () => {
+      if (entry.aborted) {
+        finalizeAborted(clientMsgId, entry, 'Dibatalkan oleh pengguna.');
+        return;
+      }
+      const turnTimer = setTimeout(() => {
+        if (entry.state === 'RUNNING') {
+          entry.aborted = true;
+          try { abortController.abort(); } catch (_) {}
+          finalizeAborted(clientMsgId, entry, 'Batas waktu pemrosesan pesan habis. Silakan coba lagi.');
+        }
+      }, TURN_TIMEOUT_MS);
+      if (typeof turnTimer.unref === 'function') turnTimer.unref();
+
+      try {
+        await executeAndStreamChat(clientMsgId, entry, content, payload);
+      } catch (err) {
+        console.error('[BRIDGE-CHAT] Error processing CHAT_SEND:', err.message);
+        finalizeAborted(clientMsgId, entry, sanitizeClientError(err, 'Gagal memproses pesan saat ini. Silakan coba lagi.'));
+      } finally {
+        clearTimeout(turnTimer);
+      }
+    });
   }
 
   async function handleChatVoiceSend(payload, ws) {
-    const clientMsgId = String(payload.client_msg_id || '').trim();
+    const clientMsgId = String(payload.client_msg_id || '').trim().slice(0, MAX_CLIENT_MSG_ID_LEN);
     const audioB64 = typeof payload.audio_b64 === 'string' ? payload.audio_b64.trim() : '';
     const rawMime = String(payload.audio_mime || 'audio/ogg').trim();
     const durationMs = Number.isFinite(Number(payload.duration_ms)) ? Math.max(0, Number(payload.duration_ms)) : 0;
@@ -486,6 +663,19 @@ function createMobileChatHandler(deps = {}) {
       }
     }
 
+    // H-10: Cap concurrent in-flight voice note decoding/STT to protect 892 MB VPS memory
+    if (activeVoiceInFlight >= 2) {
+      safeSend(ws, {
+        type: 'CHAT_CHUNK',
+        client_msg_id: clientMsgId,
+        seq: 1,
+        status: 'ERROR_ABORT',
+        chunk: '',
+        error: 'Pesan suara sebelumnya masih diproses. Tunggu sebentar lalu coba lagi.'
+      });
+      return;
+    }
+
     const audioBuffer = decodeStrictBase64(audioB64);
     if (!audioBuffer) {
       safeSend(ws, {
@@ -513,6 +703,7 @@ function createMobileChatHandler(deps = {}) {
     }
 
     pruneReplayCapacity();
+    const abortController = new AbortController();
     const entry = {
       state: 'RUNNING',
       chunks: [],
@@ -520,6 +711,7 @@ function createMobileChatHandler(deps = {}) {
       intent: 'NORMAL_CHAT',
       error: null,
       aborted: false,
+      abortController,
       ws,
       updatedAt: nowFn()
     };
@@ -536,28 +728,62 @@ function createMobileChatHandler(deps = {}) {
       ts: nowFn()
     });
 
-    try {
-      const voiceEngine = getVoiceEngine();
-      const transcribedText = String(await voiceEngine.transcribeAudioBuffer(audioBuffer, {
-        ext: validation.ext,
-        mimeType: validation.mimeType
-      }) || '').trim();
+    activeVoiceInFlight += 1;
+    await enqueueSessionTurn(async () => {
+      const turnTimer = setTimeout(() => {
+        if (entry.state === 'RUNNING') {
+          entry.aborted = true;
+          try { abortController.abort(); } catch (_) {}
+          finalizeAborted(clientMsgId, entry, 'Waktu pemrosesan pesan suara habis. Silakan coba lagi.');
+        }
+      }, TURN_TIMEOUT_MS);
+      if (typeof turnTimer.unref === 'function') turnTimer.unref();
 
-      if (entry.aborted) {
-        finalizeAborted(clientMsgId, entry, 'Dibatalkan oleh pengguna.');
-        return;
+      try {
+        if (entry.aborted) {
+          finalizeAborted(clientMsgId, entry, 'Dibatalkan oleh pengguna.');
+          return;
+        }
+        const voiceEngine = getVoiceEngine();
+        const transcribedText = String(await voiceEngine.transcribeAudioBuffer(audioBuffer, {
+          ext: validation.ext,
+          mimeType: validation.mimeType,
+          signal: abortController.signal
+        }) || '').trim();
+
+        if (entry.aborted) {
+          finalizeAborted(clientMsgId, entry, 'Dibatalkan oleh pengguna.');
+          return;
+        }
+
+        if (!transcribedText) {
+          finalizeAborted(clientMsgId, entry, 'Suara terlalu pelan atau tidak terdengar jelas. Silakan rekam ulang.');
+          return;
+        }
+
+        // V-03: Surface transcribed text back to Android via non-breaking CHAT_ACK stage
+        safeSend(entry.ws, {
+          type: 'CHAT_ACK',
+          client_msg_id: clientMsgId,
+          status: 'THINKING',
+          stage: 'TRANSCRIBED',
+          transcript: transcribedText,
+          ts: nowFn()
+        });
+
+        await executeAndStreamChat(clientMsgId, entry, transcribedText, payload);
+      } catch (err) {
+        if (entry.aborted) {
+          finalizeAborted(clientMsgId, entry, 'Dibatalkan oleh pengguna.');
+          return;
+        }
+        console.error('[BRIDGE-CHAT] Error processing CHAT_VOICE_SEND:', err.message);
+        finalizeAborted(clientMsgId, entry, sanitizeClientError(err, 'Gagal mengenali pesan suara saat ini. Silakan rekam ulang.'));
+      } finally {
+        clearTimeout(turnTimer);
+        activeVoiceInFlight = Math.max(0, activeVoiceInFlight - 1);
       }
-
-      if (!transcribedText) {
-        finalizeAborted(clientMsgId, entry, 'Suara terlalu pelan atau tidak terdengar jelas. Silakan rekam ulang.');
-        return;
-      }
-
-      await executeAndStreamChat(clientMsgId, entry, transcribedText, payload);
-    } catch (err) {
-      console.error('[BRIDGE-CHAT] Error processing CHAT_VOICE_SEND:', err.message);
-      finalizeAborted(clientMsgId, entry, `Gagal memproses pesan suara: ${err.message}`);
-    }
+    });
   }
 
   function finalizeAborted(clientMsgId, entry, errorMsg) {
@@ -600,6 +826,9 @@ function createMobileChatHandler(deps = {}) {
     const entry = replayStore.get(clientMsgId);
     if (entry && entry.state === 'RUNNING') {
       entry.aborted = true;
+      if (entry.abortController && typeof entry.abortController.abort === 'function') {
+        try { entry.abortController.abort(); } catch (_) {}
+      }
       console.log(`[BRIDGE-CHAT] CHAT_STOP received for client_msg_id=${clientMsgId}`);
     }
   }
@@ -729,6 +958,7 @@ function createMobileChatHandler(deps = {}) {
     handleChatStop,
     handleActionAuth,
     handleActionCancel,
+    rebindClientWs,
     destroy,
     _replayStore: replayStore
   };

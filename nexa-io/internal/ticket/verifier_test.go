@@ -105,6 +105,26 @@ func TestVerifierRejectsExpiredWrongScopeBadSigAndMissingTermSID(t *testing.T) {
 	if _, err := v.Verify(noSidTermTk, "term"); !errors.Is(err, ErrMissingSID) {
 		t.Fatalf("expected ErrMissingSID, got: %v", err)
 	}
+
+	// 5. M5: Far-future ticket TTL (> 75s) must be rejected so tickets cannot survive idle restart
+	farFutureTk := makeTestTicket(t, priv, Claims{
+		Scope: "logs",
+		Exp:   fixedNow.Unix() + 90,
+		JTI:   "jti-far-1",
+	})
+	if _, err := v.Verify(farFutureTk, "logs"); !errors.Is(err, ErrMalformedTicket) {
+		t.Fatalf("expected ErrMalformedTicket for TTL > 75s (M5), got: %v", err)
+	}
+
+	// 6. M5: Whitespace-only JTI must be rejected
+	blankJtiTk := makeTestTicket(t, priv, Claims{
+		Scope: "logs",
+		Exp:   fixedNow.Unix() + 45,
+		JTI:   "   ",
+	})
+	if _, err := v.Verify(blankJtiTk, "logs"); !errors.Is(err, ErrMissingJTI) {
+		t.Fatalf("expected ErrMissingJTI for blank JTI, got: %v", err)
+	}
 }
 
 func TestLoadPublicKeyFromPEM(t *testing.T) {

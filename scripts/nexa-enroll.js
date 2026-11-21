@@ -12,10 +12,14 @@
  * ============================================================
  */
 
+require('dotenv').config();
+
 const {
   EnrolledDevicesStore,
   formatFingerprint4x8
 } = require('../src/core/auth/enrolled_devices_store');
+
+const VALUE_FLAGS = new Set(['device', 'pubkey-b64', 'store']);
 
 function parseArgs(argv) {
   const args = argv.slice(2);
@@ -29,12 +33,12 @@ function parseArgs(argv) {
       if (eqIdx !== -1) {
         const key = rawKey.slice(0, eqIdx);
         const val = rawKey.slice(eqIdx + 1);
-        flags[key] = val === '' ? true : val;
+        flags[key] = VALUE_FLAGS.has(key) ? val : (val === '' ? true : val);
       } else {
         const key = rawKey;
         const next = args[i + 1];
         if (!next || next.startsWith('--')) {
-          flags[key] = true;
+          flags[key] = VALUE_FLAGS.has(key) ? '' : true;
         } else {
           flags[key] = next;
           i++;
@@ -60,15 +64,21 @@ function printUsage() {
 
 function main() {
   const { command, flags } = parseArgs(process.argv);
-  if (typeof process.getuid === 'function' && process.getuid() === 0 && !process.env.NEXA_ENROLL_ALLOW_ROOT) {
-    console.warn('[nexa-enroll] WARNING: Running as root creates 0600 files owned by root:root which user nexa cannot read.');
-    console.warn('[nexa-enroll] Recommended: sudo -u nexa node scripts/nexa-enroll.js ' + process.argv.slice(2).join(' '));
+  if (typeof process.getuid === 'function' && process.getuid() === 0 && !process.env.NEXA_ENROLL_ALLOW_ROOT && !flags['allow-root']) {
+    console.error('[nexa-enroll] ERROR: Refusing to run as root because 0600 files owned by root:root cannot be read by user nexa.');
+    console.error('[nexa-enroll] Run as: sudo -u nexa node scripts/nexa-enroll.js ' + process.argv.slice(2).join(' '));
+    console.error('[nexa-enroll] (Pass --allow-root or NEXA_ENROLL_ALLOW_ROOT=1 to override explicitly.)');
+    process.exit(1);
   }
   const store = new EnrolledDevicesStore({
     filePath: flags.store || process.env.NEXA_ENROLLED_DEVICES_PATH
   });
 
   if (command === 'start' || command === 're-pair') {
+    if (Object.prototype.hasOwnProperty.call(flags, 'device') && !String(flags.device || '').trim()) {
+      console.error('Error: --device requires a non-empty device ID.');
+      process.exit(1);
+    }
     const deviceId = flags.device || 'samsung-a33-tuan';
     const isRepair = command === 're-pair';
     const pending = store.createPendingEnrollment({ deviceId, repair: isRepair });

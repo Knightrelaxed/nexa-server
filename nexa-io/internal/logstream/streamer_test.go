@@ -265,11 +265,43 @@ func TestJournalByteArrayAndUnitWhitelistEnforcement(t *testing.T) {
 		t.Fatal("expected sshd.service to be rejected by FR-LOG-02 whitelist (G-C7)")
 	}
 
-	// G-C7: Selecting ONLY UnitSystemd (bit 2 = 0x04) MUST generate explicit match args, never empty unfiltered journalctl
+	// H5: Sysstat / unrelated PID 1 lifecycle events MUST be rejected (eliminates sysstat-collect.service flood)
+	sysstatJSON := `{"MESSAGE":"Started sysstat-collect.service","PRIORITY":"6","_PID":"1","SYSLOG_IDENTIFIER":"systemd","UNIT":"sysstat-collect.service"}`
+	if _, allowed := parseJournalJSONLine([]byte(sysstatJSON)); allowed {
+		t.Fatal("expected sysstat-collect.service PID 1 event to be rejected (H5)")
+	}
+
+	// H5: Spoofed SYSLOG_IDENTIFIER=nexa-server from another unit MUST be rejected or mapped to its real _SYSTEMD_UNIT
+	spoofJSON := `{"MESSAGE":"Fake log from term","PRIORITY":"6","_SYSTEMD_UNIT":"nexa-term.service","SYSLOG_IDENTIFIER":"nexa-server"}`
+	spoofRec, spoofOK := parseJournalJSONLine([]byte(spoofJSON))
+	if !spoofOK || spoofRec.UnitID != proto.UnitNexaIO {
+		t.Fatalf("expected _SYSTEMD_UNIT=nexa-term.service to override spoofed SYSLOG_IDENTIFIER, got ok=%v rec=%+v", spoofOK, spoofRec)
+	}
+	spoofEvilJSON := `{"MESSAGE":"Fake log from cron","PRIORITY":"6","_SYSTEMD_UNIT":"cron.service","SYSLOG_IDENTIFIER":"nexa-server"}`
+	if _, allowed := parseJournalJSONLine([]byte(spoofEvilJSON)); allowed {
+		t.Fatal("expected cron.service with spoofed SYSLOG_IDENTIFIER=nexa-server to be rejected (H5)")
+	}
+
+	// H5: PID 1 lifecycle event for whitelisted nexa-log.service MUST be accepted as UnitSystemd
+	nexaPid1JSON := `{"MESSAGE":"Started nexa-log.service","PRIORITY":"6","_PID":"1","SYSLOG_IDENTIFIER":"systemd","UNIT":"nexa-log.service"}`
+	pid1Rec, pid1OK := parseJournalJSONLine([]byte(nexaPid1JSON))
+	if !pid1OK || pid1Rec.UnitID != proto.UnitSystemd {
+		t.Fatalf("expected whitelisted PID 1 event for nexa-log.service to be accepted as UnitSystemd, got ok=%v rec=%+v", pid1OK, pid1Rec)
+	}
+
+	// G-C7 / H5: Selecting ONLY UnitSystemd (bit 2 = 0x04) MUST generate explicit kernel + scoped PID 1 UNIT args
 	args := buildJournalctlArgs(proto.LogOpenParams{UnitMask: 1 << proto.UnitSystemd, TailLines: 20})
 	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "_TRANSPORT=kernel") || !strings.Contains(joined, "SYSLOG_IDENTIFIER=systemd") {
-		t.Fatalf("UnitSystemd journalctl args missing explicit kernel/systemd clauses: %v", args)
+	if !strings.Contains(joined, "--no-pager") || !strings.Contains(joined, "_TRANSPORT=kernel") || !strings.Contains(joined, "UNIT=nexa-server.service") {
+		t.Fatalf("UnitSystemd journalctl args missing explicit kernel/scoped UNIT clauses: %v", args)
+	}
+	if strings.Contains(joined, "SYSLOG_IDENTIFIER=systemd") {
+		t.Fatalf("UnitSystemd journalctl args must not use unscoped SYSLOG_IDENTIFIER=systemd: %v", args)
+	}
+
+	// L1: Leading ANSI escape before [cat=AUTH] is parsed cleanly into CatAuth
+	if (rec.CatFlags & proto.CatAuth) == 0 {
+		t.Fatalf("expected leading ANSI + [cat=AUTH] to parse CatAuth flag, got 0x%02x (msg=%q)", rec.CatFlags, rec.Message)
 	}
 
 	// G-L1: Nil verifier must fail closed with 500

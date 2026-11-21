@@ -118,6 +118,12 @@ func TestCategoryPrefixParsingAndUTF8Truncation(t *testing.T) {
 	if !utf8.Valid(longErr[3:]) || len(longErr[3:]) > 512 {
 		t.Fatalf("EncodeErrFrame produced invalid/oversized UTF-8: len=%d valid=%v", len(longErr[3:]), utf8.Valid(longErr[3:]))
 	}
+
+	// L1: Full 3-segment JWT and ?ticket= query string redaction
+	redacted := RedactSafetyNet("GET /io/logs?ticket=secret123 jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c")
+	if strings.Contains(redacted, "secret123") || strings.Contains(redacted, "SflKxwRJSMeKKF") {
+		t.Fatalf("L1 redaction leaked query ticket or 3rd JWT segment: %s", redacted)
+	}
 }
 
 func TestOpenAndCreditPayloadsAndFilterMatching(t *testing.T) {

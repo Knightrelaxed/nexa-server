@@ -52,7 +52,7 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow non-browser clients (Telegram webhooks, CLI, mobile apps, curl)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(String(origin).trim().toLowerCase())) {
       return callback(null, true);
     }
     return callback(new Error('CORS policy violation'));
@@ -79,6 +79,9 @@ morgan.token('safe-url', (req) => {
 });
 
 app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]', {
+  stream: {
+    write: (msg) => console.log(String(msg || '').trimEnd())
+  },
   skip: (req, res) => {
     // Skip noisy automated web scanner hits (404s like .env, .git, config)
     if (res.statusCode === 404) return true;
@@ -188,13 +191,25 @@ if (require.main === module) {
     // WhatsApp adapter telah dinonaktifkan untuk deployment cloud.
     // Lihat src/interfaces/whatsapp/ untuk implementasi lokal.
 
+    let shuttingDown = false;
     function gracefulShutdown(signal) {
+      if (shuttingDown) return;
+      shuttingDown = true;
       console.log(`[LIFECYCLE] 🛑 Received ${signal}. Draining connections and initiating clean shutdown...`);
       try {
         bridge.closeWebSocket();
       } catch (e) {
         console.warn('[LIFECYCLE] Error closing WebSocket bridge:', e.message);
       }
+      try {
+        require('./core/auth/ticket_service').getTicketService().destroy();
+      } catch (_) {}
+      try {
+        require('./core/auth/finance_stepup_service').getFinanceStepUpService().destroy();
+      } catch (_) {}
+      try {
+        require('./interfaces/bridge/mobile_chat/handler').getMobileChatHandler().destroy();
+      } catch (_) {}
       server.close(() => {
         console.log('[LIFECYCLE] ✅ Server HTTP/WS closed cleanly.');
         process.exit(0);
@@ -229,10 +244,11 @@ process.on('uncaughtException', (error) => {
   console.error('  Error:', error.message);
   console.error('  Stack:', error.stack);
 
-  // Send emergency alert to Telegram if configured
+  // Send emergency alert to Telegram if configured (with FR-SEC-04 secret redaction)
   try {
     const { sendTelegramOutbound } = require('./interfaces/webhook');
-    const safeErrorMsg = String(error?.message || 'Unknown error')
+    const { redactSecrets } = require('./utils/logger');
+    const safeErrorMsg = redactSecrets(String(error?.message || 'Unknown error'))
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');

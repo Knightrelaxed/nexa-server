@@ -103,7 +103,7 @@ function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
 
     if (note.priority === 'P0') return _deliver(note);
     if (note.priority === 'P2') return _queue(note, 'QUEUED_DIGEST');
-    if (isQuietHour(t, P)) return _queue(note, 'QUEUED_DEFERRED', 'quiet-hours');
+    if (isQuietHour(t, P) && !note.bypassQuietHours) return _queue(note, 'QUEUED_DEFERRED', 'quiet-hours');
 
     if (!isScheduledReport) {
       const sent = await store.countSentSince('P1', startOfDayIso(t, P));
@@ -112,8 +112,15 @@ function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
     return _deliver(note);
   }
 
-  const _compose = (title, rows) =>
-    `${title}\n${rows.map(r => `• ${String(r.text).split('\n')[0].slice(0, 160)}`).join('\n')}`;
+  // N-02: Preserve multi-line report summaries instead of chopping off everything after the first newline
+  const _compose = (title, rows) => {
+    const body = rows.map(r => {
+      const clean = String(r.text || '').trim();
+      const condensed = clean.length > 600 ? clean.slice(0, 600) + '...' : clean;
+      return `• ${condensed}`;
+    }).join('\n\n');
+    return `${title}\n\n${body}`;
+  };
 
   /** Cron at e.g. 12:30 and 19:30 WIB. One message instead of many. */
   async function flushDigest() {
@@ -158,11 +165,20 @@ function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
 // ---------------------------------------------------------------------
 // Storage Adapters
 // ---------------------------------------------------------------------
+const MAX_MEMORY_STORE_ROWS = 500;
+
 function createMemoryStore() {
   const rows = []; let seq = 0;
   return {
     rows,
-    async record(r) { const row = { id: ++seq, engagedAt: null, ...r }; rows.push(row); return row.id; },
+    async record(r) {
+      const row = { id: ++seq, engagedAt: null, ...r };
+      rows.push(row);
+      if (rows.length > MAX_MEMORY_STORE_ROWS) {
+        rows.splice(0, rows.length - MAX_MEMORY_STORE_ROWS);
+      }
+      return row.id;
+    },
     async setStatus(id, status, reason) { const r = rows.find(x => x.id === id); if (r) { r.status = status; r.reason = reason; } },
     async lastSentAt(key) { return rows.filter(r => r.dedupeKey === key && r.status === 'SENT').map(r => r.sentAt).sort().pop() || null; },
     async countSentSince(priority, sinceIso) {
@@ -277,7 +293,23 @@ function getNotifier() {
     let sendFn;
     try {
       const { sendTelegramOutbound } = require('../interfaces/telegram/actions');
-      sendFn = async (text) => sendTelegramOutbound(text, false);
+      sendFn = async (text, meta = {}) => {
+        // N-01 / UC5: Deliver proactive messages to Mobile Bridge (/ws) in parallel when connected
+        try {
+          const mobileClient = require('../interfaces/bridge/mobile_bridge/client');
+          if (mobileClient && typeof mobileClient.isConnected === 'function' && mobileClient.isConnected()) {
+            const { stripHtmlForMobile } = require('../interfaces/bridge/mobile_chat/handler');
+            const plainText = typeof stripHtmlForMobile === 'function' ? stripHtmlForMobile(text) : String(text || '');
+            mobileClient.sendProactiveMessage({
+              text: plainText,
+              kind: meta.kind || 'PROACTIVE',
+              priority: meta.priority || 'P1',
+              clientMsgId: meta.id ? `proactive_${meta.id}` : ''
+            });
+          }
+        } catch (_) {}
+        return sendTelegramOutbound(text, false);
+      };
     } catch (_) {
       sendFn = async () => {};
     }
@@ -291,7 +323,7 @@ function getNotifier() {
 
 /**
  * Proactive notification entry point for all background tasks and cron jobs.
- * Enforces Quiet Hours (22:00 - 06:00 WIB), deduplication, and rate limiting.
+ * Enforces Quiet Hours (23:00 - 05:00 WIB), deduplication, and rate limiting.
  */
 async function notifyProactive({
   kind = 'general',
@@ -300,7 +332,8 @@ async function notifyProactive({
   text,
   expiresAt = null,
   isScheduled = false,
-  timeSensitive = false
+  timeSensitive = false,
+  bypassQuietHours = false
 }) {
   if (!text) return null;
   const notifier = getNotifier();
@@ -311,7 +344,8 @@ async function notifyProactive({
     text,
     expiresAt,
     isScheduled,
-    timeSensitive
+    timeSensitive,
+    bypassQuietHours
   });
 }
 

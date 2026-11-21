@@ -89,7 +89,7 @@ router.post('/bridge/command', security.bridgeAuth, async (req, res) => {
       console.warn(`[SECURITY] ⚠️ REST /bridge/command blocked unpermitted action: "${action}"`);
       return res.status(403).json({ error: `Action '${action}' is not permitted by bridge security policy.` });
     }
-    const adapter = require('./mobile_bridge/adapter');
+    const adapter = require('./bridge/mobile_bridge/adapter');
     const result = await adapter.execute(action, params || {});
     res.status(200).json(result);
   } catch (err) {
@@ -100,7 +100,7 @@ router.post('/bridge/command', security.bridgeAuth, async (req, res) => {
 router.post('/bridge/simulate-call', security.bridgeAuth, async (req, res) => {
   try {
     const { callerName, message, playRingtone } = req.body;
-    const adapter = require('./mobile_bridge/adapter');
+    const adapter = require('./bridge/mobile_bridge/adapter');
     const result = await adapter.simulateIncomingCall(
       callerName || 'N.E.X.A Assistant',
       message || 'Tuan Faqih, ada interupsi penting dari N.E.X.A.',

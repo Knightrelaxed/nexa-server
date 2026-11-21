@@ -79,7 +79,8 @@ async function executeMidnightCheckin(options = {}) {
     if (screenResult && screenResult.success && screenResult.data && typeof screenResult.data.screen_on === 'boolean') {
       isScreenActive = screenResult.data.screen_on;
     } else {
-      isScreenActive = bridgeAdapter.isScreenActive(120000);
+      // N-03: Threshold must exceed Android's 180s heartbeat window
+      isScreenActive = bridgeAdapter.isScreenActive(240000);
     }
   } catch (queryErr) {
     console.warn('[CRON] Gagal query real-time getScreenStatus pada 01:00 WIB:', queryErr.message);
@@ -96,10 +97,12 @@ async function executeMidnightCheckin(options = {}) {
   const checkinText = await intelligenceBrief.generateMidnightCheckin({ screenActive: true });
   const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
 
-  // 1. Peringatan via Notifier
+  // 1. Peringatan via Notifier (N-02: timeSensitive=true because user screen is verified ON at 01:00 WIB)
   await notifyProactive({
     kind: 'midnight_checkin',
     priority: 'P1',
+    timeSensitive: true,
+    bypassQuietHours: true,
     dedupeKey: `midnight_checkin:${todayKey}`,
     text: checkinText
   });
@@ -592,7 +595,7 @@ function initCronJobs() {
       console.error('[WATCHDOG] Watchdog error:', e.message);
     }
     watchdogRunning = false;
-  }, 90 * 1000);
+  }, 90 * 1000).unref();
 
   // 5. Overdue Task Alert (07:00 WIB)
   cron.schedule('0 7 * * *', async () => {
@@ -603,13 +606,13 @@ function initCronJobs() {
       
       if (overdueTasks && overdueTasks.length > 0) {
         let alertMsg = `🔴 <b>REMINDER: ${overdueTasks.length} tugas Tuan sudah terlambat:</b>\n`;
+        // N-03: Compute midnight difference strictly in Asia/Jakarta (+07:00), not server UTC timezone
+        const todayWibYmd = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+        const todayWibMidnightMs = Date.parse(`${todayWibYmd}T00:00:00+07:00`);
         overdueTasks.forEach((t, i) => {
-          const d = new Date(t.due);
-          // Calculate diff days correctly based on start of days
-          const now = new Date();
-          now.setHours(0,0,0,0);
-          d.setHours(0,0,0,0);
-          const diffDays = Math.max(1, Math.ceil((now - d) / (1000 * 60 * 60 * 24)));
+          const dueYmd = new Date(t.due).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+          const dueWibMidnightMs = Date.parse(`${dueYmd}T00:00:00+07:00`);
+          const diffDays = Math.max(1, Math.round((todayWibMidnightMs - dueWibMidnightMs) / (1000 * 60 * 60 * 24)));
           alertMsg += `${i + 1}. ${t.title} (terlambat ${diffDays} hari)\n`;
         });
         
@@ -1011,6 +1014,7 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
             kind: 'SCHEDULED_WEEKLY_BUDGET',
             priority: 'P1',
             isScheduled: true,
+            bypassQuietHours: true,
             dedupeKey: `budget_weekly:${weekKey}`,
             text: msg
           });
@@ -1040,6 +1044,7 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
               kind: 'SCHEDULED_MONTHLY_BUDGET',
               priority: 'P1',
               isScheduled: true,
+              bypassQuietHours: true,
               dedupeKey: `budget_monthly:${monthKey}`,
               text: msg
             });
@@ -1055,9 +1060,10 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
   // 14. [PHASE 8] Auto-Escalation Checker (Every 1 Minute)
   cron.schedule('* * * * *', async () => {
     try {
-      if (!env.SUPABASE_URL || !env.SUPABASE_KEY) return;
-      const { createClient } = require('@supabase/supabase-js');
-      const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_KEY);
+      // L-01: Reuse singleton Supabase client instead of leaking 1,440 createClient() instances/day
+      const supabaseMemories = require('../infrastructure/Supabase_Memories');
+      const supabase = supabaseMemories.supabase;
+      if (!supabase) return;
 
       const nowIso = new Date().toISOString();
       const { data: expiredSessions, error } = await supabase

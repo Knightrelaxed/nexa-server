@@ -20,14 +20,21 @@ function normalizeOrigin(raw) {
 }
 
 function buildAllowedOrigins(envConfig = process.env) {
-  const set = new Set([
-    `https://${DEFAULT_AZURE_DOMAIN}`,
-    'http://localhost:3000',
-    'http://127.0.0.1:3000'
-  ]);
-
+  const isProd = String(envConfig.NODE_ENV || '').trim().toLowerCase() === 'production';
   const primary = normalizeOrigin(envConfig.NEXA_DOMAIN);
-  if (primary) set.add(primary);
+  const set = new Set();
+
+  if (primary) {
+    set.add(primary);
+  } else {
+    set.add(`https://${DEFAULT_AZURE_DOMAIN}`);
+  }
+
+  // Only allow localhost origins in non-production environments (H-13)
+  if (!isProd) {
+    set.add('http://localhost:3000');
+    set.add('http://127.0.0.1:3000');
+  }
 
   const extra = String(envConfig.NEXA_ALLOWED_ORIGINS || '')
     .split(',')

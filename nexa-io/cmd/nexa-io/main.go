@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"nexa-io/internal/logstream"
 	"nexa-io/internal/proto"
+	"nexa-io/internal/ptyutil"
 	"nexa-io/internal/termstream"
 	"nexa-io/internal/ticket"
 )
@@ -74,17 +76,28 @@ func main() {
 		defer stop()
 
 		var httpSrv *http.Server
+		var logSrv *logstream.Server
+		var shutdownOnce sync.Once
+
 		shutdown := func(reason string) {
-			fmt.Fprintf(os.Stderr, "[nexa-log] Shutting down cleanly (%s)...\n", reason)
-			stop()
-			if httpSrv != nil {
-				sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer sCancel()
-				_ = httpSrv.Shutdown(sCtx)
-			}
+			shutdownOnce.Do(func() {
+				fmt.Fprintf(os.Stderr, "[nexa-log] Shutting down cleanly (%s)...\n", reason)
+				stop()
+				if logSrv != nil {
+					logSrv.ShutdownAll(proto.CloseServerStop)
+				}
+				if httpSrv != nil {
+					sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer sCancel()
+					_ = httpSrv.Shutdown(sCtx)
+				}
+				if logSrv != nil {
+					logSrv.Wait(3 * time.Second)
+				}
+			})
 		}
 
-		logSrv := logstream.NewServer(logstream.Config{
+		logSrv = logstream.NewServer(logstream.Config{
 			Verifier:      v,
 			BatchInterval: 150 * time.Millisecond,
 			PauseTimeout:  5 * time.Minute,
@@ -107,9 +120,7 @@ func main() {
 
 		go func() {
 			<-ctx.Done()
-			sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer sCancel()
-			_ = httpSrv.Shutdown(sCtx)
+			shutdown("signal received")
 		}()
 
 		go logSrv.StartIdleWatchdog(ctx)
@@ -117,6 +128,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "ERR nexa-log serve: %v\n", err)
 			os.Exit(1)
 		}
+		logSrv.Wait(3 * time.Second)
 
 	case "terminal":
 		pub, err := ticket.LoadPublicKeyFromCredential("ticket-pub.pem", *pubKeyPath)
@@ -141,18 +153,22 @@ func main() {
 
 		var httpSrv *http.Server
 		var termSrv *termstream.Server
+		var shutdownOnce sync.Once
 
 		shutdown := func(reason string) {
-			fmt.Fprintf(os.Stderr, "[nexa-term] Shutting down cleanly (%s)...\n", reason)
-			stop()
-			if termSrv != nil {
-				termSrv.ShutdownAll(proto.CloseServerStop)
-			}
-			if httpSrv != nil {
-				sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer sCancel()
-				_ = httpSrv.Shutdown(sCtx)
-			}
+			shutdownOnce.Do(func() {
+				fmt.Fprintf(os.Stderr, "[nexa-term] Shutting down cleanly (%s)...\n", reason)
+				stop()
+				if termSrv != nil {
+					termSrv.ShutdownAll(proto.CloseServerStop)
+				}
+				if httpSrv != nil {
+					sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer sCancel()
+					_ = httpSrv.Shutdown(sCtx)
+				}
+				ptyutil.WaitTeardown(2500 * time.Millisecond)
+			})
 		}
 
 		termSrv = termstream.NewServer(termstream.Config{
@@ -183,10 +199,7 @@ func main() {
 
 		go func() {
 			<-ctx.Done()
-			termSrv.ShutdownAll(proto.CloseServerStop)
-			sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer sCancel()
-			_ = httpSrv.Shutdown(sCtx)
+			shutdown("signal received")
 		}()
 
 		go termSrv.StartIdleWatchdog(ctx)
@@ -194,6 +207,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "ERR nexa-term serve: %v\n", err)
 			os.Exit(1)
 		}
+		ptyutil.WaitTeardown(2500 * time.Millisecond)
 
 	default:
 		fmt.Fprintln(os.Stderr, "Usage: nexa-io --mode=verify-ticket|logs|terminal")

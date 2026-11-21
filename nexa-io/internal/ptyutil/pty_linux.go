@@ -10,11 +10,29 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 	"unsafe"
 )
+
+var teardownWG sync.WaitGroup
+
+// WaitTeardown waits up to timeout for any in-flight PTY process-group SIGKILL escalation goroutines (H1).
+func WaitTeardown(timeout time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		teardownWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+	}
+}
 
 const (
 	ioctlTIOCGPTN   = 0x80045430
@@ -202,33 +220,101 @@ func (p *linuxPTY) SignalWinch() error {
 	return nil
 }
 
-// KillGroup sends SIGHUP to both the foreground and shell process groups, waits up to 2 seconds
-// (exiting early if cmd.Wait() already completed to avoid PID reuse races, G-H4), then sends SIGKILL.
+// listSessionPIDs scans /proc for all PIDs belonging to session ID targetSID (H1),
+// catching backgrounded jobs that moved to their own process group via job control.
+func listSessionPIDs(targetSID int) []int {
+	if targetSID <= 0 {
+		return nil
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid <= 1 {
+			continue
+		}
+		statBytes, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
+		if err != nil {
+			continue
+		}
+		// Format: pid (comm) state ppid pgrp session ...
+		// comm may contain spaces/parens, so find the LAST ')'
+		statStr := string(statBytes)
+		rparen := strings.LastIndexByte(statStr, ')')
+		if rparen < 0 || rparen+2 >= len(statStr) {
+			continue
+		}
+		fields := strings.Fields(statStr[rparen+2:])
+		// fields[0]=state, [1]=ppid, [2]=pgrp, [3]=session
+		if len(fields) >= 4 {
+			if sid, convErr := strconv.Atoi(fields[3]); convErr == nil && sid == targetSID {
+				pids = append(pids, pid)
+			}
+		}
+	}
+	return pids
+}
+
+func signalSessionMembers(targetSID, fgPGID int, sig syscall.Signal) int {
+	if fgPGID > 0 {
+		_ = syscall.Kill(-fgPGID, sig)
+	}
+	if targetSID > 0 && targetSID != fgPGID {
+		_ = syscall.Kill(-targetSID, sig)
+	}
+	members := listSessionPIDs(targetSID)
+	for _, pid := range members {
+		_ = syscall.Kill(pid, sig)
+	}
+	return len(members)
+}
+
+// KillGroup sends SIGHUP to the foreground PGID, shell PGID, and every PID in the PTY session
+// (via /proc SID scan, H1), waits up to 2 seconds while checking whether any session members
+// remain alive (never aborting early just because bash exited while background jobs linger),
+// and escalates to SIGKILL. Tracked by teardownWG for clean shutdown waiting.
 func (p *linuxPTY) KillGroup() error {
 	var closeErr error
 	p.killOnce.Do(func() {
 		fg := p.foregroundPGID()
-		if fg > 0 {
-			_ = syscall.Kill(-fg, syscall.SIGHUP)
-		}
-		if p.pgid > 0 && p.pgid != fg {
-			_ = syscall.Kill(-p.pgid, syscall.SIGHUP)
-		}
+		signalSessionMembers(p.pgid, fg, syscall.SIGHUP)
 		closeErr = p.master.Close()
 
+		teardownWG.Add(1)
 		go func() {
-			timer := time.NewTimer(2 * time.Second)
-			defer timer.Stop()
-			select {
-			case <-p.doneCh:
-				return
-			case <-timer.C:
-				if fg > 0 {
-					_ = syscall.Kill(-fg, syscall.SIGKILL)
+			defer teardownWG.Done()
+			deadline := time.Now().Add(2 * time.Second)
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+
+			for {
+				shellExited := false
+				select {
+				case <-p.doneCh:
+					shellExited = true
+				default:
 				}
-				if p.pgid > 0 && p.pgid != fg {
-					_ = syscall.Kill(-p.pgid, syscall.SIGKILL)
+				if shellExited && len(listSessionPIDs(p.pgid)) == 0 {
+					return
 				}
+				if time.Now().After(deadline) {
+					// Escalate to SIGKILL on remaining session members only (safe against PID reuse via SID check)
+					remaining := listSessionPIDs(p.pgid)
+					for _, pid := range remaining {
+						_ = syscall.Kill(pid, syscall.SIGKILL)
+					}
+					if !shellExited && p.pgid > 0 {
+						_ = syscall.Kill(-p.pgid, syscall.SIGKILL)
+					}
+					return
+				}
+				<-ticker.C
 			}
 		}()
 	})

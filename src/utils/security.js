@@ -132,9 +132,12 @@ function cliAuth(req, res, next) {
  */
 function bridgeAuth(req, res, next) {
   const authHeader = req.headers.authorization;
-  const configuredSecret = String(env.NEXA_DEVICE_SECRET || env.NEXA_BRIDGE_SECRET || '').trim();
+  const configuredSecrets = [
+    env.NEXA_DEVICE_SECRET,
+    env.NEXA_BRIDGE_SECRET
+  ].map(s => String(s || '').trim()).filter(Boolean);
 
-  if (!configuredSecret) {
+  if (configuredSecrets.length === 0) {
     console.error('[SECURITY] NEXA_DEVICE_SECRET / NEXA_BRIDGE_SECRET is missing. Rejecting Bridge webhook request.');
     return res.status(500).json({ error: 'Server Bridge auth not configured' });
   }
@@ -145,7 +148,7 @@ function bridgeAuth(req, res, next) {
 
   const token = String(authHeader.slice('Bearer '.length)).trim();
 
-  if (!token || !safeEqual(token, configuredSecret)) {
+  if (!token || !configuredSecrets.some(secret => safeEqual(token, secret))) {
     console.warn('[SECURITY] Unauthorized Bridge webhook attempt with invalid token');
     return res.status(403).json({ error: 'Forbidden: Invalid bridge token' });
   }

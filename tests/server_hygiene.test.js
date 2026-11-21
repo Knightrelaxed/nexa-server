@@ -82,20 +82,28 @@ test('detectCategory and formatLine attach canonical [cat=...] tags and optional
   assert.equal(explicitLine.outputLine, '<3>[cat=BRIDGE] Socket closed');
 });
 
-test('buildAllowedOrigins supports custom NEXA_DOMAIN and multi-origin cutover list', () => {
+test('buildAllowedOrigins supports custom NEXA_DOMAIN, multi-origin cutover, and production exclusions', () => {
   assert.equal(normalizeOrigin('nexa.tuan.id/'), 'https://nexa.tuan.id');
   assert.equal(normalizeOrigin('https://custom.nexa.dev///'), 'https://custom.nexa.dev');
 
-  const origins = buildAllowedOrigins({
+  // Default (no custom NEXA_DOMAIN, non-production): includes Azure fallback + localhost
+  const defaultOrigins = buildAllowedOrigins({ NODE_ENV: 'development' });
+  assert.ok(defaultOrigins.includes('https://nexa-server.indonesiacentral.cloudapp.azure.com'));
+  assert.ok(defaultOrigins.includes('http://localhost:3000'));
+
+  // Custom NEXA_DOMAIN in production: excludes legacy Azure FQDN and localhost origins (H-13)
+  const prodOrigins = buildAllowedOrigins({
+    NODE_ENV: 'production',
     NEXA_DOMAIN: 'nexa.tuan.id',
     NEXA_ALLOWED_ORIGINS: 'https://staging.tuan.id, http://192.168.1.5:3000'
   });
 
-  assert.ok(origins.includes('https://nexa.tuan.id'));
-  assert.ok(origins.includes('https://staging.tuan.id'));
-  assert.ok(origins.includes('http://192.168.1.5:3000'));
-  assert.ok(origins.includes('https://nexa-server.indonesiacentral.cloudapp.azure.com'));
-  assert.ok(origins.includes('http://localhost:3000'));
+  assert.ok(prodOrigins.includes('https://nexa.tuan.id'));
+  assert.ok(prodOrigins.includes('https://staging.tuan.id'));
+  assert.ok(prodOrigins.includes('http://192.168.1.5:3000'));
+  assert.ok(!prodOrigins.includes('https://nexa-server.indonesiacentral.cloudapp.azure.com'));
+  assert.ok(!prodOrigins.includes('http://localhost:3000'));
+  assert.ok(!prodOrigins.includes('http://127.0.0.1:3000'));
 });
 
 test('ecosystem.config.js enforces calibrated V8 heap, PM2 memory guard, and syslog priority prefix', () => {

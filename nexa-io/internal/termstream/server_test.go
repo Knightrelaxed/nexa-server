@@ -349,3 +349,72 @@ func TestStaleGraceTimerDoesNotKillResumedSessionAndFailClosedNilVerifier(t *tes
 		t.Fatal("ShutdownAll did not terminate session cleanly (G-M2)")
 	}
 }
+
+func TestResumeOverflowOffsetResetDoesNotDesyncBy7Bytes(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	v, _ := ticket.NewVerifier(pub)
+
+	createdPTYCh := make(chan *fakePTY, 1)
+	srv := NewServer(Config{
+		Verifier:      v,
+		Enabled:       true,
+		DetachTimeout: 5 * time.Second,
+		GraceTimeout:  5 * time.Second,
+		PTYFactory: func(rows, cols uint16) (ptyutil.Session, error) {
+			p := newFakePTY(rows, cols)
+			createdPTYCh <- p
+			return p, nil
+		},
+	})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	sidRaw := [16]byte{9, 8, 7, 6, 5, 4, 3, 2, 1, 2, 3, 4, 5, 6, 7, 8}
+	sidStr := base64.RawURLEncoding.EncodeToString(sidRaw[:])
+
+	tkt1 := issueTermTicket(t, priv, sidStr, "jti-ovf-1")
+	conn1, br1 := dialTermWS(t, ts.URL, tkt1)
+	openFrame, _ := proto.EncodeFrame(proto.ChTermMin, proto.OpOpen, proto.EncodeTermOpen(24, 80, sidRaw))
+	_ = writeMaskedClientFrame(conn1, openFrame)
+
+	p := <-createdPTYCh
+	p.outCh <- []byte("boot")
+	_ = conn1.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _ = readUnmaskedServerFrame(br1)
+	_ = conn1.Close()
+	time.Sleep(30 * time.Millisecond)
+
+	// Client sends stale/ahead offset 999999 -> triggers OFFSET_RESET:<sentOffset> + SIGWINCH WITHOUT un-ringed 7-byte clear frame (C1)
+	tkt2 := issueTermTicket(t, priv, sidStr, "jti-ovf-2")
+	conn2, br2 := dialTermWS(t, ts.URL, tkt2)
+	defer conn2.Close()
+
+	resumeFrame, _ := proto.EncodeFrame(proto.ChTermMin, proto.OpResume, proto.EncodeTermResume(sidRaw, 999999))
+	_ = writeMaskedClientFrame(conn2, resumeFrame)
+
+	_ = conn2.SetReadDeadline(time.Now().Add(2 * time.Second))
+	fReset, err := readUnmaskedServerFrame(br2)
+	if err != nil {
+		t.Fatalf("failed reading OFFSET_RESET frame: %v", err)
+	}
+	_, opReset, payloadReset, _ := proto.DecodeFrame(fReset)
+	if opReset != proto.OpErr || len(payloadReset) < 1 || payloadReset[0] != proto.ErrResumeFailed {
+		t.Fatalf("expected OpErr(ErrResumeFailed), got op=%d payload=%q", opReset, string(payloadReset))
+	}
+	if string(payloadReset[1:]) != "OFFSET_RESET:4" {
+		t.Fatalf("expected exact OFFSET_RESET:4, got %q", string(payloadReset[1:]))
+	}
+
+	// Next live PTY output must arrive directly (NOT preceded by un-ringed \x1b[2J\x1b[H!)
+	p.outCh <- []byte("prompt$ ")
+	fNext, err := readUnmaskedServerFrame(br2)
+	if err != nil {
+		t.Fatalf("failed reading post-reset live output: %v", err)
+	}
+	_, opNext, payloadNext, _ := proto.DecodeFrame(fNext)
+	if opNext != proto.OpData || string(payloadNext) != "prompt$ " {
+		t.Fatalf("C1 regression: expected direct 'prompt$ ' after OFFSET_RESET, got op=%d payload=%q", opNext, string(payloadNext))
+	}
+
+	srv.ShutdownAll(proto.CloseServerStop)
+}

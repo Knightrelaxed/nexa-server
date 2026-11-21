@@ -27,15 +27,18 @@ var (
 	ErrMissingDev      = errors.New("ticket missing dev claim")
 	ErrMissingJTI      = errors.New("ticket missing jti")
 	ErrReplayedJTI     = errors.New("ticket jti already consumed")
+	ErrReplayCacheFull = errors.New("ticket replay cache capacity reached")
 )
 
 const (
 	// Small clock skew allowance between Node.js issuer and Go sidecar on same host.
 	maxClockSkewSec = 5
-	// Maximum ticket lifetime accepted (guards against malformed far-future exp).
-	maxTicketTTLSec = 120
+	// M5: Strictly < IdleTimeout (90s) - maxClockSkewSec (5s) so tickets cannot survive an idle restart.
+	maxTicketTTLSec = 75
 	// Maximum raw ticket length accepted (G-L2).
 	maxTicketBytes = 4096
+	// M5: Bound seenJTI map so valid-key DoS cannot grow memory unboundedly.
+	maxSeenJTIs = 4096
 )
 
 // Claims matches the JSON payload signed by Node.js TicketService.
@@ -132,6 +135,7 @@ func (v *Verifier) Verify(ticketStr, expectedScope string) (*Claims, error) {
 		return nil, ErrMalformedTicket
 	}
 
+	claims.JTI = strings.TrimSpace(claims.JTI)
 	if claims.JTI == "" {
 		return nil, ErrMissingJTI
 	}
@@ -169,6 +173,9 @@ func (v *Verifier) Verify(ticketStr, expectedScope string) (*Claims, error) {
 
 	if _, alreadyUsed := v.seenJTI[claims.JTI]; alreadyUsed {
 		return nil, ErrReplayedJTI
+	}
+	if len(v.seenJTI) >= maxSeenJTIs {
+		return nil, ErrReplayCacheFull
 	}
 	v.seenJTI[claims.JTI] = claims.Exp
 

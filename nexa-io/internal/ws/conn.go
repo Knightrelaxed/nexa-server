@@ -16,17 +16,19 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 const (
-	wsGUID          = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-	opContinuation  = 0x0
-	opText          = 0x1
-	opBinary        = 0x2
-	opClose         = 0x8
-	opPing          = 0x9
-	opPong          = 0xA
-	maxInboundBytes = 8192
+	wsGUID              = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	opContinuation      = 0x0
+	opText              = 0x1
+	opBinary            = 0x2
+	opClose             = 0x8
+	opPing              = 0x9
+	opPong              = 0xA
+	maxInboundBytes     = 8192
+	maxInboundFragments = 16
 )
 
 var (
@@ -41,6 +43,7 @@ type Conn struct {
 	raw       net.Conn
 	br        *bufio.Reader
 	writeMu   sync.Mutex
+	closeSent bool // H2: prevents writing any frames after RFC 6455 opClose
 	closed    atomic.Bool
 	closeOnce sync.Once
 }
@@ -126,10 +129,11 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 }
 
 // ReadBinaryFrame reads the next binary data frame from the client with strict RFC 6455 validation:
-// requires client masking, RSV=0, FIN && len<=125 on control frames, and valid fragmentation state (G-H8).
+// requires client masking, RSV=0, FIN && len<=125 on control frames, and valid fragmentation state (G-H8, M1).
 func (c *Conn) ReadBinaryFrame() ([]byte, error) {
 	var assembled []byte
 	inFragment := false
+	fragCount := 0
 
 	for {
 		var hdr [2]byte
@@ -176,7 +180,8 @@ func (c *Conn) ReadBinaryFrame() ([]byte, error) {
 			payloadLen = binary.BigEndian.Uint64(ext[:])
 		}
 
-		if payloadLen > maxInboundBytes || uint64(len(assembled))+payloadLen > maxInboundBytes {
+		// M1: Do not add interleaved control frame payload length onto fragmented data assembly limit
+		if payloadLen > maxInboundBytes || (!isControl && uint64(len(assembled))+payloadLen > maxInboundBytes) {
 			_ = c.WriteCloseFrame(1009, "frame too large")
 			_ = c.Close()
 			return nil, ErrFrameTooLarge
@@ -202,6 +207,12 @@ func (c *Conn) ReadBinaryFrame() ([]byte, error) {
 		case opPong:
 			continue
 		case opClose:
+			// M1: RFC 6455 §5.5.1 forbids 1-byte close payloads
+			if len(payload) == 1 {
+				_ = c.WriteCloseFrame(1002, "invalid 1-byte close payload")
+				_ = c.Close()
+				return nil, ErrProtocolError
+			}
 			_ = c.WriteCloseFrame(1000, "")
 			_ = c.Close()
 			return nil, ErrConnClosed
@@ -216,11 +227,18 @@ func (c *Conn) ReadBinaryFrame() ([]byte, error) {
 				return assembled, nil
 			}
 			inFragment = true
+			fragCount = 1
 		case opContinuation:
 			if !inFragment {
 				_ = c.WriteCloseFrame(1002, "unexpected continuation frame")
 				_ = c.Close()
 				return nil, ErrProtocolError
+			}
+			fragCount++
+			if fragCount > maxInboundFragments {
+				_ = c.WriteCloseFrame(1009, "too many continuation fragments")
+				_ = c.Close()
+				return nil, ErrFrameTooLarge
 			}
 			assembled = append(assembled, payload...)
 			if fin {
@@ -244,14 +262,19 @@ func (c *Conn) WriteBinaryFrame(payload []byte) error {
 }
 
 // WriteCloseFrame writes an RFC 6455 Close control frame (opcode 0x8) with status code (e.g. 1000)
-// so OkHttp receives onClosing/onClosed cleanly instead of EOFException (G-H8).
+// so OkHttp receives onClosing/onClosed cleanly instead of EOFException (G-H8, M1).
 func (c *Conn) WriteCloseFrame(code uint16, reason string) error {
-	if len(reason) > 123 {
-		reason = reason[:123]
+	clean := strings.ToValidUTF8(reason, "\uFFFD")
+	if len(clean) > 123 {
+		cut := 123
+		for cut > 0 && !utf8.RuneStart(clean[cut]) {
+			cut--
+		}
+		clean = clean[:cut]
 	}
-	payload := make([]byte, 2+len(reason))
+	payload := make([]byte, 2+len(clean))
 	binary.BigEndian.PutUint16(payload[0:2], code)
-	copy(payload[2:], reason)
+	copy(payload[2:], clean)
 	return c.writeRawFrame(opClose, payload)
 }
 
@@ -259,7 +282,7 @@ func (c *Conn) writeRawFrame(opcode byte, payload []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	if c.closed.Load() {
+	if c.closed.Load() || c.closeSent {
 		return ErrConnClosed
 	}
 
@@ -289,6 +312,10 @@ func (c *Conn) writeRawFrame(opcode byte, payload []byte) error {
 	}
 	if length > 0 {
 		copy(frame[hdrLen:], payload)
+	}
+
+	if opcode == opClose {
+		c.closeSent = true
 	}
 
 	_ = c.raw.SetWriteDeadline(time.Now().Add(10 * time.Second))

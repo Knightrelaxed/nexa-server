@@ -37,16 +37,18 @@ class NexaBridgeAdapter {
    * @param {Object} telemetry 
    */
   handleIncomingTelemetry(telemetry) {
-    this.latestTelemetry = {
-      ...telemetry,
-      updated_at: new Date().toISOString()
-    };
+    const merged = mobileClient.updateLatestTelemetry(telemetry);
+    this.latestTelemetry = merged;
 
-    if (telemetry.battery_level !== undefined) {
-      presenceModel.batteryLevel = telemetry.battery_level;
-    }
-    if (telemetry.screen_on !== undefined) {
-      presenceModel.isScreenOn = Boolean(telemetry.screen_on);
+    if (typeof presenceModel.updateFromMobileTelemetry === 'function') {
+      presenceModel.updateFromMobileTelemetry(merged);
+    } else {
+      if (telemetry.battery_level !== undefined) {
+        presenceModel.batteryLevel = telemetry.battery_level;
+      }
+      if (telemetry.screen_on !== undefined) {
+        presenceModel.isScreenOn = Boolean(telemetry.screen_on);
+      }
     }
 
     // Broadcast to any registered listener
@@ -216,11 +218,11 @@ class NexaBridgeAdapter {
     if (res && res.success && res.data) {
       const act = String(action).toUpperCase();
       if (act === 'GET_SCREEN_STATUS' && typeof res.data.screen_on === 'boolean') {
-        if (!this.latestTelemetry) this.latestTelemetry = {};
-        this.latestTelemetry.screen_on = res.data.screen_on;
-        this.latestTelemetry.is_screen_on = res.data.screen_on;
-        this.latestTelemetry.screen_state = res.data.screen_state || (res.data.screen_on ? 'ON' : 'OFF');
-        this.latestTelemetry.updated_at = new Date().toISOString();
+        this.latestTelemetry = mobileClient.updateLatestTelemetry({
+          screen_on: res.data.screen_on,
+          is_screen_on: res.data.screen_on,
+          screen_state: res.data.screen_state || (res.data.screen_on ? 'ON' : 'OFF')
+        });
         presenceModel.isScreenOn = res.data.screen_on;
       } else if (act === 'GET_LIGHT_STATUS' && (typeof res.data.lux === 'number' || res.data.state)) {
         presenceModel.updateFromContextEvent('LIGHT_CHANGED', {
@@ -278,11 +280,11 @@ class NexaBridgeAdapter {
   async getScreenStatus() {
     const res = await this.execute('GET_SCREEN_STATUS');
     if (res && res.success && res.data && typeof res.data.screen_on === 'boolean') {
-      if (!this.latestTelemetry) this.latestTelemetry = {};
-      this.latestTelemetry.screen_on = res.data.screen_on;
-      this.latestTelemetry.is_screen_on = res.data.screen_on;
-      this.latestTelemetry.screen_state = res.data.screen_state || (res.data.screen_on ? 'ON' : 'OFF');
-      this.latestTelemetry.updated_at = new Date().toISOString();
+      this.latestTelemetry = mobileClient.updateLatestTelemetry({
+        screen_on: res.data.screen_on,
+        is_screen_on: res.data.screen_on,
+        screen_state: res.data.screen_state || (res.data.screen_on ? 'ON' : 'OFF')
+      });
       presenceModel.isScreenOn = res.data.screen_on;
     }
     return res;
@@ -417,10 +419,18 @@ class NexaBridgeAdapter {
     }
   }
 
+  offContextUpdate(callback) {
+    this.contextListeners.delete(callback);
+  }
+
   onCallEvent(callback) {
     if (typeof callback === 'function') {
       this.callEventListeners.add(callback);
     }
+  }
+
+  offCallEvent(callback) {
+    this.callEventListeners.delete(callback);
   }
 
   isConnected() {
@@ -436,7 +446,7 @@ class NexaBridgeAdapter {
       return false;
     }
 
-    const telemetry = this.latestTelemetry;
+    const telemetry = mobileClient.getLatestTelemetry() || this.latestTelemetry;
     if (!telemetry || typeof telemetry !== 'object') {
       return false;
     }

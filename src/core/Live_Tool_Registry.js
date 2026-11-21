@@ -755,6 +755,26 @@ async function executeLiveTool(toolName, args = {}, context = {}) {
         const category = String(args.category || '').trim() || _inferCategoryFromDescription(desc) || 'Lainnya';
         const targetDate = _parseDateFromVoice(args.date || 'today');
 
+        // C-3 / FR-AUTH-07: Never allow Bearer-only Live Voice channel to bypass biometric Step-Up for transfers/bills
+        const isTransferOrBill = /\b(?:transfer|tf|trf|bi-fast|bifast|kirim\s*uang|kirim\s+ke|bayar\s+(?:tagihan|indihome|pln|listrik|cicilan|hutang|utang|sewa|kos|pajak)|pindah\s*saldo|top\s*up)\b/i.test(`${rawMethod} ${desc} ${category}`);
+        if (isTransferOrBill) {
+          return {
+            status: 'STEP_UP_REQUIRED',
+            message: 'Aksi transfer atau pembayaran tagihan tidak dapat dieksekusi langsung melalui panggilan suara demi keamanan (FR-AUTH-07). Mohon kirim instruksi di Chat Mobile agar dikonfirmasi dengan sidik jari Tuan.'
+          };
+        }
+
+        // C-3 / FR-AUTH-08: Reject abnormally large unauthenticated voice ledger writes exceeding daily cap
+        try {
+          const stepUp = require('./auth/finance_stepup_service').getFinanceStepUpService();
+          if (nominal > stepUp.dailyLimitRp) {
+            return {
+              status: 'STEP_UP_REQUIRED',
+              message: `Nominal Rp${nominal.toLocaleString('id-ID')} melebihi batas pencatatan suara langsung. Silakan catat atau konfirmasi lewat Chat Mobile.`
+            };
+          }
+        } catch (_) {}
+
         const now     = new Date();
         const hours   = String(now.getHours()).padStart(2, '0');
         const minutes = String(now.getMinutes()).padStart(2, '0');

@@ -4,9 +4,28 @@
 // Handles all 20+ FINANCE actions across Telegram and CLI
 // ============================================================
 
-const financeEngine    = require('../../../domain/Finance_Engine');
-const supabaseMemories = require('../../../infrastructure/Supabase_Memories');
-const helpers          = require('../helpers');
+const financeEngine        = require('../../../domain/Finance_Engine');
+const financeConfirmations = require('../../../domain/finance/Finance_Confirmations');
+const supabaseMemories     = require('../../../infrastructure/Supabase_Memories');
+const helpers              = require('../helpers');
+
+const MOBILE_TRANSFER_OR_BILL_RE = /\b(?:transfer|tf|trf|tranfer|trasnfer|kirim\s*uang|kirim\s+\d|kirim\s+ke\b|bayar\s+(?:tagihan|indihome|pln|listrik|wifi|internet|cicilan|hutang|utang|kos|sewa|pajak)|pindah\s*saldo|top\s*up|bi-fast|bifast|m-banking|mbanking)\b/i;
+
+function _isTransferPaymentMethod(pm) {
+  if (!pm || typeof pm !== 'string') return false;
+  const s = pm.trim().toLowerCase();
+  if (!s) return false;
+  if (s === 'transfer bank' || s === 'transfer' || s === 'tf' || s === 'trf' || s === 'bi-fast' || s === 'bifast' || s === 'antar bank' || s === 'm-banking' || s === 'mbanking') {
+    return true;
+  }
+  try {
+    const { _normalizePaymentMethod } = require('../../../domain/finance/Finance_Helpers');
+    if (typeof _normalizePaymentMethod === 'function') {
+      return _normalizePaymentMethod(pm) === 'Transfer bank';
+    }
+  } catch (_) {}
+  return false;
+}
 
 /**
  * Resolves pending email context from either Telegram or CLI context
@@ -153,6 +172,9 @@ async function handleFinanceIntent(routingData, context = {}) {
   let domainReply = null;
 
   if (action === 'IMPORT_FROM_EMAIL') {
+    if (context.source === 'mobile' && !context.stepUpAuthorized) {
+      return '❌ Sinkronisasi massal transaksi dari email melalui mobile memerlukan otorisasi langsung atau melalui cron otomatis demi keamanan ledger Tuan.';
+    }
     const gmailClient = require('../../../infrastructure/Gmail_Client');
     const pendingEmail = _getPendingEmail(context);
     const candidateEmails = pendingEmail?.lastBatch?.length
@@ -219,25 +241,36 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'UNDO_DELETE' || action === 'UNDO') {
+    if (context.source === 'mobile' && !context.stepUpAuthorized) {
+      return '❌ Pembatalan penghapusan / undo transaksi dari mobile memerlukan sesi terverifikasi atau Telegram demi keamanan ledger Tuan.';
+    }
     const result = await financeEngine.undoDeleteTransaction();
     return result.message;
   }
 
   if (action === 'CONFIRM_TRANSACTION') {
     if (context.source === 'mobile' && !context.stepUpAuthorized) {
-      return '❌ Konfirmasi antrean transaksi tertunda dari mobile tidak diizinkan tanpa otorisasi biometrik. Silakan konfirmasi via Telegram atau buat instruksi baru.';
+      const hasTransferPending = typeof financeConfirmations.hasPendingTransferConfirmation === 'function'
+        && financeConfirmations.hasPendingTransferConfirmation();
+      if (hasTransferPending) {
+        return '❌ Konfirmasi antrean transaksi transfer tertunda dari mobile tidak diizinkan tanpa otorisasi biometrik. Silakan konfirmasi via Telegram atau buat instruksi transfer baru.';
+      }
     }
     const confirmationReply = await financeEngine.confirmPendingTransactions(true, ed.description || null, ed.category || null, null, null, null);
     return confirmationReply || '✅ Tidak ada transaksi yang tertunda. Kemungkinan transaksi telah disimpan otomatis karena melewati batas waktu 5 menit.';
   }
 
   if (action === 'UPDATE_PENDING') {
-    if (context.source === 'mobile' && !context.stepUpAuthorized) {
+    const isMobileUnverified = context.source === 'mobile' && !context.stepUpAuthorized;
+    if (isMobileUnverified) {
+      const descText = `${ed.description || ''} ${textInput}`;
       const isEscalatingTransfer = String(ed.type || '').toUpperCase() === 'TRANSFER' ||
-        ed.payment_method === 'Transfer bank' ||
-        (ed.nominal !== undefined && ed.nominal !== null);
+        _isTransferPaymentMethod(ed.payment_method) ||
+        (ed.nominal !== undefined && ed.nominal !== null) ||
+        MOBILE_TRANSFER_OR_BILL_RE.test(descText) ||
+        /\b(?:biaya\s*admin|admin\s*fee|fee\s+\d)\b/i.test(descText);
       if (isEscalatingTransfer) {
-        return '❌ Perubahan jenis ke transfer atau pengubahan nominal transaksi tertunda melalui mobile memerlukan otorisasi biometrik Step-Up baru.';
+        return '❌ Perubahan jenis ke transfer, biaya admin, atau pengubahan nominal transaksi tertunda melalui mobile memerlukan otorisasi biometrik Step-Up baru.';
       }
     }
     const cleanUserText = textInput.replace(/\[KONTEKS_[A-Z]+[\s\S]*?"\s*\]\s*/gi, '').replace(/\[KONTEKS_[^\]]*\]/gi, '').trim();
@@ -257,7 +290,8 @@ async function handleFinanceIntent(routingData, context = {}) {
       ed.payment_method || null,
       null,
       dateISO,
-      timeHHMM
+      timeHHMM,
+      { allowTransferEscalation: !isMobileUnverified }
     );
     if (updatedMsg) return updatedMsg;
 
@@ -268,7 +302,7 @@ async function handleFinanceIntent(routingData, context = {}) {
 
     if (replyMsgText && (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|latest|\s)*$/i.test(String(kw).trim()))) {
       const idMatch = replyMsgText.match(/(?:No|ID)\s*:\s*(?:#)?([a-f0-9\-]{4,36}|\d+)/i);
-      const cMatch = replyMsgText.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+      const cMatch = replyMsgText.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80}?)(?=\s+(?:Nominal|Saldo|Akun|Kategori|Tipe|Waktu|Tanggal)\b|$)/i);
       const nLabelMatch = replyMsgText.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
       const nRpMatch = replyMsgText.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
 
@@ -305,17 +339,28 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'CANCEL_TRANSACTION') {
+    if (context.source === 'mobile' && !context.stepUpAuthorized) {
+      const hasTransferPending = typeof financeConfirmations.hasPendingTransferConfirmation === 'function'
+        && financeConfirmations.hasPendingTransferConfirmation();
+      if (hasTransferPending) {
+        return '❌ Pembatalan antrean transfer tertunda dari mobile memerlukan konfirmasi eksplisit di kartu biometrik atau Telegram.';
+      }
+    }
     const confirmationReply = await financeEngine.confirmPendingTransactions(false, null, null, null, null, null);
     return confirmationReply || 'Tidak ada transaksi yang tertunda.';
   }
 
   if (action === 'EDIT') {
     if (context.source === 'mobile' && !context.stepUpAuthorized) {
-      const isSensitiveEdit = String(ed.type || '').toUpperCase() === 'TRANSFER' ||
-        ed.payment_method === 'Transfer bank' ||
+      const normType = String(ed.type || '').toUpperCase();
+      const isSensitiveEdit = normType === 'TRANSFER' ||
+        normType === 'INCOME' ||
+        normType === 'EXPENSE' ||
+        _isTransferPaymentMethod(ed.payment_method) ||
+        (ed.account !== undefined && ed.account !== null && String(ed.account).trim() !== '') ||
         (ed.nominal !== undefined && ed.nominal !== null);
       if (isSensitiveEdit) {
-        return '❌ Pengubahan nominal atau jenis transfer pada riwayat transaksi melalui mobile memerlukan verifikasi biometrik atau konfirmasi via Telegram.';
+        return '❌ Pengubahan nominal, akun, atau tipe transaksi pada riwayat ledger melalui mobile memerlukan verifikasi biometrik atau konfirmasi via Telegram.';
       }
     }
     const cleanUserText = textInput.replace(/\[KONTEKS_[A-Z]+[\s\S]*?"\s*\]\s*/gi, '').replace(/\[KONTEKS_[^\]]*\]/gi, '').trim();
@@ -333,7 +378,7 @@ async function handleFinanceIntent(routingData, context = {}) {
 
     if (replyMsgText && (!kw || /^(ini|itu|transaksi|kategori|perbaiki|ubah|sesuaikan|yang|saya|latest|\s)*$/i.test(String(kw).trim()))) {
       const idMatch = replyMsgText.match(/(?:No|ID)\s*:\s*(?:#)?([a-f0-9\-]{4,36}|\d+)/i);
-      const cMatch = replyMsgText.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+      const cMatch = replyMsgText.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80}?)(?=\s+(?:Nominal|Saldo|Akun|Kategori|Tipe|Waktu|Tanggal)\b|$)/i);
       const nLabelMatch = replyMsgText.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
       const nRpMatch = replyMsgText.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
 
@@ -407,6 +452,7 @@ async function handleFinanceIntent(routingData, context = {}) {
 
   if (action === 'RECORD_MULTIPLE' && Array.isArray(ed.transactions)) {
     const replies = [];
+    let mobileStepUpEmitted = 0;
     for (const tx of ed.transactions) {
       const txNominal = typeof tx.nominal === 'number'
         ? tx.nominal
@@ -421,40 +467,50 @@ async function handleFinanceIntent(routingData, context = {}) {
         description: tx.description || '-',
         time: tx.time || new Date().toISOString(),
         account: tx.account || null,
+        fromAccount: tx.from_account || tx.fromAccount || null,
+        isSelfTransfer: Boolean(tx.is_self_transfer || tx.isSelfTransfer),
         payment_method: tx.payment_method || null
       };
 
       const isMultiTransfer = String(txData.type || '').toUpperCase() === 'TRANSFER' ||
-        txData.payment_method === 'Transfer bank' ||
-        /\b(?:transfer|tf|trf|tranfer|trasnfer|kirim\s*uang|bayar\s*tagihan|pindah\s*saldo|top\s*up|bi-fast|bifast)\b/i.test(`${textInput} ${txData.description}`);
+        _isTransferPaymentMethod(txData.payment_method) ||
+        MOBILE_TRANSFER_OR_BILL_RE.test(`${textInput} ${txData.description}`);
 
-      // N-C2: Never allow RECORD_MULTIPLE on mobile to bypass biometric Step-Up for transfers
+      // N-C2 / F-05 / H-6: Never allow RECORD_MULTIPLE on mobile to bypass biometric Step-Up,
+      // avoid double-counting adminFee, and emit at most 1 Step-Up sheet per chat turn
       if (context.source === 'mobile' && !context.stepUpAuthorized && isMultiTransfer) {
-        const stepUpService = context.financeStepUpService ||
-          require('../../../core/auth/finance_stepup_service').getFinanceStepUpService();
+        if (mobileStepUpEmitted >= 1) {
+          replies.push(`⚠️ Demi keamanan biometrik, mohon kirim instruksi transfer ke ${txData.destination} dalam pesan terpisah setelah konfirmasi transfer pertama selesai.`);
+          continue;
+        }
+        const stepUpMod = require('../../../core/auth/finance_stepup_service');
+        const stepUpService = context.financeStepUpService || stepUpMod.getFinanceStepUpService();
         const totalAmount = txNominal + (txAdminFee > 0 ? txAdminFee : 0);
         const pendingRes = stepUpService.createPendingAction({
           clientMsgId: context.clientMsgId || '',
-          actionLabel: 'Transfer Dana',
+          actionLabel: txData.isSelfTransfer ? 'Transfer Antar-Akun' : 'Transfer Dana',
           amount: totalAmount,
           recipient: txData.destination,
           bank: tx.to_bank || tx.bank || null,
           acctLast4: tx.acct_last4 || null,
           executionDetails: txData,
           executeFn: async (canonicalPending) => {
+            // H-6: Pass txNominal (WITHOUT adminFee added again) because Finance_Ledger adds adminFee separately
             const committedTx = {
               ...txData,
               destination: canonicalPending.recipientFull,
-              nominal: canonicalPending.amount
+              nominal: txNominal,
+              adminFee: txAdminFee > 0 ? txAdminFee : 0
             };
             await financeEngine.processTransaction(committedTx, 'MOBILE_STEPUP');
-            return `Transfer ${canonicalPending.amount} ke ${canonicalPending.recipientFull} (${canonicalPending.bank} •••• ${canonicalPending.acctLast4}) telah dieksekusi dan dicatat.`;
+            return `Otorisasi biometrik berhasil. Transfer ${stepUpMod.formatRupiah(canonicalPending.amount)} ke ${canonicalPending.recipientFull} (${canonicalPending.bank} •••• ${canonicalPending.acctLast4}) telah dieksekusi dan dicatat.`;
           }
         });
 
         if (!pendingRes.ok) {
           replies.push(`❌ ${pendingRes.message}`);
         } else {
+          mobileStepUpEmitted += 1;
           if (typeof context.onStepUpRequired === 'function') {
             context.onStepUpRequired(pendingRes.pendingFrame);
           }
@@ -476,7 +532,7 @@ async function handleFinanceIntent(routingData, context = {}) {
     return replies.join('\n\n---\n\n');
   }
 
-  if (ed.nominal || action === 'RECORD' || action === 'TRANSFER') {
+  if (ed.nominal || action === 'RECORD' || action === 'TRANSFER' || action === 'PAY') {
     // 1. Strict Anti-Hallucination Guardrail for Nominal:
     // Verify whether user actually stated a price/nominal in their message.
     let parsedNominal = typeof ed.nominal === 'number'
@@ -654,11 +710,12 @@ async function handleFinanceIntent(routingData, context = {}) {
       return '⚠️ Transaksi ini tampaknya sudah pernah dicatat sebelumnya (duplikat) atau sedang menunggu konfirmasi.';
     };
 
-    // FR-AUTH-07 / FR-AUTH-08 / FR-CHAT-19: Hardware-Biometric Step-Up Gate at tool execution layer for mobile transfers
+    // FR-AUTH-07 / FR-AUTH-08 / FR-CHAT-19 / F-01 / F-02: Hardware-Biometric Step-Up Gate at tool execution layer for mobile transfers & bill payments
     const requiresMobileStepUp = context.source === 'mobile' && !context.stepUpAuthorized && (
       isTransfer ||
-      txData.payment_method === 'Transfer bank' ||
-      /\b(?:transfer|tf|trf|tranfer|trasnfer|kirim\s*uang|kirim\s+\d|bayar\s*tagihan|pindah\s*saldo|top\s*up|bi-fast|bifast|m-banking|mbanking)\b/i.test(textInput)
+      action === 'PAY' ||
+      _isTransferPaymentMethod(txData.payment_method) ||
+      MOBILE_TRANSFER_OR_BILL_RE.test(textInput)
     );
 
     if (requiresMobileStepUp) {

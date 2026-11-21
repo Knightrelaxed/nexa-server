@@ -1,10 +1,19 @@
 'use strict';
-const { describe, it } = require('node:test');
+const { describe, it, after } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+
+const createdTmpDirs = [];
+after(() => {
+  for (const dir of createdTmpDirs) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (_) {}
+  }
+});
 
 const { EnrolledDevicesStore } = require('../src/core/auth/enrolled_devices_store');
 const {
@@ -15,6 +24,7 @@ const { createMobileChatHandler } = require('../src/interfaces/bridge/mobile_cha
 
 function createTempStoreWithDevice(deviceId = 'samsung-a33-tuan') {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexa-stepup-'));
+  createdTmpDirs.push(tmpDir);
   const filePath = path.join(tmpDir, 'enrolled_devices.json');
   const store = new EnrolledDevicesStore({ filePath });
 

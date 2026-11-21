@@ -14,12 +14,17 @@
  * ============================================================
  */
 
+const fs = require('node:fs');
+const path = require('node:path');
 const crypto = require('node:crypto');
 const { EnrolledDevicesStore } = require('./enrolled_devices_store');
+const { sanitizeLogToken } = require('../../utils/logger');
 
 const DEFAULT_ACTION_TTL_MS = 30_000;
 const MAX_PENDING_ACTIONS = 8;
 const DEFAULT_DAILY_LIMIT_RP = 2_000_000;
+const MAX_AUTH_ATTEMPTS_PER_MIN = 12;
+const AUTH_RATE_WINDOW_MS = 60_000;
 
 const DEFAULT_WHITELIST = [
   {
@@ -102,6 +107,23 @@ function buildCanonicalActionSignMessage(nonce, actionId, canonicalHash) {
   return Buffer.from(`nexa-action-v1\n${nonce}\n${actionId}\n${canonicalHash}`, 'utf8');
 }
 
+function resolveDailyLimitRp(explicitLimit, envLimit) {
+  if (explicitLimit !== undefined && explicitLimit !== null && explicitLimit !== '') {
+    const parsedExplicit = Number(explicitLimit);
+    return Number.isFinite(parsedExplicit) && parsedExplicit >= 0 ? Math.round(parsedExplicit) : 0;
+  }
+  if (envLimit !== undefined && envLimit !== null && String(envLimit).trim() !== '') {
+    const parsedEnv = Number(String(envLimit).trim());
+    if (!Number.isFinite(parsedEnv) || parsedEnv < 0) {
+      // C-1: Fail closed to 0 on invalid NEXA_FINANCE_DAILY_LIMIT (never NaN fail-open)
+      console.error(`[NEXA-AUTH] CRITICAL: Invalid NEXA_FINANCE_DAILY_LIMIT="${envLimit}" (must be plain integer). Enforcing fail-closed limit 0.`);
+      return 0;
+    }
+    return Math.round(parsedEnv);
+  }
+  return DEFAULT_DAILY_LIMIT_RP;
+}
+
 class FinanceStepUpService {
   /**
    * @param {object} [options]
@@ -109,6 +131,8 @@ class FinanceStepUpService {
    * @param {number} [options.actionTtlMs]
    * @param {number} [options.dailyLimitRp]
    * @param {Array} [options.whitelist]
+   * @param {string} [options.whitelistFilePath]
+   * @param {string} [options.dailyUsageFilePath]
    * @param {boolean} [options.enforceWhitelist]
    * @param {() => number} [options.nowFn]
    */
@@ -117,20 +141,109 @@ class FinanceStepUpService {
       filePath: options.devicesFilePath
     });
     this.actionTtlMs = options.actionTtlMs || DEFAULT_ACTION_TTL_MS;
-    this.dailyLimitRp = Number(options.dailyLimitRp || process.env.NEXA_FINANCE_DAILY_LIMIT || DEFAULT_DAILY_LIMIT_RP);
-    this.whitelist = Array.isArray(options.whitelist) ? options.whitelist : DEFAULT_WHITELIST;
+    this.dailyLimitRp = resolveDailyLimitRp(options.dailyLimitRp, process.env.NEXA_FINANCE_DAILY_LIMIT);
+    this._staticWhitelist = Array.isArray(options.whitelist) ? options.whitelist : null;
+    this.whitelistFilePath = options.whitelistFilePath || process.env.NEXA_FINANCE_WHITELIST_PATH || '';
+    this.whitelist = this._staticWhitelist || DEFAULT_WHITELIST;
+    this._whitelistStatKey = '';
     this.enforceWhitelist = options.enforceWhitelist !== undefined ? Boolean(options.enforceWhitelist) : true;
     this.nowFn = options.nowFn || (() => Date.now());
+
+    // H-4: Persist daily usage when a backing path is explicitly provided or running with default singleton store
+    this.dailyUsageFilePath = options.dailyUsageFilePath !== undefined
+      ? options.dailyUsageFilePath
+      : (options.deviceStore ? '' : (process.env.NEXA_FINANCE_DAILY_USAGE_PATH || ''));
 
     // actionId -> PendingAction
     this.pendingActions = new Map();
     // YYYY-MM-DD -> cumulative authorized Rp
     this.dailyUsedByDate = new Map();
+    // deviceId -> timestamps[] (rate limit verifyAndExecuteAction, M-4)
+    this._authBuckets = new Map();
+
+    this._loadPersistedDailyUsage();
+    this._reloadWhitelistIfChanged();
 
     this._sweepTimer = setInterval(() => this.sweepExpired(), 5_000);
     if (typeof this._sweepTimer.unref === 'function') {
       this._sweepTimer.unref();
     }
+  }
+
+  _loadPersistedDailyUsage() {
+    if (!this.dailyUsageFilePath) return;
+    try {
+      if (!fs.existsSync(this.dailyUsageFilePath)) return;
+      const raw = fs.readFileSync(this.dailyUsageFilePath, 'utf8').trim();
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+      const todayKey = getJakartaDateKey(this.nowFn());
+      if (Number.isFinite(Number(parsed[todayKey])) && Number(parsed[todayKey]) >= 0) {
+        this.dailyUsedByDate.set(todayKey, Math.round(Number(parsed[todayKey])));
+      }
+    } catch (err) {
+      console.warn(`[NEXA-AUTH] Could not load persisted daily finance usage: ${err.message}`);
+    }
+  }
+
+  _persistDailyUsage() {
+    if (!this.dailyUsageFilePath) return;
+    try {
+      const todayKey = getJakartaDateKey(this.nowFn());
+      const payload = { [todayKey]: this.dailyUsedByDate.get(todayKey) || 0 };
+      const dir = path.dirname(this.dailyUsageFilePath);
+      if (!fs.existsSync(dir)) return;
+      const tmp = `${this.dailyUsageFilePath}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+      fs.writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n', { mode: 0o600, encoding: 'utf8' });
+      try { fs.chmodSync(tmp, 0o600); } catch (_) {}
+      fs.renameSync(tmp, this.dailyUsageFilePath);
+    } catch (err) {
+      console.warn(`[NEXA-AUTH] Could not persist daily finance usage: ${err.message}`);
+    }
+  }
+
+  _reloadWhitelistIfChanged() {
+    if (this._staticWhitelist || !this.whitelistFilePath) return;
+    try {
+      if (!fs.existsSync(this.whitelistFilePath)) {
+        this.whitelist = DEFAULT_WHITELIST;
+        this._whitelistStatKey = '';
+        return;
+      }
+      const stat = fs.statSync(this.whitelistFilePath);
+      const statKey = `${stat.mtimeMs}:${stat.ino}:${stat.size}`;
+      if (statKey === this._whitelistStatKey) return;
+      const parsed = JSON.parse(fs.readFileSync(this.whitelistFilePath, 'utf8'));
+      if (!Array.isArray(parsed)) {
+        throw new Error('Whitelist file must contain a JSON array');
+      }
+      this.whitelist = parsed.filter(item => item && typeof item.recipientFull === 'string' && item.recipientFull.trim());
+      this._whitelistStatKey = statKey;
+    } catch (err) {
+      // H-5: Fail closed (empty whitelist) if configured whitelist file exists but is malformed
+      this.whitelist = [];
+      this._whitelistStatKey = '';
+      console.error(`[NEXA-AUTH] Failed loading finance whitelist (fail-closed): ${err.message}`);
+    }
+  }
+
+  _consumeAuthRateLimit(deviceKey) {
+    const now = this.nowFn();
+    const key = deviceKey || '__unknown__';
+    const prev = this._authBuckets.get(key) || [];
+    const active = prev.filter(ts => now - ts < AUTH_RATE_WINDOW_MS);
+    if (active.length >= MAX_AUTH_ATTEMPTS_PER_MIN) {
+      this._authBuckets.set(key, active);
+      return false;
+    }
+    active.push(now);
+    if (this._authBuckets.size > 64 && !this._authBuckets.has(key)) {
+      const oldest = this._authBuckets.keys().next().value;
+      if (oldest !== undefined) this._authBuckets.delete(oldest);
+    }
+    this._authBuckets.set(key, active);
+    return true;
   }
 
   destroy() {
@@ -170,6 +283,7 @@ class FinanceStepUpService {
    * canonical whitelisted bank/acctLast4 values.
    */
   resolveRecipientProfile({ recipientInput, bankInput, acctLast4Input }) {
+    this._reloadWhitelistIfChanged();
     const rawTarget = String(recipientInput || '').trim();
     const normTarget = normalizeIdentity(rawTarget);
     const normAcctLast4 = String(acctLast4Input || '').replace(/[^0-9]/g, '').slice(-4);
@@ -249,7 +363,7 @@ class FinanceStepUpService {
 
     // FR-AUTH-08: Whitelist check
     if (this.enforceWhitelist && !profile.whitelisted) {
-      console.warn(`[NEXA-AUTH] ACTION_REJECTED reason=RECIPIENT_NOT_WHITELISTED recipient="${profile.recipientFull}"`);
+      console.warn(`[NEXA-AUTH] ACTION_REJECTED reason=RECIPIENT_NOT_WHITELISTED recipient="${sanitizeLogToken(profile.recipientFull, 64)}"`);
       return {
         ok: false,
         code: 'RECIPIENT_NOT_WHITELISTED',
@@ -257,9 +371,9 @@ class FinanceStepUpService {
       };
     }
 
-    // FR-AUTH-08: Daily limit check
+    // FR-AUTH-08 / C-1: Daily limit check (fail-closed even against NaN)
     const currentRemaining = this.getDailyRemaining(now);
-    if (cleanAmount > currentRemaining) {
+    if (!(cleanAmount <= currentRemaining)) {
       console.warn(`[NEXA-AUTH] ACTION_REJECTED reason=DAILY_LIMIT_EXCEEDED amount=${cleanAmount} remaining=${currentRemaining}`);
       return {
         ok: false,
@@ -341,16 +455,29 @@ class FinanceStepUpService {
   async verifyAndExecuteAction({ actionId, deviceId, nonce, signatureDerB64 }) {
     const cleanActionId = String(actionId || '').trim();
     const cleanDeviceId = String(deviceId || '').trim();
+    const safeActionLog = sanitizeLogToken(cleanActionId, 64);
+    const safeDeviceLog = sanitizeLogToken(cleanDeviceId, 64);
     const cleanNonce = String(nonce || '').trim();
     const cleanSigB64 = String(signatureDerB64 || '').trim();
     const now = this.nowFn();
+
+    if (!this._consumeAuthRateLimit(cleanDeviceId)) {
+      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${safeActionLog} device_id=${safeDeviceLog} result=RATE_LIMITED`);
+      return {
+        ok: false,
+        status: 'REJECTED',
+        code: 'RATE_LIMITED',
+        actionId: cleanActionId,
+        message: 'Terlalu banyak percobaan otorisasi aksi keuangan.'
+      };
+    }
 
     const pending = this.pendingActions.get(cleanActionId);
     // Single-use deletion immediately on verification attempt (prevents replay)
     this.pendingActions.delete(cleanActionId);
 
     if (!pending) {
-      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${cleanActionId} device_id=${cleanDeviceId} result=NOT_FOUND_OR_REPLAY`);
+      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${safeActionLog} device_id=${safeDeviceLog} result=NOT_FOUND_OR_REPLAY`);
       return {
         ok: false,
         status: 'EXPIRED',
@@ -361,7 +488,7 @@ class FinanceStepUpService {
     }
 
     if (now > pending.exp) {
-      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${cleanActionId} device_id=${cleanDeviceId} result=EXPIRED`);
+      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${safeActionLog} device_id=${safeDeviceLog} result=EXPIRED`);
       return {
         ok: false,
         status: 'EXPIRED',
@@ -373,7 +500,7 @@ class FinanceStepUpService {
     }
 
     if (!timingSafeStringEqual(pending.nonce, cleanNonce)) {
-      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${cleanActionId} device_id=${cleanDeviceId} result=NONCE_MISMATCH`);
+      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${safeActionLog} device_id=${safeDeviceLog} result=NONCE_MISMATCH`);
       return {
         ok: false,
         status: 'REJECTED',
@@ -386,7 +513,7 @@ class FinanceStepUpService {
 
     const device = this.deviceStore.getDevice(cleanDeviceId);
     if (!device || device.status !== 'ACTIVE') {
-      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${cleanActionId} device_id=${cleanDeviceId} result=UNKNOWN_DEVICE`);
+      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${safeActionLog} device_id=${safeDeviceLog} result=UNKNOWN_DEVICE`);
       return {
         ok: false,
         status: 'REJECTED',
@@ -399,20 +526,22 @@ class FinanceStepUpService {
 
     let isValidSig = false;
     try {
-      const pubKey = device.publicKey || crypto.createPublicKey({
-        key: Buffer.from(device.publicKeySpkiDerB64, 'base64'),
-        format: 'der',
-        type: 'spki'
-      });
-      const canonicalMsg = buildCanonicalActionSignMessage(pending.nonce, pending.actionId, pending.canonicalHash);
       const sigDer = Buffer.from(cleanSigB64, 'base64');
-      isValidSig = crypto.verify('sha256', canonicalMsg, { key: pubKey, dsaEncoding: 'der' }, sigDer);
+      if (sigDer.length >= 32 && sigDer.length <= 128) {
+        const pubKey = device.publicKey || crypto.createPublicKey({
+          key: Buffer.from(device.publicKeySpkiDerB64, 'base64'),
+          format: 'der',
+          type: 'spki'
+        });
+        const canonicalMsg = buildCanonicalActionSignMessage(pending.nonce, pending.actionId, pending.canonicalHash);
+        isValidSig = crypto.verify('sha256', canonicalMsg, { key: pubKey, dsaEncoding: 'der' }, sigDer);
+      }
     } catch (_) {
       isValidSig = false;
     }
 
     if (!isValidSig) {
-      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${cleanActionId} device_id=${cleanDeviceId} result=FAIL_ECDSA`);
+      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${safeActionLog} device_id=${safeDeviceLog} result=FAIL_ECDSA`);
       return {
         ok: false,
         status: 'REJECTED',
@@ -423,10 +552,10 @@ class FinanceStepUpService {
       };
     }
 
-    // Re-check daily limit atomically before committing
+    // Re-check daily limit atomically before committing (fail-closed against NaN, C-1)
     const currentRemaining = this.getDailyRemaining(now);
-    if (pending.amount > currentRemaining) {
-      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${cleanActionId} result=DAILY_LIMIT_EXCEEDED`);
+    if (!(pending.amount <= currentRemaining)) {
+      console.warn(`[NEXA-AUTH] ACTION_AUTH action_id=${safeActionLog} result=DAILY_LIMIT_EXCEEDED`);
       return {
         ok: false,
         status: 'REJECTED',
@@ -439,6 +568,7 @@ class FinanceStepUpService {
 
     const dateKey = getJakartaDateKey(now);
     this.dailyUsedByDate.set(dateKey, (this.dailyUsedByDate.get(dateKey) || 0) + pending.amount);
+    this._persistDailyUsage();
 
     let executionReply = '';
     try {
@@ -447,7 +577,8 @@ class FinanceStepUpService {
       // N-H3: Race-safe rollback relative to CURRENT map value (never stale local variable)
       const currentUsed = this.dailyUsedByDate.get(dateKey) || 0;
       this.dailyUsedByDate.set(dateKey, Math.max(0, currentUsed - pending.amount));
-      console.error(`[NEXA-AUTH] ACTION_AUTH action_id=${cleanActionId} result=EXEC_ERROR err=${err.message}`);
+      this._persistDailyUsage();
+      console.error(`[NEXA-AUTH] ACTION_AUTH action_id=${safeActionLog} result=EXEC_ERROR err=${err.message}`);
       return {
         ok: false,
         status: 'REJECTED',
@@ -460,7 +591,7 @@ class FinanceStepUpService {
 
     const remainingNow = this.getDailyRemaining(now);
     console.log(
-      `[NEXA-AUTH] ACTION_AUTH action_id=${cleanActionId} device_id=${cleanDeviceId} result=OK remaining=${remainingNow}`
+      `[NEXA-AUTH] ACTION_AUTH action_id=${safeActionLog} device_id=${safeDeviceLog} result=OK remaining=${remainingNow}`
     );
 
     return {
@@ -480,16 +611,21 @@ class FinanceStepUpService {
   }
 
   /**
-   * Cancel a pending action explicitly from the mobile bottom sheet (N-M5 / N-L6).
+   * Cancel a pending action explicitly from the mobile bottom sheet (N-M5 / N-L6 / M-4).
    */
   cancelPendingAction({ actionId, deviceId = '', reason = 'USER_CANCELLED' }) {
     const cleanActionId = String(actionId || '').trim();
     const cleanDeviceId = String(deviceId || '').trim();
+    const safeActionLog = sanitizeLogToken(cleanActionId, 64);
+    const safeDeviceLog = sanitizeLogToken(cleanDeviceId, 64);
+    const safeReasonLog = sanitizeLogToken(reason, 32);
+    const isTimeout = String(reason || '').toUpperCase() === 'TIMEOUT';
 
-    if (cleanDeviceId) {
-      const dev = this.deviceStore.getDevice(cleanDeviceId);
+    // M-4: Require active enrolled device_id on explicit cancel (timeout cleanup may arrive without device_id)
+    if (!isTimeout || cleanDeviceId) {
+      const dev = cleanDeviceId ? this.deviceStore.getDevice(cleanDeviceId) : null;
       if (!dev || dev.status !== 'ACTIVE') {
-        console.warn(`[NEXA-AUTH] ACTION_CANCEL rejected unknown device_id=${cleanDeviceId}`);
+        console.warn(`[NEXA-AUTH] ACTION_CANCEL rejected unknown device_id=${safeDeviceLog}`);
         return {
           ok: false,
           found: false,
@@ -506,8 +642,7 @@ class FinanceStepUpService {
     const found = Boolean(pending);
     this.pendingActions.delete(cleanActionId);
 
-    console.log(`[NEXA-AUTH] ACTION_CANCEL action_id=${cleanActionId} device_id=${cleanDeviceId} found=${found} reason=${reason}`);
-    const isTimeout = String(reason || '').toUpperCase() === 'TIMEOUT';
+    console.log(`[NEXA-AUTH] ACTION_CANCEL action_id=${safeActionLog} device_id=${safeDeviceLog} found=${found} reason=${safeReasonLog}`);
     return {
       ok: true,
       found,

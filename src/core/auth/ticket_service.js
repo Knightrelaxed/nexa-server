@@ -16,14 +16,18 @@ const fs = require('fs');
 const crypto = require('crypto');
 const env = require('../../config/env');
 const { EnrolledDevicesStore } = require('./enrolled_devices_store');
+const { sanitizeLogToken } = require('../../utils/logger');
 
 const ALLOWED_SCOPES = new Set(['logs', 'term', 'finance']);
 const MAX_PENDING_PER_DEVICE = 8;
+const MAX_ACTIVE_SESSIONS_PER_DEVICE = 2; // FR-AUTH-11: 1 active + 1 resuming max per device
+const MAX_GLOBAL_ACTIVE_SESSIONS = 8;
 const CHALLENGE_TTL_MS = 30_000;
 const TICKET_TTL_SEC = 45;
 const SESSION_TTL_MS = 4 * 3600_000;
 const RATE_WINDOW_MS = 60_000;
 const MAX_TICKET_REQ_PER_MIN = 5;
+const MAX_VERIFY_REQ_PER_MIN = 15;
 const MAX_CONSECUTIVE_FAILS = 3;
 const LOCKOUT_DURATION_MS = 15 * 60_000;
 const UNKNOWN_BUCKET_KEY = '__unknown__';
@@ -46,6 +50,7 @@ class TicketService {
     this.pendingChallenges = new Map(); // nonce -> { deviceId, scope, sid, exp, isResume, sessionExp }
     this.activeSessions = new Map();    // sid -> { deviceId, scope, exp }
     this.requestBuckets = new Map();    // deviceId -> number[] (timestamps in RATE_WINDOW_MS)
+    this.verifyBuckets = new Map();     // deviceId -> number[] (CHALLENGE_RESP rate limit)
     this.failureState = new Map();      // deviceId -> { count, lockedUntil, lastFailAt }
 
     this._sweepTimer = setInterval(() => this.sweepExpired(), 10_000);
@@ -91,6 +96,11 @@ class TicketService {
       const kept = timestamps.filter(ts => now - ts < RATE_WINDOW_MS);
       if (kept.length === 0) this.requestBuckets.delete(devId);
       else this.requestBuckets.set(devId, kept);
+    }
+    for (const [devId, timestamps] of this.verifyBuckets.entries()) {
+      const kept = timestamps.filter(ts => now - ts < RATE_WINDOW_MS);
+      if (kept.length === 0) this.verifyBuckets.delete(devId);
+      else this.verifyBuckets.set(devId, kept);
     }
     for (const [devId, state] of this.failureState.entries()) {
       if (state.lockedUntil > 0 && now >= state.lockedUntil) {
@@ -141,16 +151,16 @@ class TicketService {
     this.failureState.delete(deviceId);
   }
 
-  _consumeRateLimit(bucketKey, maxPerMin = MAX_TICKET_REQ_PER_MIN) {
+  _consumeRateLimit(bucketKey, maxPerMin = MAX_TICKET_REQ_PER_MIN, bucketMap = this.requestBuckets) {
     const now = this.nowFn();
-    const prev = this.requestBuckets.get(bucketKey) || [];
+    const prev = bucketMap.get(bucketKey) || [];
     const active = prev.filter(ts => now - ts < RATE_WINDOW_MS);
     if (active.length >= maxPerMin) {
-      this.requestBuckets.set(bucketKey, active);
+      bucketMap.set(bucketKey, active);
       return false;
     }
     active.push(now);
-    this.requestBuckets.set(bucketKey, active);
+    bucketMap.set(bucketKey, active);
     return true;
   }
 
@@ -163,8 +173,9 @@ class TicketService {
    */
   makeChallenge(deviceId, scope, resumeSid = '', meta = {}) {
     const cleanId = String(deviceId || '').trim();
+    const safeLogId = sanitizeLogToken(cleanId, 64);
     const cleanScope = String(scope || '').trim().toLowerCase();
-    const clientIp = String(meta.clientIp || 'unknown');
+    const clientIp = sanitizeLogToken(meta.clientIp || 'unknown', 64);
 
     if (!cleanId) {
       return { ok: false, code: 'INVALID_DEVICE', message: 'Device ID tidak valid.' };
@@ -175,7 +186,7 @@ class TicketService {
 
     // N-M1: Enforce terminal kill switch before challenge issuance
     if (cleanScope === 'term' && !this._isTermEnabled()) {
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=term jti=- result=FEATURE_DISABLED`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=term jti=- result=FEATURE_DISABLED`);
       return {
         ok: false,
         code: 'FEATURE_DISABLED',
@@ -189,7 +200,7 @@ class TicketService {
     if (device) {
       const lock = this._checkLockout(cleanId);
       if (lock.locked) {
-        console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${cleanScope} jti=- result=LOCKED_OUT`);
+        console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${cleanScope} jti=- result=LOCKED_OUT`);
         return {
           ok: false,
           code: 'LOCKED_OUT',
@@ -202,7 +213,7 @@ class TicketService {
     // N-H4: Unknown/spoofed device IDs share bounded bucket so maps cannot grow unbounded
     const rateCap = device ? MAX_TICKET_REQ_PER_MIN : 30;
     if (!this._consumeRateLimit(bucketKey, rateCap)) {
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${cleanScope} jti=- result=RATE_LIMITED`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${cleanScope} jti=- result=RATE_LIMITED`);
       return {
         ok: false,
         code: 'RATE_LIMITED',
@@ -211,7 +222,7 @@ class TicketService {
     }
 
     if (!device || device.status !== 'ACTIVE') {
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${cleanScope} jti=- result=DEVICE_NOT_ENROLLED`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${cleanScope} jti=- result=DEVICE_NOT_ENROLLED`);
       return {
         ok: false,
         code: 'DEVICE_NOT_ENROLLED',
@@ -225,7 +236,7 @@ class TicketService {
       if (entry.deviceId === cleanId) pendingForDevice++;
     }
     if (pendingForDevice >= MAX_PENDING_PER_DEVICE) {
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${cleanScope} jti=- result=TOO_MANY_PENDING`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${cleanScope} jti=- result=TOO_MANY_PENDING`);
       return {
         ok: false,
         code: 'TOO_MANY_PENDING',
@@ -241,7 +252,7 @@ class TicketService {
       if (cleanResume) {
         const existing = this.activeSessions.get(cleanResume);
         if (!existing || existing.deviceId !== cleanId || this.nowFn() > existing.exp) {
-          console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=term jti=- result=INVALID_RESUME_SID`);
+          console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=term jti=- result=INVALID_RESUME_SID`);
           return {
             ok: false,
             code: 'INVALID_RESUME_SID',
@@ -252,6 +263,21 @@ class TicketService {
         isResume = true;
         sessionExp = existing.exp;
       } else {
+        // FR-AUTH-11: Enforce per-device & global terminal session cap in Node (evict oldest if device starts fresh)
+        let deviceSessions = [];
+        for (const [k, s] of this.activeSessions.entries()) {
+          if (s.deviceId === cleanId && this.nowFn() <= s.exp) {
+            deviceSessions.push([k, s]);
+          }
+        }
+        if (deviceSessions.length >= MAX_ACTIVE_SESSIONS_PER_DEVICE) {
+          deviceSessions.sort((a, b) => a[1].exp - b[1].exp);
+          this.activeSessions.delete(deviceSessions[0][0]);
+        }
+        if (this.activeSessions.size >= MAX_GLOBAL_ACTIVE_SESSIONS) {
+          const oldestSid = this.activeSessions.keys().next().value;
+          if (oldestSid) this.activeSessions.delete(oldestSid);
+        }
         sid = crypto.randomBytes(16).toString('base64url');
       }
     }
@@ -267,7 +293,7 @@ class TicketService {
       sessionExp
     });
 
-    console.log(`[NEXA-AUTH] CHALLENGE_ISSUED ip=${clientIp} device=${cleanId} scope=${cleanScope} ttl=30s`);
+    console.log(`[NEXA-AUTH] CHALLENGE_ISSUED ip=${clientIp} device=${safeLogId} scope=${cleanScope} ttl=30s`);
     return {
       ok: true,
       nonce,
@@ -286,12 +312,25 @@ class TicketService {
    */
   issueTicket(deviceId, nonce, signatureDer, meta = {}) {
     const cleanId = String(deviceId || '').trim();
+    const safeLogId = sanitizeLogToken(cleanId, 64);
     const cleanNonce = String(nonce || '').trim();
-    const clientIp = String(meta.clientIp || 'unknown');
+    const clientIp = sanitizeLogToken(meta.clientIp || 'unknown', 64);
+
+    // M-3: Rate-limit CHALLENGE_RESP per device / unknown bucket
+    const verifyBucketKey = this._bucketKeyFor(cleanId);
+    const verifyCap = verifyBucketKey === UNKNOWN_BUCKET_KEY ? 40 : MAX_VERIFY_REQ_PER_MIN;
+    if (!this._consumeRateLimit(verifyBucketKey, verifyCap, this.verifyBuckets)) {
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=- jti=- result=RATE_LIMITED`);
+      return {
+        ok: false,
+        code: 'RATE_LIMITED',
+        message: 'Terlalu banyak percobaan verifikasi tiket.'
+      };
+    }
 
     const lock = this._checkLockout(cleanId);
     if (lock.locked) {
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=- jti=- result=LOCKED_OUT`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=- jti=- result=LOCKED_OUT`);
       return {
         ok: false,
         code: 'LOCKED_OUT',
@@ -300,32 +339,43 @@ class TicketService {
       };
     }
 
-    // Consume nonce immediately regardless of verification outcome (single-use)
     const pending = this.pendingChallenges.get(cleanNonce);
-    this.pendingChallenges.delete(cleanNonce);
-
     if (!pending) {
       this._recordFailure(cleanId, 'NONCE_UNKNOWN_OR_REPLAYED');
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=- jti=- result=INVALID_NONCE`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=- jti=- result=INVALID_NONCE`);
       return { ok: false, code: 'INVALID_NONCE', message: 'Nonce tidak valid atau sudah digunakan.' };
     }
 
+    // M-3: Verify deviceId BEFORE consuming victim's nonce
     if (pending.deviceId !== cleanId) {
       this._recordFailure(cleanId, 'DEVICE_MISMATCH');
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${pending.scope} jti=- result=DEVICE_MISMATCH`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${pending.scope} jti=- result=DEVICE_MISMATCH`);
       return { ok: false, code: 'DEVICE_MISMATCH', message: 'Perangkat tidak cocok dengan tantangan.' };
+    }
+
+    // Consume nonce immediately once ownership matches (single-use)
+    this.pendingChallenges.delete(cleanNonce);
+
+    // M-3: Re-check terminal kill switch right before minting a term ticket
+    if (pending.scope === 'term' && !this._isTermEnabled()) {
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=term jti=- result=FEATURE_DISABLED`);
+      return {
+        ok: false,
+        code: 'FEATURE_DISABLED',
+        message: 'Terminal inspeksi sedang dinonaktifkan oleh kill switch server.'
+      };
     }
 
     if (this.nowFn() > pending.exp) {
       this._recordFailure(cleanId, 'NONCE_EXPIRED');
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${pending.scope} jti=- result=NONCE_EXPIRED`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${pending.scope} jti=- result=NONCE_EXPIRED`);
       return { ok: false, code: 'NONCE_EXPIRED', message: 'Tantangan biometrik sudah kedaluwarsa.' };
     }
 
     const device = this.deviceStore.getDevice(cleanId);
     if (!device || device.status !== 'ACTIVE') {
       this._recordFailure(cleanId, 'DEVICE_INACTIVE');
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${pending.scope} jti=- result=DEVICE_NOT_ENROLLED`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${pending.scope} jti=- result=DEVICE_NOT_ENROLLED`);
       return { ok: false, code: 'DEVICE_NOT_ENROLLED', message: 'Perangkat tidak aktif.' };
     }
 
@@ -335,7 +385,7 @@ class TicketService {
 
     if (sigBuf.length < 32 || sigBuf.length > 128) {
       this._recordFailure(cleanId, 'BAD_SIGNATURE_LENGTH');
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${pending.scope} jti=- result=INVALID_SIGNATURE`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${pending.scope} jti=- result=INVALID_SIGNATURE`);
       return { ok: false, code: 'INVALID_SIGNATURE', message: 'Format tanda tangan tidak valid.' };
     }
 
@@ -354,7 +404,7 @@ class TicketService {
 
     if (!isValid) {
       this._recordFailure(cleanId, 'SIGNATURE_VERIFICATION_FAILED');
-      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${pending.scope} jti=- result=INVALID_SIGNATURE`);
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${pending.scope} jti=- result=INVALID_SIGNATURE`);
       return { ok: false, code: 'INVALID_SIGNATURE', message: 'Verifikasi tanda tangan ECDSA gagal.' };
     }
 
@@ -364,7 +414,7 @@ class TicketService {
     if (pending.scope === 'term' && pending.isResume) {
       const existing = this.activeSessions.get(pending.sid);
       if (!existing || existing.deviceId !== cleanId || this.nowFn() > existing.exp || this.nowFn() > pending.sessionExp) {
-        console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=term jti=- result=SESSION_EXPIRED`);
+        console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=term jti=- result=SESSION_EXPIRED`);
         return {
           ok: false,
           code: 'SESSION_EXPIRED',
@@ -378,7 +428,7 @@ class TicketService {
     try {
       serverPriv = this._getServerPrivateKey();
     } catch (keyErr) {
-      console.error(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${pending.scope} jti=- result=SERVER_KEY_UNAVAILABLE err=${keyErr.message}`);
+      console.error(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${pending.scope} jti=- result=SERVER_KEY_UNAVAILABLE err=${keyErr.message}`);
       return {
         ok: false,
         code: 'SERVER_KEY_UNAVAILABLE',
@@ -408,7 +458,7 @@ class TicketService {
     try {
       ticketSig = crypto.sign(null, payloadBuf, serverPriv);
     } catch (signErr) {
-      console.error(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${pending.scope} jti=${jti} result=SIGN_ERROR err=${signErr.message}`);
+      console.error(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${pending.scope} jti=${jti} result=SIGN_ERROR err=${signErr.message}`);
       return {
         ok: false,
         code: 'TICKET_SIGN_ERROR',
@@ -417,7 +467,7 @@ class TicketService {
     }
     const ticket = `${payloadBuf.toString('base64url')}.${ticketSig.toString('base64url')}`;
 
-    console.log(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${cleanId} scope=${pending.scope} jti=${jti} result=ISSUED ttl=${TICKET_TTL_SEC}s`);
+    console.log(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeLogId} scope=${pending.scope} jti=${jti} result=ISSUED ttl=${TICKET_TTL_SEC}s`);
     return {
       ok: true,
       ticket,

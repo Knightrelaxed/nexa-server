@@ -77,6 +77,13 @@ async function loadAppLimits() {
     }
   }
 
+  // L-03: Fall back to DEFAULT_LIMITS if Supabase is unreachable or returns 0 rows
+  if (limitsMap.size === 0) {
+    for (const [k, v] of DEFAULT_LIMITS.entries()) {
+      limitsMap.set(k, { ...v });
+    }
+  }
+
   _cachedDbLimits = limitsMap;
   _cacheExpiry = now + (10 * 60 * 1000);
   return limitsMap;
@@ -141,22 +148,34 @@ async function evaluateAppUsage(telemetry) {
         attempts: lockout.attempts
       };
     } else {
-      // Masa lockout selesai
-      _activeLockouts.delete(pkg);
+      // Masa lockout selesai (L-03: consistently use cleanPkg)
+      _activeLockouts.delete(cleanPkg);
     }
   }
 
-  console.log(`[APP-DISCIPLINE] ⏱️ Evaluating ${appName} (${pkg}): Session=${sessionMinutes}m/${rule.max_session}m | Daily=${dailyMinutes}m/${rule.max_daily}m`);
+  // L-03: Sweep expired cooldown/lockout entries opportunistically so maps remain bounded
+  if (_activeLockouts.size > 64) {
+    for (const [k, v] of _activeLockouts.entries()) {
+      if (now >= v.expiry) _activeLockouts.delete(k);
+    }
+  }
+  if (_alertCooldowns.size > 128) {
+    for (const [k, ts] of _alertCooldowns.entries()) {
+      if (now - ts >= ALERT_COOLDOWN_MS) _alertCooldowns.delete(k);
+    }
+  }
+
+  console.log(`[APP-DISCIPLINE] ⏱️ Evaluating ${appName} (${cleanPkg}): Session=${sessionMinutes}m/${rule.max_session}m | Daily=${dailyMinutes}m/${rule.max_daily}m`);
 
   // ── 1. CEK PELANGGARAN BATAS SESI (SESSION LIMIT BREACH) ─────────────────
   if (sessionMinutes >= rule.max_session) {
-    const cooldownKey = `${pkg}_session_breach`;
+    const cooldownKey = `${cleanPkg}_session_breach`;
     const lastAlert = _alertCooldowns.get(cooldownKey) || 0;
 
     if (now - lastAlert >= ALERT_COOLDOWN_MS) {
       _alertCooldowns.set(cooldownKey, now);
       // Set active lockout for 30 minutes
-      _activeLockouts.set(pkg, { expiry: now + LOCKOUT_DURATION_MS, attempts: 0, appName });
+      _activeLockouts.set(cleanPkg, { expiry: now + LOCKOUT_DURATION_MS, attempts: 0, appName });
       console.warn(`[APP-DISCIPLINE] 🚨 SESSION LIMIT BREACH: ${appName} reached ${sessionMinutes} minutes! Entered 30m lockout.`);
 
       // Trigger GodMode escalation

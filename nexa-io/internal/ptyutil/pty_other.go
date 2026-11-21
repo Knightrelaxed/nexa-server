@@ -5,7 +5,11 @@ package ptyutil
 import (
 	"errors"
 	"io"
+	"time"
 )
+
+// WaitTeardown is a no-op on non-Linux targets.
+func WaitTeardown(_ time.Duration) {}
 
 // Session represents a live PTY-backed shell process.
 type Session interface {

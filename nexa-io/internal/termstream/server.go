@@ -30,6 +30,10 @@ const (
 	DefaultMaxSessionAge     = 4 * time.Hour
 	DefaultIdleTimeout       = 90 * time.Second
 	DefaultMaxGlobalSessions = 2
+	DefaultMaxConns          = 4
+	preOpenReadDeadline      = 5 * time.Second
+	maxTermRows              = 200
+	maxTermCols              = 300
 	// G-C1: Placed outside /etc/nexa (which is InaccessiblePaths in nexa-term.service)
 	DefaultKillSwitchFile = "/opt/nexa/etc/terminal.enabled"
 	stdinQueueCapacity    = 64
@@ -49,6 +53,7 @@ type Config struct {
 	MaxSessionAge     time.Duration
 	IdleTimeout       time.Duration
 	MaxGlobalSessions int
+	MaxConns          int
 	ShellPath         string
 	HomeDir           string
 	UserName          string
@@ -70,7 +75,7 @@ type termSession struct {
 	credit      int64
 	creditCond  *sync.Cond
 	detached    bool
-	resuming    bool   // G-H5: pauses ptyReadLoop while RESUME replays missed bytes
+	resuming    bool   // G-H5 / C2: pauses ptyReadLoop while RESUME replays missed bytes
 	detachGen   uint64 // G-H6: guards graceTimer against killing a newly resumed session
 	closed      bool
 	graceTimer  *time.Timer
@@ -79,11 +84,14 @@ type termSession struct {
 
 // Server handles /io/term binary WebSocket connections.
 type Server struct {
-	cfg         Config
-	mu          sync.Mutex
-	sessions    map[string]*termSession // sid -> *termSession
-	activeConns atomic.Int32            // G-M2: includes pre-OPEN WS connections in idle check
-	lastActive  atomic.Int64
+	cfg           Config
+	mu            sync.Mutex
+	sessions      map[string]*termSession // sid -> *termSession
+	pendingSpawns int                     // M3: reserves session slots while spawning PTY outside s.mu
+	activeConns   int                     // H4/G-M2: includes pre-OPEN WS connections under s.mu
+	shuttingDown  bool                    // H4: coordinated with idle watchdog before Verify()
+	limiter       *logstream.IPRateLimiter
+	lastActive    atomic.Int64
 }
 
 // NewServer creates a new Terminal Server (Kill Switch defaults to OFF, FR-TERM-18).
@@ -103,6 +111,9 @@ func NewServer(cfg Config) *Server {
 	if cfg.MaxGlobalSessions <= 0 {
 		cfg.MaxGlobalSessions = DefaultMaxGlobalSessions
 	}
+	if cfg.MaxConns <= 0 {
+		cfg.MaxConns = DefaultMaxConns
+	}
 	if cfg.EnableFlagFile == "" {
 		cfg.EnableFlagFile = DefaultKillSwitchFile
 	}
@@ -110,6 +121,7 @@ func NewServer(cfg Config) *Server {
 	s := &Server{
 		cfg:      cfg,
 		sessions: make(map[string]*termSession),
+		limiter:  logstream.NewIPRateLimiter(30, 15, 256),
 	}
 	s.lastActive.Store(time.Now().UnixNano())
 	if s.cfg.PTYFactory == nil {
@@ -118,6 +130,22 @@ func NewServer(cfg Config) *Server {
 		}
 	}
 	return s
+}
+
+func clampTermSize(rows, cols uint16) (uint16, uint16) {
+	if rows == 0 {
+		rows = 24
+	}
+	if cols == 0 {
+		cols = 80
+	}
+	if rows > maxTermRows {
+		rows = maxTermRows
+	}
+	if cols > maxTermCols {
+		cols = maxTermCols
+	}
+	return rows, cols
 }
 
 // IsEnabled checks the server-side kill switch (FR-TERM-18 / FR-SEC-07). Default is OFF.
@@ -139,9 +167,12 @@ func (s *Server) IsEnabled() bool {
 	return false
 }
 
-// ShutdownAll cleanly terminates all live/detached sessions with the given CLOSE reason (G-M2).
+// ShutdownAll cleanly terminates all live/detached sessions with the given CLOSE reason (G-M2/H4).
 func (s *Server) ShutdownAll(reason uint8) {
 	s.mu.Lock()
+	if reason == proto.CloseServerStop {
+		s.shuttingDown = true
+	}
 	all := make([]*termSession, 0, len(s.sessions))
 	for _, sess := range s.sessions {
 		all = append(all, sess)
@@ -157,6 +188,7 @@ func (s *Server) ShutdownAll(reason uint8) {
 // and upgrades to a binary WebSocket.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientIP := logstream.ExtractClientIP(r)
+	safeIP := logstream.SanitizeLogField(clientIP)
 
 	// G-L1: Fail closed if Verifier is not configured
 	if s.cfg.Verifier == nil {
@@ -164,30 +196,60 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// H4 / H6: Check shuttingDown, rate limit, and activeConns BEFORE Verify() so idle exit never burns a JTI
+	s.mu.Lock()
+	if s.shuttingDown {
+		s.mu.Unlock()
+		http.Error(w, "terminal worker shutting down; retry to wake worker", http.StatusServiceUnavailable)
+		return
+	}
+	if !s.limiter.Allow(clientIP) {
+		s.mu.Unlock()
+		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=rate_limited\n", safeIP)
+		http.Error(w, "too many handshake attempts", http.StatusTooManyRequests)
+		return
+	}
+	if s.activeConns >= s.cfg.MaxConns {
+		s.mu.Unlock()
+		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=max_conns_reached\n", safeIP)
+		http.Error(w, "too many active terminal connections", http.StatusTooManyRequests)
+		return
+	}
+	s.activeConns++
+	s.lastActive.Store(time.Now().UnixNano())
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		s.activeConns--
+		s.lastActive.Store(time.Now().UnixNano())
+		s.mu.Unlock()
+	}()
+
 	// FR-TERM-18 / FR-SEC-07: Server-side kill switch (default OFF)
 	if !s.IsEnabled() {
-		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=kill_switch_off\n", clientIP)
+		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=kill_switch_off\n", safeIP)
 		http.Error(w, "Terminal dinonaktifkan di server (kill switch OFF)", http.StatusForbidden)
 		return
 	}
 
 	// FR-SEC-01: Forbid ticket in query string
 	if r.URL.Query().Get("ticket") != "" || r.URL.Query().Get("token") != "" {
-		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=query_ticket_forbidden\n", clientIP)
+		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=query_ticket_forbidden\n", safeIP)
 		http.Error(w, "ticket in query string forbidden (FR-SEC-01)", http.StatusUnauthorized)
 		return
 	}
 
 	token := logstream.ExtractBearerToken(r)
 	if token == "" {
-		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=missing_bearer\n", clientIP)
+		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=missing_bearer\n", safeIP)
 		http.Error(w, "missing Authorization Bearer ticket", http.StatusUnauthorized)
 		return
 	}
 
 	claims, err := s.cfg.Verifier.Verify(token, "term")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=%v\n", clientIP, err)
+		fmt.Fprintf(os.Stderr, "[NEXA-TERM] auth_reject ip=%s reason=%v\n", safeIP, err)
 		http.Error(w, "invalid or expired terminal ticket: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -202,17 +264,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.activeConns.Add(1)
-	s.lastActive.Store(time.Now().UnixNano())
-	defer func() {
-		s.activeConns.Add(-1)
-		s.lastActive.Store(time.Now().UnixNano())
-	}()
-
-	s.handleConnection(conn, claims, clientIP)
+	s.handleConnection(conn, claims, safeIP)
 }
 
-// StartIdleWatchdog exits cleanly after 90s with 0 active/detached sessions and 0 open WS connections (FR-SRV-02 / G-M2).
+// StartIdleWatchdog exits cleanly after 90s with 0 active/detached sessions and 0 open WS connections (FR-SRV-02 / G-M2),
+// and enforces live kill-switch revocation every 1s (H7).
 func (s *Server) StartIdleWatchdog(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -221,25 +277,45 @@ func (s *Server) StartIdleWatchdog(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// H7: Immediately terminate live sessions if server-side kill switch is flipped OFF mid-session
+			if !s.IsEnabled() {
+				s.mu.Lock()
+				hasSessions := len(s.sessions) > 0
+				s.mu.Unlock()
+				if hasSessions {
+					fmt.Fprintf(os.Stderr, "[NEXA-TERM] kill_switch_flipped_off: terminating all live sessions\n")
+					s.ShutdownAll(proto.CloseAuth)
+				}
+			}
+
 			s.mu.Lock()
-			count := len(s.sessions)
-			s.mu.Unlock()
-			if count > 0 || s.activeConns.Load() > 0 {
+			if s.shuttingDown {
+				s.mu.Unlock()
+				return
+			}
+			count := len(s.sessions) + s.pendingSpawns
+			conns := s.activeConns
+			if count > 0 || conns > 0 {
 				s.lastActive.Store(time.Now().UnixNano())
+				s.mu.Unlock()
 				continue
 			}
 			idleDur := time.Duration(time.Now().UnixNano() - s.lastActive.Load())
 			if idleDur >= s.cfg.IdleTimeout {
+				// H4: Atomically mark shuttingDown under s.mu before calling shutdown callback
+				s.shuttingDown = true
+				s.mu.Unlock()
 				if s.cfg.OnIdleShutdown != nil {
 					s.cfg.OnIdleShutdown()
 				}
 				return
 			}
+			s.mu.Unlock()
 		}
 	}
 }
 
-func (s *Server) handleConnection(conn *ws.Conn, claims *ticket.Claims, clientIP string) {
+func (s *Server) handleConnection(conn *ws.Conn, claims *ticket.Claims, safeIP string) {
 	defer conn.Close()
 
 	var currentSession *termSession
@@ -252,8 +328,12 @@ func (s *Server) handleConnection(conn *ws.Conn, claims *ticket.Claims, clientIP
 	}()
 
 	for {
-		// FR-TERM-12: 30-second Dead-Man Switch read deadline
-		_ = conn.SetReadDeadline(time.Now().Add(s.cfg.DetachTimeout))
+		// H6 / FR-TERM-12: Tight 5s pre-OPEN/RESUME deadline, then 30s Dead-Man Switch read deadline
+		deadline := s.cfg.DetachTimeout
+		if currentSession == nil && preOpenReadDeadline < deadline {
+			deadline = preOpenReadDeadline
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(deadline))
 		raw, err := conn.ReadBinaryFrame()
 		if err != nil {
 			return
@@ -284,8 +364,9 @@ func (s *Server) handleConnection(conn *ws.Conn, claims *ticket.Claims, clientIP
 				_ = conn.WriteCloseFrame(1008, "sid mismatch")
 				return
 			}
+			rows, cols := clampTermSize(openParams.Rows, openParams.Cols)
 			termChannel = ch
-			sess, errCode, errMsg := s.openOrAttachSession(claims, clientIP, conn, ch, openParams.Rows, openParams.Cols)
+			sess, errCode, errMsg := s.openOrAttachSession(claims, safeIP, conn, ch, rows, cols)
 			if sess == nil {
 				_ = conn.WriteBinaryFrame(proto.EncodeErrFrame(ch, errCode, errMsg))
 				_ = conn.WriteCloseFrame(1008, errMsg)
@@ -301,7 +382,7 @@ func (s *Server) handleConnection(conn *ws.Conn, claims *ticket.Claims, clientIP
 				return
 			}
 			termChannel = ch
-			sess, errCode, errMsg := s.resumeSession(claims, clientIP, conn, ch, resumeParams)
+			sess, errCode, errMsg := s.resumeSession(claims, safeIP, conn, ch, resumeParams)
 			if sess == nil {
 				_ = conn.WriteBinaryFrame(proto.EncodeErrFrame(ch, errCode, errMsg))
 				_ = conn.WriteCloseFrame(1008, errMsg)
@@ -310,7 +391,12 @@ func (s *Server) handleConnection(conn *ws.Conn, claims *ticket.Claims, clientIP
 			currentSession = sess
 
 		case ch == termChannel && op == proto.OpData:
-			if currentSession != nil && len(payload) > 0 {
+			if currentSession == nil {
+				_ = conn.WriteBinaryFrame(proto.EncodeErrFrame(ch, proto.ErrInvalidFrame, "DATA received before OPEN/RESUME"))
+				_ = conn.WriteCloseFrame(1002, "no active session")
+				return
+			}
+			if len(payload) > 0 {
 				// G-H9: Non-blocking enqueue to dedicated PTY writer so full kernel PTY buffer never stalls PING/Dead-Man Switch
 				cp := make([]byte, len(payload))
 				copy(cp, payload)
@@ -323,13 +409,24 @@ func (s *Server) handleConnection(conn *ws.Conn, claims *ticket.Claims, clientIP
 
 		case ch == termChannel && op == proto.OpResize:
 			rows, cols, err := proto.DecodeTermResize(payload)
-			if err == nil && currentSession != nil {
-				_ = currentSession.pty.Resize(rows, cols)
+			if err != nil {
+				_ = conn.WriteBinaryFrame(proto.EncodeErrFrame(ch, proto.ErrInvalidFrame, "invalid RESIZE payload"))
+				_ = conn.WriteCloseFrame(1002, "invalid RESIZE")
+				return
+			}
+			if currentSession != nil {
+				cRows, cCols := clampTermSize(rows, cols)
+				_ = currentSession.pty.Resize(cRows, cCols)
 			}
 
 		case ch == termChannel && op == proto.OpCredit:
 			addBytes, err := proto.DecodeCredit(payload)
-			if err == nil && currentSession != nil {
+			if err != nil {
+				_ = conn.WriteBinaryFrame(proto.EncodeErrFrame(ch, proto.ErrInvalidFrame, "invalid CREDIT payload"))
+				_ = conn.WriteCloseFrame(1002, "invalid CREDIT")
+				return
+			}
+			if currentSession != nil {
 				currentSession.mu.Lock()
 				if addBytes == 0 {
 					// Screen off / pause (FR-TERM-13): hold PTY read without killing session
@@ -352,11 +449,17 @@ func (s *Server) handleConnection(conn *ws.Conn, claims *ticket.Claims, clientIP
 				_ = conn.WriteCloseFrame(1000, "")
 			}
 			return
+
+		default:
+			// M2: Reject unknown opcodes/channels explicitly
+			_ = conn.WriteBinaryFrame(proto.EncodeErrFrame(proto.ChControl, proto.ErrInvalidFrame, fmt.Sprintf("unsupported frame ch=0x%02x op=0x%02x", ch, op)))
+			_ = conn.WriteCloseFrame(1002, "unsupported frame")
+			return
 		}
 	}
 }
 
-func (s *Server) openOrAttachSession(claims *ticket.Claims, clientIP string, conn *ws.Conn, ch uint8, rows, cols uint16) (*termSession, uint8, string) {
+func (s *Server) openOrAttachSession(claims *ticket.Claims, safeIP string, conn *ws.Conn, ch uint8, rows, cols uint16) (*termSession, uint8, string) {
 	var oldConn *ws.Conn
 
 	s.mu.Lock()
@@ -378,6 +481,7 @@ func (s *Server) openOrAttachSession(claims *ticket.Claims, clientIP string, con
 			existing.activeConn = conn
 			existing.activeCh = ch
 			existing.detached = false
+			existing.resuming = false
 			existing.detachGen++
 			existing.credit = proto.InitialTermCredit
 			existing.creditCond.Broadcast()
@@ -388,21 +492,23 @@ func (s *Server) openOrAttachSession(claims *ticket.Claims, clientIP string, con
 			if oldConn != nil && oldConn != conn {
 				_ = oldConn.Close()
 			}
-			if rows > 0 && cols > 0 {
-				_ = existing.pty.Resize(rows, cols)
-			}
+			_ = existing.pty.Resize(rows, cols)
 			return existing, 0, ""
 		}
 	}
 
-	// FR-AUTH-11: Global concurrent session cap
-	if len(s.sessions) >= s.cfg.MaxGlobalSessions {
+	// FR-AUTH-11 / M3: Global concurrent session cap (accounting for in-flight spawns), then release s.mu before PTYFactory
+	if len(s.sessions)+s.pendingSpawns >= s.cfg.MaxGlobalSessions {
 		s.mu.Unlock()
 		return nil, proto.ErrResourceLimit, "batas sesi terminal bersamaan tercapai"
 	}
+	s.pendingSpawns++
+	s.mu.Unlock()
 
 	ptySess, err := s.cfg.PTYFactory(rows, cols)
 	if err != nil {
+		s.mu.Lock()
+		s.pendingSpawns--
 		s.mu.Unlock()
 		return nil, proto.ErrResourceLimit, "gagal memulai PTY bash: " + err.Error()
 	}
@@ -421,23 +527,34 @@ func (s *Server) openOrAttachSession(claims *ticket.Claims, clientIP string, con
 	}
 	sess.creditCond = sync.NewCond(&sess.mu)
 
+	s.mu.Lock()
+	s.pendingSpawns--
+	if s.shuttingDown || !s.IsEnabled() {
+		s.mu.Unlock()
+		_ = ptySess.KillGroup()
+		return nil, proto.ErrFeatureOff, "terminal ditutup saat inisialisasi"
+	}
+	if _, dup := s.sessions[claims.SID]; dup {
+		s.mu.Unlock()
+		_ = ptySess.KillGroup()
+		return nil, proto.ErrResourceLimit, "sesi duplikat terdeteksi"
+	}
 	// FR-TERM-14: 4-hour absolute session limit
 	sess.maxAgeTimer = time.AfterFunc(s.cfg.MaxSessionAge, func() {
 		s.terminateSession(sess, proto.CloseSessionLimit)
 	})
-
 	s.sessions[claims.SID] = sess
 	s.mu.Unlock()
 
 	fmt.Fprintf(os.Stderr, "[NEXA-TERM] session_start ip=%s sid=%s dev=%s jti=%s rows=%d cols=%d\n",
-		clientIP, claims.SID, claims.Dev, claims.JTI, rows, cols)
+		safeIP, logstream.SanitizeLogField(claims.SID), logstream.SanitizeLogField(claims.Dev), logstream.SanitizeLogField(claims.JTI), rows, cols)
 
 	go s.ptyWriteLoop(sess)
 	go s.ptyReadLoop(sess)
 	return sess, 0, ""
 }
 
-func (s *Server) resumeSession(claims *ticket.Claims, clientIP string, conn *ws.Conn, ch uint8, params proto.TermResumeParams) (*termSession, uint8, string) {
+func (s *Server) resumeSession(claims *ticket.Claims, safeIP string, conn *ws.Conn, ch uint8, params proto.TermResumeParams) (*termSession, uint8, string) {
 	// Verify that the 16-byte SID in RESUME matches the verified Ed25519 ticket SID
 	expectedSIDBytes := sidTo16Bytes(claims.SID)
 	if params.SID != expectedSIDBytes {
@@ -469,7 +586,7 @@ func (s *Server) resumeSession(claims *ticket.Claims, clientIP string, conn *ws.
 	sess.activeConn = conn
 	sess.activeCh = ch
 	sess.detached = false
-	sess.resuming = true // G-H5: hold ptyReadLoop until replay is flushed cleanly
+	sess.resuming = true // G-H5 / C2: hold ptyReadLoop live writes until replay + drain finish
 	sess.detachGen++
 	sess.credit = proto.InitialTermCredit
 
@@ -483,33 +600,91 @@ func (s *Server) resumeSession(claims *ticket.Claims, clientIP string, conn *ws.
 	}
 
 	var replayedBytes int64
+	var writeErr error
+	sentUpTo := currentSentOffset
+
 	if inRing {
 		if len(missed) > 0 {
-			s.writeChunkedData(conn, ch, missed)
-			replayedBytes = int64(len(missed))
+			writeErr = s.writeChunkedData(conn, ch, missed)
+			if writeErr == nil {
+				replayedBytes += int64(len(missed))
+			}
 		}
 	} else {
-		// G-H5 / A-H5: Notify client of exact authoritative server sentOffset via ERR(7) OFFSET_RESET
-		// BEFORE sending ANSI screen clear + SIGWINCH redraw so client & server offsets stay synchronized!
-		_ = conn.WriteBinaryFrame(proto.EncodeErrFrame(ch, proto.ErrResumeFailed, fmt.Sprintf("OFFSET_RESET:%d", currentSentOffset)))
-		s.writeChunkedData(conn, ch, []byte("\x1b[2J\x1b[H"))
-		replayedBytes = 7
-		_ = sess.pty.SignalWinch()
-	}
-
-	sess.mu.Lock()
-	sess.resuming = false
-	if replayedBytes > 0 {
-		sess.credit -= replayedBytes
-		if sess.credit < 0 {
-			sess.credit = 0
+		// C1: Notify client of exact authoritative server sentOffset via ERR(7) OFFSET_RESET:<offset>
+		// WITHOUT injecting an un-ringed "\x1b[2J\x1b[H" frame (which caused a permanent +7 offset desync!).
+		// Client resets its terminal emulator on OFFSET_RESET, and SIGWINCH prompts shell redraw cleanly via ring.
+		writeErr = conn.WriteBinaryFrame(proto.EncodeErrFrame(ch, proto.ErrResumeFailed, fmt.Sprintf("OFFSET_RESET:%d", currentSentOffset)))
+		if writeErr == nil {
+			_ = sess.pty.SignalWinch()
 		}
 	}
-	sess.creditCond.Broadcast()
-	sess.mu.Unlock()
+
+	if writeErr != nil {
+		sess.mu.Lock()
+		if sess.activeConn == conn {
+			sess.resuming = false
+			sess.creditCond.Broadcast()
+		}
+		sess.mu.Unlock()
+		s.detachSession(sess, conn)
+		return nil, proto.ErrResumeFailed, "gagal mengirim replay terminal"
+	}
+
+	// C2: Drain any live PTY bytes appended to sess.ring while resuming == true before handing back to ptyReadLoop
+	for {
+		sess.mu.Lock()
+		if sess.closed || sess.activeConn != conn {
+			sess.mu.Unlock()
+			return nil, proto.ErrResumeFailed, "sesi terminal diambil alih atau ditutup"
+		}
+		latestOffset := sess.ring.SentOffset()
+		if latestOffset <= sentUpTo {
+			sess.resuming = false
+			if replayedBytes > 0 {
+				sess.credit -= replayedBytes
+				if sess.credit < 0 {
+					sess.credit = 0
+				}
+			}
+			sess.creditCond.Broadcast()
+			sess.mu.Unlock()
+			break
+		}
+		tail, tailInRing := sess.ring.SliceFrom(sentUpTo)
+		sentUpTo = latestOffset
+		sess.mu.Unlock()
+
+		if tailInRing && len(tail) > 0 {
+			if err := s.writeChunkedData(conn, ch, tail); err != nil {
+				sess.mu.Lock()
+				if sess.activeConn == conn {
+					sess.resuming = false
+					sess.creditCond.Broadcast()
+				}
+				sess.mu.Unlock()
+				s.detachSession(sess, conn)
+				return nil, proto.ErrResumeFailed, "koneksi terputus saat sinkronisasi replay"
+			}
+			replayedBytes += int64(len(tail))
+		} else if !tailInRing {
+			if err := conn.WriteBinaryFrame(proto.EncodeErrFrame(ch, proto.ErrResumeFailed, fmt.Sprintf("OFFSET_RESET:%d", sentUpTo))); err != nil {
+				sess.mu.Lock()
+				if sess.activeConn == conn {
+					sess.resuming = false
+					sess.creditCond.Broadcast()
+				}
+				sess.mu.Unlock()
+				s.detachSession(sess, conn)
+				return nil, proto.ErrResumeFailed, "koneksi terputus saat reset offset"
+			}
+			_ = sess.pty.SignalWinch()
+		}
+	}
 
 	fmt.Fprintf(os.Stderr, "[NEXA-TERM] session_resume ip=%s sid=%s dev=%s jti=%s offset=%d server_offset=%d in_ring=%v replay_bytes=%d\n",
-		clientIP, claims.SID, claims.Dev, claims.JTI, params.ReceivedOffset, currentSentOffset, inRing, len(missed))
+		safeIP, logstream.SanitizeLogField(claims.SID), logstream.SanitizeLogField(claims.Dev), logstream.SanitizeLogField(claims.JTI),
+		params.ReceivedOffset, sentUpTo, inRing, replayedBytes)
 	return sess, 0, ""
 }
 
@@ -523,8 +698,10 @@ func (s *Server) detachSession(sess *termSession, closedConn *ws.Conn) {
 
 	sess.activeConn = nil
 	sess.detached = true
+	sess.resuming = false
 	sess.detachGen++
 	myGen := sess.detachGen
+	sess.creditCond.Broadcast()
 
 	// FR-TERM-12: 120-second grace timer after detach; guarded by detachGen (G-H6)
 	if sess.graceTimer != nil {
@@ -533,7 +710,8 @@ func (s *Server) detachSession(sess *termSession, closedConn *ws.Conn) {
 	sess.graceTimer = time.AfterFunc(s.cfg.GraceTimeout, func() {
 		s.terminateSessionIfDetached(sess, myGen, proto.CloseDetachExpired)
 	})
-	fmt.Fprintf(os.Stderr, "[NEXA-TERM] session_detached sid=%s gen=%d grace_sec=%.0f\n", sess.sid, myGen, s.cfg.GraceTimeout.Seconds())
+	fmt.Fprintf(os.Stderr, "[NEXA-TERM] session_detached sid=%s gen=%d grace_sec=%.0f\n",
+		logstream.SanitizeLogField(sess.sid), myGen, s.cfg.GraceTimeout.Seconds())
 }
 
 // terminateSessionIfDetached ensures a stale graceTimer callback can never kill a session
@@ -581,7 +759,7 @@ func (s *Server) terminateSession(sess *termSession, reason uint8) {
 	}
 	_ = sess.pty.KillGroup()
 	fmt.Fprintf(os.Stderr, "[NEXA-TERM] session_end sid=%s reason=%d duration_sec=%.0f\n",
-		sess.sid, reason, time.Since(sess.createdAt).Seconds())
+		logstream.SanitizeLogField(sess.sid), reason, time.Since(sess.createdAt).Seconds())
 }
 
 func (s *Server) ptyWriteLoop(sess *termSession) {
@@ -623,9 +801,14 @@ func (s *Server) ptyReadLoop(sess *termSession) {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
 
-			// G-H5: Re-read activeConn/resuming AFTER pty.Read() returns so concurrent detach/resume never writes out-of-order
+			// G-H5 / C2 / M3: Re-check activeConn/resuming/credit AFTER pty.Read() returns.
+			// If screen turned off (credit == 0) mid-read, wait on creditCond so zero bytes are lost
+			// and zero bytes are written to a paused screen.
 			sess.mu.Lock()
 			sess.ring.Append(chunk)
+			for !sess.closed && !sess.detached && !sess.resuming && sess.activeConn != nil && sess.credit <= 0 {
+				sess.creditCond.Wait()
+			}
 			if sess.closed || sess.detached || sess.resuming || sess.activeConn == nil {
 				sess.mu.Unlock()
 			} else {
@@ -653,7 +836,7 @@ func (s *Server) ptyReadLoop(sess *termSession) {
 		if err != nil {
 			// G-L3: Linux PTY master returns EIO when the slave login shell exits normally
 			if !errors.Is(err, io.EOF) && !errors.Is(err, syscall.EIO) {
-				fmt.Fprintf(os.Stderr, "[NEXA-TERM] pty read error sid=%s: %v\n", sess.sid, err)
+				fmt.Fprintf(os.Stderr, "[NEXA-TERM] pty read error sid=%s: %v\n", logstream.SanitizeLogField(sess.sid), err)
 			}
 			s.terminateSession(sess, proto.CloseNormal)
 			return
@@ -661,17 +844,21 @@ func (s *Server) ptyReadLoop(sess *termSession) {
 	}
 }
 
-func (s *Server) writeChunkedData(conn *ws.Conn, ch uint8, data []byte) {
+func (s *Server) writeChunkedData(conn *ws.Conn, ch uint8, data []byte) error {
 	for offset := 0; offset < len(data); offset += proto.MaxFramePayloadBytes {
 		end := offset + proto.MaxFramePayloadBytes
 		if end > len(data) {
 			end = len(data)
 		}
 		frame, err := proto.EncodeFrame(ch, proto.OpData, data[offset:end])
-		if err != nil || conn.WriteBinaryFrame(frame) != nil {
-			return
+		if err != nil {
+			return err
+		}
+		if err := conn.WriteBinaryFrame(frame); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
 // sidTo16Bytes converts a base64url 16-byte SID string (or arbitrary SID) deterministically to 16 bytes.

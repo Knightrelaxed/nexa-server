@@ -13,6 +13,7 @@ module.exports = {
     autorestart: true,
     watch: false,
     max_memory_restart: '420M', // Safe ceiling on 892 MiB VPS (above 216 MiB measured RSS)
+    kill_timeout: 12000, // Allow app.js 10s graceful HTTP/WS drain before SIGKILL (L-1)
     node_args: '--max-old-space-size=320', // Safe headroom above 173 MiB measured Used Heap
     env: {
       NODE_ENV: 'production',

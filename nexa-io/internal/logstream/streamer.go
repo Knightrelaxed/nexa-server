@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"strconv"
@@ -32,10 +33,127 @@ const (
 	DefaultPauseTimeout  = 5 * time.Minute
 	DefaultIdleTimeout   = 90 * time.Second
 	DefaultReadDeadline  = 45 * time.Second
+	DefaultMaxConns      = 4
 	DefaultPM2OutPath    = "/var/log/nexa/out.log"
 	DefaultPM2ErrPath    = "/var/log/nexa/err.log"
 	maxJournalLineBytes  = 256 * 1024
+	maxPM2LineBytes      = 64 * 1024
 )
+
+// IPRateLimiter provides a bounded per-IP token bucket for WebSocket upgrade handshakes (H6).
+type IPRateLimiter struct {
+	mu           sync.Mutex
+	buckets      map[string]*ipBucket
+	refillPerSec float64
+	burst        float64
+	maxBuckets   int
+}
+
+type ipBucket struct {
+	tokens   float64
+	lastSeen time.Time
+}
+
+// NewIPRateLimiter constructs a bounded token-bucket limiter.
+func NewIPRateLimiter(perMinute float64, burst float64, maxBuckets int) *IPRateLimiter {
+	if perMinute <= 0 {
+		perMinute = 30
+	}
+	if burst <= 0 {
+		burst = 15
+	}
+	if maxBuckets <= 0 {
+		maxBuckets = 256
+	}
+	return &IPRateLimiter{
+		buckets:      make(map[string]*ipBucket),
+		refillPerSec: perMinute / 60.0,
+		burst:        burst,
+		maxBuckets:   maxBuckets,
+	}
+}
+
+// Allow checks and consumes 1 token for ip.
+func (l *IPRateLimiter) Allow(ip string) bool {
+	if l == nil {
+		return true
+	}
+	key := ip
+	if key == "" {
+		key = "unknown"
+	}
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if len(l.buckets) >= l.maxBuckets {
+		if _, exists := l.buckets[key]; !exists {
+			// Sweep idle entries first
+			for k, b := range l.buckets {
+				if now.Sub(b.lastSeen) > 5*time.Minute {
+					delete(l.buckets, k)
+				}
+			}
+			// If still full, evict oldest entry
+			if len(l.buckets) >= l.maxBuckets {
+				var oldestKey string
+				var oldestTime time.Time
+				for k, b := range l.buckets {
+					if oldestKey == "" || b.lastSeen.Before(oldestTime) {
+						oldestKey = k
+						oldestTime = b.lastSeen
+					}
+				}
+				if oldestKey != "" {
+					delete(l.buckets, oldestKey)
+				}
+			}
+		}
+	}
+
+	b, ok := l.buckets[key]
+	if !ok {
+		b = &ipBucket{tokens: l.burst, lastSeen: now}
+		l.buckets[key] = b
+	} else {
+		elapsed := now.Sub(b.lastSeen).Seconds()
+		if elapsed > 0 {
+			b.tokens += elapsed * l.refillPerSec
+			if b.tokens > l.burst {
+				b.tokens = l.burst
+			}
+		}
+		b.lastSeen = now
+	}
+
+	if b.tokens < 1.0 {
+		return false
+	}
+	b.tokens -= 1.0
+	return true
+}
+
+// SanitizeLogField strips newlines/control chars/delimiters from audit log tokens.
+func SanitizeLogField(s string) string {
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for _, r := range s {
+		if sb.Len() >= 64 {
+			break
+		}
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '.' || r == '-' || r == '_' || r == ':' {
+			sb.WriteRune(r)
+		} else if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
+			sb.WriteByte('_')
+		}
+	}
+	out := strings.Trim(sb.String(), "_")
+	if out == "" {
+		return "-"
+	}
+	return out
+}
 
 // SourceProducer is a pluggable log record producer (defaults to journalctl + optional PM2 log tail).
 type SourceProducer func(ctx context.Context, params proto.LogOpenParams, out chan<- proto.LogRecord) error
@@ -48,16 +166,28 @@ type Config struct {
 	PauseTimeout   time.Duration
 	IdleTimeout    time.Duration
 	ReadDeadline   time.Duration
+	MaxConns       int
 	PM2OutLogPath  string
 	PM2ErrLogPath  string
 	OnIdleShutdown func()
 }
 
+type logSessionHandle struct {
+	conn   *ws.Conn
+	cancel context.CancelFunc
+}
+
 // Server handles /io/logs WebSocket connections and enforces idle exit.
 type Server struct {
-	cfg         Config
-	activeConns atomic.Int32
-	lastActive  atomic.Int64
+	cfg          Config
+	lifecycleMu  sync.Mutex
+	shuttingDown bool
+	activeConns  int
+	nextSessID   uint64
+	sessions     map[uint64]logSessionHandle
+	sessionWG    sync.WaitGroup
+	limiter      *IPRateLimiter
+	lastActive   atomic.Int64
 }
 
 // NewServer creates a new Log Streamer Server.
@@ -74,7 +204,14 @@ func NewServer(cfg Config) *Server {
 	if cfg.ReadDeadline <= 0 {
 		cfg.ReadDeadline = DefaultReadDeadline
 	}
-	s := &Server{cfg: cfg}
+	if cfg.MaxConns <= 0 {
+		cfg.MaxConns = DefaultMaxConns
+	}
+	s := &Server{
+		cfg:      cfg,
+		sessions: make(map[uint64]logSessionHandle),
+		limiter:  NewIPRateLimiter(30, 15, 256),
+	}
 	s.lastActive.Store(time.Now().UnixNano())
 	if s.cfg.Producer == nil {
 		s.cfg.Producer = s.defaultJournalAndPM2Producer
@@ -91,26 +228,85 @@ func ExtractBearerToken(r *http.Request) string {
 	return strings.TrimSpace(auth[7:])
 }
 
-// ExtractClientIP extracts the client IP from X-Forwarded-For or RemoteAddr for audit logs (PRD 14.1).
+// ExtractClientIP extracts the validated client IP from the rightmost X-Forwarded-For entry
+// ONLY when received over a trusted local proxy (Unix domain socket or loopback), otherwise
+// falls back to RemoteAddr (M4). Always validated via netip.ParseAddr.
 func ExtractClientIP(r *http.Request) string {
-	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
-		if idx := strings.IndexByte(xff, ','); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
+	remoteRaw := strings.TrimSpace(r.RemoteAddr)
+	trustedProxy := false
+	var remoteAddr netip.Addr
+	hasRemoteAddr := false
+
+	if remoteRaw == "" || remoteRaw == "@" || strings.HasPrefix(remoteRaw, "/") {
+		// systemd Unix socket / Caddy reverse_proxy unix//run/...
+		trustedProxy = true
+	} else {
+		host := remoteRaw
+		if h, _, err := net.SplitHostPort(remoteRaw); err == nil {
+			host = h
 		}
-		return xff
+		if addr, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+			remoteAddr = addr.Unmap()
+			hasRemoteAddr = true
+			if remoteAddr.IsLoopback() {
+				trustedProxy = true
+			}
+		}
 	}
-	if host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr)); err == nil && host != "" {
-		return host
+
+	if trustedProxy {
+		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+			parts := strings.Split(xff, ",")
+			for i := len(parts) - 1; i >= 0; i-- {
+				cand := strings.TrimSpace(parts[i])
+				if addr, err := netip.ParseAddr(strings.Trim(cand, "[]")); err == nil {
+					return addr.Unmap().String()
+				}
+			}
+		}
 	}
-	if addr := strings.TrimSpace(r.RemoteAddr); addr != "" {
-		return addr
+
+	if hasRemoteAddr {
+		return remoteAddr.String()
 	}
 	return "unknown"
+}
+
+// ShutdownAll marks the server shutting down and cleanly terminates all active log streams (H3/H4).
+func (s *Server) ShutdownAll(reason uint8) {
+	s.lifecycleMu.Lock()
+	s.shuttingDown = true
+	handles := make([]logSessionHandle, 0, len(s.sessions))
+	for _, h := range s.sessions {
+		handles = append(handles, h)
+	}
+	s.lifecycleMu.Unlock()
+
+	for _, h := range handles {
+		_ = h.conn.WriteBinaryFrame(proto.EncodeCloseFrame(proto.ChLogs, reason))
+		_ = h.conn.WriteCloseFrame(1001, "server stopping")
+		h.cancel()
+		_ = h.conn.Close()
+	}
+}
+
+// Wait blocks until all active session goroutines (and their journalctl children) exit, up to timeout (H3).
+func (s *Server) Wait(timeout time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		s.sessionWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+	}
 }
 
 // ServeHTTP authenticates the Ed25519 ticket (scope=logs) and upgrades to a binary WebSocket.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientIP := ExtractClientIP(r)
+	safeIP := SanitizeLogField(clientIP)
 
 	// G-L1: Fail closed if Verifier is not configured
 	if s.cfg.Verifier == nil {
@@ -118,23 +314,53 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// H4: Check shuttingDown & reserve connection slot BEFORE Verify() so idle shutdown never burns a JTI
+	s.lifecycleMu.Lock()
+	if s.shuttingDown {
+		s.lifecycleMu.Unlock()
+		http.Error(w, "log streamer shutting down; retry to wake worker", http.StatusServiceUnavailable)
+		return
+	}
+	if !s.limiter.Allow(clientIP) {
+		s.lifecycleMu.Unlock()
+		fmt.Fprintf(os.Stderr, "[NEXA-LOG] auth_reject ip=%s reason=rate_limited\n", safeIP)
+		http.Error(w, "too many handshake attempts", http.StatusTooManyRequests)
+		return
+	}
+	if s.activeConns >= s.cfg.MaxConns {
+		s.lifecycleMu.Unlock()
+		fmt.Fprintf(os.Stderr, "[NEXA-LOG] auth_reject ip=%s reason=max_conns_reached\n", safeIP)
+		http.Error(w, "too many active log streams", http.StatusTooManyRequests)
+		return
+	}
+	s.activeConns++
+	s.lastActive.Store(time.Now().UnixNano())
+	s.lifecycleMu.Unlock()
+
+	defer func() {
+		s.lifecycleMu.Lock()
+		s.activeConns--
+		s.lastActive.Store(time.Now().UnixNano())
+		s.lifecycleMu.Unlock()
+	}()
+
 	// FR-SEC-01: Reject tickets in query string; require Authorization: Bearer header
 	if r.URL.Query().Get("ticket") != "" || r.URL.Query().Get("token") != "" {
-		fmt.Fprintf(os.Stderr, "[NEXA-LOG] auth_reject ip=%s reason=query_ticket_forbidden\n", clientIP)
+		fmt.Fprintf(os.Stderr, "[NEXA-LOG] auth_reject ip=%s reason=query_ticket_forbidden\n", safeIP)
 		http.Error(w, "ticket in query string forbidden (FR-SEC-01)", http.StatusUnauthorized)
 		return
 	}
 
 	token := ExtractBearerToken(r)
 	if token == "" {
-		fmt.Fprintf(os.Stderr, "[NEXA-LOG] auth_reject ip=%s reason=missing_bearer\n", clientIP)
+		fmt.Fprintf(os.Stderr, "[NEXA-LOG] auth_reject ip=%s reason=missing_bearer\n", safeIP)
 		http.Error(w, "missing Authorization Bearer ticket", http.StatusUnauthorized)
 		return
 	}
 
 	claims, err := s.cfg.Verifier.Verify(token, "logs")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[NEXA-LOG] auth_reject ip=%s reason=%v\n", clientIP, err)
+		fmt.Fprintf(os.Stderr, "[NEXA-LOG] auth_reject ip=%s reason=%v\n", safeIP, err)
 		http.Error(w, "invalid or expired logs ticket: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -144,17 +370,36 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "[NEXA-LOG] session_start ip=%s dev=%s jti=%s\n", clientIP, claims.Dev, claims.JTI)
-	s.activeConns.Add(1)
-	s.lastActive.Store(time.Now().UnixNano())
-	defer func() {
+	safeDev := SanitizeLogField(claims.Dev)
+	safeJTI := SanitizeLogField(claims.JTI)
+	fmt.Fprintf(os.Stderr, "[NEXA-LOG] session_start ip=%s dev=%s jti=%s\n", safeIP, safeDev, safeJTI)
+
+	sessCtx, sessCancel := context.WithCancel(r.Context())
+	s.lifecycleMu.Lock()
+	if s.shuttingDown {
+		s.lifecycleMu.Unlock()
+		sessCancel()
+		_ = conn.WriteCloseFrame(1001, "server stopping")
 		_ = conn.Close()
-		s.activeConns.Add(-1)
-		s.lastActive.Store(time.Now().UnixNano())
-		fmt.Fprintf(os.Stderr, "[NEXA-LOG] session_end ip=%s dev=%s jti=%s\n", clientIP, claims.Dev, claims.JTI)
+		return
+	}
+	s.nextSessID++
+	sessID := s.nextSessID
+	s.sessions[sessID] = logSessionHandle{conn: conn, cancel: sessCancel}
+	s.sessionWG.Add(1)
+	s.lifecycleMu.Unlock()
+
+	defer func() {
+		sessCancel()
+		_ = conn.Close()
+		s.lifecycleMu.Lock()
+		delete(s.sessions, sessID)
+		s.lifecycleMu.Unlock()
+		s.sessionWG.Done()
+		fmt.Fprintf(os.Stderr, "[NEXA-LOG] session_end ip=%s dev=%s jti=%s\n", safeIP, safeDev, safeJTI)
 	}()
 
-	s.handleSession(r.Context(), conn)
+	s.handleSession(sessCtx, conn)
 }
 
 // StartIdleWatchdog monitors active connections and triggers OnIdleShutdown after IdleTimeout (90s).
@@ -166,17 +411,27 @@ func (s *Server) StartIdleWatchdog(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if s.activeConns.Load() > 0 {
+			s.lifecycleMu.Lock()
+			if s.shuttingDown {
+				s.lifecycleMu.Unlock()
+				return
+			}
+			if s.activeConns > 0 {
 				s.lastActive.Store(time.Now().UnixNano())
+				s.lifecycleMu.Unlock()
 				continue
 			}
 			idleDur := time.Duration(time.Now().UnixNano() - s.lastActive.Load())
 			if idleDur >= s.cfg.IdleTimeout {
+				// H4: Flip shuttingDown atomically under lifecycleMu before invoking shutdown callback
+				s.shuttingDown = true
+				s.lifecycleMu.Unlock()
 				if s.cfg.OnIdleShutdown != nil {
 					s.cfg.OnIdleShutdown()
 				}
 				return
 			}
+			s.lifecycleMu.Unlock()
 		}
 	}
 }
@@ -241,6 +496,7 @@ func (s *Server) handleSession(parentCtx context.Context, conn *ws.Conn) {
 		currentFilter  = proto.LogOpenParams{UnitMask: proto.AllowedUnitMask, MinPrio: proto.PrioDebug, CatMask: 0, TailLines: 50}
 		currentGen     uint64
 		producerCancel context.CancelFunc
+		producerWG     sync.WaitGroup
 		rawCh          = make(chan taggedLogRecord, 512)
 		resetCh        = make(chan uint64, 8)
 	)
@@ -255,6 +511,9 @@ func (s *Server) handleSession(parentCtx context.Context, conn *ws.Conn) {
 		pCtx, pCancel := context.WithCancel(ctx)
 		producerCancel = pCancel
 		currentFilter = params
+		// C3: Reset credit and pause clock on every fresh OPEN/filter resubscription
+		credit = proto.InitialLogCredit
+		pausedSince = time.Time{}
 		mu.Unlock()
 
 		// Signal writer loop to discard stale records & droppedCount from old filter generation (G-H2)
@@ -271,7 +530,9 @@ func (s *Server) handleSession(parentCtx context.Context, conn *ws.Conn) {
 			}
 		}
 
+		producerWG.Add(1)
 		go func() {
+			defer producerWG.Done()
 			localOut := make(chan proto.LogRecord, 128)
 			done := make(chan struct{})
 			go func() {
@@ -304,6 +565,7 @@ func (s *Server) handleSession(parentCtx context.Context, conn *ws.Conn) {
 			producerCancel()
 		}
 		mu.Unlock()
+		producerWG.Wait()
 	}()
 
 	// Reader goroutine: processes OPEN, CREDIT, CLOSE, and PING frames from phone
@@ -377,6 +639,12 @@ func (s *Server) handleSession(parentCtx context.Context, conn *ws.Conn) {
 
 			case (ch == proto.ChLogs || ch == proto.ChControl) && op == proto.OpClose:
 				_ = conn.WriteCloseFrame(1000, "")
+				return
+
+			default:
+				// M2: Reject unknown channel/opcode frames explicitly instead of silently ignoring
+				_ = conn.WriteBinaryFrame(proto.EncodeErrFrame(proto.ChControl, proto.ErrInvalidFrame, fmt.Sprintf("unsupported frame ch=0x%02x op=0x%02x", ch, op)))
+				_ = conn.WriteCloseFrame(1002, "unsupported frame")
 				return
 			}
 		}
@@ -621,14 +889,28 @@ type journalEntry struct {
 	Message           journalField `json:"MESSAGE"`
 	Priority          journalField `json:"PRIORITY"`
 	SystemdUnit       journalField `json:"_SYSTEMD_UNIT"`
+	UnitField         journalField `json:"UNIT"`
+	PID               journalField `json:"_PID"`
 	SyslogIdentifier  journalField `json:"SYSLOG_IDENTIFIER"`
 	Transport         journalField `json:"_TRANSPORT"`
 	RealtimeTimestamp journalField `json:"__REALTIME_TIMESTAMP"`
 }
 
+func isWhitelistedSystemdTargetUnit(u string) bool {
+	switch strings.ToLower(strings.TrimSpace(u)) {
+	case "nexa-server.service", "pm2-nexa.service", "caddy.service",
+		"nexa-log.service", "nexa-log.socket",
+		"nexa-term.service", "nexa-term.socket":
+		return true
+	default:
+		return false
+	}
+}
+
 // buildJournalctlArgs builds explicit, `+`-disjoined journalctl match arguments strictly
-// scoped to the 4 whitelisted units (FR-LOG-02 / G-C7), with native `-p` priority filter
-// for ERRORS ONLY and deeper `-n` scan window when category filtering is active.
+// scoped to the 4 whitelisted units (FR-LOG-02 / G-C7 / H5), with `--no-pager`, native `-p`
+// priority filter for all severity levels < DEBUG, and PID 1 lifecycle events scoped ONLY to
+// N.E.X.A + Caddy units (eliminating sysstat-collect.service flood!).
 func buildJournalctlArgs(params proto.LogOpenParams) []string {
 	tailScan := int(params.TailLines)
 	if params.CatMask != 0 && tailScan > 0 {
@@ -643,9 +925,9 @@ func buildJournalctlArgs(params proto.LogOpenParams) []string {
 		}
 	}
 
-	args := []string{"-f", "-o", "json", "-n", strconv.Itoa(tailScan)}
-	if params.MinPrio > 0 && params.MinPrio <= proto.PrioError {
-		// Native RFC 5424 severity filter so ERRORS ONLY fetches historical errors directly
+	args := []string{"--no-pager", "-f", "-o", "json", "-n", strconv.Itoa(tailScan)}
+	if params.MinPrio > 0 && params.MinPrio < proto.PrioDebug {
+		// Native RFC 5424 severity filter for ERROR/WARN/INFO
 		args = append(args, "-p", strconv.Itoa(int(params.MinPrio)))
 	}
 
@@ -653,13 +935,19 @@ func buildJournalctlArgs(params proto.LogOpenParams) []string {
 
 	if (params.UnitMask & (1 << proto.UnitNexaServer)) != 0 {
 		clauses = append(clauses, []string{"_SYSTEMD_UNIT=nexa-server.service"})
+		clauses = append(clauses, []string{"_SYSTEMD_UNIT=pm2-nexa.service"})
 	}
 	if (params.UnitMask & (1 << proto.UnitCaddy)) != 0 {
 		clauses = append(clauses, []string{"_SYSTEMD_UNIT=caddy.service"})
 	}
 	if (params.UnitMask & (1 << proto.UnitSystemd)) != 0 {
+		// H5: Kernel logs + PID 1 lifecycle events STRICTLY for whitelisted N.E.X.A/Caddy units
 		clauses = append(clauses, []string{"_TRANSPORT=kernel"})
-		clauses = append(clauses, []string{"SYSLOG_IDENTIFIER=systemd"})
+		clauses = append(clauses, []string{"_PID=1", "UNIT=nexa-server.service"})
+		clauses = append(clauses, []string{"_PID=1", "UNIT=pm2-nexa.service"})
+		clauses = append(clauses, []string{"_PID=1", "UNIT=caddy.service"})
+		clauses = append(clauses, []string{"_PID=1", "UNIT=nexa-log.service"})
+		clauses = append(clauses, []string{"_PID=1", "UNIT=nexa-term.service"})
 	}
 	if (params.UnitMask & (1 << proto.UnitNexaIO)) != 0 {
 		clauses = append(clauses, []string{"_SYSTEMD_UNIT=nexa-log.service"})
@@ -681,13 +969,14 @@ func buildJournalctlArgs(params proto.LogOpenParams) []string {
 func (s *Server) defaultJournalAndPM2Producer(ctx context.Context, params proto.LogOpenParams, out chan<- proto.LogRecord) error {
 	var wg sync.WaitGroup
 
-	// 1. G-C2: If PM2 transition log files exist and nexa-server unit (bit 0) is enabled, tail BOTH out and err files
+	// 1. C4: Always spawn PM2 tailers when nexa-server unit (bit 0) is enabled;
+	// tailPM2File handles missing/delayed files and rotation gracefully without exiting.
 	if (params.UnitMask & (1 << proto.UnitNexaServer)) != 0 {
 		outPath := s.cfg.PM2OutLogPath
 		if outPath == "" {
 			outPath = DefaultPM2OutPath
 		}
-		if _, err := os.Stat(outPath); err == nil {
+		if outPath != "" && outPath != "-" {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -699,18 +988,16 @@ func (s *Server) defaultJournalAndPM2Producer(ctx context.Context, params proto.
 		if errPath == "" {
 			errPath = DefaultPM2ErrPath
 		}
-		if errPath != "" && errPath != outPath {
-			if _, err := os.Stat(errPath); err == nil {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					tailPM2File(ctx, errPath, proto.PrioError, params, out)
-				}()
-			}
+		if errPath != "" && errPath != "-" && errPath != outPath {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				tailPM2File(ctx, errPath, proto.PrioError, params, out)
+			}()
 		}
 	}
 
-	// 2. Spawn journalctl -f -o json for whitelisted systemd units (FR-LOG-02 / G-C7)
+	// 2. Spawn journalctl -f -o json for whitelisted systemd units (FR-LOG-02 / G-C7 / H5)
 	args := buildJournalctlArgs(params)
 	if len(args) > 0 {
 		cmd := exec.CommandContext(ctx, "journalctl", args...)
@@ -757,7 +1044,7 @@ func (s *Server) defaultJournalAndPM2Producer(ctx context.Context, params proto.
 }
 
 // readLineCapped reads one newline-delimited line from br, discarding trailing bytes beyond maxBytes
-// instead of failing permanently like bufio.Scanner.
+// instead of failing permanently like bufio.Scanner or exhausting memory like ReadString.
 func readLineCapped(br *bufio.Reader, maxBytes int) ([]byte, error) {
 	var out []byte
 	for {
@@ -777,6 +1064,30 @@ func readLineCapped(br *bufio.Reader, maxBytes int) ([]byte, error) {
 	}
 }
 
+// readLineCappedWithNewline reads up to '\n' (capped at maxBytes) and reports whether '\n' was seen.
+func readLineCappedWithNewline(br *bufio.Reader, maxBytes int) (line []byte, hasNewline bool, err error) {
+	for {
+		frag, readErr := br.ReadSlice('\n')
+		if len(frag) > 0 {
+			if frag[len(frag)-1] == '\n' {
+				hasNewline = true
+			}
+			if len(line) < maxBytes {
+				rem := maxBytes - len(line)
+				if len(frag) > rem {
+					line = append(line, frag[:rem]...)
+				} else {
+					line = append(line, frag...)
+				}
+			}
+		}
+		if errors.Is(readErr, bufio.ErrBufferFull) {
+			continue
+		}
+		return bytes.TrimRight(line, "\r\n"), hasNewline, readErr
+	}
+}
+
 func parseJournalJSONLine(line []byte) (proto.LogRecord, bool) {
 	var je journalEntry
 	if err := json.Unmarshal(line, &je); err != nil {
@@ -792,24 +1103,37 @@ func parseJournalJSONLine(line []byte) (proto.LogRecord, bool) {
 		prio = uint8(p)
 	}
 
-	// G-C7: Enforce strict FR-LOG-02 unit whitelist at parser layer as defense-in-depth
+	// H5 / G-C7: Check kernel-trusted _SYSTEMD_UNIT BEFORE user-spoofable SYSLOG_IDENTIFIER!
+	// This prevents `logger -t nexa-server` from inside nexa-term.service from forging nexa-server logs,
+	// and drops unrelated PID 1 lifecycle noise such as sysstat-collect.service.
 	unitName := strings.ToLower(strings.TrimSpace(string(je.SystemdUnit)))
+	targetUnit := strings.ToLower(strings.TrimSpace(string(je.UnitField)))
 	identName := strings.ToLower(strings.TrimSpace(string(je.SyslogIdentifier)))
 	transport := strings.ToLower(strings.TrimSpace(string(je.Transport)))
+	pidStr := strings.TrimSpace(string(je.PID))
 
 	var unitID uint8
 	switch {
-	case unitName == "nexa-server.service" || identName == "nexa-server":
+	case unitName == "nexa-server.service" || unitName == "pm2-nexa.service":
 		unitID = proto.UnitNexaServer
-	case unitName == "caddy.service" || identName == "caddy":
+	case unitName == "caddy.service":
 		unitID = proto.UnitCaddy
-	case unitName == "nexa-log.service" || unitName == "nexa-term.service" ||
-		identName == "nexa-log" || identName == "nexa-term" || identName == "nexa-io":
+	case unitName == "nexa-log.service" || unitName == "nexa-term.service":
 		unitID = proto.UnitNexaIO
-	case transport == "kernel" || identName == "systemd" || identName == "kernel":
+	case unitName == "init.scope":
+		if !isWhitelistedSystemdTargetUnit(targetUnit) {
+			return proto.LogRecord{}, false
+		}
+		unitID = proto.UnitSystemd
+	case unitName != "":
+		// Any other explicit systemd unit (sshd.service, sysstat-collect.service, cron.service, etc.)
+		// is strictly rejected even if SYSLOG_IDENTIFIER was spoofed.
+		return proto.LogRecord{}, false
+	case transport == "kernel":
+		unitID = proto.UnitSystemd
+	case (pidStr == "1" || identName == "systemd") && isWhitelistedSystemdTargetUnit(targetUnit):
 		unitID = proto.UnitSystemd
 	default:
-		// Reject non-whitelisted host units (e.g. sshd, sudo, cron)
 		return proto.LogRecord{}, false
 	}
 
@@ -838,7 +1162,7 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 		seekWindowBytes = 256 * 1024
 	}
 
-	openAndSeek := func(initialTail int) (*os.File, os.FileInfo, *bufio.Reader, []proto.LogRecord, string, error) {
+	openAndSeek := func(initialTail int, fromStart bool) (*os.File, os.FileInfo, *bufio.Reader, []proto.LogRecord, string, error) {
 		f, err := os.Open(filePath)
 		if err != nil {
 			return nil, nil, nil, nil, "", err
@@ -849,10 +1173,14 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 			return nil, nil, nil, nil, "", statErr
 		}
 
+		if fromStart {
+			return f, info, bufio.NewReaderSize(f, 32*1024), nil, "", nil
+		}
+
 		// G-M1: If tailLines == 0, start live tailing directly from EOF
 		if initialTail <= 0 {
 			_, _ = f.Seek(0, io.SeekEnd)
-			return f, info, bufio.NewReader(f), nil, "", nil
+			return f, info, bufio.NewReaderSize(f, 32*1024), nil, "", nil
 		}
 
 		seekedMidFile := false
@@ -860,19 +1188,19 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 			_, _ = f.Seek(info.Size()-seekWindowBytes, io.SeekStart)
 			seekedMidFile = true
 		}
-		reader := bufio.NewReader(f)
+		reader := bufio.NewReaderSize(f, 32*1024)
 		if seekedMidFile {
-			// G-M1: Discard truncated first partial line after mid-file seek
-			_, _ = reader.ReadString('\n')
+			// G-M1 / C4: Discard truncated first partial line safely with cap
+			_, _, _ = readLineCappedWithNewline(reader, maxPM2LineBytes)
 		}
 
 		var recent []proto.LogRecord
 		var partial string
 		for {
-			chunk, readErr := reader.ReadString('\n')
-			if len(chunk) > 0 {
-				if strings.HasSuffix(chunk, "\n") {
-					full := strings.TrimSpace(partial + chunk)
+			chunk, hasNL, readErr := readLineCappedWithNewline(reader, maxPM2LineBytes)
+			if len(chunk) > 0 || hasNL {
+				if hasNL {
+					full := strings.TrimSpace(partial + string(chunk))
 					partial = ""
 					if full != "" {
 						rec := parsePM2Line(full, defaultPrio)
@@ -883,8 +1211,13 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 							}
 						}
 					}
-				} else {
-					partial += chunk
+				} else if len(partial) < maxPM2LineBytes {
+					rem := maxPM2LineBytes - len(partial)
+					if len(chunk) > rem {
+						partial += string(chunk[:rem])
+					} else {
+						partial += string(chunk)
+					}
 				}
 			}
 			if errors.Is(readErr, io.EOF) {
@@ -898,9 +1231,54 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 		return f, info, reader, recent, partial, nil
 	}
 
-	f, curInfo, reader, recent, partial, err := openAndSeek(tailLines)
-	if err != nil {
-		return
+	drainLines := func(reader *bufio.Reader, partial *string, flushPartial bool) {
+		for {
+			chunk, hasNL, readErr := readLineCappedWithNewline(reader, maxPM2LineBytes)
+			if len(chunk) > 0 || hasNL {
+				if hasNL {
+					full := strings.TrimSpace(*partial + string(chunk))
+					*partial = ""
+					if full != "" {
+						emitPM2Line(ctx, full, defaultPrio, out)
+					}
+				} else if len(*partial) < maxPM2LineBytes {
+					rem := maxPM2LineBytes - len(*partial)
+					if len(chunk) > rem {
+						*partial += string(chunk[:rem])
+					} else {
+						*partial += string(chunk)
+					}
+				}
+			}
+			if readErr != nil {
+				break
+			}
+		}
+		if flushPartial && strings.TrimSpace(*partial) != "" {
+			emitPM2Line(ctx, strings.TrimSpace(*partial), defaultPrio, out)
+			*partial = ""
+		}
+	}
+
+	// C4: Wait cleanly if file does not exist yet instead of exiting immediately
+	var (
+		f       *os.File
+		curInfo os.FileInfo
+		reader  *bufio.Reader
+		recent  []proto.LogRecord
+		partial string
+		err     error
+	)
+	for {
+		f, curInfo, reader, recent, partial, err = openAndSeek(tailLines, false)
+		if err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 	defer func() {
 		if f != nil {
@@ -923,45 +1301,43 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// G-M1: Detect file rotation or truncation (logrotate / pm2-logrotate)
+			if f == nil {
+				// Retry opening after transient rotation error (C4)
+				nf, nInfo, nReader, _, _, openErr := openAndSeek(0, true)
+				if openErr != nil {
+					continue
+				}
+				f = nf
+				curInfo = nInfo
+				reader = nReader
+				partial = ""
+			}
+
+			// G-M1 / C4: Detect file rotation or truncation (logrotate / pm2-logrotate)
 			if newInfo, statErr := os.Stat(filePath); statErr == nil {
 				curPos, _ := f.Seek(0, io.SeekCurrent)
 				rotated := !os.SameFile(curInfo, newInfo)
 				truncated := newInfo.Size() < curPos
 				if rotated || truncated {
-					_ = f.Close()
-					nf, nInfo, nReader, _, _, openErr := openAndSeek(0)
-					if openErr != nil {
-						return
+					if rotated {
+						// Drain any last unread bytes from old inode before switching
+						drainLines(reader, &partial, true)
 					}
-					// For newly rotated/truncated file, seek to start so no new lines are missed
-					_, _ = nf.Seek(0, io.SeekStart)
+					_ = f.Close()
+					f = nil
+					nf, nInfo, nReader, _, _, openErr := openAndSeek(0, true)
+					if openErr != nil {
+						// Retry on next tick instead of abandoning tailer permanently
+						continue
+					}
 					f = nf
 					curInfo = nInfo
-					reader = bufio.NewReader(f)
-					_ = nReader
+					reader = nReader
 					partial = ""
 				}
 			}
 
-			for {
-				chunk, readErr := reader.ReadString('\n')
-				if len(chunk) > 0 {
-					if strings.HasSuffix(chunk, "\n") {
-						full := strings.TrimSpace(partial + chunk)
-						partial = ""
-						if full != "" {
-							emitPM2Line(ctx, full, defaultPrio, out)
-						}
-					} else {
-						// G-M1: Retain incomplete line until '\n' arrives
-						partial += chunk
-					}
-				}
-				if readErr != nil {
-					break
-				}
-			}
+			drainLines(reader, &partial, false)
 		}
 	}
 }

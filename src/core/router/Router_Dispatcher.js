@@ -542,9 +542,15 @@ async function routeUserMessage(textInput, runtimeHints = {}) {
     if (runtimeHints.deviceContext && typeof runtimeHints.deviceContext === 'object') {
       const dc = runtimeHints.deviceContext;
       const parts = [];
-      if (dc.battery !== undefined && dc.battery !== null) parts.push(`baterai=${dc.battery}%`);
-      if (dc.battery_level !== undefined && dc.battery_level !== null && parts.length === 0) parts.push(`baterai=${dc.battery_level}%`);
-      if (dc.is_charging !== undefined) parts.push(dc.is_charging ? 'charging' : 'on-battery');
+      const bat = dc.battery !== undefined && dc.battery !== null ? dc.battery : dc.battery_level;
+      if (bat !== undefined && bat !== null) parts.push(`baterai=${bat}%`);
+      const isCharging = dc.is_charging !== undefined
+        ? dc.is_charging
+        : (dc.charging !== undefined ? dc.charging : dc.battery_charging);
+      if (isCharging !== undefined && isCharging !== null) parts.push(isCharging ? 'charging' : 'on-battery');
+      const screenOn = dc.screen_on !== undefined ? dc.screen_on : dc.is_screen_on;
+      if (typeof screenOn === 'boolean') parts.push(screenOn ? 'layar=nyala' : 'layar=mati');
+      if (dc.motion_state) parts.push(`gerak=${dc.motion_state}`);
       if (dc.geofence || dc.location_zone) parts.push(`zona=${dc.geofence || dc.location_zone}`);
       if (dc.current_app || dc.foreground_app) parts.push(`app=${dc.current_app || dc.foreground_app}`);
       if (dc.network_type) parts.push(`jaringan=${dc.network_type}`);

@@ -327,8 +327,9 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
 /**
  * Updates a pending transaction with new details (description/category/nominal/account/paymentMethod).
  */
-async function updatePendingTransaction(newDescription = null, newCategory = null, newNominal = null, newAccount = null, newPaymentMethod = null, targetKey = null, newDate = null, newTime = null) {
+async function updatePendingTransaction(newDescription = null, newCategory = null, newNominal = null, newAccount = null, newPaymentMethod = null, targetKey = null, newDate = null, newTime = null, options = {}) {
   if (pendingConfirmations.size === 0) return null;
+  const allowTransferEscalation = options.allowTransferEscalation !== false;
 
   // Targeted resolution: if a specific key was resolved from the user's Reply,
   // update only that transaction. Otherwise fall back to the first one (legacy).
@@ -359,7 +360,7 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
         pending.tx.type = 'INCOME';
       }
       pending.tx.description = newDescription.replace(/\bbukan\s+(?:transfer|pindahan|tf)[,\s]*/i, '').trim() || (pending.tx.type === 'EXPENSE' ? 'Pengeluaran' : 'Pemasukan');
-    } else {
+    } else if (allowTransferEscalation) {
       // Mendukung variasi: "itu transfer dari dana", "tf dari dana", "dari dana", "pindahan dari gopay", "saldo dari dana", "tf dana"
       const transferMatch = (newDescription || '').match(/(?:(?:transfer|tf|pindahan|pindah|kirim(?:an)?|saldo)\s+)?(?:dari|dr)\s+([a-z0-9\s]+)/i) ||
                             (newDescription || '').match(/(?:transfer|tf|pindahan|pindah)\s+([a-z0-9\s]+)/i);
@@ -381,8 +382,8 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
       }
     }
 
-    // Cek perubahan biaya admin pada pending transfer / pengeluaran
-    if (pending.tx.isSelfTransfer || (pending.tx.type || '').toUpperCase() === 'EXPENSE') {
+    // Cek perubahan biaya admin pada pending transfer / pengeluaran (F-01: blocked on mobile when !allowTransferEscalation)
+    if (allowTransferEscalation && (pending.tx.isSelfTransfer || (pending.tx.type || '').toUpperCase() === 'EXPENSE')) {
       const adminMatch = (newDescription || '').match(/(?:biaya\s*admin(?:nya)?|biaya\s*transfer|admin(?:nya)?|biaya|adm|fee)\s*(?:sebesar|sejumlah|rp\.?)?\s*([0-9][0-9\.\,]*\s*(?:k|rb|ribu)?)/i);
       const noAdminMatch = /\b(?:tanpa\s*admin|bebas\s*admin|free\s*admin|admin(?:nya)?\s*0|gratis\s*admin)\b/i.test(newDescription || '');
 
@@ -1002,11 +1003,29 @@ async function getPendingConfirmationsContext() {
   }
 }
 
+/**
+ * Returns true if any currently pending confirmation is a transfer/bill requiring biometric Step-Up (F-03).
+ * @returns {boolean}
+ */
+function hasPendingTransferConfirmation() {
+  for (const entry of pendingConfirmations.values()) {
+    const tx = entry && entry.tx;
+    if (!tx) continue;
+    const tType = String(tx.type || '').toUpperCase();
+    const pm = _normalizePaymentMethod(tx.payment_method || '');
+    if (tx.isSelfTransfer || tType === 'TRANSFER' || pm === 'Transfer bank') {
+      return true;
+    }
+  }
+  return false;
+}
+
 module.exports = {
   recoverPendingTransactions,
   _resolveTargetKeyFromSnippet,
   confirmPendingTransactions,
   updatePendingTransaction,
+  hasPendingTransferConfirmation,
   _buildConfirmationMessage,
   _autoSavePending,
   requestTransactionConfirmation,

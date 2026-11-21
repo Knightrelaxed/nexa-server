@@ -14,9 +14,25 @@ const USER_AGENT_HEADER = {
   'User-Agent': `${USER_AGENT} (Personal AI Assistant; admin@nexa-assistant.local)`
 };
 
-// ── In-Memory Spatial Cache (30-Minute TTL) ───────────────────
+// ── In-Memory Spatial Cache (30-Minute TTL, bounded max 300 entries, L-04) ──
 const _spatialCache = new Map();
 const SPATIAL_CACHE_TTL_MS = 30 * 60 * 1000;
+const SPATIAL_CACHE_MAX_ENTRIES = 300;
+
+function setSpatialCache(key, data) {
+  const now = Date.now();
+  if (_spatialCache.size >= SPATIAL_CACHE_MAX_ENTRIES && !_spatialCache.has(key)) {
+    for (const [k, v] of _spatialCache.entries()) {
+      if ((now - v.timestamp) >= SPATIAL_CACHE_TTL_MS) _spatialCache.delete(k);
+    }
+    while (_spatialCache.size >= SPATIAL_CACHE_MAX_ENTRIES) {
+      const oldest = _spatialCache.keys().next().value;
+      if (oldest === undefined) break;
+      _spatialCache.delete(oldest);
+    }
+  }
+  _spatialCache.set(key, { timestamp: now, data });
+}
 
 /**
  * Hitung jarak garis lurus (Haversine formula) antara 2 koordinat (dalam Meter)
@@ -130,7 +146,7 @@ async function searchSerperGoogleMaps(query, lat, lon, opts = {}) {
       results.sort((a, b) => a.distanceMeters - b.distanceMeters);
     }
 
-    _spatialCache.set(cacheKey, { timestamp: Date.now(), data: results });
+    setSpatialCache(cacheKey, results);
     return results.slice(0, limit);
   } catch (err) {
     console.warn('[LOCATION-ENGINE] Serper Google Maps search error:', err.message);

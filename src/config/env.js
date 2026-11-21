@@ -114,6 +114,7 @@ module.exports = {
   // ============================================================
   NEXA_DEVICE_SECRET: process.env.NEXA_DEVICE_SECRET,
   NEXA_BRIDGE_SECRET: process.env.NEXA_BRIDGE_SECRET,
+  NEXA_HMAC_SECRET: process.env.NEXA_HMAC_SECRET || '',
   NEXA_GODMODE_SECRET: process.env.NEXA_GODMODE_SECRET,
   GMAIL_WEBHOOK_SECRET: process.env.GMAIL_WEBHOOK_SECRET || process.env.NEXA_GODMODE_SECRET,
   NEXA_CLI_SECRET: process.env.NEXA_CLI_SECRET, // Strict CLI isolation (No Fallback)
@@ -131,9 +132,16 @@ module.exports = {
   NEXA_TICKET_PUB_PATH: process.env.NEXA_TICKET_PUB_PATH ||
     (credentialsDir ? path.join(credentialsDir, 'ticket-pub.pem') : '/etc/nexa/ticket-pub.pem'),
   NEXA_ENROLLED_DEVICES_PATH: process.env.NEXA_ENROLLED_DEVICES_PATH || '/etc/nexa/enrolled_devices.json',
+  NEXA_FINANCE_WHITELIST_PATH: process.env.NEXA_FINANCE_WHITELIST_PATH || '/etc/nexa/finance_whitelist.json',
+  NEXA_FINANCE_DAILY_USAGE_PATH: process.env.NEXA_FINANCE_DAILY_USAGE_PATH || '/etc/nexa/finance_daily_usage.json',
   NEXA_TERM_ENABLED: ['true', '1', 'yes'].includes(
     String(process.env.NEXA_TERM_ENABLED || process.env.NEXA_TERMINAL_ENABLED || 'false').trim().toLowerCase()
   ),
   NEXA_TERM_KILL_SWITCH_FILE: process.env.NEXA_TERM_KILL_SWITCH_FILE || '/opt/nexa/etc/terminal.enabled',
-  NEXA_WS_WATCHDOG_MS: Number(process.env.NEXA_WS_WATCHDOG_MS || 60000),
+  NEXA_WS_WATCHDOG_MS: (() => {
+    const raw = process.env.NEXA_WS_WATCHDOG_MS;
+    if (raw === undefined || String(raw).trim() === '') return 60000;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 15000 ? parsed : 60000;
+  })(),
 };

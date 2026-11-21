@@ -20,9 +20,53 @@ class PresenceModel {
     this.light = null; // { condition: string, lux: number|null, at: number }
     this.isScreenOn = null;
     this.batteryLevel = null;
+    this.isCharging = null;
+    this.networkType = null;
     this.lastPickupAt = null;
     this.lastEvent = null;
     this.lastEventAt = null;
+  }
+
+  /**
+   * Update real-time device telemetry from Mobile Bridge TELEMETRY_REPORT / CHAT_SEND device_context (R-01 / R-02).
+   * @param {object} telemetry
+   */
+  updateFromMobileTelemetry(telemetry = {}) {
+    if (!telemetry || typeof telemetry !== 'object') return;
+    const now = Date.now();
+    const rawBat = telemetry.battery_level !== undefined ? telemetry.battery_level : telemetry.battery;
+    if (rawBat !== undefined && rawBat !== null && Number.isFinite(Number(rawBat))) {
+      this.batteryLevel = Math.max(0, Math.min(100, Math.round(Number(rawBat))));
+    }
+    const rawCharging = telemetry.is_charging !== undefined
+      ? telemetry.is_charging
+      : (telemetry.charging !== undefined ? telemetry.charging : telemetry.battery_charging);
+    if (typeof rawCharging === 'boolean') {
+      this.isCharging = rawCharging;
+    }
+    const rawScreen = telemetry.screen_on !== undefined
+      ? telemetry.screen_on
+      : (telemetry.is_screen_on !== undefined ? telemetry.is_screen_on : telemetry.screenOn);
+    if (typeof rawScreen === 'boolean') {
+      this.isScreenOn = rawScreen;
+    }
+    if (typeof telemetry.network_type === 'string' && telemetry.network_type.trim()) {
+      this.networkType = telemetry.network_type.trim();
+    }
+    if (typeof telemetry.motion_state === 'string' && telemetry.motion_state.trim()) {
+      const m = telemetry.motion_state.toUpperCase();
+      if (m.includes('MOVING') || m.includes('WALK') || m.includes('DRIVE')) {
+        this.activity = 'Bergerak';
+        this.activityAt = now;
+      } else if (m.includes('STILL') || m.includes('STATIONARY')) {
+        this.activity = 'Diam / Istirahat';
+        this.activityAt = now;
+      }
+    }
+    if (typeof telemetry.geofence === 'string' && telemetry.geofence.trim()) {
+      this.place = telemetry.geofence.trim();
+      this.placeAt = now;
+    }
   }
 
   updateFromContextEvent(event, report = {}) {
