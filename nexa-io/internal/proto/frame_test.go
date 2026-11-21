@@ -161,4 +161,18 @@ func TestOpenAndCreditPayloadsAndFilterMatching(t *testing.T) {
 	if !MatchesFilter(synthRec, open) {
 		t.Fatal("expected synthetic overflow record to always pass filter")
 	}
+
+	// Opsi A: CORE category (0x08) and composite CORE group (CatCore|CatFinance = 0x09)
+	coreCat, coreClean := ParseCategoryPrefix("<6>[cat=CORE] [ROUTER] Intent CALENDAR dispatched")
+	if coreCat != CatCore || coreClean != "[ROUTER] Intent CALENDAR dispatched" {
+		t.Fatalf("unexpected CORE parse: cat=0x%02x msg=%q", coreCat, coreClean)
+	}
+	coreGroupFilter := LogOpenParams{UnitMask: 0x0F, MinPrio: PrioDebug, CatMask: CatCore | CatFinance}
+	coreRec := LogRecord{Prio: PrioInfo, UnitID: UnitNexaServer, CatFlags: CatCore}
+	if !MatchesFilter(coreRec, coreGroupFilter) || !MatchesFilter(finRec, coreGroupFilter) {
+		t.Fatal("expected CORE group filter (0x09) to match both CatCore and CatFinance")
+	}
+	if MatchesFilter(bridgeRec, coreGroupFilter) {
+		t.Fatal("expected BRIDGE record to be rejected by CORE group filter")
+	}
 }

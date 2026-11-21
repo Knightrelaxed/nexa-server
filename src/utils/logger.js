@@ -31,9 +31,9 @@ const SYSLOG_PRIORITY = {
   DEBUG: 7
 };
 
-const EXPLICIT_CAT_RE = /^\[cat=(FINANCE|BRIDGE|AUTH)\]\s*/i;
-const MULTI_EXPLICIT_CAT_RE = /^\s*(?:\[cat=(FINANCE|BRIDGE|AUTH)\]\s*)+/i;
-const VALID_CATEGORIES = new Set(['FINANCE', 'BRIDGE', 'AUTH']);
+const EXPLICIT_CAT_RE = /^\[cat=(FINANCE|BRIDGE|AUTH|CORE)\]\s*/i;
+const MULTI_EXPLICIT_CAT_RE = /^\s*(?:\[cat=(FINANCE|BRIDGE|AUTH|CORE)\]\s*)+/i;
+const VALID_CATEGORIES = new Set(['FINANCE', 'BRIDGE', 'AUTH', 'CORE']);
 
 /**
  * Sanitize untrusted identifiers (device_id, IP, action_id, reason) before writing
@@ -81,6 +81,21 @@ const BRIDGE_PATTERNS = [
   /\[WS[_-]GATEWAY[^\]]*\]/i,
   /\[LIVE[_-]VOICE[^\]]*\]/i,
   /\[LIVE[_-]TOOL[^\]]*\]/i
+];
+
+const CORE_PATTERNS = [
+  /\[(?:AI[_-])?ROUTER[^\]]*\]/i,
+  /\[FALLBACK[^\]]*\]/i,
+  /\[VOICE(?:[_-](?:MOBILE|BRIDGE|W0))?[^\]]*\]/i,
+  /\[SACR[^\]]*\]/i,
+  /\[VECTOR[_-]CACHE[^\]]*\]/i,
+  /\[(?:GOOGLE[_-]?)?(?:WORKSPACE|CALENDAR|AGENDA|GMAIL|EMAIL|DOCS|SHEETS?|SLIDES?|DRIVE|TASKS?)[^\]]*\]/i,
+  /\[(?:LOCATION|SPATIAL|GEOFENCE)[^\]]*\]/i,
+  /\[(?:APP[_-])?DISCIPLINE[^\]]*\]/i,
+  /\[(?:VAULT|2ND[_-]?BRAIN|PLAYBOOK|NOTIFIER|MEMOR(?:Y|IES)|EPHEMERAL|FOLLOW[_-]UP)[^\]]*\]/i,
+  /\[TELEGRAM[^\]]*\]/i,
+  /\[WEB[_-]?SEARCH[^\]]*\]/i,
+  /\[(?:MOBILE[_-]?CHAT|CHAT[_-]?HANDLER)[^\]]*\]/i
 ];
 
 /**
@@ -219,10 +234,16 @@ function detectCategories(message) {
       break;
     }
   }
+  for (const re of CORE_PATTERNS) {
+    if (re.test(rest)) {
+      found.add('CORE');
+      break;
+    }
+  }
 
-  // Canonical order: FINANCE, BRIDGE, AUTH
+  // Canonical order: FINANCE, BRIDGE, AUTH, CORE
   const ordered = [];
-  for (const name of ['FINANCE', 'BRIDGE', 'AUTH']) {
+  for (const name of ['FINANCE', 'BRIDGE', 'AUTH', 'CORE']) {
     if (found.has(name)) ordered.push(name);
   }
   return ordered;

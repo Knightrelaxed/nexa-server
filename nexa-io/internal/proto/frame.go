@@ -68,6 +68,7 @@ const (
 	CatFinance   uint8 = 0x01
 	CatBridge    uint8 = 0x02
 	CatAuth      uint8 = 0x04
+	CatCore      uint8 = 0x08
 	CatSynthetic uint8 = 0x80
 
 	// Limits (PRD §10.1, §10.3)
@@ -308,6 +309,8 @@ func ParseSyslogPriorityAndCategory(raw string) (uint8, bool, uint8, string) {
 			flags |= CatBridge
 		case "AUTH":
 			flags |= CatAuth
+		case "CORE":
+			flags |= CatCore
 		default:
 			// Ignore unrecognized/forged category tags like [cat=SYNTHETIC]
 			return prio, hasPrio, flags, trimmed

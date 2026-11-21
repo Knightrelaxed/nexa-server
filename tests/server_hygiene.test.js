@@ -139,4 +139,13 @@ test('log filtering coverage: budget/dedup/step-up carry FINANCE, live-tool carr
   // WARN line under PM2 with NEXA_SYSLOG_PREFIX=1 preserves <4> priority distinct from <3> ERROR
   const formattedWarn = formatLine('WARN', '[FINANCE] Recovery resend failed', { useSyslogPrefix: true });
   assert.equal(formattedWarn.outputLine, '<4>[cat=FINANCE] [FINANCE] Recovery resend failed');
+
+  // Opsi A: AI Router, Fallback, Workspace (Gmail/Calendar/Docs/Tasks), Location, Discipline, Voice STT carry CORE
+  assert.equal(detectCategory('[ROUTER] Intent=CALENDAR confidence=0.98'), 'CORE');
+  assert.equal(detectCategory('[FALLBACK] Tier 1 (Gemini) failed: 503'), 'CORE');
+  assert.equal(detectCategory('[GMAIL] Fetched 3 unread messages'), 'CORE');
+  assert.equal(detectCategory('[GOOGLE_WORKSPACE] Updated Docs file'), 'CORE');
+  assert.equal(detectCategory('[APP-DISCIPLINE] Daily limit check ok'), 'CORE');
+  assert.equal(detectCategory('[VOICE-MOBILE] Groq Whisper Key 1 SUCCESS'), 'CORE');
+  assert.equal(detectCategory('[LOCATION] Geofence kampus entered'), 'CORE');
 });
