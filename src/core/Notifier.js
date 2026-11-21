@@ -45,7 +45,13 @@ function createNotifier({ store, send, policy = {}, now = () => new Date() }) {
   async function _deliver(n, extra = {}) {
     const id = await store.record({ ...n, status: 'SENT', sentAt: now().toISOString(), ...extra });
     try {
-      await send(n.text, { id, kind: n.kind, priority: n.priority });
+      await send(n.text, {
+        id,
+        kind: n.kind,
+        priority: n.priority,
+        card: n.card || null,
+        telegramFallbackFn: typeof n.telegramFallbackFn === 'function' ? n.telegramFallbackFn : null
+      });
       return { status: 'SENT', id };
     } catch (err) {
       await store.setStatus(id, 'FAILED', String(err && err.message || err));
@@ -244,7 +250,7 @@ function createSupabaseStore(sb) {
 
 function createResilientStore(sb) {
   const mem = createMemoryStore();
-  if (!sb) return mem;
+  if (!sb || typeof sb.from !== 'function') return mem;
   const db = createSupabaseStore(sb);
   let tableMissingUntil = 0;
 
@@ -300,6 +306,13 @@ function getNotifier() {
         let mobileStatus = null;
         let mobileId = '';
 
+        const sendTelegramFallback = () => {
+          if (typeof meta.telegramFallbackFn === 'function') {
+            return meta.telegramFallbackFn();
+          }
+          return sendTelegramOutbound(text, false);
+        };
+
         try {
           const mobileClient = require('../interfaces/bridge/mobile_bridge/client');
           const { stripHtmlForMobile } = require('../interfaces/bridge/mobile_bridge/chat_handler');
@@ -308,14 +321,15 @@ function getNotifier() {
             text: plainText,
             kind: meta.kind || 'PROACTIVE',
             priority: meta.priority || 'P1',
-            clientMsgId: meta.id ? `proactive_${meta.id}` : ''
+            clientMsgId: meta.id ? `proactive_${meta.id}` : '',
+            card: meta.card || null
           });
           mobileStatus = res && res.status;
           mobileId = (res && res.id) || '';
         } catch (_) {}
 
         // Legacy / transition mode: always mirror to Telegram too
-        if (mode === 'both') return sendTelegramOutbound(text, false);
+        if (mode === 'both') return sendTelegramFallback();
 
         // mobile_primary: delivered straight to the phone -> no Telegram duplicate
         if (mobileStatus === 'SENT') return { channel: 'mobile' };
@@ -324,7 +338,7 @@ function getNotifier() {
         if (mobileStatus === 'QUEUED') {
           if (isUrgent) {
             // P0 must never wait: also alert via Telegram right now
-            return sendTelegramOutbound(text, false);
+            return sendTelegramFallback();
           }
           const delayMs = Math.max(1, Number(envCfg.NEXA_PROACTIVE_TELEGRAM_FALLBACK_MIN) || 5) * 60_000;
           const timer = setTimeout(() => {
@@ -333,7 +347,7 @@ function getNotifier() {
               // Still undelivered after the grace window -> Telegram fallback and drop from catch-up queue
               if (mobileClient.isProactivePending(mobileId)) {
                 mobileClient.dropPendingProactive(mobileId);
-                Promise.resolve(sendTelegramOutbound(text, false)).catch(() => {});
+                Promise.resolve(sendTelegramFallback()).catch(() => {});
               }
             } catch (_) {}
           }, delayMs);
@@ -342,7 +356,7 @@ function getNotifier() {
         }
 
         // Mobile path unavailable/failed (e.g. empty text, module error): keep Telegram as safety net
-        return sendTelegramOutbound(text, false);
+        return sendTelegramFallback();
       };
     } catch (_) {
       sendFn = async () => {};
@@ -367,7 +381,9 @@ async function notifyProactive({
   expiresAt = null,
   isScheduled = false,
   timeSensitive = false,
-  bypassQuietHours = false
+  bypassQuietHours = false,
+  card = null,
+  telegramFallbackFn = null
 }) {
   if (!text) return null;
   const notifier = getNotifier();
@@ -379,7 +395,9 @@ async function notifyProactive({
     expiresAt,
     isScheduled,
     timeSensitive,
-    bypassQuietHours
+    bypassQuietHours,
+    card,
+    telegramFallbackFn
   });
 }
 

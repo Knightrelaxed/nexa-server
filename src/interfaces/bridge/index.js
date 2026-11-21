@@ -8,6 +8,7 @@ const gateway = require('./gateway');
 const mobileClient = require('./mobile_bridge/client');
 const mobileAdapter = require('./mobile_bridge/adapter');
 const mobileChatHandler = require('./mobile_bridge/chat_handler');
+const mobileCardHandler = require('./mobile_bridge/card_handler');
 const windowsClient = require('./windows_bridge/client');
 const windowsAdapter = require('./windows_bridge/adapter');
 
@@ -21,7 +22,8 @@ module.exports = {
   mobile: {
     client: mobileClient,
     adapter: mobileAdapter,
-    chatHandler: mobileChatHandler
+    chatHandler: mobileChatHandler,
+    cardHandler: mobileCardHandler
   },
   windows: {
     client: windowsClient,
@@ -32,6 +34,7 @@ module.exports = {
   mobileClient,
   mobileAdapter,
   mobileChatHandler,
+  mobileCardHandler,
   windowsClient,
   windowsAdapter,
 

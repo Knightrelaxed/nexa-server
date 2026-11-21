@@ -244,15 +244,32 @@ async function triggerGodMode(level = 1, metadata = {}) {
 
   console.log(`[GODMODE ENGINE] Plan Ready: Level ${level} (${plan.levelName}) for app "${metadata.violation_app || 'Unknown'}"`);
 
-  // Kirim notifikasi / audit log ke Telegram
-  if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-    try {
-      const { sendTelegramOutbound } = require('../interfaces/webhook');
-      await sendTelegramOutbound(plan.telegramMessage);
-      console.log(`[GODMODE AUDIT] Telegram notification sent successfully.`);
-    } catch (telegramErr) {
-      console.error('[GODMODE AUDIT] Failed to send God Mode audit to Telegram:', telegramErr.message);
+  // Kirim notifikasi / audit log via Notifier (mobile-primary + Level 2 Interactive Card)
+  try {
+    const { notifyProactive } = require('../core/Notifier');
+    let card = null;
+    if (Number(level) === 2 && metadata.session_key) {
+      const { buildDisciplineCheckCard } = require('../interfaces/bridge/mobile_bridge/card_handler');
+      card = buildDisciplineCheckCard({
+        sessionKey: metadata.session_key,
+        appName: metadata.violation_app || 'App',
+        messageTone: metadata.message_tone || 'firm',
+        usedCount: Number(metadata.ten_min_used_count) || 0,
+        expiresAtMs: metadata.callback_expires_at ? new Date(metadata.callback_expires_at).getTime() : 0
+      });
     }
+    await notifyProactive({
+      kind: 'discipline_alert',
+      priority: 'P0',
+      timeSensitive: true,
+      bypassQuietHours: true,
+      dedupeKey: metadata.session_key ? `disc:${metadata.session_key}:L${level}` : null,
+      text: plan.telegramMessage,
+      card
+    });
+    console.log(`[GODMODE AUDIT] Discipline notification dispatched via Notifier (L${level}).`);
+  } catch (notifyErr) {
+    console.error('[GODMODE AUDIT] Failed to send God Mode audit via Notifier:', notifyErr.message);
   }
 
   // Kirim perintah fisik ke Nexa Bridge Android App jika terhubung

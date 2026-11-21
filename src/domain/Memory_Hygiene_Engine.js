@@ -234,20 +234,58 @@ async function reportStagedForPruning(sendTelegramFn, stats = {}) {
   if (totalAutoArchived > 0) msg += `📦 Diarsipkan otomatis: <b>${totalAutoArchived}</b> fakta kadaluarsa\n`;
   if (stats.merged > 0) msg += `🧩 Kontradiksi di-merge: <b>${stats.merged}</b> pasang\n`;
   if (msg.includes('📦') || msg.includes('🧩')) msg += '\n';
+  const { notifyProactive } = require('../core/Notifier');
+  const weekKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+
   if (totalStaged === 0) {
     msg += `✅ Tidak ada fakta yang perlu dikonfirmasi.\n\nMemori N.E.X.A <b>100% bersih</b> minggu ini!`;
-    try { await sendTelegramFn(msg, true); } catch (_) {}
+    try {
+      await notifyProactive({
+        kind: 'SCHEDULED_MEMORY_HYGIENE',
+        priority: 'P1',
+        isScheduled: true,
+        bypassQuietHours: true,
+        dedupeKey: `hygiene_clean:${weekKey}`,
+        text: msg
+      });
+    } catch (_) {}
     return;
   }
-  msg += `⚠️ <b>${totalStaged} Fakta Memudar — Perlu Konfirmasi Tuan:</b>\n<i>(Lama tidak dibicarakan, mungkin sudah tidak relevan)</i>\n\n${stagedLines}\n\n<i>Apakah fakta-fakta ini masih relevan?</i>`;
-  const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
-  const chatId = env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) { console.warn('[HYGIENE] Step 4: Telegram not configured.'); return; }
-  try {
+  msg += `⚠️ <b>${totalStaged} Fakta Memudar: Perlu Konfirmasi Tuan</b>\n<i>(Lama tidak dibicarakan, mungkin sudah tidak relevan)</i>\n\n${stagedLines}\n\n<i>Apakah fakta-fakta ini masih relevan?</i>`;
+
+  const { buildMemoryHygieneCard } = require('../interfaces/bridge/mobile_bridge/card_handler');
+  const card = buildMemoryHygieneCard(allStaged, stats);
+  const telegramFallbackFn = async () => {
+    const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
+    const chatId = env.TELEGRAM_CHAT_ID;
+    if (!botToken || !chatId) return;
     const axios = require('axios');
-    await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, { chat_id: chatId, text: msg, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '✅ Arsipkan Semua', callback_data: 'HYGIENE_ARCHIVE_ALL' }, { text: '❌ Tahan Semua', callback_data: 'HYGIENE_HOLD_ALL' }], [{ text: '🔍 Pilih Manual', callback_data: 'HYGIENE_SELECT_MANUAL' }]] } });
-    console.log('[HYGIENE] Step 4 Review card sent to Telegram.');
-  } catch (err) { console.error('[HYGIENE] Step 4 Telegram error:', err.message); }
+    await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      chat_id: chatId,
+      text: msg,
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '✅ Arsipkan Semua', callback_data: 'HYGIENE_ARCHIVE_ALL' }, { text: '❌ Tahan Semua', callback_data: 'HYGIENE_HOLD_ALL' }],
+          [{ text: '🔍 Pilih Manual', callback_data: 'HYGIENE_SELECT_MANUAL' }]
+        ]
+      }
+    });
+  };
+
+  try {
+    await notifyProactive({
+      kind: 'SCHEDULED_MEMORY_HYGIENE',
+      priority: 'P1',
+      isScheduled: true,
+      bypassQuietHours: true,
+      dedupeKey: `hygiene_review:${weekKey}`,
+      text: msg,
+      card,
+      telegramFallbackFn
+    });
+    console.log('[HYGIENE] Step 4 Review card dispatched via Notifier (mobile-primary).');
+  } catch (err) { console.error('[HYGIENE] Step 4 Notifier error:', err.message); }
 }
 
 // ORCHESTRATOR

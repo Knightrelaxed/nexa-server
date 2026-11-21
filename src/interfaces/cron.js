@@ -147,6 +147,7 @@ function initCronJobs() {
             console.log(`[CRON] ✅ Recurring Bills Detection done: ${upserted} rules updated.`);
             if (candidates && candidates.length > 0) {
               const { sendTelegramWithKeyboard } = require('./telegram/actions');
+              const { buildRecurringBillCard } = require('./bridge/mobile_bridge/card_handler');
               for (const c of candidates) {
                 const formattedNominal = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(c.amount_median);
                 const msgText = `🔄 <b>Deteksi Pengeluaran Rutin Baru</b>\n\n` +
@@ -162,8 +163,18 @@ function initCronJobs() {
                     { text: '❌ Tolak', callback_data: `REC_NO:${c.id}` }
                   ]]
                 };
-                await sendTelegramWithKeyboard(msgText, replyMarkup).catch(kErr => {
-                  console.warn('[CRON] Failed sending recurring keyboard prompt:', kErr.message);
+                const card = buildRecurringBillCard(c);
+                await notifyProactive({
+                  kind: 'SCHEDULED_RECURRING_BILL',
+                  priority: 'P1',
+                  isScheduled: true,
+                  bypassQuietHours: true,
+                  dedupeKey: `rec_bill:${c.id}`,
+                  text: msgText,
+                  card,
+                  telegramFallbackFn: () => sendTelegramWithKeyboard(msgText, replyMarkup)
+                }).catch(kErr => {
+                  console.warn('[CRON] Failed sending recurring bill prompt:', kErr.message);
                 });
               }
             }
@@ -574,14 +585,22 @@ function initCronJobs() {
             console.log(`[WATCHDOG] Tx ${compositeKey} expired (${Math.round(ageMs/60000)}m old). Auto-saving...`);
             await financeEngine.autoSaveFromWatchdog(compositeKey, tx);
           } else if (!row.telegram_sent && ageMs >= 60 * 1000) {
-            // Not yet sent to Telegram AND grace period elapsed (>= 60s) to prevent race condition with primary sender — rescue resend
+            // Not yet sent AND grace period elapsed (>= 60s) to prevent race condition with primary sender: rescue resend
             const msg = await financeEngine.buildConfirmationMessage(tx, 'SINKRONISASI KEUANGAN TERBARU');
+            const { buildFinanceTxCard } = require('./bridge/mobile_bridge/card_handler');
+            const supabaseFinance = require('../infrastructure/Supabase_Finance');
+            let categories = [];
+            try { categories = await supabaseFinance.getCategoriesList(); } catch (_) {}
+            const expiresAtMs = new Date(row.created_at).getTime() + 5 * 60 * 1000;
+            const card = buildFinanceTxCard(tx, compositeKey, { categories, expiresAtMs });
             await notifyProactive({
               kind: 'pending_transaction_alert',
               priority: 'P0',
               timeSensitive: true,
+              bypassQuietHours: true,
               dedupeKey: `watchdog:${compositeKey}`,
-              text: msg
+              text: msg,
+              card
             });
             await supabase.markPendingTransactionSent(compositeKey);
             console.log(`[WATCHDOG] ✅ Alert resent successfully for: ${compositeKey}`);

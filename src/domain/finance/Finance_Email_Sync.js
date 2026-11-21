@@ -317,8 +317,14 @@ async function pollFinanceEmails() {
           const nominalFmt = `Rp${nominal.toLocaleString('id-ID')}`;
           const accountSuffix = account === 'Bank Jago' ? ' (Bank Jago)' : '';
           const failedMsg = `⚠️ <b>TRANSFER GAGAL${accountSuffix}</b>\n\nTujuan: ${destination}\nNominal: ${nominalFmt}\n\n<i>N.E.X.A mengabaikan transaksi ini dan tidak mencatatnya ke dalam catatan keuangan Anda.</i>`;
-          const { sendTelegramMessage } = require('../../utils/telegram_network');
-          await sendTelegramMessage(failedMsg, env.TELEGRAM_CHAT_ID, env.TELEGRAM_BOT_TOKEN);
+          const { notifyProactive } = require('../../core/Notifier');
+          await notifyProactive({
+            kind: 'finance_failed_transfer',
+            priority: 'P1',
+            bypassQuietHours: true,
+            dedupeKey: `fin_fail:${compositeKey}`,
+            text: failedMsg
+          });
         } catch (_sendErr) {
           console.warn('[FINANCE] Failed transfer alert could not be sent:', _sendErr.message);
         }
@@ -391,8 +397,23 @@ async function pollFinanceEmails() {
       try {
         const msg = await requestTransactionConfirmation(tx, confirmationLabel, compositeKey);
         if (msg) {
-          const { sendTelegramMessage } = require('../../utils/telegram_network');
-          await sendTelegramMessage(msg, env.TELEGRAM_CHAT_ID, env.TELEGRAM_BOT_TOKEN);
+          const { notifyProactive } = require('../../core/Notifier');
+          const { buildFinanceTxCard } = require('../../interfaces/bridge/mobile_bridge/card_handler');
+          let categories = [];
+          try { categories = await supabaseFinance.getCategoriesList(); } catch (_) {}
+          const card = buildFinanceTxCard(tx, compositeKey, {
+            categories,
+            expiresAtMs: Date.now() + 5 * 60 * 1000
+          });
+          await notifyProactive({
+            kind: 'finance_tx_confirm',
+            priority: 'P0',
+            timeSensitive: true,
+            bypassQuietHours: true,
+            dedupeKey: `fin_tx:${compositeKey}`,
+            text: msg,
+            card
+          });
           await supabase.markPendingTransactionSent(compositeKey);
         }
       } catch (err) {

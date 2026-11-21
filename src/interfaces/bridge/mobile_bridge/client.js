@@ -237,6 +237,19 @@ function handleMessage(payload, ws) {
     return;
   }
 
+  // 0.65 Native Interactive Card Actions (FINANCE_TX, RECURRING_BILL, IDENTITY_PROPOSAL, MEMORY_HYGIENE, DISCIPLINE_CHECK)
+  if (pType === 'CARD_ACTION') {
+    try {
+      const { handleCardAction } = require('./card_handler');
+      Promise.resolve(handleCardAction(payload, ws)).catch(err => {
+        console.error('[BRIDGE-CARD] Unhandled card action error:', err.message);
+      });
+    } catch (e) {
+      console.error('[BRIDGE-CARD] Card WS routing error:', e.message);
+    }
+    return;
+  }
+
   // 1. Tool Call / Command Result
   if (payload.type === 'tool_result' || payload.type === 'COMMAND_RESULT') {
     const cmdId = payload.id || payload.command_id;
@@ -505,10 +518,10 @@ function _sendProactiveFrame(frame) {
 
 /**
  * Push a proactive N.E.X.A message to the phone, queueing it while offline.
- * @param {{ text: string, kind?: string, priority?: string, clientMsgId?: string }} msg
+ * @param {{ text: string, kind?: string, priority?: string, clientMsgId?: string, card?: object|null }} msg
  * @returns {{ status: 'SENT'|'QUEUED'|'DROPPED', id: string }}
  */
-function sendProactiveMessage({ text, kind = 'PROACTIVE', priority = 'P1', clientMsgId = '' }) {
+function sendProactiveMessage({ text, kind = 'PROACTIVE', priority = 'P1', clientMsgId = '', card = null }) {
   const cleanText = String(text || '').trim();
   const id = clientMsgId || `proactive_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
   if (!cleanText) return { status: 'DROPPED', id };
@@ -521,6 +534,9 @@ function sendProactiveMessage({ text, kind = 'PROACTIVE', priority = 'P1', clien
     content: cleanText.slice(0, 4000),
     ts: Date.now()
   };
+  if (card && typeof card === 'object') {
+    frame.card = card;
+  }
 
   if (_sendProactiveFrame(frame)) return { status: 'SENT', id };
 
@@ -531,6 +547,20 @@ function sendProactiveMessage({ text, kind = 'PROACTIVE', priority = 'P1', clien
     _persistProactiveQueue();
   }
   return { status: 'QUEUED', id };
+}
+
+/**
+ * Push a real-time CARD_UPDATE frame to the connected mobile client.
+ */
+function sendCardUpdate(updateFrame = {}) {
+  if (!activeClient || activeClient.readyState !== WebSocket.OPEN) return false;
+  try {
+    activeClient.send(JSON.stringify({ type: 'CARD_UPDATE', ts: Date.now(), ...updateFrame }));
+    return true;
+  } catch (err) {
+    console.warn('[BRIDGE-MOBILE] Failed pushing CARD_UPDATE:', err.message);
+    return false;
+  }
 }
 
 function isProactivePending(clientMsgId) {
@@ -621,6 +651,7 @@ module.exports = {
   isConnected,
   sendCommand,
   sendProactiveMessage,
+  sendCardUpdate,
   isProactivePending,
   dropPendingProactive,
   getPendingProactiveCount,

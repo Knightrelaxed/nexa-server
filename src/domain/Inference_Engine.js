@@ -796,20 +796,14 @@ async function _sendPendingProposalsToTelegram(pendingIds) {
   const sb = _getSupabase();
   if (!sb) return;
 
-  // Lazy require untuk menghindari circular dependency
-  let webhookModule;
-  try {
-    webhookModule = require('../interfaces/webhook');
-  } catch (e) {
-    console.error('[INFERENCE] Cannot require webhook module:', e.message);
-    return;
-  }
+  const { notifyProactive } = require('../core/Notifier');
+  const { buildIdentityProposalCard } = require('../interfaces/bridge/mobile_bridge/card_handler');
 
-  const sendFn = webhookModule.sendIdentityProposalToTelegram;
-  if (typeof sendFn !== 'function') {
-    console.error('[INFERENCE] sendIdentityProposalToTelegram is not a function.');
-    return;
-  }
+  let webhookModule = null;
+  try { webhookModule = require('../interfaces/webhook'); } catch (_) {}
+  const sendFn = webhookModule && typeof webhookModule.sendIdentityProposalToTelegram === 'function'
+    ? webhookModule.sendIdentityProposalToTelegram
+    : null;
 
   for (const { proposalId } of pendingIds) {
     try {
@@ -821,18 +815,46 @@ async function _sendPendingProposalsToTelegram(pendingIds) {
         .single();
 
       if (error || !proposal) {
-        console.warn(`[INFERENCE] Proposal #${proposalId} not found for Telegram send.`);
+        console.warn(`[INFERENCE] Proposal #${proposalId} not found for dispatch.`);
         continue;
       }
 
-      // Kirim ke Telegram dengan tombol Approve/Reject
-      await sendFn(proposal);
+      const confidencePct = Math.round((parseFloat(proposal.confidence) || 0) * 100);
+      const isUpdate = Boolean(proposal.old_value);
+      const plainSummary = [
+        `💡 <b>PROPOSAL ${isUpdate ? 'REVISI' : 'BARU'} IDENTITAS N.E.X.A</b>`,
+        `Observasi Minggu Ini (Confidence: <b>${confidencePct}%</b>):`,
+        `"${proposal.reasoning || ''}"`,
+        ``,
+        `<b>${proposal.layer}</b>: ${proposal.trait_key}`,
+        isUpdate ? `Nilai lama: ${proposal.old_value}` : '',
+        `Nilai baru: ${proposal.proposed_value}`
+      ].filter(Boolean).join('\n');
+
+      const card = buildIdentityProposalCard(proposal);
+      await notifyProactive({
+        kind: 'SCHEDULED_IDENTITY_PROPOSAL',
+        priority: 'P1',
+        isScheduled: true,
+        dedupeKey: `id_prop:${proposal.id}`,
+        text: plainSummary,
+        card,
+        telegramFallbackFn: sendFn ? () => sendFn(proposal) : null
+      });
+
+      if (proposal.status === 'STAGED') {
+        await sb.from('nexa_identity_proposals')
+          .update({ status: 'PENDING' })
+          .eq('id', proposal.id)
+          .eq('status', 'STAGED')
+          .catch(() => {});
+      }
 
       // Jeda antar pengiriman agar tidak spam
       await new Promise(resolve => setTimeout(resolve, 1500));
 
     } catch (err) {
-      console.error(`[INFERENCE] Failed to send proposal #${proposalId} to Telegram:`, err.message);
+      console.error(`[INFERENCE] Failed to dispatch proposal #${proposalId}:`, err.message);
     }
   }
 }
@@ -1102,11 +1124,15 @@ async function runDailyDecayPass() {
             `Apakah profil ini masih relevan dan akurat tentang Anda, Tuan?`
           ].join('\n');
 
-          if (webhookModule?.sendTelegramOutbound) {
-            await webhookModule.sendTelegramOutbound(msg, true);
-            stats.checkins++;
-            await new Promise(r => setTimeout(r, 1000));
-          }
+          const { notifyProactive } = require('../core/Notifier');
+          await notifyProactive({
+            kind: 'identity_decay_checkin',
+            priority: 'P1',
+            dedupeKey: `decay_checkin:${item.trait_key}:${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })}`,
+            text: msg
+          });
+          stats.checkins++;
+          await new Promise(r => setTimeout(r, 1000));
         } catch (sendErr) {
           console.warn('[DECAY] Failed to send soft check-in:', sendErr.message);
         }
@@ -1163,8 +1189,7 @@ async function runTier2SoftApprovePass() {
 
     // Lazy require Supabase_Memories untuk fungsi approveIdentityProposal
     const supabaseMemories = require('../infrastructure/Supabase_Memories');
-    let webhookModule;
-    try { webhookModule = require('../interfaces/webhook'); } catch (_) {}
+    const { notifyProactive } = require('../core/Notifier');
 
     for (const proposal of expiredProposals) {
       stats.checked++;
@@ -1177,16 +1202,18 @@ async function runTier2SoftApprovePass() {
           stats.autoApproved++;
           console.log(`[TIER2] ✅ Auto-approved proposal #${proposal.id}`);
 
-          // Kirim notifikasi ringkas ke Telegram
-          if (webhookModule?.sendTelegramOutbound) {
-            const notif = [
-              `⚡ <b>Tier 2 Auto-Approved</b>`,
-              `Tidak ada respons dalam 48 jam — proposal berikut telah otomatis dikunci:`,
-              `<b>${proposal.layer}</b> → <code>${proposal.trait_key}</code>`,
-              `<i>"${proposal.proposed_value}"</i>`
-            ].join('\n');
-            await webhookModule.sendTelegramOutbound(notif, true).catch(() => {});
-          }
+          const notif = [
+            `⚡ <b>Tier 2 Auto-Approved</b>`,
+            `Tidak ada respons dalam 48 jam, proposal berikut telah otomatis dikunci:`,
+            `<b>${proposal.layer}</b> -> <code>${proposal.trait_key}</code>`,
+            `<i>"${proposal.proposed_value}"</i>`
+          ].join('\n');
+          await notifyProactive({
+            kind: 'tier2_auto_approved',
+            priority: 'P1',
+            dedupeKey: `tier2_auto:${proposal.id}`,
+            text: notif
+          }).catch(() => {});
 
           await new Promise(r => setTimeout(r, 800));
         } else {

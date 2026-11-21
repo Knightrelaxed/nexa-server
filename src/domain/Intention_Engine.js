@@ -390,11 +390,15 @@ async function runIntentionCheckPass() {
         `Bagaimana perkembangannya sekarang, Tuan? Apakah rencana ini masih berjalan atau sudah terwujud?`
       ].join('\n');
 
-      if (webhookModule?.sendTelegramOutbound) {
-        await webhookModule.sendTelegramOutbound(frictionMsg, true);
-        stats.sent++;
-        console.log(`[INTENTION] Follow-up sent for: "${item.intention}"`);
-      }
+      const { notifyProactive } = require('../core/Notifier');
+      await notifyProactive({
+        kind: 'intention_followup',
+        priority: 'P1',
+        dedupeKey: `intention:${item.id}`,
+        text: frictionMsg
+      });
+      stats.sent++;
+      console.log(`[INTENTION] Follow-up sent via Notifier for: "${item.intention}"`);
 
       await sb
         .from('nexa_pending_intentions')
@@ -460,11 +464,15 @@ async function runOutcomeCheckPass() {
         `Apakah keputusan tersebut sudah terasa hasilnya, Tuan? Satu kalimat singkat pun sudah cukup untuk catatan kita.`
       ].join('\n');
 
-      if (webhookModule?.sendTelegramOutbound) {
-        await webhookModule.sendTelegramOutbound(outcomeMsg, true);
-        stats.sent++;
-        console.log(`[INTENTION] Outcome check sent for: "${item.decision}"`);
-      }
+      const { notifyProactive } = require('../core/Notifier');
+      await notifyProactive({
+        kind: 'decision_outcome_check',
+        priority: 'P1',
+        dedupeKey: `outcome:${item.id}`,
+        text: outcomeMsg
+      });
+      stats.sent++;
+      console.log(`[INTENTION] Outcome check sent via Notifier for: "${item.decision}"`);
 
       await sb
         .from('nexa_decision_journal')

@@ -208,7 +208,6 @@
         "SM.logTransactionKey",
         "Behavior.logFinanceRecord",
         "Budget.checkAndAlertBudget",
-        "webhook.sendTelegramOutbound",
         "webhook.sendTelegramOutbound"
       ]
     },
@@ -339,11 +338,12 @@
         "SF.getAccountsList",
         "SM.savePendingTransaction",
         "SF.getAccountBalances",
+        "SF.getCategoriesList",
+        "SM.saveChatMemory",
         "net.sendTelegramMessage",
         "SM.markPendingTransactionSent",
         "SM.isDuplicateTransaction",
-        "SM.logTransactionKey",
-        "net.sendTelegramMessage"
+        "SM.logTransactionKey"
       ]
     },
     "analytics: getFinanceAnalytics(null)": {

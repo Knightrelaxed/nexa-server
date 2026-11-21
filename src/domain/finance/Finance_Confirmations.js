@@ -92,20 +92,33 @@ async function recoverPendingTransactions() {
 
       // Register in-memory map
       const remaining = TIMEOUT_MS - ageMs;
+      const expiresAtMs = Date.now() + remaining;
       const timeoutId = setTimeout(async () => {
         if (pendingConfirmations.has(compositeKey)) {
           await _autoSavePending(compositeKey, tx);
         }
       }, remaining);
-      pendingConfirmations.set(compositeKey, { tx, timeoutId });
+      pendingConfirmations.set(compositeKey, { tx, timeoutId, expiresAtMs });
 
-      // If Telegram was never sent — resend now via curl+proxy (proven to work on HF)
+      // If alert was never sent, resend now via Notifier (mobile-primary with interactive card)
       if (!row.telegram_sent) {
-        console.log(`[FINANCE] Resending unsent Telegram alert for: ${compositeKey}`);
+        console.log(`[FINANCE] Resending unsent finance alert for: ${compositeKey}`);
         const msg = await _buildConfirmationMessage(tx);
         try {
-          const { sendTelegramOutbound } = require('../../interfaces/webhook');
-          await sendTelegramOutbound(msg);
+          const { notifyProactive } = require('../../core/Notifier');
+          const { buildFinanceTxCard } = require('../../interfaces/bridge/mobile_bridge/card_handler');
+          let categories = [];
+          try { categories = await supabaseFinance.getCategoriesList(); } catch (_) {}
+          const card = buildFinanceTxCard(tx, compositeKey, { categories, expiresAtMs });
+          await notifyProactive({
+            kind: 'finance_tx_confirm',
+            priority: 'P0',
+            timeSensitive: true,
+            bypassQuietHours: true,
+            dedupeKey: `fin_tx_recover:${compositeKey}`,
+            text: msg,
+            card
+          });
           await supabase.markPendingTransactionSent(compositeKey);
         } catch (e) {
           console.warn(`[FINANCE] Recovery resend failed for ${compositeKey}:`, e.message);
@@ -792,8 +805,23 @@ async function _autoSavePending(compositeKey, tx) {
       if (pairResult.status !== 'SUCCESS') {
         console.error('[FINANCE] Auto-save writeTransferPair failed:', pairResult.reason);
         try {
-          const { sendTelegramOutbound } = require('../../interfaces/webhook');
-          await sendTelegramOutbound(`⚠️ <b>Gagal Menyimpan Transfer Otomatis</b>\n\nNominal: Rp${nominalNum.toLocaleString('id-ID')}\nSumber: ${fromAcc}\nTujuan: ${toAcc}\nAlasan: ${pairResult.reason}\n\n<i>Transaksi dibatalkan.</i>`);
+          const mobileClient = require('../../interfaces/bridge/mobile_bridge/client');
+          mobileClient.sendCardUpdate({
+            card_id: `fin_${compositeKey}`,
+            status: 'RESOLVED',
+            resolved_badge: 'Failed',
+            resolved_detail: `Auto-save failed: ${pairResult.reason}`
+          });
+        } catch (_) {}
+        try {
+          const { notifyProactive } = require('../../core/Notifier');
+          await notifyProactive({
+            kind: 'finance_autosave_error',
+            priority: 'P1',
+            bypassQuietHours: true,
+            dedupeKey: `fin_as_err:${compositeKey}`,
+            text: `⚠️ <b>Gagal Menyimpan Transfer Otomatis</b>\n\nNominal: Rp${nominalNum.toLocaleString('id-ID')}\nSumber: ${fromAcc}\nTujuan: ${toAcc}\nAlasan: ${pairResult.reason}\n\n<i>Transaksi dibatalkan.</i>`
+          });
         } catch (_) {}
         return;
       }
@@ -810,8 +838,23 @@ async function _autoSavePending(compositeKey, tx) {
         timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransfer <b>${nominalFmt}</b> dari <b>${fromAcc}</b> ke <b>${toAcc}</b> telah disimpan otomatis.\n\n• Saldo ${fromAcc}: -${nominalFmt}\n• Saldo ${toAcc}: +${nominalFmt}`;
       }
       try {
-        const { sendTelegramOutbound } = require('../../interfaces/webhook');
-        await sendTelegramOutbound(timeoutMsg);
+        const mobileClient = require('../../interfaces/bridge/mobile_bridge/client');
+        mobileClient.sendCardUpdate({
+          card_id: `fin_${compositeKey}`,
+          status: 'RESOLVED',
+          resolved_badge: 'Auto-saved',
+          resolved_detail: `Transfer ${nominalFmt} (${fromAcc} -> ${toAcc}) saved automatically.`
+        });
+      } catch (_) {}
+      try {
+        const { notifyProactive } = require('../../core/Notifier');
+        await notifyProactive({
+          kind: 'finance_autosave',
+          priority: 'P1',
+          bypassQuietHours: true,
+          dedupeKey: `fin_as:${compositeKey}`,
+          text: timeoutMsg
+        });
       } catch (_) {}
       return;
     }
@@ -831,8 +874,25 @@ async function _autoSavePending(compositeKey, tx) {
     } catch (e) {
       // BUG FIX 5: Notify user of silent failures
       console.error('[FINANCE] Auto-save processTransaction failed:', e.message);
-      const { sendTelegramOutbound } = require('../../interfaces/webhook');
-      await sendTelegramOutbound(`⚠️ <b>Gagal Menyimpan Transaksi Otomatis</b>\n\nNominal: Rp${tx.nominal}\nTujuan: ${tx.destination}\nAlasan: ${e.message}\n\n<i>Transaksi dibatalkan.</i>`);
+      try {
+        const mobileClient = require('../../interfaces/bridge/mobile_bridge/client');
+        mobileClient.sendCardUpdate({
+          card_id: `fin_${compositeKey}`,
+          status: 'RESOLVED',
+          resolved_badge: 'Failed',
+          resolved_detail: `Auto-save failed: ${e.message}`
+        });
+      } catch (_) {}
+      try {
+        const { notifyProactive } = require('../../core/Notifier');
+        await notifyProactive({
+          kind: 'finance_autosave_error',
+          priority: 'P1',
+          bypassQuietHours: true,
+          dedupeKey: `fin_as_err:${compositeKey}`,
+          text: `⚠️ <b>Gagal Menyimpan Transaksi Otomatis</b>\n\nNominal: Rp${tx.nominal}\nTujuan: ${tx.destination}\nAlasan: ${e.message}\n\n<i>Transaksi dibatalkan.</i>`
+        });
+      } catch (_) {}
       return;
     }
     
@@ -842,8 +902,23 @@ async function _autoSavePending(compositeKey, tx) {
     const nominalFmt = isNaN(nominalNum) ? String(tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
     const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`;
     try {
-      const { sendTelegramOutbound } = require('../../interfaces/webhook');
-      await sendTelegramOutbound(timeoutMsg);
+      const mobileClient = require('../../interfaces/bridge/mobile_bridge/client');
+      mobileClient.sendCardUpdate({
+        card_id: `fin_${compositeKey}`,
+        status: 'RESOLVED',
+        resolved_badge: 'Auto-saved',
+        resolved_detail: `${nominalFmt} saved automatically · ${tx.category}`
+      });
+    } catch (_) {}
+    try {
+      const { notifyProactive } = require('../../core/Notifier');
+      await notifyProactive({
+        kind: 'finance_autosave',
+        priority: 'P1',
+        bypassQuietHours: true,
+        dedupeKey: `fin_as:${compositeKey}`,
+        text: timeoutMsg
+      });
     } catch (_) {}
   } catch (e) {
     console.error('[FINANCE] Auto-save failed:', e.message);
@@ -916,17 +991,22 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
   const msg = await _buildConfirmationMessage(tx, sourceLabel);
 
   // 3. Auto-save timeout
+  const expiresAtMs = Date.now() + 5 * 60 * 1000;
   const timeoutId = setTimeout(async () => {
     if (pendingConfirmations.has(compositeKey)) {
       await _autoSavePending(compositeKey, tx);
     }
   }, 5 * 60 * 1000);
 
-  pendingConfirmations.set(compositeKey, { tx, timeoutId });
+  pendingConfirmations.set(compositeKey, { tx, timeoutId, expiresAtMs });
 
-  // 4. Return message — caller (webhook.js) will send it via the proven webhook response method
-  //    and call markPendingTransactionSent() after successful delivery.
+  // 4. Return message - caller handles delivery and calls markPendingTransactionSent().
   return msg;
+}
+
+function getPendingTransactionByKey(compositeKey) {
+  if (!compositeKey) return null;
+  return pendingConfirmations.get(compositeKey) || null;
 }
 
 /**
@@ -1029,6 +1109,7 @@ module.exports = {
   _buildConfirmationMessage,
   _autoSavePending,
   requestTransactionConfirmation,
+  getPendingTransactionByKey,
   autoSaveFromWatchdog,
   resolveTargetKeyFromSnippet,
   getPendingConfirmationsContext,

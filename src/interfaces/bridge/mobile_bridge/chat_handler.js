@@ -254,14 +254,18 @@ function createMobileChatHandler(deps = {}) {
       }
     }
     if (entry.state === 'FINAL') {
-      safeSend(ws, {
+      const finalFrame = {
         type: 'CHAT_CHUNK',
         client_msg_id: clientMsgId,
         seq: entry.finalSeq,
         status: 'STREAM_FINAL',
         chunk: '',
         intent: entry.intent || 'NORMAL_CHAT'
-      });
+      };
+      if (entry.card && typeof entry.card === 'object') {
+        finalFrame.card = entry.card;
+      }
+      safeSend(ws, finalFrame);
     } else if (entry.state === 'ABORTED') {
       safeSend(ws, {
         type: 'CHAT_CHUNK',
@@ -306,6 +310,119 @@ function createMobileChatHandler(deps = {}) {
     return `[Membalas pesan ${senderLabel}: "${replyCtx.preview}"]\n${content}`;
   }
 
+  async function tryHandleDirectSlashCommand(rawText) {
+    const trimmed = String(rawText || '').trim();
+    if (!trimmed.startsWith('/')) return null;
+
+    // 1. /search <query>
+    if (/^\/search\b/i.test(trimmed)) {
+      const query = trimmed.replace(/^\/search\s*/i, '').trim();
+      if (!query) {
+        return {
+          intent: 'COMMAND_SEARCH',
+          reply: 'Format: `/search <kata kunci>`\nContoh: `/search VPS` atau `/search anggaran kopi`'
+        };
+      }
+      const supabaseMemories = deps.supabaseMemories || require('../../../infrastructure/Supabase_Memories');
+      const results = await supabaseMemories.searchPastChats(query, 5);
+      if (!results || results.length === 0) {
+        return {
+          intent: 'COMMAND_SEARCH',
+          reply: `Tidak ditemukan riwayat percakapan untuk kata kunci: "${query}".`
+        };
+      }
+      const lines = results.map(r => {
+        const dt = new Date(r.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+        const roleLabel = (r.role || 'user').toLowerCase() === 'user' ? 'Tuan' : 'N.E.X.A';
+        const snippet = String(r.content || '').substring(0, 160);
+        return `- **[${dt} WIB] ${roleLabel}:**\n  "${snippet}${String(r.content || '').length > 160 ? '...' : ''}"`;
+      });
+      return {
+        intent: 'COMMAND_SEARCH',
+        reply: `**Hasil Pencarian Riwayat: "${query}"**\n\n${lines.join('\n\n')}`
+      };
+    }
+
+    // 2. /playbook [intent | undo <intent>]
+    if (/^\/playbook\b/i.test(trimmed)) {
+      const playbookEngine = deps.playbookEngine || require('../../../domain/Playbook_Engine');
+      const parts = trimmed.split(/\s+/);
+      let htmlReply = '';
+      if (parts.length === 1) {
+        htmlReply = await playbookEngine.formatPlaybooksSummary();
+      } else if (parts[1].toLowerCase() === 'undo') {
+        const targetIntent = parts[2] || '';
+        if (!targetIntent) {
+          htmlReply = 'Format salah. Gunakan: `/playbook undo <INTENT>` (contoh: `/playbook undo EMAIL`)';
+        } else {
+          const undoRes = await playbookEngine.undoPlaybook(targetIntent);
+          htmlReply = undoRes && undoRes.message ? undoRes.message : 'Playbook diperbarui.';
+        }
+      } else {
+        htmlReply = await playbookEngine.formatPlaybookDetail(parts[1]);
+      }
+      return { intent: 'COMMAND_PLAYBOOK', reply: stripHtmlForMobile(htmlReply) };
+    }
+
+    // 3. /capabilities (/fitur, /bisaapa, /kemampuan)
+    if (/^(\/capabilities|\/fitur|\/bisaapa|\/kemampuan)\b/i.test(trimmed)) {
+      const { CAPABILITIES_REGISTRY } = require('../../../config/capabilities_registry');
+      const { VERSION } = require('../../../config/version');
+      const lines = [`**KAPABILITAS RESMI N.E.X.A v${VERSION}**`, ''];
+      const domains = {};
+      for (const cap of CAPABILITIES_REGISTRY) {
+        if (!domains[cap.domain]) domains[cap.domain] = [];
+        domains[cap.domain].push(cap);
+      }
+      for (const [dom, list] of Object.entries(domains)) {
+        lines.push(`**${dom}:**`);
+        for (const item of list) {
+          lines.push(`- **${item.title}**: ${item.summary}`);
+        }
+        lines.push('');
+      }
+      lines.push('Tuan dapat menanyakan detail teknis fitur apa pun secara langsung.');
+      return { intent: 'COMMAND_CAPABILITIES', reply: lines.join('\n') };
+    }
+
+    // 4. /trigger_weekly (/force_weekly, /weekly_inference)
+    if (/^(\/trigger_weekly|\/force_weekly|\/weekly_inference)\b/i.test(trimmed)) {
+      const inferenceEngine = deps.inferenceEngine || require('../../../domain/Inference_Engine');
+      const { notifyProactive } = require('../../../core/Notifier');
+      setImmediate(async () => {
+        try {
+          const result = await inferenceEngine.runWeeklyIdentityInference();
+          const summaryMsg = (result && result.success && result.saved > 0)
+            ? [
+                `Weekly Identity Inference Selesai (Manual Trigger)`,
+                ``,
+                `Hipotesis dianalisis: ${result.totalHypotheses}`,
+                `Proposal baru tersimpan: ${result.saved}`,
+                `Dikirim untuk review: ${result.pendingSent}`,
+                `Di-stage (bukti kurang): ${result.staged}`,
+                `Diabaikan: ${result.skipped}`
+              ].join('\n')
+            : 'Weekly Identity Inference selesai. Tidak ada hipotesis baru minggu ini; model identitas stabil.';
+          await notifyProactive({
+            kind: 'SCHEDULED_WEEKLY_INFERENCE',
+            priority: 'P1',
+            isScheduled: true,
+            bypassQuietHours: true,
+            text: summaryMsg
+          });
+        } catch (err) {
+          console.error('[BRIDGE-CMD] Error running weekly inference:', err.message);
+        }
+      });
+      return {
+        intent: 'COMMAND_WEEKLY_INFERENCE',
+        reply: 'Memulai Weekly Cognitive Pass sekarang. Hasil analisis dan kartu proposal akan dikirim otomatis ke chat ini begitu selesai.'
+      };
+    }
+
+    return null;
+  }
+
   async function executeAndStreamChat(clientMsgId, entry, content, payload) {
     const replyCtx = extractSanitizedReplyContext(payload);
     const routedInput = buildReplyContextPrompt(content, replyCtx);
@@ -320,6 +437,17 @@ function createMobileChatHandler(deps = {}) {
     Promise.resolve(saveChatMemory('user', content, 'mobile')).catch(err => {
       console.warn('[BRIDGE-CHAT] Failed saving user chat memory:', err.message);
     });
+
+    // Direct Slash Commands (/search, /playbook, /capabilities, /trigger_weekly) with zero LLM overhead
+    try {
+      const slashRes = await tryHandleDirectSlashCommand(content);
+      if (slashRes) {
+        await streamFinalReply(clientMsgId, entry, content, slashRes.reply, slashRes.intent, saveChatMemory);
+        return;
+      }
+    } catch (cmdErr) {
+      console.warn('[BRIDGE-CHAT] Slash command error:', cmdErr.message);
+    }
 
     const telemetry = payload.device_context || (typeof getLatestTelemetry() === 'function' ? getLatestTelemetry()() : null);
     if (telemetry && typeof telemetry === 'object') {
@@ -472,7 +600,7 @@ function createMobileChatHandler(deps = {}) {
     await streamFinalReply(clientMsgId, entry, content, cleanReply, normIntent, saveChatMemory);
   }
 
-  async function streamFinalReply(clientMsgId, entry, _userContent, cleanReply, normIntent, saveChatMemory) {
+  async function streamFinalReply(clientMsgId, entry, _userContent, cleanReply, normIntent, saveChatMemory, card = null) {
     const chunks = splitIntoStreamChunks(cleanReply, chunkSize);
     let seq = 0;
 
@@ -505,16 +633,21 @@ function createMobileChatHandler(deps = {}) {
 
     entry.finalSeq = seq + 1;
     entry.state = 'FINAL';
+    entry.card = card || null;
     entry.updatedAt = nowFn();
 
-    safeSend(entry.ws, {
+    const finalFrame = {
       type: 'CHAT_CHUNK',
       client_msg_id: clientMsgId,
       seq: entry.finalSeq,
       status: 'STREAM_FINAL',
       chunk: '',
       intent: normIntent
-    });
+    };
+    if (card && typeof card === 'object') {
+      finalFrame.card = card;
+    }
+    safeSend(entry.ws, finalFrame);
 
     Promise.resolve(saveChatMemory('nexa', cleanReply.slice(0, 4000), 'mobile')).catch(err => {
       console.warn('[BRIDGE-CHAT] Failed saving assistant chat memory:', err.message);
