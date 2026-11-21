@@ -28,8 +28,8 @@ import (
 
 const (
 	DefaultBatchInterval = 150 * time.Millisecond
-	MaxLinesPerBatch     = 30 // 30 lines per 150ms = 200 lines/sec (FR-LOG-07)
-	MaxRingQueueRecords  = 256
+	MaxLinesPerBatch     = 30  // 30 lines per 150ms = 200 lines/sec (FR-LOG-07)
+	MaxRingQueueRecords  = 512 // Safely holds max requested TailLines (500) before spike eviction
 	DefaultPauseTimeout  = 5 * time.Minute
 	DefaultIdleTimeout   = 90 * time.Second
 	DefaultReadDeadline  = 45 * time.Second
@@ -751,22 +751,21 @@ func (s *Server) handleSession(parentCtx context.Context, conn *ws.Conn) {
 				continue
 			}
 
-			// G-H1: Trim ring to MaxLinesPerBatch FIRST so the synthetic overflow banner is NEVER trimmed away!
+			// Paced draining (FR-LOG-07): dequeue up to MaxLinesPerBatch (30) lines per 150ms tick
+			// without discarding buffered records still fitting in ringBuf. Genuine spikes exceeding
+			// MaxRingQueueRecords evict oldest in pushRing and prepend the synthetic overflow banner.
 			maxDataRecords := MaxLinesPerBatch
-			if droppedCount > 0 || ringLen > MaxLinesPerBatch {
-				// Reserve 1 slot for synthetic banner if overflow occurred
+			if droppedCount > 0 {
+				// Reserve 1 slot for synthetic overflow banner when ring overflow occurred
 				maxDataRecords = MaxLinesPerBatch - 1
 			}
-			if ringLen > maxDataRecords {
-				excess := ringLen - maxDataRecords
-				for i := 0; i < excess; i++ {
-					_ = popFront()
-				}
-				droppedCount += excess
+			toSend := ringLen
+			if toSend > maxDataRecords {
+				toSend = maxDataRecords
 			}
 
 			// Build batch slice to send (optional synthetic overflow banner first)
-			batch := make([]proto.LogRecord, 0, ringLen+1)
+			batch := make([]proto.LogRecord, 0, toSend+1)
 			synthIncluded := false
 			savedDropCount := droppedCount
 			if droppedCount > 0 {
@@ -779,7 +778,7 @@ func (s *Server) handleSession(parentCtx context.Context, conn *ws.Conn) {
 				})
 				synthIncluded = true
 			}
-			for i := 0; i < ringLen; i++ {
+			for i := 0; i < toSend; i++ {
 				batch = append(batch, ringBuf[(ringHead+i)%MaxRingQueueRecords])
 			}
 
@@ -966,33 +965,128 @@ func buildJournalctlArgs(params proto.LogOpenParams) []string {
 	return args
 }
 
+type pm2InitialSource struct {
+	path        string
+	defaultPrio uint8
+	tailLines   int
+	f           *os.File
+	info        os.FileInfo
+	reader      *bufio.Reader
+	recent      []proto.LogRecord
+	partial     string
+	opened      bool
+}
+
 func (s *Server) defaultJournalAndPM2Producer(ctx context.Context, params proto.LogOpenParams, out chan<- proto.LogRecord) error {
 	var wg sync.WaitGroup
 
-	// 1. C4: Always spawn PM2 tailers when nexa-server unit (bit 0) is enabled;
-	// tailPM2File handles missing/delayed files and rotation gracefully without exiting.
+	// 1. C4: Always spawn PM2 tailers when nexa-server unit (bit 0) is enabled.
+	// Read initial tails of out.log and err.log deterministically ordered by file ModTime()
+	// (older file emitted first, newer file emitted last) so goroutine scheduling never buries
+	// fresh out.log INFO lines behind older err.log WARN/ERROR lines.
 	if (params.UnitMask & (1 << proto.UnitNexaServer)) != 0 {
 		outPath := s.cfg.PM2OutLogPath
 		if outPath == "" {
 			outPath = DefaultPM2OutPath
 		}
-		if outPath != "" && outPath != "-" {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				tailPM2File(ctx, outPath, proto.PrioInfo, params, out)
-			}()
-		}
-
 		errPath := s.cfg.PM2ErrLogPath
 		if errPath == "" {
 			errPath = DefaultPM2ErrPath
 		}
+
+		baseTail := int(params.TailLines)
+		errTail := baseTail
+		if params.CatMask == 0 && (params.MinPrio == 0 || params.MinPrio > proto.PrioError) && baseTail > 0 {
+			// In ALL mode, balance err.log initial tail so stale errors don't crowd out fresh out.log INFO lines.
+			capErr := baseTail / 3
+			if capErr < 10 && baseTail >= 10 {
+				capErr = 10
+			}
+			if capErr > 30 {
+				capErr = 30
+			}
+			if errTail > capErr {
+				errTail = capErr
+			}
+		}
+
+		var sources []*pm2InitialSource
+		if outPath != "" && outPath != "-" {
+			sources = append(sources, &pm2InitialSource{
+				path:        outPath,
+				defaultPrio: proto.PrioInfo,
+				tailLines:   baseTail,
+			})
+		}
 		if errPath != "" && errPath != "-" && errPath != outPath {
+			sources = append(sources, &pm2InitialSource{
+				path:        errPath,
+				defaultPrio: proto.PrioError,
+				tailLines:   errTail,
+			})
+		}
+
+		for _, src := range sources {
+			f, info, reader, recent, partial, openErr := openPM2FileForTail(src.path, src.defaultPrio, params, src.tailLines, false)
+			if openErr == nil {
+				src.f = f
+				src.info = info
+				src.reader = reader
+				src.recent = recent
+				src.partial = partial
+				src.opened = true
+			}
+		}
+
+		// Order opened sources by ModTime ascending (older file first, newer file last)
+		if len(sources) == 2 && sources[0].opened && sources[1].opened {
+			if sources[0].info.ModTime().After(sources[1].info.ModTime()) {
+				sources[0], sources[1] = sources[1], sources[0]
+			}
+		}
+
+		// Emit initial tail records deterministically before live polling begins
+		aborted := false
+		for _, src := range sources {
+			if !src.opened {
+				continue
+			}
+			for _, rec := range src.recent {
+				select {
+				case <-ctx.Done():
+					aborted = true
+				case out <- rec:
+				}
+				if aborted {
+					break
+				}
+			}
+			src.recent = nil
+			if aborted {
+				break
+			}
+		}
+
+		if aborted {
+			for _, src := range sources {
+				if src.f != nil {
+					_ = src.f.Close()
+				}
+			}
+			return nil
+		}
+
+		// Hand off each file handle (or missing-file retry) to live 250ms tailer goroutines
+		for _, src := range sources {
+			srcCopy := src
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				tailPM2File(ctx, errPath, proto.PrioError, params, out)
+				if srcCopy.opened {
+					tailPM2LiveLoop(ctx, srcCopy.path, srcCopy.defaultPrio, params, out, srcCopy.f, srcCopy.info, srcCopy.reader, srcCopy.partial)
+				} else {
+					tailPM2File(ctx, srcCopy.path, srcCopy.defaultPrio, params, out)
+				}
 			}()
 		}
 	}
@@ -1152,8 +1246,13 @@ func parseJournalJSONLine(line []byte) (proto.LogRecord, bool) {
 	}, true
 }
 
-func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params proto.LogOpenParams, out chan<- proto.LogRecord) {
-	tailLines := int(params.TailLines)
+func openPM2FileForTail(
+	filePath string,
+	defaultPrio uint8,
+	params proto.LogOpenParams,
+	initialTail int,
+	fromStart bool,
+) (*os.File, os.FileInfo, *bufio.Reader, []proto.LogRecord, string, error) {
 	hasSelectiveFilter := params.CatMask != 0 || (params.MinPrio > 0 && params.MinPrio <= proto.PrioError)
 	seekWindowBytes := int64(32 * 1024)
 	if hasSelectiveFilter {
@@ -1162,137 +1261,119 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 		seekWindowBytes = 256 * 1024
 	}
 
-	openAndSeek := func(initialTail int, fromStart bool) (*os.File, os.FileInfo, *bufio.Reader, []proto.LogRecord, string, error) {
-		f, err := os.Open(filePath)
-		if err != nil {
-			return nil, nil, nil, nil, "", err
-		}
-		info, statErr := f.Stat()
-		if statErr != nil {
-			_ = f.Close()
-			return nil, nil, nil, nil, "", statErr
-		}
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, nil, nil, nil, "", err
+	}
+	info, statErr := f.Stat()
+	if statErr != nil {
+		_ = f.Close()
+		return nil, nil, nil, nil, "", statErr
+	}
 
-		if fromStart {
-			return f, info, bufio.NewReaderSize(f, 32*1024), nil, "", nil
-		}
+	if fromStart {
+		return f, info, bufio.NewReaderSize(f, 32*1024), nil, "", nil
+	}
 
-		// G-M1: If tailLines == 0, start live tailing directly from EOF
-		if initialTail <= 0 {
-			_, _ = f.Seek(0, io.SeekEnd)
-			return f, info, bufio.NewReaderSize(f, 32*1024), nil, "", nil
-		}
+	// G-M1: If tailLines == 0, start live tailing directly from EOF
+	if initialTail <= 0 {
+		_, _ = f.Seek(0, io.SeekEnd)
+		return f, info, bufio.NewReaderSize(f, 32*1024), nil, "", nil
+	}
 
-		seekedMidFile := false
-		if info.Size() > seekWindowBytes {
-			_, _ = f.Seek(info.Size()-seekWindowBytes, io.SeekStart)
-			seekedMidFile = true
-		}
-		reader := bufio.NewReaderSize(f, 32*1024)
-		if seekedMidFile {
-			// G-M1 / C4: Discard truncated first partial line safely with cap
-			_, _, _ = readLineCappedWithNewline(reader, maxPM2LineBytes)
-		}
+	seekedMidFile := false
+	if info.Size() > seekWindowBytes {
+		_, _ = f.Seek(info.Size()-seekWindowBytes, io.SeekStart)
+		seekedMidFile = true
+	}
+	reader := bufio.NewReaderSize(f, 32*1024)
+	if seekedMidFile {
+		// G-M1 / C4: Discard truncated first partial line safely with cap
+		_, _, _ = readLineCappedWithNewline(reader, maxPM2LineBytes)
+	}
 
-		var recent []proto.LogRecord
-		var partial string
-		for {
-			chunk, hasNL, readErr := readLineCappedWithNewline(reader, maxPM2LineBytes)
-			if len(chunk) > 0 || hasNL {
-				if hasNL {
-					full := strings.TrimSpace(partial + string(chunk))
-					partial = ""
-					if full != "" {
-						rec := parsePM2Line(full, defaultPrio)
-						if !hasSelectiveFilter || proto.MatchesFilter(rec, params) {
-							recent = append(recent, rec)
-							if len(recent) > initialTail {
-								recent = recent[1:]
-							}
+	var recent []proto.LogRecord
+	var partial string
+	for {
+		chunk, hasNL, readErr := readLineCappedWithNewline(reader, maxPM2LineBytes)
+		if len(chunk) > 0 || hasNL {
+			if hasNL {
+				full := strings.TrimSpace(partial + string(chunk))
+				partial = ""
+				if full != "" {
+					rec := parsePM2Line(full, defaultPrio)
+					if !hasSelectiveFilter || proto.MatchesFilter(rec, params) {
+						recent = append(recent, rec)
+						if len(recent) > initialTail {
+							recent = recent[1:]
 						}
 					}
-				} else if len(partial) < maxPM2LineBytes {
-					rem := maxPM2LineBytes - len(partial)
-					if len(chunk) > rem {
-						partial += string(chunk[:rem])
-					} else {
-						partial += string(chunk)
-					}
+				}
+			} else if len(partial) < maxPM2LineBytes {
+				rem := maxPM2LineBytes - len(partial)
+				if len(chunk) > rem {
+					partial += string(chunk[:rem])
+				} else {
+					partial += string(chunk)
 				}
 			}
-			if errors.Is(readErr, io.EOF) {
-				break
-			}
-			if readErr != nil {
-				_ = f.Close()
-				return nil, nil, nil, nil, "", readErr
-			}
 		}
-		return f, info, reader, recent, partial, nil
-	}
-
-	drainLines := func(reader *bufio.Reader, partial *string, flushPartial bool) {
-		for {
-			chunk, hasNL, readErr := readLineCappedWithNewline(reader, maxPM2LineBytes)
-			if len(chunk) > 0 || hasNL {
-				if hasNL {
-					full := strings.TrimSpace(*partial + string(chunk))
-					*partial = ""
-					if full != "" {
-						emitPM2Line(ctx, full, defaultPrio, out)
-					}
-				} else if len(*partial) < maxPM2LineBytes {
-					rem := maxPM2LineBytes - len(*partial)
-					if len(chunk) > rem {
-						*partial += string(chunk[:rem])
-					} else {
-						*partial += string(chunk)
-					}
-				}
-			}
-			if readErr != nil {
-				break
-			}
-		}
-		if flushPartial && strings.TrimSpace(*partial) != "" {
-			emitPM2Line(ctx, strings.TrimSpace(*partial), defaultPrio, out)
-			*partial = ""
-		}
-	}
-
-	// C4: Wait cleanly if file does not exist yet instead of exiting immediately
-	var (
-		f       *os.File
-		curInfo os.FileInfo
-		reader  *bufio.Reader
-		recent  []proto.LogRecord
-		partial string
-		err     error
-	)
-	for {
-		f, curInfo, reader, recent, partial, err = openAndSeek(tailLines, false)
-		if err == nil {
+		if errors.Is(readErr, io.EOF) {
 			break
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(500 * time.Millisecond):
+		if readErr != nil {
+			_ = f.Close()
+			return nil, nil, nil, nil, "", readErr
 		}
 	}
+	return f, info, reader, recent, partial, nil
+}
+
+func drainPM2Lines(ctx context.Context, reader *bufio.Reader, partial *string, defaultPrio uint8, out chan<- proto.LogRecord, flushPartial bool) {
+	for {
+		chunk, hasNL, readErr := readLineCappedWithNewline(reader, maxPM2LineBytes)
+		if len(chunk) > 0 || hasNL {
+			if hasNL {
+				full := strings.TrimSpace(*partial + string(chunk))
+				*partial = ""
+				if full != "" {
+					emitPM2Line(ctx, full, defaultPrio, out)
+				}
+			} else if len(*partial) < maxPM2LineBytes {
+				rem := maxPM2LineBytes - len(*partial)
+				if len(chunk) > rem {
+					*partial += string(chunk[:rem])
+				} else {
+					*partial += string(chunk)
+				}
+			}
+		}
+		if readErr != nil {
+			break
+		}
+	}
+	if flushPartial && strings.TrimSpace(*partial) != "" {
+		emitPM2Line(ctx, strings.TrimSpace(*partial), defaultPrio, out)
+		*partial = ""
+	}
+}
+
+func tailPM2LiveLoop(
+	ctx context.Context,
+	filePath string,
+	defaultPrio uint8,
+	params proto.LogOpenParams,
+	out chan<- proto.LogRecord,
+	f *os.File,
+	curInfo os.FileInfo,
+	reader *bufio.Reader,
+	partial string,
+) {
 	defer func() {
 		if f != nil {
 			_ = f.Close()
 		}
 	}()
-
-	for _, rec := range recent {
-		select {
-		case <-ctx.Done():
-			return
-		case out <- rec:
-		}
-	}
 
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -1303,7 +1384,7 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 		case <-ticker.C:
 			if f == nil {
 				// Retry opening after transient rotation error (C4)
-				nf, nInfo, nReader, _, _, openErr := openAndSeek(0, true)
+				nf, nInfo, nReader, _, _, openErr := openPM2FileForTail(filePath, defaultPrio, params, 0, true)
 				if openErr != nil {
 					continue
 				}
@@ -1321,11 +1402,11 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 				if rotated || truncated {
 					if rotated {
 						// Drain any last unread bytes from old inode before switching
-						drainLines(reader, &partial, true)
+						drainPM2Lines(ctx, reader, &partial, defaultPrio, out, true)
 					}
 					_ = f.Close()
 					f = nil
-					nf, nInfo, nReader, _, _, openErr := openAndSeek(0, true)
+					nf, nInfo, nReader, _, _, openErr := openPM2FileForTail(filePath, defaultPrio, params, 0, true)
 					if openErr != nil {
 						// Retry on next tick instead of abandoning tailer permanently
 						continue
@@ -1337,9 +1418,45 @@ func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params
 				}
 			}
 
-			drainLines(reader, &partial, false)
+			drainPM2Lines(ctx, reader, &partial, defaultPrio, out, false)
 		}
 	}
+}
+
+func tailPM2File(ctx context.Context, filePath string, defaultPrio uint8, params proto.LogOpenParams, out chan<- proto.LogRecord) {
+	tailLines := int(params.TailLines)
+
+	// C4: Wait cleanly if file does not exist yet instead of exiting immediately
+	var (
+		f       *os.File
+		curInfo os.FileInfo
+		reader  *bufio.Reader
+		recent  []proto.LogRecord
+		partial string
+		err     error
+	)
+	for {
+		f, curInfo, reader, recent, partial, err = openPM2FileForTail(filePath, defaultPrio, params, tailLines, false)
+		if err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+
+	for _, rec := range recent {
+		select {
+		case <-ctx.Done():
+			_ = f.Close()
+			return
+		case out <- rec:
+		}
+	}
+
+	tailPM2LiveLoop(ctx, filePath, defaultPrio, params, out, f, curInfo, reader, partial)
 }
 
 func parsePM2Line(rawLine string, defaultPrio uint8) proto.LogRecord {

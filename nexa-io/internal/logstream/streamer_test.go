@@ -397,3 +397,134 @@ func TestPM2PriorityPreservationDeepTailAndJournalctlFilterArgs(t *testing.T) {
 		t.Fatalf("unexpected filtered PM2 tail records: %+v", got)
 	}
 }
+
+func TestAllFilterInitialTailPreservesInfoAndErrorsDeterministically(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := ticket.NewVerifier(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "out.log")
+	errPath := filepath.Join(dir, "err.log")
+
+	var outSB, errSB strings.Builder
+	for i := 0; i < 120; i++ {
+		outSB.WriteString(fmt.Sprintf("<6>[cat=CORE] [NEXA] Normal operational log #%03d\n", i))
+	}
+	for i := 0; i < 47; i++ {
+		errSB.WriteString(fmt.Sprintf("<4>[cat=CORE] [FALLBACK] Warn 503 #%02d\n", i))
+	}
+	if err := os.WriteFile(errPath, []byte(errSB.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outPath, []byte(outSB.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Make err.log explicitly older than out.log (mirroring real VPS state)
+	older := time.Now().Add(-5 * time.Minute)
+	newer := time.Now()
+	if err := os.Chtimes(errPath, older, older); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(outPath, newer, newer); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := NewServer(Config{
+		Verifier:      v,
+		BatchInterval: 25 * time.Millisecond,
+		PM2OutLogPath: outPath,
+		PM2ErrLogPath: errPath,
+	})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	tkt := issueTestTicket(t, priv, "logs", "jti-all-tail-1")
+	addr := strings.TrimPrefix(ts.URL, "http://")
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	handshake := "GET /io/logs HTTP/1.1\r\n" +
+		"Host: " + addr + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+		"Sec-WebSocket-Version: 13\r\n" +
+		"Authorization: Bearer " + tkt + "\r\n\r\n"
+	if _, err := conn.Write([]byte(handshake)); err != nil {
+		t.Fatal(err)
+	}
+	br := bufio.NewReader(conn)
+	statusLine, err := br.ReadString('\n')
+	if err != nil || !strings.Contains(statusLine, "101") {
+		t.Fatalf("expected 101, got %q (%v)", statusLine, err)
+	}
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil || line == "\r\n" {
+			break
+		}
+	}
+
+	openPayload := proto.EncodeLogOpen(proto.LogOpenParams{
+		UnitMask:  1 << proto.UnitNexaServer,
+		MinPrio:   proto.PrioDebug,
+		CatMask:   0,
+		TailLines: 100,
+	})
+	openFrame, _ := proto.EncodeFrame(proto.ChLogs, proto.OpOpen, openPayload)
+	if err := writeMaskedClientFrame(conn, openFrame); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = conn.SetReadDeadline(time.Now().Add(450 * time.Millisecond))
+	var received []proto.LogRecord
+	for {
+		frame, err := readUnmaskedServerFrame(br)
+		if err != nil {
+			break
+		}
+		ch, op, payload, err := proto.DecodeFrame(frame)
+		if err != nil || ch != proto.ChLogs || op != proto.OpData {
+			continue
+		}
+		recs, err := proto.DecodeLogRecords(payload)
+		if err != nil {
+			t.Fatalf("DecodeLogRecords failed: %v", err)
+		}
+		if len(recs) > MaxLinesPerBatch {
+			t.Fatalf("batch exceeded MaxLinesPerBatch (%d): got %d", MaxLinesPerBatch, len(recs))
+		}
+		received = append(received, recs...)
+	}
+
+	infoCount, warnCount, synthCount := 0, 0, 0
+	for _, r := range received {
+		switch {
+		case (r.CatFlags & proto.CatSynthetic) != 0:
+			synthCount++
+		case r.Prio <= proto.PrioWarn:
+			warnCount++
+		default:
+			infoCount++
+		}
+	}
+	if synthCount != 0 {
+		t.Fatalf("expected 0 synthetic overflow banners on normal initial tail, got %d (total=%d info=%d warn=%d)", synthCount, len(received), infoCount, warnCount)
+	}
+	if infoCount < 90 || warnCount == 0 {
+		t.Fatalf("expected both INFO (>=90) and WARN (>0) on ALL initial tail, got info=%d warn=%d total=%d", infoCount, warnCount, len(received))
+	}
+	last := received[len(received)-1]
+	if last.Prio != proto.PrioInfo || !strings.Contains(last.Message, "#119") {
+		t.Fatalf("expected newest tail record to be latest out.log INFO (#119), got prio=%d msg=%q", last.Prio, last.Message)
+	}
+}
