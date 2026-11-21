@@ -186,15 +186,21 @@ class LiveVoiceSession {
     this.currentModel      = LIVE_MODELS.TIER_1_SPEED;
     this.isActive          = false;
     this.isSetupComplete   = false;
+    this.isReconnecting    = false;
+    this.hasSentInitialGreeting = false;
     this.isEndingCall      = false;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 4;
     this.turnHistory       = [];   // { role: 'user'|'assistant', text: string }
     this.sessionStartTime  = Date.now();
-    // BUG 3 & 4 FIX: Keepalive heartbeat + server watchdog state
+    // Keepalive heartbeat + server watchdog state
     this.keepaliveInterval = null;
     this.watchdogInterval  = null;
-    this.lastActivityTime  = Date.now();  // BUG 4: tracks last Google message time
+    this.lastActivityTime  = Date.now();  // tracks last Google message/pong time
+    this._lastGooglePongAt = Date.now();
+    this._awaitingGooglePong = false;
+    this._pendingResponseSince = 0;       // set ONLY on real speech/ASR/tool/text awaiting Google reply
+    this._strongSpeechStreak   = 0;
     // Turn Gating: Prevent mic ambient noise from colliding with greeting & tool response synthesis
     this.isExecutingTool     = false;
     this.isWaitingToolReply  = false;
@@ -304,7 +310,12 @@ class LiveVoiceSession {
     }
     this.isGreetingPending   = false;
     this.isAssistantSpeaking = false;
-    this.lastClientInputTime = Date.now();
+    this._pendingResponseSince = 0;
+    this._strongSpeechStreak   = 0;
+    this._lastGooglePongAt     = Date.now();
+    this._awaitingGooglePong   = false;
+    this.lastActivityTime      = Date.now();
+    this.lastClientInputTime   = Date.now();
 
     const apiKey    = this._getApiKey();
     const rawBase   = process.env.GEMINI_LIVE_BASE_URL || 'https://generativelanguage.googleapis.com';
@@ -331,8 +342,17 @@ class LiveVoiceSession {
 
       socket.on('open', async () => {
         if (this.googleWs !== socket) return;
+        this._lastGooglePongAt = Date.now();
+        this._awaitingGooglePong = false;
         console.log(`[LIVE-VOICE] Connected to Google WSS. Sending setup payload...`);
         await this._sendSetupPayload();
+      });
+
+      socket.on('pong', () => {
+        if (this.googleWs !== socket) return;
+        this._lastGooglePongAt = Date.now();
+        this._awaitingGooglePong = false;
+        this.lastActivityTime = Date.now();
       });
 
       socket.on('message', async (data) => {
@@ -348,13 +368,14 @@ class LiveVoiceSession {
       socket.on('close', (code, reason) => {
         if (this.googleWs !== socket) return;
         const rStr = reason ? reason.toString() : '';
-        console.log(`[LIVE-VOICE] Google WebSocket Closed: Code ${code} — "${rStr}"`);
-        if (this.isActive && !this.isEndingCall) {
+        console.log(`[LIVE-VOICE] Google WebSocket Closed: Code ${code} (${rStr})`);
+        if (this.isActive && !this.isEndingCall && !this.isReconnecting) {
           this._handleFailover(code, rStr);
         }
       });
     } catch (err) {
       console.error(`[LIVE-VOICE] Failed to initiate Google WebSocket:`, err.message);
+      this.isReconnecting = false;
       this._handleFailover(500, err.message);
     }
   }
@@ -624,6 +645,15 @@ class LiveVoiceSession {
         `   - DILARANG KERAS menolak permintaan Tuan untuk mencari namanya sendiri di internet dengan alasan "privasi dan keamanan data pribadi"! Segera laksanakan pencarian sesuai perintah Tuan.\n`
       : '';
 
+    let reconnectCallContextBlock = '';
+    if (this.hasSentInitialGreeting && this.turnHistory.length > 0) {
+      const recentTurns = this.turnHistory
+        .slice(-6)
+        .map(t => `${t.role === 'user' ? 'Tuan' : 'Nexa'}: ${_stripHtml(t.text).slice(0, 220)}`)
+        .join('\n');
+      reconnectCallContextBlock = `\n\n[KONTEKS PERCAKAPAN TELEPON SAAT INI (LANJUTAN RECONNECT)]:\nPanggilan ini baru saja tersambung ulang secara mulus. JANGAN mengulang sapaan pembuka. Lanjutkan percakapan secara alami dari konteks terakhir:\n${recentTurns}\n`;
+    }
+
     // ── Assemble Full System Prompt ──────────────────────────────────────
     const fullSystemPrompt =
       languageLockPrefix +
@@ -640,7 +670,8 @@ class LiveVoiceSession {
       categoriesBlock +
       recentFinanceBlock +
       calendarScheduleBlock +
-      recentChatBlock;
+      recentChatBlock +
+      reconnectCallContextBlock;
 
     const elapsed = Date.now() - buildStart;
     console.log(`[LIVE-VOICE] Setup payload built in ${elapsed}ms. Prompt: ${fullSystemPrompt.length} chars. Tools: ${LIVE_TOOL_DECLARATIONS.length}. Sending...`);
@@ -726,13 +757,21 @@ class LiveVoiceSession {
       if (hasToolCall) {
         this.isExecutingTool = true;
         this.isWaitingToolReply = false;
+        this._pendingResponseSince = 0;
+        this._strongSpeechStreak = 0;
       }
 
       // ── 1. Setup Complete ────────────────────────────────────────────────
       if (msg.setupComplete) {
+        const isMidCallReconnect = this.hasSentInitialGreeting;
         this.isSetupComplete    = true;
+        this.isReconnecting     = false;
         this.reconnectAttempts  = 0;
-        console.log(`[LIVE-VOICE] Session Setup Confirmed by Google. Ready for live audio stream!`);
+        this._pendingResponseSince = 0;
+        this._strongSpeechStreak   = 0;
+        this._lastGooglePongAt     = Date.now();
+        this._awaitingGooglePong   = false;
+        console.log(`[LIVE-VOICE] Session Setup Confirmed by Google. Ready for live audio stream! (reconnect=${isMidCallReconnect})`);
 
         // Notify Android client that live session is open
         this._sendToClient({
@@ -747,43 +786,48 @@ class LiveVoiceSession {
           status: 'LISTENING'
         });
 
-        // Proactive Initial Vocal Greeting (Dynamic, organic & context-aware)
-        const greetingPayload = {
-          clientContent: {
-            turns: [{
-              role: 'user',
-              parts: [{
-                text: _generateDynamicVocalGreetingInstruction()
-              }]
-            }],
-            turnComplete: true
-          }
-        };
-
-        this.isGreetingPending = true;
-        setTimeout(() => {
-          if (this.isGreetingPending) {
-            this.isGreetingPending = false;
-            // If greeting timed out without speech, ensure HUD is LISTENING
-            if (!this.isAssistantSpeaking) {
-              this._sendToClient({
-                type: 'CALL_STATUS_UPDATE',
-                status: 'LISTENING'
-              });
+        // Proactive Initial Vocal Greeting ONLY on the very first setup of the call (never re-greet on mid-call failover!)
+        if (!isMidCallReconnect) {
+          this.hasSentInitialGreeting = true;
+          const greetingPayload = {
+            clientContent: {
+              turns: [{
+                role: 'user',
+                parts: [{
+                  text: _generateDynamicVocalGreetingInstruction()
+                }]
+              }],
+              turnComplete: true
             }
-          }
-        }, 4000);
+          };
 
-        try {
-          this.googleWs.send(JSON.stringify(greetingPayload));
-          console.log(`[LIVE-VOICE] Dispatched Proactive Vocal Greeting trigger.`);
-        } catch (err) {
-          console.warn(`[LIVE-VOICE] Greeting send warning:`, err.message);
+          this.isGreetingPending = true;
+          this._pendingResponseSince = Date.now();
+          setTimeout(() => {
+            if (this.isGreetingPending) {
+              this.isGreetingPending = false;
+              // If greeting timed out without speech, ensure HUD is LISTENING
+              if (!this.isAssistantSpeaking) {
+                this._sendToClient({
+                  type: 'CALL_STATUS_UPDATE',
+                  status: 'LISTENING'
+                });
+              }
+            }
+          }, 4000).unref();
+
+          try {
+            this.googleWs.send(JSON.stringify(greetingPayload));
+            console.log(`[LIVE-VOICE] Dispatched Proactive Vocal Greeting trigger.`);
+          } catch (err) {
+            console.warn(`[LIVE-VOICE] Greeting send warning:`, err.message);
+          }
+        } else {
+          console.log(`[LIVE-VOICE] Mid-call reconnect complete; suppressed duplicate initial greeting.`);
         }
 
-        // BUG 3 FIX: Start keepalive heartbeat to prevent idle timeout
+        // Start keepalive heartbeat & server-side watchdog
         this._startKeepalive();
-        // BUG 4 FIX: Start server-side watchdog for stuck session detection
         this._startServerWatchdog();
 
         return;
@@ -837,6 +881,9 @@ class LiveVoiceSession {
           if ((isKnownPhantom || (chunk.trim().split(/\s+/).length <= 1 && (this._lastUserAudioRms || 0) < 25)) && (!hasRecentVoice || (this._lastUserAudioRms || 0) < 35)) {
             console.log(`[LIVE-VOICE] 🛡️ Suppressed phantom ASR chunk: "${chunk.trim()}" (RMS: ${(this._lastUserAudioRms || 0).toFixed(0)})`);
           } else {
+            if (!this._pendingResponseSince) {
+              this._pendingResponseSince = Date.now();
+            }
             if (this._userTranscriptBuf && !this._userTranscriptBuf.endsWith(' ') && !chunk.startsWith(' ')) {
               this._userTranscriptBuf += ' ' + chunk;
             } else {
@@ -873,6 +920,8 @@ class LiveVoiceSession {
 
         // Accumulate assistant output transcript if provided
         if (msg.serverContent.outputTranscription?.text) {
+          this._pendingResponseSince = 0;
+          this._strongSpeechStreak = 0;
           const cleanChunk = String(msg.serverContent.outputTranscription.text)
             .replace(/\s*---+\s*To address the user's[\s\S]*$/i, '');
           this.currentTurnAssistantText = (this.currentTurnAssistantText || '') + cleanChunk;
@@ -887,6 +936,8 @@ class LiveVoiceSession {
         for (const p of parts) {
           // Audio chunk (PCM 24kHz Base64)
           if (p.inlineData && p.inlineData.data) {
+            this._pendingResponseSince = 0;
+            this._strongSpeechStreak = 0;
             if (this._toolSafetyTimer) {
               clearTimeout(this._toolSafetyTimer);
               this._toolSafetyTimer = null;
@@ -1089,6 +1140,7 @@ class LiveVoiceSession {
             this.googleWs.send(JSON.stringify(toolResponsePayload));
             console.log(`[LIVE-VOICE] Sent ${responses.length} Tool Response(s) back to Google.`);
             this.isWaitingToolReply = true;
+            this._pendingResponseSince = Date.now();
           } catch (sendErr) {
             console.error('[LIVE-VOICE] Failed to send tool response to Google:', sendErr.message);
             this.isExecutingTool = false;
@@ -1172,8 +1224,19 @@ class LiveVoiceSession {
       pcmBuf = Buffer.from(pcmBase64, 'base64');
       rms = this._calculatePcmRms(pcmBuf);
       this._lastUserAudioRms = rms;
+      // Sensitive threshold strictly for barge-in & phantom-ASR gating
       if (rms > 40) {
         this._lastVocalActivityTime = Date.now();
+      }
+      // Sustained strong speech detector for watchdog (ignores ambient room/fan noise at RMS 85-650)
+      const strongSpeechThreshold = Math.max(BARGE_IN_RMS_THRESHOLD * 2, 1100);
+      if (!this.isAssistantSpeaking && rms >= strongSpeechThreshold) {
+        this._strongSpeechStreak = (this._strongSpeechStreak || 0) + 1;
+        if (this._strongSpeechStreak >= 5 && !this._pendingResponseSince) {
+          this._pendingResponseSince = Date.now();
+        }
+      } else {
+        this._strongSpeechStreak = 0;
       }
     } catch (_) {}
 
@@ -1501,10 +1564,23 @@ class LiveVoiceSession {
    * Rotates API keys and falls back to Tier 2 Marathon model after key exhaustion
    */
   async _handleFailover(code, reason) {
-    if (!this.isActive) return;
+    if (!this.isActive || this.isEndingCall || this.isReconnecting) return;
+    this.isReconnecting = true;
+
+    // Terminate stale Google socket & pause intervals immediately so no duplicate failover can race during backoff
+    if (this.googleWs) {
+      try {
+        this.googleWs.removeAllListeners();
+        this.googleWs.terminate();
+      } catch (_) {}
+      this.googleWs = null;
+    }
+    this.isSetupComplete = false;
+    if (this.keepaliveInterval) { clearInterval(this.keepaliveInterval); this.keepaliveInterval = null; }
+    if (this.watchdogInterval)  { clearInterval(this.watchdogInterval);  this.watchdogInterval  = null; }
 
     this.reconnectAttempts++;
-    console.warn(`[LIVE-VOICE] Failover triggered (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}): Code ${code} — ${reason}`);
+    console.warn(`[LIVE-VOICE] Failover triggered (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}): Code ${code} (${reason})`);
 
     this._sendToClient({
       type: 'CALL_STATUS_UPDATE',
@@ -1512,7 +1588,12 @@ class LiveVoiceSession {
     });
 
     if (this.reconnectAttempts <= this.maxReconnectAttempts) {
+      const prevKeyIdx = this.currentKeyIndex;
       this.currentKeyIndex = (this.currentKeyIndex + 1) % (GOOGLE_KEYS.length || 1);
+      if (this.currentKeyIndex !== prevKeyIdx) {
+        // Resumption handles are project/key-scoped; clear when rotating to another key
+        this._resumptionHandle = null;
+      }
 
       if (this.reconnectAttempts >= 3 && this.currentModel === LIVE_MODELS.TIER_1_SPEED) {
         console.log(`[LIVE-VOICE] Switching to Tier 2 Marathon: ${LIVE_MODELS.TIER_2_MARATHON}`);
@@ -1521,8 +1602,13 @@ class LiveVoiceSession {
 
       console.log(`[LIVE-VOICE] Reconnecting with Key Index ${this.currentKeyIndex}...`);
       await new Promise(r => setTimeout(r, 600));
+      this.isReconnecting = false;
+      if (!this.isActive || this.isEndingCall) {
+        return;
+      }
       await this._connectGoogleWs();
     } else {
+      this.isReconnecting = false;
       console.error(`[LIVE-VOICE] All failover tiers exhausted.`);
       this._sendToClient({
         type: 'CALL_ERROR',
@@ -1533,7 +1619,7 @@ class LiveVoiceSession {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // BUG 3 FIX: Keepalive Heartbeat — prevent Google idle timeout
+  // Keepalive Heartbeat: prevent Google idle timeout
   // Sends a 100ms silence frame (3200 zero bytes @16kHz) only when client is truly idle
   // ──────────────────────────────────────────────────────────────────────────
   _startKeepalive() {
@@ -1547,7 +1633,7 @@ class LiveVoiceSession {
       // Only inject silence keepalive if client has been truly idle (no audio/video) for >= 4500ms
       const idleTime = Date.now() - this.lastClientInputTime;
       if (idleTime < 4500) {
-        return; // Session is actively streaming audio or video — skip keepalive injection
+        return; // Session is actively streaming audio or video; skip keepalive injection
       }
 
       try {
@@ -1563,45 +1649,61 @@ class LiveVoiceSession {
         console.warn(`[LIVE-VOICE] Keepalive send warning:`, err.message);
       }
     }, 5000);
+    if (typeof this.keepaliveInterval.unref === 'function') this.keepaliveInterval.unref();
     console.log(`[LIVE-VOICE] Conditional keepalive heartbeat started (5s interval, idle threshold: 4.5s).`);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // BUG 4 FIX: Server-Side Watchdog — detect and recover stuck sessions
-  // Checks every 15s; triggers failover only when reply is stuck or connection is dead
+  // Server-Side Watchdog: detect genuinely stuck turns or dead Google sockets
+  // Checks every 15s; NEVER kills a healthy quiet call on ambient mic noise
   // ──────────────────────────────────────────────────────────────────────────
   _startServerWatchdog() {
     if (this.watchdogInterval) clearInterval(this.watchdogInterval);
     this.watchdogInterval = setInterval(() => {
-      if (!this.isActive) return;
-      const googleSilentMs = Date.now() - this.lastActivityTime;
-      const clientSilentMs = Date.now() - this.lastClientInputTime;
+      if (!this.isActive || this.isReconnecting) return;
+      const now = Date.now();
+      const googleSilentMs = now - this.lastActivityTime;
+      const clientSilentMs = now - this.lastClientInputTime;
 
-      // Condition A: User vocal activity was recently detected (RMS > 40 speech, not ambient mic stream)
-      // and Google failed to respond for > 30s after the user spoke -> stuck generation!
-      const userSpokeRecently = Boolean(this._lastVocalActivityTime && (Date.now() - this._lastVocalActivityTime < 35000));
-      const userSpokeAfterGoogle = Boolean(this._lastVocalActivityTime && (this._lastVocalActivityTime > this.lastActivityTime));
-      if (userSpokeRecently && userSpokeAfterGoogle && googleSilentMs > 30000) {
-        console.warn(`[LIVE-VOICE] Watchdog: User spoke recently (${Math.round((Date.now() - this._lastVocalActivityTime) / 1000)}s ago) but Google silent for ${Math.round(googleSilentMs / 1000)}s - triggering failover.`);
-        this._handleFailover(1006, 'Google silent timeout');
+      // Condition A1: Genuine dead Google WS detection via RFC 6455 ping/pong (non-intrusive to audio)
+      if (this.googleWs && this.googleWs.readyState === WebSocket.OPEN && typeof this.googleWs.ping === 'function') {
+        if (this._awaitingGooglePong && (now - this._lastGooglePongAt) > 35000) {
+          console.warn(`[LIVE-VOICE] Watchdog: Google WS ping unanswered for >35s - triggering failover.`);
+          this._handleFailover(1006, 'Google WS ping timeout');
+          return;
+        }
+        if (googleSilentMs > 20000 && !this._awaitingGooglePong) {
+          this._awaitingGooglePong = true;
+          try {
+            this.googleWs.ping();
+          } catch (_) {}
+        }
+      }
+
+      // Condition A2: Real pending turn (ASR transcript, tool response, greeting, or sustained loud speech)
+      // went unanswered by Google for >30s -> genuinely stuck generation!
+      const pendingAgeMs = this._pendingResponseSince > 0 ? (now - this._pendingResponseSince) : 0;
+      if (pendingAgeMs > 30000 && googleSilentMs > 25000) {
+        console.warn(`[LIVE-VOICE] Watchdog: Pending reply unanswered for ${Math.round(pendingAgeMs / 1000)}s (Google silent ${Math.round(googleSilentMs / 1000)}s) - triggering failover.`);
+        this._handleFailover(1006, 'Google stuck reply timeout');
         return;
       }
 
       // Condition B: Total session silence (both Google and client silent > 60s) -> close abandoned session cleanly
-      // (NEVER trigger failover reconnect loop when client is idle or muted)
       if (googleSilentMs > 60000 && clientSilentMs > 60000) {
-        console.warn(`[LIVE-VOICE] Watchdog: Total session silence for >60s — closing idle live session cleanly.`);
+        console.warn(`[LIVE-VOICE] Watchdog: Total session silence for >60s; closing idle live session cleanly.`);
         this.close().catch(err => console.warn('[LIVE-VOICE] Error closing idle session:', err.message));
         return;
       }
 
       // Condition C: Client socket is disconnected / not open and silent for > 25s
       if ((!this.clientWs || this.clientWs.readyState !== WebSocket.OPEN) && clientSilentMs > 25000) {
-        console.warn(`[LIVE-VOICE] Watchdog: Client socket disconnected and silent for >25s — closing live session.`);
+        console.warn(`[LIVE-VOICE] Watchdog: Client socket disconnected and silent for >25s; closing live session.`);
         this.close().catch(err => console.warn('[LIVE-VOICE] Error closing disconnected session:', err.message));
         return;
       }
     }, 15000);
+    if (typeof this.watchdogInterval.unref === 'function') this.watchdogInterval.unref();
     console.log(`[LIVE-VOICE] Server watchdog started (check: 15s, stuck threshold: 30s).`);
   }
 
@@ -1612,6 +1714,7 @@ class LiveVoiceSession {
     if (this.isClosed) return;
     this.isClosed = true;
     this.isActive = false;
+    this.isReconnecting = false;
     const durationSec = Math.round((Date.now() - this.sessionStartTime) / 1000);
     console.log(`[LIVE-VOICE] Closing Live Session [${this.sessionId}] | Duration: ${durationSec}s | Turns: ${this.turnHistory.length}`);
 

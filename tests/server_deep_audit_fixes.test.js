@@ -422,4 +422,65 @@ describe('Server Deep Audit Waves 1-3 Regression Suite', () => {
     const webhookSrc = fs.readFileSync(webhookPath, 'utf8');
     assert.ok(!webhookSrc.includes("require('./mobile_bridge/adapter')"));
   });
+
+  it('[LIVE-VOICE] ignores ambient room noise in watchdog and suppresses duplicate greeting on mid-call reconnect', async () => {
+    const { LiveVoiceSession } = require('../src/core/Live_Voice_Engine');
+    const sentToGoogle = [];
+    const sentToClient = [];
+
+    const fakeClientWs = { readyState: 1, send: (m) => sentToClient.push(JSON.parse(m)) };
+    const fakeGoogleWs = {
+      readyState: 1,
+      send: (m) => sentToGoogle.push(JSON.parse(m)),
+      ping: () => {},
+      removeAllListeners: () => {},
+      terminate: () => {}
+    };
+
+    const sess = new LiveVoiceSession('test-live-watchdog', fakeClientWs);
+    sess.isActive = true;
+    sess.googleWs = fakeGoogleWs;
+
+    // 1. Initial setupComplete dispatches Proactive Vocal Greeting exactly once
+    await sess._handleGoogleMessage(Buffer.from(JSON.stringify({ setupComplete: {} })));
+    assert.equal(sess.hasSentInitialGreeting, true);
+    const initialGreetings = sentToGoogle.filter(m => m.clientContent?.turns?.[0]?.parts?.[0]?.text);
+    assert.equal(initialGreetings.length, 1);
+
+    // Simulate Google responding with output transcription -> clears _pendingResponseSince
+    await sess._handleGoogleMessage(Buffer.from(JSON.stringify({
+      serverContent: { outputTranscription: { text: 'Selamat malam Tuan.' } }
+    })));
+    assert.equal(sess._pendingResponseSince, 0);
+
+    // 2. Ambient noise chunks (RMS ~350) MUST NOT set _pendingResponseSince
+    const makePcmB64 = (amp) => {
+      const buf = Buffer.alloc(3200);
+      for (let i = 0; i < 1600; i++) buf.writeInt16LE(amp, i * 2);
+      return buf.toString('base64');
+    };
+    const ambientB64 = makePcmB64(350);
+    for (let i = 0; i < 10; i++) {
+      sess.handleIncomingClientAudio(ambientB64);
+    }
+    assert.equal(sess._pendingResponseSince, 0, 'Ambient noise RMS=350 must not trigger watchdog pending timer');
+
+    // 3. Sustained loud speech (5 chunks of RMS=2000) sets _pendingResponseSince
+    const loudB64 = makePcmB64(2000);
+    for (let i = 0; i < 5; i++) {
+      sess.handleIncomingClientAudio(loudB64);
+    }
+    assert.ok(sess._pendingResponseSince > 0, 'Sustained loud speech should arm watchdog pending timer');
+
+    // 4. Mid-call reconnect setupComplete MUST NOT send a second Proactive Vocal Greeting
+    await sess._handleGoogleMessage(Buffer.from(JSON.stringify({ setupComplete: {} })));
+    const totalGreetings = sentToGoogle.filter(m => m.clientContent?.turns?.[0]?.parts?.[0]?.text);
+    assert.equal(totalGreetings.length, 1, 'Mid-call reconnect must suppress duplicate initial greeting');
+
+    // Cleanup intervals cleanly
+    if (sess.keepaliveInterval) clearInterval(sess.keepaliveInterval);
+    if (sess.watchdogInterval) clearInterval(sess.watchdogInterval);
+    sess.isClosed = true;
+    sess.isActive = false;
+  });
 });
