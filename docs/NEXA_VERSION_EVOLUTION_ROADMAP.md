@@ -1,4 +1,4 @@
-# N.E.X.A ARCHITECTURAL WHITEPAPER: EVOLUTIONARY ROADMAP (v1.0 to v3.2)
+# N.E.X.A ARCHITECTURAL WHITEPAPER: EVOLUTIONARY ROADMAP (v1.0 to v4.0.0)
 **Neural Executive with Xenial Agent (N.E.X.A)**  
 *Chief of Staff & Autonomous Executive Ecosystem for Tuan Faqih Hidayatulloh*  
 
@@ -6,9 +6,9 @@
 
 ## Executive Summary
 
-Dokumen ilmiah ini merangkum kronologi evolusi arsitektur **N.E.X.A (Neural Executive with Xenial Agent)** dari prototipe eksperimental berbasis lingkungan lokal (*Termux Genesis*), evolusi kognisi organik dan *Self-Learning*, migrasi infrastruktur server mandiri **v3.0 — Sovereign Azure Cloud Production (Jakarta Region)**, konsolidasi ekosistem terpadu **v3.1 — Unified Master OAuth 2.0 & Chrono-Episodic Cognitive Architecture**, ketahanan deterministik **v3.2 — Deterministic Resilience, Zero-LLM Finance & Cognitive Traffic Control**, pembelajaran prosedural tertutup **v3.3 — Hermes Adaptive Playbooks & Stance Alignment**, hingga arsitektur antarmuka bersih terpisah **v3.4 — Modular Unified Ingress, Hexagonal Decoupling & Platform-Aware Hardening**. 
+Dokumen ilmiah ini merangkum kronologi evolusi arsitektur **N.E.X.A (Neural Executive with Xenial Agent)** dari prototipe eksperimental berbasis lingkungan lokal (*Termux Genesis*), evolusi kognisi organik dan *Self-Learning*, migrasi infrastruktur server mandiri **v3.0 (Sovereign Azure Cloud Production, Jakarta Region)**, konsolidasi ekosistem terpadu **v3.1 (Unified Master OAuth 2.0 & Chrono-Episodic Cognitive Architecture)**, ketahanan deterministik **v3.2 (Deterministic Resilience, Zero-LLM Finance & Cognitive Traffic Control)**, pembelajaran prosedural tertutup **v3.3 (Hermes Adaptive Playbooks & Stance Alignment)**, pemisahan ingress bersih **v3.4 (Modular Unified Ingress, Hexagonal Decoupling & Platform-Aware Hardening)**, hingga transformasi platform penuh **v4.0.0 (Sovereign AI Control Center, Dual-WebSocket & Go Sidecar `nexa-io`, Interactive Cards, Mobile Chat-First Parity, N.E.X.A Pulse Monitor & Systemd Cutover)**.
 
-Setiap lompatan versi mewakili terobosan dalam rekayasa sistem terdistribusi, manajemen memori autobiografis (*Chrono-Episodic Memory*), ketahanan sistem anti-gagal (*Fault-Tolerant Multi-Tier Fallback*), integritas matematika murni tanpa halusinasi LLM, gerbang notifikasi pintar dengan *Quiet Hours*, integrasi multi-antarmuka (Telegram, CLI, Mobile Bridge), isolasi keamanan kanal, serta otomatisasi kognisi proaktif yang dirancang khusus untuk mendukung aspirasi akademik, kedisiplinan, dan karier diplomatik Tuan Faqih Hidayatulloh.
+Setiap lompatan versi mewakili terobosan dalam rekayasa sistem terdistribusi, manajemen memori autobiografis (*Chrono-Episodic Memory*), ketahanan sistem anti-gagal (*Fault-Tolerant Multi-Tier Fallback*), integritas matematika murni tanpa halusinasi LLM, gerbang notifikasi pintar dengan *Quiet Hours*, integrasi multi-antarmuka (Telegram, CLI, Android Control Center, Windows Desktop Bridge), otentikasi biometrik perangkat keras (Android Keystore ECDSA P-256 + tiket Ed25519 offline), observabilitas VPS berjejaring aman via `/monitor`, serta otomatisasi kognisi proaktif yang dirancang khusus untuk mendukung aspirasi akademik, kedisiplinan, dan produktivitas Tuan Faqih Hidayatulloh.
 
 ```mermaid
 flowchart TD
@@ -36,7 +36,7 @@ flowchart TD
     end
 
     subgraph S5 ["5. Sovereign Infrastructure (v3.0)"]
-        V30["<b>v3.0 (Azure Sovereign VPS)</b><br>• Ubuntu 24.04 Jakarta (24/7)<br>• Caddy HTTPS & PM2 Systemd<br>• Ed25519 DevOps Key Auth"]
+        V30["<b>v3.0 (Azure Sovereign VPS)</b><br>• Ubuntu 24.04 Jakarta (24/7)<br>• Caddy HTTPS & Systemd<br>• Ed25519 DevOps Key Auth"]
     end
 
     subgraph S6 ["6. Unified Master & Chrono-Episodic (v3.1)"]
@@ -51,11 +51,15 @@ flowchart TD
         V33["<b>v3.3 (Hermes Playbook Loop)</b><br>• Adaptive Procedural Playbooks<br>• Zero-Token Signal Detector<br>• Turn N-1 Credit Assignment<br>• Static Cache-Friendly System Prefix"]
     end
 
-    subgraph S9 ["9. Modular Unified Ingress & Clean Architecture (v3.4)"]
-        V34["<b>v3.4 (Modular Unified Ingress)</b><br>• Hexagonal Adapter Decoupling<br>• 7 Shared Domain Intent Handlers<br>• Platform-Aware HTML Sanitizer<br>• Universal Bank Currency Parser (IDR)<br>• 0.50% Code Duplication (122 Tests)"]
+    subgraph S9 ["9. Modular Ingress & Cognitive Refinement (v3.4)"]
+        V34["<b>v3.4.0 - v3.4.5 (Modular & Multimodal)</b><br>• Hexagonal Ingress, Finance & Memory Subsystems<br>• Self-Knowledge Registry & 5-Tier Cognitive Memory<br>• Multi-Bank Auto-Sync (Mandiri & Jago)<br>• Rust Windows Bridge (WASAPI + D3D11 + 32 Live Tools)"]
     end
 
-    V1 --> V20 --> V21 --> V22 --> V23 --> V24 --> V25 --> V26 --> V27 --> V28 --> V29 --> V30 --> V31 --> V32 --> V33 --> V34
+    subgraph S10 ["10. Sovereign AI Control Center & Pulse Platform (v4.0.0)"]
+        V40["<b>v4.0.0 (Sovereign AI Control Center)</b><br>• Native Mobile AI Chat-First, Voice Notes & 12 Interactive Cards<br>• Dual-WS + Go Sidecar nexa-io (/io/logs & /io/term PTY)<br>• Keystore ECDSA P-256 + Ed25519 Tickets + Finance Step-Up Gate<br>• N.E.X.A Pulse Monitor (/monitor) & Full Systemd Cutover<br>• Standalone Repo Extraction: Knightrelaxed/nexa-finance"]
+    end
+
+    V1 --> V20 --> V21 --> V22 --> V23 --> V24 --> V25 --> V26 --> V27 --> V28 --> V29 --> V30 --> V31 --> V32 --> V33 --> V34 --> V40
 ```
 
 ---
@@ -375,34 +379,59 @@ Pembaruan arsitektur **v3.4** merevolusi lapisan ingress menjadi sistem terpisah
 
 ---
 
-## Kesimpulan & Metrik Spesifikasi v3.4.5
+## Bab 10: Sovereign AI Control Center, Go Sidecars & Pulse Observability (v4.0.0)
 
-| Parameter Arsitektur | Spesifikasi N.E.X.A v3.4.5 (Production Release) |
+### v4.0.0: Transformasi Menyeluruh ke Sovereign Control Center & Native Parity
+Rilis **v4.0.0** merupakan lompatan arsitektural terbesar sejak kelahiran Cloud Core v3.0. Fokus utama rilis ini adalah menyatukan kendali percakapan AI, aksi interaktif kaya konteks, kontrol jarak jauh server Linux, keamanan kriptografis perangkat keras, efisiensi baterai/RAM seluler ekstrem, serta observabilitas infrastruktur VPS mandiri tanpa ketergantungan pada agent pihak ketiga.
+
+1. **Native Mobile AI Control Center (`com.nexa.mobilebridge`)**:
+   - **Arsitektur Chat-First Offline-Capable:** Pengalaman chat murni di Android menggunakan Jetpack Compose, Room (`nexa_chat.db` dengan Paging 3), delta-streaming karakter demi karakter (`CHAT_DELTA`), replay sinkronisasi setelah putus jaringan (`CHAT_RESUME` berjangka 10 menit), serta *in-chat notification actions* termasuk Direct Reply langsung dari notifikasi OS tanpa membuka layar aplikasi.
+   - **Multimodal Voice Notes & Slash Commands:** Perekam pesan suara OGG/Opus langsung di kotak ketik dengan pemutaran audio terintegrasi dan antarmuka *Slash Command Palette* (`/briefing`, `/budget`, `/vault`, `/search`, `/playbook`, `/capabilities`).
+   - **12 Kartu Interaktif N.E.X.A (`card_handler.js` & `InteractiveCardView.kt`):** Render kartu native di dalam bubble chat untuk `FINANCE_TX` (desain *receipt-first* yang bersih beserta Hard Account Gate & sinkronisasi status langsung tanpa emoji berlebih), `RECURRING_BILL`, `IDENTITY_PROPOSAL`, `MEMORY_HYGIENE`, `DISCIPLINE_CHECK`, `CALENDAR_CONFLICT`, `FINANCE_DELETE`, `TASK_CONFIRM`, `PROACTIVE_TASKS`, `VAULT_METADATA`, `BRIEFING_SUMMARY`, dan `BUDGET_RECAP`.
+   - **Banking-Safe App Discipline (`AppUsageTracker.kt`) & UI Hibernation:** Menghapus ketergantungan `AccessibilityService` demi keamanan aplikasi m-banking, beralih ke `UsageStatsManager` + `FLAG_SECURE`, manajemen `WakeLock`/`WifiLock` *on-demand* via `BridgePowerLockManager`, serta pelepas buffer grafis UI otomatis saat standby di latar belakang (*Home Standby* mencapai ~50,0 MB RAM fisik aktif).
+
+2. **Go Sidecar Platform (`nexa-io`) & Arsitektur Dual-WebSocket (/ws + /io/*)**:
+   - **Pemisahan Jalur Data & Kendali:** Node.js Core tetap fokus pada kognisi AI & bisnis di Connection A (`/ws`), sementara streaming log sistem (`journalctl`) dan shell terminal PTY dialihkan ke binari native **Go 1.22** terisolasi (`nexa-io`) melalui Connection B (`/io/logs` -> `nexa-log.socket` dan `/io/term` -> `nexa-term.socket`).
+   - **Protokol Biner 13-Byte (`proto/frame.go`) & 64 KB PTY Replay Ring:** Komunikasi biner big-endian hemat alokasi dengan kontrol kredit aliran (*flow control credits*), buffer riwayat terminal melingkar 64 KB (`ring.go`) untuk penyambungan ulang sesi VT100 mulus, dan pembatasan redaksi rahasia (`redactSecrets`) sebelum log meninggalkan VPS.
+   - **Sandboxing Systemd Ketat:** Unit worker `nexa-log.service` (MemoryMax 48M, `PrivateNetwork=yes`, `ProcSubset=all` khusus akses `journald`) dan `nexa-term.service` (MemoryMax 160M, blokir loopback via `IPAddressDeny=127.0.0.0/8 ::1/128`) diverifikasi offline memakai kunci publik **Ed25519** via `LoadCredential=ticket-pub.pem`.
+
+3. **Zero-Trust Device Spine & Hardware Biometric Finance Step-Up (`src/core/auth/`)**:
+   - Identitas perangkat keras tertanam via **Android Keystore ECDSA P-256** (`DeviceKeystoreManager.kt`), melewati tantangan kriptografis server (`ENROLL_SUBMIT`, `TICKET_REQ`, `CHALLENGE_RESP`) untuk menerbitkan tiket sesi **Ed25519** berumur singkat (`ticket_service.js`).
+   - Operasi finansial sensitif melewati gerbang deterministik backend `finance_stepup_service.js` dengan TTL 30 detik, nonce sekali pakai, daftar penerima terverifikasi (*whitelist*), batas nominal harian di server, dan tanda tangan biometrik langsung via `FinanceStepUpBottomSheet.kt`.
+
+4. **N.E.X.A Pulse Monitor (`/monitor`) & Full Systemd Cutover**:
+   - Membangun sub-sistem pemantauan VPS mandiri (`src/monitor/`) yang menyimpan histori metrik biner tetap ukuran 7 hari (`monitor_metrics_7d.bin`, kapasitas 10.080 sampel / ~709 KB, 72 byte per catatan), pelacak error tersedot-otomatis dengan redaksi rahasia (`issue_tracker.js`), heatmap kesehatan 168 jam, serta pemantauan 4 unit inti (`systemd_inspector.js`).
+   - **Cutover Penuh dari PM2 ke Systemd:** Menghapus ketergantungan PM2 God Daemon dan PM2+ agent demi menghemat ~47 MiB RAM fisik pada VPS 1 GB, menggantinya dengan unit `nexa-server.service` (`--max-old-space-size=320`, `MemoryMax=420M`) dan hak restart terbatas melalui kebijakan **Polkit** (`51-nexa-monitor.rules`).
+
+5. **Modularisasi Ekosistem (`Knightrelaxed/nexa-finance`)**:
+   - Memisahkan aplikasi web Next.js (`nexa-finance-web`) dari monorepo `nexa-server` menjadi repositori mandiri `Knightrelaxed/nexa-finance` agar siklus rilis frontend dan backend berjalan independen dan ramping.
+
+---
+
+## Kesimpulan & Metrik Spesifikasi v4.0.0
+
+| Parameter Arsitektur | Spesifikasi N.E.X.A v4.0.0 (Production Release) |
 | :--- | :--- |
 | **Official Name & Title** | **N.E.X.A (Neural Executive with Xenial Agent)** |
-| **Architectural Edition** | **Multi-Peripheral Bridge, Real-time Gemini Live Voice-Vision & Desktop Automation Core (v3.4.5)** |
+| **Architectural Edition** | **Sovereign AI Control Center, Dual-WS Go Sidecar & Pulse Observability Core (v4.0.0)** |
 | **Core Compute Infrastructure** | Azure Virtual Machine `Standard_B2ats_v2` (Ubuntu 24.04 ARM, Jakarta `indonesiacentral`) |
-| **Process Management & Auto-Healing** | PM2 Process Manager v5.4 + Systemd Auto-Revive + PM2 Plus Cloud Dashboard |
-| **Edge Web Server & Security** | Caddy v2 Reverse Proxy + Automated Let's Encrypt TLS/SSL |
-| **Production Domain** | `https://nexa-server.indonesiacentral.cloudapp.azure.com` |
-| **Environment Runtime** | Node.js 20 LTS (`NODE_ENV=production`, RAM Footprint ~18-28 MB, CPU Idle 0%) |
-| **Ingress Architecture** | Hexagonal Decoupling (Common Domain Handlers + Modular Telegram & CLI Adapters) |
-| **Desktop Automation Gateway** | Native Windows Bridge (Rust / Slint / Win32 GDI Stealth Overlay / WASAPI Duplex) |
-| **Finance Architecture** | Layered Subsystems + High-Performance Public Facade (`src/domain/finance/`) |
-| **Router Architecture** | Decoupled Cognitive Subsystems + Public Facade (`src/core/router/`) |
-| **Memory Architecture** | Layered Persistence Subsystems + High-Performance Public Facade (`src/infrastructure/memories/`) |
-| **Code Duplication Rate** | **0.50%** (3 klon, 41 baris tersisa di seluruh antarmuka) |
-| **Security Sanitization** | Platform-Aware HTML Escaping for Telegram + Clean Plain-Text for Terminal CLI |
-| **Desktop Security Policies** | Armed Guard 15-Min Lease, Terminal Injection Guard, Protected Process Whitelist, HUD Click Guard |
-| **Google Cloud Integration** | Unified Master OAuth 2.0 Client (16 Master Scopes, Zero Hardcoded Secrets) |
-| **Multimodal Real-Time Engine** | Gemini Live 2.5 + Sonora Resampling + Echo Cancellation AEC3 + D3D11 Capture |
+| **Process Management & Auto-Healing** | Native `systemd` (`nexa-server.service`, `nexa-log.socket/service`, `nexa-term.socket/service`) + Polkit |
+| **Edge Web Server & Security** | Caddy v2 Reverse Proxy + Automated Let's Encrypt TLS/SSL + CSP & Loopback Binding |
+| **Production Domain** | `https://nexa-server.indonesiacentral.cloudapp.azure.com` (Control & Pulse `/monitor`) |
+| **Environment Runtime** | Node.js 20+ LTS (`--max-old-space-size=320`, `MemoryMax=420M`) + Go 1.22 Sidecar (`nexa-io`) |
+| **Ingress Architecture** | Hexagonal Decoupling (Common Handlers, Telegram, CLI, Mobile Chat-First `/ws`, Desktop `/ws/windows`) |
+| **Mobile Control Center** | Native Android 16 / Kotlin Jetpack Compose (`com.nexa.mobilebridge`), Room + Paging 3, 12 Interactive Cards |
+| **Hardware Crypto & Step-Up Auth** | Android Keystore ECDSA P-256 Enrollment + Offline Ed25519 Session Tickets + Biometric Finance Gate |
+| **Desktop Automation Gateway** | Native Windows Bridge (Rust / Slint / Win32 GDI Stealth Overlay / WASAPI Duplex / 32 Live Tools) |
+| **Observability Platform** | Built-in N.E.X.A Pulse Monitor (`/monitor`, 7-Day ~709 KB Binary Ring, `scrypt` + HttpOnly Cookie Auth) |
+| **Finance Architecture** | Dual-Leg Transfers, Multi-Bank Auto-Sync (Mandiri & Jago), Standalone Web Portal (`Knightrelaxed/nexa-finance`) |
+| **Router & Memory Architecture** | Acyclic Cognitive Subsystems (`src/core/router/`), 5-Tier Living Memory & Dynamic Ebbinghaus Decay |
+| **Self-Knowledge Engine** | Code-as-Truth Registry (`CAPABILITIES_REGISTRY`) -> Tier 0 Manifest (~265 tokens) & Tier 1 Vector Cards |
 | **Procedural Learning Engine** | Hermes-Inspired Closed-Loop Playbook Reviewer + Turn N-1 Signal Attribution |
-| **Financial Engine** | Zero-LLM Deterministic Intelligence + Dynamic Recurring Rules (`nexa_recurring_rules`) |
-| **Notification Traffic Control** | Centralized Notifier + Quiet Hours Protection + Dedup Cooldown (`nexa_notifications`) |
-| **AI Resilience Matrix** | Round-Robin Key Ring Circuit Breaker + 429 Retry-After Parser + 11-Tier Fallback |
-| **Test Suite Coverage** | **439/439 Tests Passing** (`npm test`, 100% Pass) + **118/118 Tests Passing** (`cargo test`) |
+| **AI Resilience Matrix** | Round-Robin Key Ring Circuit Breaker + 429 Retry-After Parser + Multi-Tier Fallback |
+| **Automated Test Suites** | **41 Test Files** (`nexa-server` Node test runner) + Go `go test -race ./...` + Windows `cargo test` |
 | **Primary Beneficiary** | **Tuan Faqih Hidayatulloh** |
 
 ---
-*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v3.4.5. Diverifikasi dan disinkronkan dengan Azure Cloud Core.*
+*Dokumen resmi Architectural Evolution Roadmap N.E.X.A v4.0.0. Diverifikasi dan disinkronkan dengan kode sumber Cloud Core.*
 

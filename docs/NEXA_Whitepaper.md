@@ -1,5 +1,5 @@
 # N.E.X.A Whitepaper: Comprehensive System Book
-*(Neural Executive with Xenial Agent : v3.4.4+ "True Multimodal Duplex, Adaptive Procedural Memory, Omnichannel Finance Dual-Leg Transfers, Dynamic Situational Awareness & Closed-Loop Learning")*
+*(Neural Executive with Xenial Agent : v4.0.0 "Sovereign AI Control Center, Dual-WebSocket Go Sidecars, Native Interactive Cards, Hardware Biometric Step-Up, Pulse Observability & Systemd Cutover")*
 
 ---
 
@@ -388,30 +388,41 @@ Setiap kali Tuan Faqih melakukan perbaikan kode atau penambahan fitur pada CLI d
 
 ---
 
-#### 2.6 Struktur Arsitektur Monorepo Codebase & Peta Modul Komprehensif (v3.4.3)
+#### 2.6 Struktur Arsitektur Monorepo Codebase & Peta Modul Komprehensif (v4.0.0)
 
-Arsitektur codebase N.E.X.A mengadopsi pola **Modular Hexagonal / Layered Architecture** yang memisahkan secara ketat antara antarmuka (*Interfaces/Adapters*), orkestrasi kognitif (*Core Brain*), logika domain otonom (*Domain Engines & Subsystems*), dan lapisan infrastruktur/database (*Infrastructure & Data*).
+Arsitektur codebase N.E.X.A mengadopsi pola **Modular Hexagonal / Layered Architecture** yang memisahkan secara ketat antara antarmuka (*Interfaces/Adapters*), orkestrasi kognitif & keamanan (*Core Brain & Auth*), logika domain otonom (*Domain Engines & Subsystems*), observabilitas sistem (*Pulse Monitor*), sidecar biner berkinerja tinggi (*Go Sidecars `nexa-io`*), dan lapisan infrastruktur/database (*Infrastructure & Data*).
 
 ```mermaid
 flowchart TD
+    subgraph Edge["0. Caddy v2 TLS Edge Proxy"]
+        CADDY["Caddy v2 (HSTS, CSP, no-store)"]
+    end
+
     subgraph Ingress["1. Ingress & Interface Layer (src/interfaces/)"]
         TG["Telegram Webhook (/webhook/telegram)"]
-        MB["Mobile Bridge WebSocket (/ws & /bridge/*)"]
-        CLI_IN["Universal Remote CLI (POST /webhook/cli & SSE /cli/stream)"]
+        MB["Mobile Control Center Dual-WS (/ws & /ws/windows)"]
+        CLI_IN["Universal Remote CLI (POST /webhook/cli & SSE)"]
         GMAIL_IN["Gmail Pub/Sub Webhook (/webhook/gmail)"]
         CRON["Autonomous Chrono-Pulse Scheduler (node-cron)"]
     end
 
-    subgraph Entry["2. Entry Point & Security Hardening (src/)"]
-        APP["app.js (Express + HTTP/WS Server)"]
-        SEC["utils/security.js & logger.js (IPv4 First, CORS, Secret Token)"]
+    subgraph Sidecars["1b. Sandboxed Go 1.22 Sidecars (nexa-io/)"]
+        LOGS_IO["nexa-log.service (/io/logs, MemoryMax 48M)"]
+        TERM_IO["nexa-term.service (/io/term, MemoryMax 160M, 64KB Ring)"]
+    end
+
+    subgraph Entry["2. Entry Point, Monitor & Auth Spine (src/)"]
+        APP["app.js (Express + Dual-WS Gateway + systemd)"]
+        MON["monitor/ (/monitor/api/*, /monitor/ws/metrics, 7d Binary Ring)"]
+        AUTH["core/auth/ (ECDSA P-256 Enrollment, Ed25519 Tickets, Finance Step-Up)"]
+        SEC["utils/security.js, cors_config.js & logger.js"]
     end
 
     subgraph CoreBrain["3. Core Cognitive & Routing Layer (src/core/)"]
         AIR["AI_Router.js (Intent Classifier, Token Guard & Fact Injection)"]
         FBE["Fallback_Engine.js (Multi-Model Zero-Downtime Resilience)"]
-        TR["Live_Tool_Registry.js (Dynamic Tool Calling / Function Execution)"]
-        VE["Vision_Engine.js (11-Tier Visual Extraction)"]
+        TR["Live_Tool_Registry.js (32 Live Tools)"]
+        VE["Vision_Engine.js (OCR & Multimodal)"]
         VOICE["Live_Voice_Engine.js & Voice_Engine.js (Audio Stream & Groq Whisper)"]
     end
 
@@ -419,7 +430,7 @@ flowchart TD
         FIN["Finance_Engine (Facade) & finance/ (7 Subsystems)"]
         DISC["Discipline_GodMode & App_Discipline_Engine"]
         MEM["Episodic_Recall & Chrono_Consolidator (23:59 WIB)"]
-        INF["Inference_Engine (Cognitive Sunday Pass) & Behavior_Engine"]
+        INF["Inference_Engine, Behavior_Engine & Situational_Synthesizer"]
         PLAN["Agenda_Manager, Task_Manager & Anticipatory_Engine"]
         INT["Intention_Engine (Stated-vs-Revealed Reconciler)"]
     end
@@ -428,20 +439,28 @@ flowchart TD
         SUPA["Supabase_Finance.js & Supabase_Memories.js"]
         GMC["Google_Master_Client.js (Calendar, Gmail, Tasks, Drive, Docs)"]
         NOTION_C["Notion_Client.js"]
-        SEARCH_C["Web_Search.js (Tavily, Serper)"]
+        SEARCH_C["Web_Search.js & Location_Engine.js"]
         VEC_CACHE["utils/gemini_vector_cache.js (In-Memory RAM Snapshot)"]
     end
 
-    subgraph FrontendUI["6. Visual Presentation Layer"]
-        NFW["nexa-finance-web (Next.js 16 App Router)"]
+    subgraph Companions["6. Native Companions & Standalone Portals"]
+        AND["nexa-mobile-bridge (Android 16 Compose + Room + Keystore)"]
+        WIN["nexa-windows-bridge (Rust + Slint + WASAPI + D3D11)"]
+        NFW["Knightrelaxed/nexa-finance (Standalone Next.js 16 Portal)"]
     end
 
+    CADDY -->|/ws, /webhook, /monitor| APP
+    CADDY -->|/io/logs| LOGS_IO
+    CADDY -->|/io/term| TERM_IO
     Ingress --> APP
+    APP --> MON
+    APP --> AUTH
     APP --> SEC
     SEC --> CoreBrain
     CoreBrain --> DomainLogic
     DomainLogic --> InfraLayer
-    FrontendUI <--> SUPA
+    Companions <--> CADDY
+    NFW <--> SUPA
 ```
 
 #### 1. Hierarki Direktori Monorepo
@@ -451,22 +470,32 @@ nexa-server/
 ├── Dockerfile                          # Production container build specification
 ├── .dockerignore                       # Docker build artifact exclusion rules
 ├── .gitignore                          # Git repository ignore rules
-├── ecosystem.config.js                 # PM2 process manager configuration (VPS deployment)
-├── package.json                        # Main project manifest & production dependencies (v3.4.3)
-├── package-lock.json                   # Deterministic dependency lockfile
+├── deploy.sh                           # One-command deploy: git pull, npm test, Go rebuild, systemd restart
+├── deploy/                             # systemd units (nexa-server.service), Polkit & Caddyfile.pulse-monitor
+├── ecosystem.config.js                 # Legacy PM2 fallback configuration (superseded by systemd in prod)
+├── package.json                        # Main project manifest & production dependencies (v4.0.0)
+├── package-lock.json                   # Deterministic dependency lockfile (v4.0.0)
 ├── README.md                           # Repository overview & quick start guide
 ├── .env.example                        # Blueprint environment variable template
 │
+├── nexa-io/                            # Go 1.22 Sidecar Binary (--mode=logs | terminal | verify-ticket)
+│   ├── cmd/nexa-io/main.go             # Socket-activated Connection B entry point
+│   ├── internal/                       # 13-byte framing, Ed25519 verify, journald logstream & 64KB PTY ring
+│   └── systemd/                        # nexa-log.{socket,service}, nexa-term.{socket,service}, 50-nexa-term.rules
+│
 ├── src/
-│   ├── app.js                          # Main server boot, security headers, IPv4 agent, WS & cron init
+│   ├── app.js                          # Main server boot, Dual-WS gateway, Monitor mount, security & cron init
 │   ├── config/
+│   │   ├── capabilities_registry.js    # Single source of truth for 17 certified capabilities (v4.0.0)
 │   │   ├── env.js                      # Environment variable loader & validator
 │   │   ├── personality.js              # Persona, System Prompts, dan aturan karakter N.E.X.A
 │   │   ├── model_backup_plan.json      # Model fallback configuration matrix
-│   │   └── version.js                  # Centralized version definition (v3.4.3) & Git SHA resolver
-│   ├── core/                           # Cognitive Brain & Orchestration Layer (9 Subsystems)
+│   │   └── version.js                  # Centralized version definition (v4.0.0)
+│   ├── core/                           # Cognitive Brain, Hardware Auth & Orchestration Layer
 │   │   ├── AI_Router.js                # Public Facade (37 lines, re-exporting 18 cognitive routing APIs)
-│   │   ├── router/                     # Modular Cognitive Router Subsystem (7 Modules)
+│   │   ├── auth/                       # ECDSA P-256 enrolled devices, Ed25519 tickets, Finance Step-Up Gate
+│   │   ├── router/                     # Modular Cognitive Router Subsystem (8 Modules)
+│   │   │   ├── Memory_Classifier.js    # 5-tier cognitive memory classifier with contingency reasoning
 │   │   │   ├── Router_Cache.js         # RAM cache & TTL invalidator for personal facts, identity & self-model
 │   │   │   ├── Router_Classifier.js    # Fast reflex detection, candidate domain gating & topic classifier
 │   │   │   ├── Router_Dispatcher.js    # Master routeUserMessage orchestration loop & JSON repair
@@ -544,68 +573,30 @@ nexa-server/
 │   │   ├── cli/                        # Modular Remote CLI adapter (adapter, interceptors, intent_dispatcher)
 │   │   ├── cron.js                     # Cron pulse scheduler (01:00, 05:30, 08:15, 20:00, 21:00, 23:59 WIB)
 │   │   ├── gmail/                      # Google Cloud Pub/Sub push webhook handler
-│   │   ├── mobile_bridge/              # WebSocket /ws server & Android command dispatcher
+│   │   ├── bridge/                     # Unified Gateway (/ws, /ws/windows) + mobile_bridge (chat_handler, card_handler) & windows_bridge
 │   │   ├── telegram/                   # Modular Telegram adapter (actions, adapter, callback, command, intent, interceptors, media, vault)
 │   │   ├── webhook.js                  # Master /webhook facade router
 │   │   └── whatsapp/                   # WhatsApp Baileys socket adapter (local deployment mode)
+│   ├── monitor/                        # Built-in N.E.X.A Pulse Monitor (/monitor: 7d binary ring, scrypt auth, systemd inspector)
 │   └── utils/                          # Low-Level Utilities & Hardening
+│       ├── cors_config.js              # Origin allowlist normalization & validation
 │       ├── directive_utils.js          # Dynamic directive parser, counters & prompt injector
 │       ├── gemini_vector_cache.js      # Sub-millisecond in-memory vector cache & JSON snapshot
-│       ├── logger.js                   # Self-awareness contextual logger
+│       ├── logger.js                   # Self-awareness contextual logger with secret redaction & [cat=...] tags
 │       ├── security.js                 # Identity lock, webhook secret verification & CLI token auth
 │       ├── telegram_network.js         # Network retry & proxy fallbacks
 │       └── telegram_proxy.js           # Socks5 proxy support for restricted networks
-├── nexa-finance-web/                   # Next.js 16 Web Frontend Dashboard (Tailwind CSS, React 19)
-├── database/                           # PostgreSQL Schema definitions & migration SQL scripts (18 Migrations)
+├── database/                           # PostgreSQL Schema definitions & migration SQL scripts
+├── deploy/                             # systemd units (nexa-server.service), Polkit & Caddyfile.pulse-monitor
 ├── cloudflare-worker/                  # Cloudflare edge relay for Telegram API bypass
 ├── vercel-relay/                       # Vercel serverless relay for outbound webhook proxying
-├── scripts/                            # Maintenance, Migrations & AST Refactoring Tooling
-│   ├── audit_codebase.js               # AST codebase scanner & dependency auditor
-│   ├── audit_prompt_memory_efficiency.js # Memory token consumption profiler
-│   ├── backfill_directives.js          # Behavioral directives backfill utility
-│   ├── clean_bad_memories.js           # Supabase memory hygiene cleaner
-│   ├── generate_google_master_token.js # Google OAuth2 master token generator
-│   ├── generate_vector_snapshot.js     # Disk-to-Supabase vector embedding synchronizer
-│   ├── trigger_weekly.js               # Manual runner for weekly cognitive synthesis
-│   ├── verify_google_master_client.js  # Google OAuth2 master client validator
-│   └── refactor/                       # AST Automated Refactoring & Validation Tooling
-│       ├── README.md                   # Refactoring runbook & safety architecture
-│       ├── capture_memories_golden.js  # Golden fixture capture utility for Supabase Memories
-│       ├── capture_router_golden.js    # Golden fixture capture utility for AI Router
-│       ├── split_ai_router.js          # AST-based non-destructive module splitter for AI Router
-│       ├── split_finance_engine.js     # AST-based non-destructive module splitter for Finance Engine
-│       ├── split_supabase_memories.js  # AST-based non-destructive module splitter for Supabase Memories
-│       └── verify_finance_split.js     # Static scope & cyclic dependency validator
-├── tests/                              # Automated Unit Test Suites & Hermetic Fixtures (416 Tests)
-│   ├── cli_adapter.test.js             # CLI ingress adapter & multi-turn prompts
-│   ├── common_handlers.test.js         # Shared domain intent handlers (15 bank cases, escaping)
-│   ├── context_regressions.test.js     # Historical regression suites across context pipelines
-│   ├── day_simulation.test.js          # Full 24-hour simulation (Briefing to Midnight)
-│   ├── directive_utils.test.js         # Behavioral directive parsing & counter increments
-│   ├── finance_characterization.test.js# Golden master: Invariance test suite for modular Finance Engine (75 cases)
-│   ├── identity_directive_flow.test.js # Dynamic persona directives & alignment flow
-│   ├── memories_characterization.test.js # Golden master: Invariance test suite for modular Supabase Memories (69 cases)
-│   ├── micro_reviewer.test.js          # Micro-reviewer cognitive reflection & feedback loops
-│   ├── multi_bank_email_finance_sync.test.js # Multi-bank auto-sync: Mandiri & Jago email parser
-│   ├── multi_device_bridge.test.js     # Multi-device bridge: Mobile ADB, screen trigger & relay
-│   ├── playbook_counters.test.js       # Behavioral playbook counters & limits
-│   ├── playbook_engine.test.js         # Playbook engine rules & conditional SOPs
-│   ├── reviewer_resilience.test.js     # Reviewer engine fallback & fault tolerance
-│   ├── router_characterization.test.js # Golden master: Invariance test suite for modular AI Router (48 cases)
-│   ├── signal_detector.test.js         # Real-time behavioral signal detector
-│   ├── situational_synthesizer.test.js # Dynamic context synthesis & cognitive tone modulation
-│   ├── supabase_finance_characterization.test.js # Invariance test suite for modular Finance DB (25 APIs)
-│   ├── task_context_resolution.test.js # Contextual ambiguity resolution & state tracking
-│   ├── telegram_adapter.test.js        # Telegram adapter, action builders & callbacks
-│   ├── test_isolation_regression.test.js # Test isolation defense-in-depth & synthetic guard
-│   ├── topic_classifier.test.js        # Topic classification & fast prompt router
-│   ├── upgrade.test.js                 # Schema upgrade & database integrity validator
-│   ├── version.test.js                 # Centralized version resolver & git SHA tests
-│   ├── helpers/                        # Test Harness Helpers (memories_harness.js, router_harness.js)
-│   └── fixtures/                       # Golden Master Serialized Fixtures (finance_golden.json, memories_golden.json, router_golden.json)
+├── scripts/                            # Maintenance, Device Enrollment (nexa-enroll.js), Monitor Password & AST Refactoring
+├── tests/                              # 41 Automated Unit Test Suites & Golden Master Fixtures
 ├── tools/                              # Interactive CLI & Google Workspace OAuth2 tools
-└── docs/                               # Comprehensive architectural blueprints & specifications
+└── docs/ & Plan/                       # Comprehensive architectural blueprints, PRDs & specifications
 ```
+
+*Catatan Ekosistem: Antarmuka web `nexa-finance-web` kini dikelola secara mandiri di repositori terpisah `Knightrelaxed/nexa-finance`.*
 
 #### 2. Spesifikasi Modul Domain & Peran Fungsional
 
@@ -4424,7 +4415,100 @@ Pada portal web [`nexa-finance-web`](file:///c:/workspace/nexa-server/nexa-finan
 | **Navigasi Kartu Dasbor** | Mengarah ke daftar umum `/accounts` | **Direct Deep-Link ke `/accounts?id=<uuid>` (Detail Akun)** |
 | **Penyegaran Data Tabel Web** | Wajib reload browser penuh (*F5*) | **In-Card Asynchronous Refresh (Gaya Supabase Table Editor)** |
 | **Cakupan Test Suite Monorepo** | 437 automated unit tests | **456 automated unit tests (100% Green Pass, 0 Fail)** |
-| **Status Produksi** | v3.4.4 Base | **v3.4.4+ Enhanced Deployed on Azure VPS & Vercel** |
+| **Status Produksi** | v3.4.4 Base | **v4.0.0 Enhanced Deployed on Azure VPS (Systemd + Go Sidecars)** |
+
+---
+
+## BAB 27: ARSITEKTUR v4.0.0 : SOVEREIGN AI CONTROL CENTER, DUAL-WEBSOCKET GO SIDECARS (`nexa-io`), NATIVE INTERACTIVE CARDS, BIOMETRIC STEP-UP & PULSE MONITOR (`/monitor`)
+
+### 27.1 Transformasi Mobile Bridge Menjadi Native AI Control Center (`com.nexa.mobilebridge`)
+
+Pada v4.0.0, pendamping Android berevolusi dari periferal sensor pasif menjadi **Sovereign AI Control Center** lengkap berbasis Jetpack Compose, Room (`nexa_chat.db` dengan Paging 3), dan Kotlin Coroutines tanpa ketergantungan pada `AccessibilityService` demi kepatuhan keamanan aplikasi m-banking:
+
+1. **Arsitektur Chat-First Offline-Capable (`src/interfaces/bridge/mobile_bridge/chat_handler.js`)**:
+   - **Streaming & Idempotensi:** Pesan dikirim sebagai JSON frame pada Connection A (`/ws`) dengan `client_msg_id` idempoten (percobaan ulang saat rekoneksi tidak pernah mengeksekusi ulang LLM/tool). Respon server mengalir bertahap via `CHAT_DELTA` (`seq = 1..N`, ukuran chunk default 64 karakter) disertai plafon timeout keras 120 detik per giliran.
+   - **Buffer Pemulihan 10 Menit (`CHAT_RESUME`):** `chat_handler.js` menyimpan maksimum 100 entri balasan terbaru selama `10 menit` untuk menggantikan potongan teks yang terlewat akibat perubahan jaringan seluler, sembari merekam riwayat ke Supabase sebagai `platform = 'mobile'`.
+   - **Voice Note NLU Parity & Slash Commands:** Dukungan perekaman pesan suara langsung (`audio/ogg` OggS, `audio/mp4`/`m4a` ftyp, `audio/webm` EBML dengan batas keras 1.5 MB / 185 detik) yang langsung ditranskripsi via Groq Whisper, serta *Slash Command Palette* interaktif (`/briefing`, `/budget`, `/vault`, `/search`, `/playbook`, `/capabilities`).
+   - **Notifikasi OS & UI Hibernation:** Mendukung **Inline Direct Reply** via `ChatNotificationActionReceiver.kt` tanpa membuka layar aplikasi. Ketika aplikasi dialihkan ke latar belakang (`Home Standby`), `MainActivity` melepaskan buffer UI/grafis OpenGL (`ViewRootImpl: 0`), dan `BridgePowerLockManager.kt` hanya menahan `WakeLock`/`WifiLock` secara *on-demand*, memangkas jejak memori fisik standby hingga **~50,0 MB** (verified `dumpsys meminfo`).
+
+2. **Mesin 12 Kartu Interaktif N.E.X.A (`src/interfaces/bridge/mobile_bridge/card_handler.js`)**:
+   Setiap respons kontekstual kaya aksi dirender langsung sebagai antarmuka kartu native (`InteractiveCardView.kt`) dengan siklus patch satu arah (`CARD_ACTION` -> `CARD_UPDATE`):
+   - `FINANCE_TX`: Tata letak *receipt-first* yang bersih (hero nominal, metadata merchant, Hard Account Gate jika akun belum dipilih, dropdown kategori/akun/metode pembayaran, serta sinkronisasi status Option A bersih tanpa emoji berlebih).
+   - `RECURRING_BILL`, `IDENTITY_PROPOSAL`, `MEMORY_HYGIENE`, `DISCIPLINE_CHECK`, `CALENDAR_CONFLICT`, `FINANCE_DELETE`, `TASK_CONFIRM`, `PROACTIVE_TASKS`, `VAULT_METADATA`, `BRIEFING_SUMMARY`, dan `BUDGET_RECAP`.
+
+3. **Disiplin Digital Aman Perbankan (`AppUsageTracker.kt` + `WindowSecureEffect.kt`)**:
+   Pemantauan aplikasi latar depan beralih ke Android `UsageStatsManager` dan penangkapan layar on-demand menggunakan `MediaProjection` (`ScreenCaptureService.kt`). Layar sensitif dilindungi `FLAG_SECURE` dan seluruh rahasia lokal dienkripsi AES-GCM memakai Android Keystore (`SecretKeyStoreCipher.kt`).
+
+---
+
+### 27.2 Arsitektur Dual-WebSocket & Go 1.22 Sidecar Platform (`nexa-io`)
+
+Agar lonjakan stream log VPS atau terminal shell interaktif tidak pernah menghambat loop peristiwa (*event loop*) Node.js maupun frame suara PCM `Live_Voice_Engine.js`, lalu lintas dibagi dua di tingkat reverse proxy **Caddy v2** (`deploy/caddy/Caddyfile.pulse-monitor`):
+
+```mermaid
+flowchart LR
+    MOBILE["Android Control Center\n(com.nexa.mobilebridge)"]
+    CADDY["Caddy v2 TLS Proxy\n(nexa-server.*.azure.com)"]
+    NODE["Connection A (/ws)\nnexa-server.service\n(Node.js Core, Chat, Auth, Voice)"]
+    GO_LOG["Connection B (/io/logs)\nnexa-log.socket -> nexa-log.service\n(Go Sidecar, MemoryMax 48M)"]
+    GO_TERM["Connection B (/io/term)\nnexa-term.socket -> nexa-term.service\n(Go Sidecar PTY, MemoryMax 160M)"]
+    MON["N.E.X.A Pulse Monitor (/monitor)\nmetrics_collector + systemd_inspector"]
+
+    MOBILE -->|WSS + Ticket| CADDY
+    CADDY -->|/ws| NODE
+    CADDY -->|unix//run/nexa-log.sock| GO_LOG
+    CADDY -->|unix//run/nexa-term.sock| GO_TERM
+    CADDY -->|/monitor/*| MON
+    NODE -.->|Menerbitkan Tiket Ed25519| MOBILE
+    GO_LOG -.->|Verifikasi Offline LoadCredential| NODE
+    GO_TERM -.->|Verifikasi Offline LoadCredential| NODE
+```
+
+1. **Protokol Biner 13-Byte (`nexa-io/internal/proto/frame.go`)**:
+   Connection B menggunakan bingkai biner big-endian hemat alokasi (batas payload hot-path 4 KiB) dengan kanal terpisah (`0x00` Control, `0x01` Telemetry, `0x02` Chat, `0x03` Logs, `0x10..0xFF` Terminal PTY) dan opcodes aliran terkontrol kredit (`OpOpen`, `OpData`, `OpCredit`, `OpClose`, `OpResize`, `OpErr`, `OpPing`/`OpPong`, `OpResume`).
+2. **Isolasi Sandboxing Systemd & 64 KB PTY Replay Ring (`nexa-io/systemd/`)**:
+   - `nexa-log.service` (`--mode=logs`) dijalankan di bawah user terisolasi `nexa-log`, akses grup `systemd-journal` saja, `PrivateNetwork=yes`, `RestrictAddressFamilies=AF_UNIX`, `MemoryMax=48M`, `ProcSubset=all` (agar `journalctl -f` membaca `/proc/sys/kernel/random/boot_id`), dan redaksi rahasia aktif sebelum frame dikirim ke klien.
+   - `nexa-term.service` (`--mode=terminal`) berjalan sebagai user `nexa-term` tanpa hak sudo maupun akses ke `/home/nexa/nexa-server`, dilengkapi `IPAddressDeny=127.0.0.0/8 ::1/128` untuk memblokir akses ke layanan loopback lokal serta ring buffer melingkar 64 KB (`ring.go`) untuk penyambungan ulang sesi VT100 mulus (`OpResume`).
+
+---
+
+### 27.3 Zero-Trust Hardware Identity Spine & Biometric Finance Step-Up (`src/core/auth/`)
+
+1. **Android Keystore ECDSA P-256 Enrollment & Tiket Sesi Ed25519 Offline**:
+   - Skrip CLI [`scripts/nexa-enroll.js`](file:///c:/workspace/nexa-server/scripts/nexa-enroll.js) dan handler WebSocket [`src/core/auth/ws_auth_handler.js`](file:///c:/workspace/nexa-server/src/core/auth/ws_auth_handler.js) memasangkan kunci publik perangkat keras **ECDSA P-256** (`DeviceKeystoreManager.kt`) ke dalam [`enrolled_devices_store.js`](file:///c:/workspace/nexa-server/src/core/auth/enrolled_devices_store.js).
+   - Untuk membuka Connection B (`/io/logs` atau `/io/term`), ponsel meminta tantangan (`TICKET_REQ` -> `CHALLENGE` -> `CHALLENGE_RESP`), lalu [`ticket_service.js`](file:///c:/workspace/nexa-server/src/core/auth/ticket_service.js) menandatangani tiket jangka pendek **Ed25519**. Binari Go `nexa-io` memverifikasi tiket secara offline via kunci publik yang disuntikkan aman oleh `systemd` (`LoadCredential=ticket-pub.pem:/etc/nexa/ticket-pub.pem`).
+2. **Gerbang Finansial Deterministik (`finance_stepup_service.js`)**:
+   Eksekusi aksi finansial berisiko tinggi tidak pernah mengandalkan klaim klien (`intent_hint`) atau teks bebas LLM:
+   - Penerima divalidasi ketat terhadap daftar putih terdaftar dan batas nominal harian di server.
+   - Server membekukan detail kanonikal ke dalam `pending_action` berumur **30 detik** (maksimum 8 aksi paralel) beserta nonce sekali pakai, lalu Android menandatangani string `nexa-action-v1\n<nonce>\n<action_id>\n<canonical_hash>` lewat [`FinanceStepUpBottomSheet.kt`](file:///c:/workspace/nexa-mobile-bridge/app/src/main/java/com/nexa/mobilebridge/ui/chat/FinanceStepUpBottomSheet.kt) setelah autentikasi **BiometricPrompt CryptoObject**.
+
+---
+
+### 27.4 N.E.X.A Pulse Monitor (`/monitor`), Full Systemd Cutover & Ekstraksi `nexa-finance`
+
+1. **Observabilitas Mandiri `src/monitor/`**:
+   - **7-Day Fixed Binary History Store (`history_store.js`):** Ring biner berukuran tetap ber-header `NXPM` (kapasitas 10.080 sampel @ 1 sampel/menit = 725.784 byte / ~709 KB, 72 byte per rekord) tanpa risiko membengkaknya disk VPS, dilengkapi *hot ring* 60 sampel di RAM untuk *sparkline* 1 jam dan peta panas kesehatan 168 jam.
+   - **Deduplicated Issue Tracker & Threshold Alerts (`issue_tracker.js`, `alert_engine.js`):** Menangkap galat runtime dengan redaksi FR-SEC-04 (`redactSecrets` menyensor token Bearer, JWT, parameter query rahasia, kunci PEM, nomor rekening bank, dan OTP).
+   - **Hardened Single-User Auth & Polkit Control (`auth_service.js`, `router.js`, `systemd_inspector.js`):** Hashing password `scrypt` (`N=16384, r=8, p=1`) dengan perbandingan konstan-waktu, session cookie `HttpOnly; Secure; SameSite=Strict; Path=/monitor`, pelindung CSRF (`X-Nexa-Monitor: 1` + allowlist Origin), penguncian otomatis 15 menit setelah 5 kegagalan IP, pemantauan tepat 4 unit (`nexa-server.service`, `nexa-log.service`, `nexa-term.service`, `caddy.service`), serta tombol restart aman berbasis Polkit (`deploy/systemd/51-nexa-monitor.rules`).
+2. **Full Systemd Cutover & Penghematan RAM VPS**:
+   Menggantikan PM2 God Daemon dan PM2+ agent dengan `deploy/systemd/nexa-server.service` (`NODE_OPTIONS=--max-old-space-size=320`, `MemoryMax=420M`), membebaskan **~47 MiB RAM fisik** permanen pada VPS Azure B-series berkapasitas terbatas.
+3. **Ekstraksi Repositori Mandiri `Knightrelaxed/nexa-finance`**:
+   Aplikasi Next.js `nexa-finance-web` dipisahkan menjadi repositori tersendiri [`Knightrelaxed/nexa-finance`](https://github.com/Knightrelaxed/nexa-finance) sehingga repositori `nexa-server` murni berfokus pada layanan inti backend, sidecar Go, dan antarmuka real-time.
+
+---
+
+### 27.5 Matriks Evaluasi & Verifikasi v4.0.0
+
+| Dimensi Arsitektur | Sebelum Evolusi v4.0.0 (v3.4.5) | Setelah Evolusi v4.0.0 (Sovereign Control Center) |
+| :--- | :--- | :--- |
+| **Klien Seluler Utama** | Periferal sensor + HUD dasar | **Native AI Control Center (`ChatScreen`, Room + Paging 3, Voice Notes, Slash Commands)** |
+| **Aksi Interaktif Chat** | Inline keyboard Telegram saja | **12 Kartu Interaktif Native (`FINANCE_TX`, `BRIEFING_SUMMARY`, `BUDGET_RECAP`, dll.)** |
+| **Akses Disiplin Aplikasi** | Berbasis AccessibilityService | **Banking-Safe (`UsageStatsManager` + `FLAG_SECURE`, nol AccessibilityService)** |
+| **Efisiensi RAM Standby HP** | Menahan komponen UI penuh & WakeLock konstan | **UI Hibernation & On-Demand Power Locks (~50,0 MB RAM fisik standby)** |
+| **Inspeksi Log & Shell VPS** | Membutuhkan klien SSH eksternal | **Go 1.22 Sidecar `nexa-io` (`/io/logs`, `/io/term`) berprotokol biner 13-byte + 64 KB Replay** |
+| **Keamanan Klien & Finansial** | Bearer Token & HMAC statis | **Android Keystore ECDSA P-256 + Tiket Ed25519 + Biometric Finance Step-Up (TTL 30s)** |
+| **Observabilitas & Process Mgr** | PM2 + PM2+ (~47 MiB overhead) | **N.E.X.A Pulse Monitor (`/monitor`, ~709 KB Ring) + Full Systemd Cutover + Polkit** |
+| **Kemandirian Web Portal** | Terbenam dalam folder `nexa-finance-web` | **Repositori mandiri [`Knightrelaxed/nexa-finance`](https://github.com/Knightrelaxed/nexa-finance)** |
 
 ---
 

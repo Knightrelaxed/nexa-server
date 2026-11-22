@@ -1,27 +1,30 @@
 # N.E.X.A Ecosystem - Complete Architecture & File Tree
 
 > **Document:** `docs/NEXA_FOLDER_ARCHITECTURE.md`  
-> **Ecosystem:** N.E.X.A 3.4.5 (Sovereign Cloud Core, Finance Web Portal, Mobile Hardware Bridge, Native Windows Bridge, US Gemini Proxy & Universal CLI)  
-> **Last Updated:** 2026-10-31  
+> **Ecosystem:** N.E.X.A 4.0.0 (Sovereign Cloud Core, Go Sidecar `nexa-io`, Pulse Monitor, Mobile AI Control Center, Native Windows Bridge, Standalone Finance Web Portal, US Gemini Proxy & Universal CLI)  
+> **Last Updated:** 2026-11-22  
 > **Format:** Comprehensive Plain-Text ASCII Tree with Deep Functional Annotations  
 
 ---
 
-## 1. N.E.X.A SERVER ARCHITECTURE (Node.js Sovereign Core)
+## 1. N.E.X.A SERVER ARCHITECTURE (Node.js Sovereign Core + Go Sidecar)
 * **Local Path:** `C:\workspace\nexa-server`
 * **Production Host:** Azure Central Indonesia VPS (`/home/nexa/nexa-server`)
-* **Role:** Sovereign Cognitive Core, Multi-Model Router, Database Ledger, Realtime Relays & Background Services
-* **Current Version:** v3.4.5 (`src/config/version.js` & `package.json`)
+* **Process Manager:** Native `systemd` (`nexa-server.service`, `nexa-log.socket/service`, `nexa-term.socket/service`)
+* **Role:** Sovereign Cognitive Core, Multi-Model Router, Financial & Living Memory Engines, Dual-WS & Auth Gateways, Native Pulse Monitor (`/monitor`), Go Sidecars (`/io/logs`, `/io/term`) & Background Services
+* **Current Version:** v4.0.0 (`src/config/version.js` & `package.json`)
 
 ```text
 nexa-server/
 ├── Dockerfile                            # Production container build specification
-├── .dockerignore                         # Docker build artifact exclusion rules
+├── .dockerignore                       # Docker build artifact exclusion rules
 ├── .gitignore                            # Git repository ignore rules
-├── deploy.sh                             # Zero-downtime deployment script for Azure VPS (git pull, pretest, PM2 reload)
-├── ecosystem.config.js                   # PM2 process manager configuration (VPS deployment)
-├── package.json                          # Main project manifest & production dependencies (v3.4.5)
-├── package-lock.json                     # Deterministic dependency lockfile
+├── .github/workflows/ci.yml              # GitHub Actions CI workflow
+├── .agents/skills/                       # Local AI engineering skills (code-review, diagnosing-bugs, tdd, etc.)
+├── deploy.sh                             # Zero-downtime deployment script (git pull, npm test, Go sidecar rebuild, systemd restart)
+├── ecosystem.config.js                   # Legacy PM2 fallback configuration (replaced in prod by deploy/systemd/nexa-server.service)
+├── package.json                          # Main project manifest & production dependencies (v4.0.0)
+├── package-lock.json                     # Deterministic dependency lockfile (v4.0.0)
 ├── README.md                             # Repository overview & quick start guide
 ├── .env.example                          # Blueprint environment variable template
 │
@@ -30,9 +33,10 @@ nexa-server/
 │   └── wrangler.toml                     # Cloudflare Worker deployment configuration
 │
 ├── data/                                 # Local Storage & Snapshot Datastore
-│   ├── capabilities_manifest.txt         # Tier 0 compact manifest (~265 tokens) for router prompts & Anti-False-Denial Rule
-│   ├── capabilities_cards.json           # Tier 1 structured capability cards (17 certified modules)
-│   ├── capabilities_vectors.json         # In-memory vector snapshot for Tier 1 capability cards
+│   ├── backups/                          # Identity snapshot backups
+│   ├── capabilities_manifest.txt         # Tier 0 compact manifest (~265 tokens) compiled for v4.0.0
+│   ├── capabilities_cards.json           # Tier 1 structured capability cards (17 certified modules, v4.0.0)
+│   ├── capabilities_vectors.json         # In-memory vector snapshot for Tier 1 capability cards (v4.0.0)
 │   ├── facts_vectors.json                # In-memory snapshot of pgvector memory embeddings
 │   └── transcripts_dump/                 # Raw conversation transcripts & session archives
 │
@@ -50,6 +54,7 @@ nexa-server/
 │   ├── migration_notifier_recurring.sql  # Scheduled notifications & recurring task triggers
 │   ├── migration_settings.sql            # Dynamic user & system runtime settings schema
 │   ├── migration_split_transaction.sql   # Split-bill & shared expense transaction schema
+│   ├── migration_vault_exclude_from_stats.sql # Vault exclusion toggle from aggregate expense stats
 │   ├── phase6_migration.sql              # Cognitive Identity, Mood Time-Series & Dual Memory tables
 │   ├── phase7_migration.sql              # Causal Knowledge Graph & dynamic self-inference schema
 │   ├── phase8_discipline_state_migration.sql # Screen lock, god-mode & discipline enforcement states
@@ -58,7 +63,14 @@ nexa-server/
 │   ├── seed_phase10_cron_architecture.sql# Seed proactive cron schedules & intervals
 │   └── whatsapp_and_platform_migration.sql# Multi-platform messaging channel schema
 │
-├── docs/                                 # Architecture Whitepapers & Documentation
+├── deploy/                               # Production Infrastructure Templates (Systemd, Polkit, Caddy)
+│   ├── caddy/
+│   │   └── Caddyfile.pulse-monitor       # TLS reverse proxy routing /ws, /io/logs, /io/term & /monitor/*
+│   └── systemd/
+│       ├── 51-nexa-monitor.rules         # Polkit rule permitting user 'nexa' passwordless nexa-server restart
+│       └── nexa-server.service           # Main Node.js systemd unit (--max-old-space-size=320, MemoryMax=420M)
+│
+├── docs/                                 # Architecture Whitepapers & Technical Documentation
 │   ├── CORE_IDENTITY_AUDIT_REPORT.md     # Persona integrity & identity verification report
 │   ├── GOOGLE_MASTER_OAUTH2_ARCHITECTURE_PLAN.md # Centralized OAuth2 token infrastructure
 │   ├── JSON_PROTOCOL_SPECIFICATION.md    # Bidirectional WebSocket schema (Nexa Protocol 3.0)
@@ -67,31 +79,58 @@ nexa-server/
 │   ├── NEXA_COGNITIVE_ROUTER_PROMPT_ARCHITECTURE.md # Full verbatim prompt specification & two-payload simulation
 │   ├── nexa_core_identity_dump_231.json  # Comprehensive persona trait snapshot & embeddings dump
 │   ├── NEXA_FOLDER_ARCHITECTURE.md       # This complete ecosystem folder directory tree
-│   ├── NEXA_MOBILE_BRIDGE_DOCUMENTATION.md # Complete Android bridge technical documentation
+│   ├── NEXA_MOBILE_BRIDGE_DOCUMENTATION.md # Complete Android bridge & control center documentation
 │   ├── NEXA_ORACLE_CLOUD_MIGRATION_PLAN.md # Secondary cloud disaster recovery plan
 │   ├── NEXA_SECURITY_ARCHITECTURE_AND_HARDENING.md # Comprehensive security hardening guide
-│   ├── NEXA_VERSION_EVOLUTION_ROADMAP.md # Version evolution & release milestone roadmap (v1.0 - v3.4.4)
-│   ├── NEXA_Whitepaper.md                # General N.E.X.A architecture whitepaper (v3.4.4 with BAB 24 & BAB 25)
+│   ├── NEXA_VERSION_EVOLUTION_ROADMAP.md # Version evolution & release milestone roadmap (v1.0 - v4.0.0)
+│   ├── NEXA_Whitepaper.md                # General N.E.X.A architecture whitepaper (v4.0.0)
+│   ├── NEXA_WINDOWS_BRIDGE_INTEGRATION.md # Windows bridge integration, 32 Live Tools & safety directives
+│   ├── ORACLE_SUPPORT_CHAT_TRANSCRIPT_2026-11-06.md # External infra provisioning transcript archive
 │   └── USER_EXPERIENCE_GUIDE_NEXA_FINANCE.md # End-to-end UX guide: Web, PWA, chat, & multi-bank automation
 │
-├── logs/                                 # Runtime application logs (PM2 / Express)
+├── logs/                                 # Runtime application logs
 │
-├── nexa-finance-web/                     # Next.js Sovereign Financial Web Portal (Arsitektur Terpisah di Bagian 2)
+├── nexa-io/                              # Go 1.22 Sidecar Binary (Sandboxed Logs & Terminal PTY)
+│   ├── go.mod                            # Go module definition (module nexa-io, go 1.22)
+│   ├── cmd/nexa-io/main.go               # CLI entrypoint (--mode=logs | --mode=terminal | --mode=verify-ticket)
+│   ├── internal/
+│   │   ├── logstream/                    # journalctl & /var/log/nexa live streamer + cloexec helpers
+│   │   ├── proto/frame.go                # 13-byte big-endian Connection B binary framing + flow credits
+│   │   ├── ptyutil/                      # Linux PTY allocator & non-Linux stub
+│   │   ├── termstream/                   # Sandboxed VT100 PTY session server + 64 KB replay ring buffer
+│   │   ├── ticket/verifier.go            # Offline Ed25519 ticket signature, expiry & scope verifier
+│   │   └── ws/conn.go                    # Lightweight WebSocket binary upgrade helper
+│   └── systemd/
+│       ├── 50-nexa-term.rules            # Polkit restriction for terminal worker sandbox
+│       ├── nexa-log.service              # Sandboxed log streamer (MemoryMax 48M, PrivateNetwork=yes)
+│       ├── nexa-log.socket               # Unix socket activation (/run/nexa-log.sock)
+│       ├── nexa-term.service             # Sandboxed terminal worker (MemoryMax 160M, IPAddressDeny loopback)
+│       └── nexa-term.socket              # Unix socket activation (/run/nexa-term.sock)
 │
-├── Plan/                                 # Architectural Blueprint & Engineering Challenges
+├── Plan/                                 # Architectural Blueprints & Implementation PRDs
+│   ├── LIGHTPANDA_HEADLESS_BROWSER_INTEGRATION_PLAN.md # Headless web automation exploration plan
 │   ├── MODEL_BACKUP_GUIDE.md             # Multi-tier AI model failover guidelines
+│   ├── NEXA_GEMINI_LIVE_UI_REDESIGN_PLAN.md # Live Call UI redesign blueprint
+│   ├── NEXA_MOBILE_BRIDGE_CONTROL_CENTER_PLAN.md # Control Center migration plan
+│   ├── NEXA_MOBILE_BRIDGE_CONTROL_CENTER_PRD.md # Full Control Center v3.1 & Dual-WS PRD
+│   ├── NEXA_SCREEN_SHARING_ARCHITECTURE_PLAN.md # Multimodal screen sharing pipeline plan
+│   ├── NEXA_WEB_MONITOR_PLAN.md          # N.E.X.A Pulse Monitor (/monitor) & systemd cutover plan
+│   ├── NEXA_WINDOWS_BRIDGE_ARCHITECTURE_PLAN.md # Desktop companion bridge plan
+│   ├── PLAN_TRANSFER_WITH_ADMIN_FEE.md   # Inter-account transfer with admin fee ledger plan
 │   └── VPS_DEPLOYMENT_CHALLENGES.md      # Documented solutions for VPS networking & proxy quirks
 │
 ├── scripts/                              # Maintenance, Migrations & Diagnostic Utilities
 │   ├── audit_codebase.js                 # AST codebase scanner & dependency auditor
 │   ├── audit_prompt_memory_efficiency.js # Memory token consumption & prompt bloat profiler
-│   ├── backfill_directives.js            # Behavioral directives backfill utility (tested by directive_utils)
-│   ├── build_capabilities.js             # Compiler: capability registry compiler to Tier 0 manifest & Tier 1 cards
+│   ├── backfill_directives.js            # Behavioral directives backfill utility
+│   ├── build_capabilities.js             # Compiler: capability registry to Tier 0 manifest & Tier 1 cards
 │   ├── clean_bad_memories.js             # Supabase memory hygiene & corrupted fact cleaner
-│   ├── deploy.sh                         # Canonical bash deployment script template
 │   ├── generate_google_master_token.js   # OAuth2 refresh token generator for Google APIs
 │   ├── generate_vector_snapshot.js       # Disk-to-Supabase vector embedding synchronizer
-│   ├── reclassify_core.js                # Cognitive taxonomy audit & reclassifier (nexa_user_profile & nexa_core_identity)
+│   ├── nexa-enroll.js                    # Interactive mobile hardware device enrollment & Ed25519 key pairing CLI
+│   ├── nexa_monitor_set_password.js      # Pulse Monitor scrypt password hash generator
+│   ├── reclassify_core.js                # Cognitive taxonomy audit & reclassifier
+│   ├── temp_check.js                     # Ad-hoc diagnostic script
 │   ├── trigger_weekly.js                 # Manual runner for weekly cognitive synthesis
 │   ├── verify_google_master_client.js    # Diagnostic: Google OAuth2 master client validator
 │   └── refactor/                         # AST Automated Refactoring & Validation Tooling
@@ -103,41 +142,52 @@ nexa-server/
 │       ├── split_supabase_memories.js    # AST-based non-destructive module splitter for Supabase Memories
 │       └── verify_finance_split.js       # Static scope & cyclic dependency validator
 │
-├── tests/                                # Automated Unit Test Suites & Hermetic Fixtures (437 Tests Passing 100%)
-│   ├── audit_bugs.test.js                # Regression tests: Income category fallback, godmode candidate domains, callAI JSON
-│   ├── capabilities_integrity.test.js    # 7 unit tests: Tier 0 manifest constraints, Tier 1 cards & anti-drift router representations
+├── tests/                                # Automated Unit Test Suites & Hermetic Fixtures (41 Test Files)
+│   ├── audit_bugs.test.js                # Regression tests: Income category fallback, godmode domains, callAI JSON
+│   ├── audit_wave_a_node.test.js         # Security audit regression checks (Auth, Chat, Card, Redaction)
+│   ├── capabilities_integrity.test.js    # Tier 0 manifest constraints, Tier 1 cards & anti-drift router checks
 │   ├── cli_adapter.test.js               # Unit tests: CLI ingress adapter & multi-turn prompts
-│   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers (15 bank cases, escaping)
+│   ├── common_handlers.test.js           # Unit tests: Shared domain intent handlers & escaping
 │   ├── context_regressions.test.js       # Historical regression suites across context pipelines
 │   ├── day_simulation.test.js            # Unit tests: Full 24-hour simulation (Briefing to Midnight)
+│   ├── device_identity_spine.test.js     # Hardware ECDSA P-256 enrollment & Ed25519 session ticket tests
 │   ├── directive_utils.test.js           # Unit tests: Behavioral directive parsing & counter increments
-│   ├── finance_characterization.test.js  # Golden master: Invariance test suite for modular Finance Engine (75 cases)
+│   ├── finance_characterization.test.js  # Golden master: Invariance test suite for Finance Engine (75 cases)
+│   ├── finance_stepup_service.test.js    # Hardware biometric Finance Step-Up whitelist, limit & nonce tests
+│   ├── hyperlocal_spatial_engine.test.js # Hyperlocal spatial & place query engine tests
 │   ├── identity_directive_flow.test.js   # Unit tests: Dynamic persona directives & alignment flow
-│   ├── memories_characterization.test.js # Golden master: Invariance test suite for modular Supabase Memories (69 cases)
-│   ├── memory_classifier_hygiene.test.js # 9 unit tests: 5-tier taxonomy, contingency demotions, completed past, dynamic Ebbinghaus decay
+│   ├── live_calendar_query.test.js       # Natural Indonesian weekday/relative date calendar query tests
+│   ├── live_call_farewell.test.js        # Multimodal live voice call termination & summary tests
+│   ├── manual_transfer_and_split_resilience.test.js # Transfer, admin fee & split disambiguation tests
+│   ├── memories_characterization.test.js # Golden master: Invariance test suite for Supabase Memories (69 cases)
+│   ├── memory_classifier_hygiene.test.js # 5-tier taxonomy, contingency demotions & dynamic Ebbinghaus decay tests
 │   ├── micro_reviewer.test.js            # Unit tests: Micro-reviewer cognitive reflection & feedback loops
+│   ├── mobile_chat_handler.test.js       # Mobile chat streaming, idempotency, replay & voice note validation tests
+│   ├── mobile_interactive_cards.test.js  # 12 interactive card builders & CARD_ACTION dispatcher tests
+│   ├── monitor_auth_api.test.js          # Pulse Monitor scrypt auth, lockout, CSRF, session & Polkit API tests
+│   ├── monitor_issue_tracker.test.js     # Deduplicated & secret-redacted issue tracker store tests
+│   ├── monitor_metrics_store.test.js     # 7-day fixed binary history ring & systemd inspector tests
 │   ├── multi_bank_email_finance_sync.test.js # Multi-bank auto-sync: Mandiri & Jago email parser
-│   ├── multi_device_bridge.test.js       # Multi-device bridge: Mobile ADB, screen trigger & relay
+│   ├── multi_device_bridge.test.js       # Multi-device bridge: Mobile/Windows routing, screen trigger & relay
 │   ├── playbook_counters.test.js         # Unit tests: Behavioral playbook counters & limits
 │   ├── playbook_engine.test.js           # Unit tests: Playbook engine rules & conditional SOPs
 │   ├── reviewer_resilience.test.js       # Unit tests: Reviewer engine fallback & fault tolerance
-│   ├── router_characterization.test.js   # Golden master: Invariance test suite for modular AI Router (48 cases)
+│   ├── router_characterization.test.js   # Golden master: Invariance test suite for modular AI Router
+│   ├── server_deep_audit_fixes.test.js   # Deep audit hardening regression tests
+│   ├── server_hygiene.test.js            # Logger secret redaction, syslog category tagging & CORS hygiene tests
+│   ├── sidecar_log_protocol.test.js      # Sidecar binary framing & log redaction contract tests
+│   ├── sidecar_terminal_sandbox.test.js  # Sidecar PTY sandbox & command isolation contract tests
 │   ├── signal_detector.test.js           # Unit tests: Real-time behavioral signal detector
 │   ├── situational_synthesizer.test.js   # Dynamic context synthesis & cognitive tone modulation
-│   ├── supabase_finance_characterization.test.js # Characterization: Invariance test suite for modular Finance DB (25 APIs)
+│   ├── supabase_finance_characterization.test.js # Invariance test suite for modular Finance DB (25 APIs)
 │   ├── task_context_resolution.test.js   # Contextual ambiguity resolution & state tracking
 │   ├── telegram_adapter.test.js          # Unit tests: Telegram adapter, action builders & callbacks
 │   ├── test_isolation_regression.test.js # Test isolation defense-in-depth & synthetic guard
 │   ├── topic_classifier.test.js          # Classification: Topic classification & fast prompt router
 │   ├── upgrade.test.js                   # Migration: Schema upgrade & database integrity validator
-│   ├── version.test.js                   # Verification: Centralized version resolver & git SHA tests
-│   ├── helpers/                          # Test Harness Helpers
-│   │   ├── memories_harness.js           # Mock Supabase recording harness for characterization
-│   │   └── router_harness.js             # Mock LLM recording harness for characterization
-│   └── fixtures/                         # Golden Master Serialized Fixtures
-│       ├── finance_golden.json           # Deterministic baseline outputs & stub call signatures (Finance)
-│       ├── memories_golden.json          # Deterministic baseline query & mutation fixtures (Memories, 1,153 queries)
-│       └── router_golden.json            # Deterministic baseline prompt & routing fixtures (AI Router, 28 scenarios)
+│   ├── version.test.js                   # Verification: Centralized version resolver & SemVer breakdown tests
+│   ├── helpers/                          # Test Harness Helpers (memories_harness.js, router_harness.js)
+│   └── fixtures/                         # Golden Master Fixtures (finance_golden, memories_golden, router_golden)
 │
 ├── tools/                                # Command Line & Developer Tools
 │   ├── chat_cli.js                       # Interactive CLI terminal for talking to N.E.X.A
@@ -154,17 +204,22 @@ nexa-server/
 │       └── vision.js                     # Multimodal vision proxy
 │
 └── src/                                  # Main Backend Application Source Code
-    ├── app.js                            # Express app setup, strict security headers, CORS & loopback
+    ├── app.js                            # Express app setup, Dual-WS gateway, Monitor mount, security & cron init
     │
     ├── config/                           # Environment, Persona, Registry & Version Configuration
     │   ├── capabilities_registry.js      # Single source of truth for 17 certified capabilities, keywords & code paths
     │   ├── env.js                        # Validated environment variable loader
     │   ├── model_backup_plan.json        # Dynamic fallback parameters & retry quotas
     │   ├── personality.js                # Master executive identity prompt & behavior boundaries
-    │   └── version.js                    # Centralized version definition (v3.4.5) & Git SHA resolver
+    │   └── version.js                    # Centralized version definition (v4.0.0) from package.json
     │
-    ├── core/                             # Core Cognitive & Inference Engines (9 Subsystems)
-    │   ├── AI_Router.js                  # Public Facade (37 lines, re-exporting 18 cognitive routing APIs)
+    ├── core/                             # Core Cognitive, Auth, Multimodal & Inference Engines
+    │   ├── AI_Router.js                  # Public Facade (re-exporting 18 cognitive routing APIs)
+    │   ├── auth/                         # Zero-Trust Device Spine & Finance Step-Up Auth
+    │   │   ├── enrolled_devices_store.js # ECDSA P-256 hardware public key registry & revocation store
+    │   │   ├── finance_stepup_service.js # Deterministic whitelist, daily limit, 30s TTL nonce & ECDSA verifier
+    │   │   ├── ticket_service.js         # Ed25519 challenge-response & short-lived session ticket issuer
+    │   │   └── ws_auth_handler.js        # Connection A /ws auth router (ENROLL_SUBMIT, TICKET_REQ, CHALLENGE_RESP)
     │   ├── router/                       # Modular Cognitive Router Subsystem (8 Modules)
     │   │   ├── Memory_Classifier.js      # 5-tier cognitive memory classifier with contingency reasoning & 4 guardrails
     │   │   ├── Router_Cache.js           # RAM cache & TTL invalidator for personal facts, identity & self-model
@@ -174,48 +229,46 @@ nexa-server/
     │   │   ├── Router_Prompts.js         # Token Budget Guard, system prompt builder, Tier 0 Manifest & Anti-False-Denial Rule
     │   │   ├── Router_Selectors.js       # Semantic token extraction, word stemmer & fact relevance scorers
     │   │   └── Router_Utilities.js       # LLM utilities (callAI, classifyYesNo, classifyPending, dedupFact & memory classification)
-    │   ├── Fallback_Engine.js            # SACR v2.4 (15-Tier Dual-Mode Dynamic Fallback Router with forceHeavy support)
-    │   ├── Live_Tool_Registry.js         # Function calling & Agent Tool execution catalog
+    │   ├── Fallback_Engine.js            # SACR Dual-Mode Dynamic Fallback Router across LLM providers
+    │   ├── Live_Tool_Registry.js         # 32 certified Live Tools (Desktop automation, window management, hardware control)
     │   ├── Live_Voice_Engine.js          # Bidirectional real-time Gemini Live WebSocket relay
-    │   ├── Notifier.js                   # Cross-channel proactive notification dispatcher & queue manager
+    │   ├── Notifier.js                   # Cross-channel proactive notification dispatcher (Telegram, Mobile Chat, Push)
     │   ├── Provider_Health.js            # Dynamic API health check, circuit breaker & failover tracker
     │   ├── Topic_Classifier.js           # Fast intent/topic classification & prompt template selector
     │   ├── Vision_Engine.js              # Multimodal visual analysis & OCR engine
     │   └── Voice_Engine.js               # Groq Whisper audio transcription engine
     │
-    ├── domain/                           # Business Domain & Behavioral Engines (23 Engines)
+    ├── domain/                           # Business Domain & Behavioral Engines (26 Modules + 7 Finance Subsystems)
     │   ├── Agenda_Manager.js             # Google Calendar schedule synchronizer & conflict detection
     │   ├── Anticipatory_Engine.js        # Proactive agency & anticipatory nudging engine
     │   ├── App_Discipline_Engine.js      # App usage evaluator, screen time limiter & app locks
     │   ├── Behavior_Engine.js            # Mood time-series & habit tracking engine
     │   ├── Budget_Engine.js              # Expense limit & financial balance tracker
     │   ├── Chrono_Consolidator.js        # Chronological context synthesizer & temporal timeline builder
-    │   ├── Device_Control_Engine.js      # Remote hardware orchestration & Android bridge command emitter
+    │   ├── Device_Control_Engine.js      # Remote hardware orchestration & bridge command emitter
     │   ├── Dialectic_Engine.js           # Dialectic reasoning, cognitive debate & counter-argument synthesis
     │   ├── Discipline_GodMode.js         # Strict focus & god-mode disciplinary rules enforcement
     │   ├── Episodic_Recall.js            # Long-term episodic memory RAG & semantic retrieval
-    │   ├── Finance_Engine.js             # Public Facade (56 baris) delegating to modular finance subsystems
-    │   ├── Finance_Intel.js              # Financial intelligence, spending pattern heuristics & anomaly detection
-    │   ├── Live_Tool_Registry.js         # 32 certified Live Tools (Desktop automation, window management, hardware control)
-    │   ├── Live_Voice_Engine.js          # Real-time multimodal streaming engine (Gemini Live, duplex WebRTC audio & vision)
-    │   ├── Windows_Bridge.js             # Public Facade for Windows Desktop Automation & Command Dispatcher
+    │   ├── Finance_Engine.js             # Public Facade (56 lines) delegating to modular finance subsystems
+    │   ├── Finance_Intel.js              # Financial intelligence, recurring detection, safe-to-spend & anomaly heuristics
     │   ├── finance/                      # Decomposed Modular Finance Subsystems
     │   │   ├── Finance_Analytics.js      # Financial reports, spending velocity, saving rate & balance trends
     │   │   ├── Finance_Confirmations.js  # Multi-turn confirmation lifecycle, auto-save timeout & restart recovery
     │   │   ├── Finance_Corrections.js    # Safe transaction deletions, edit & undo manager
     │   │   ├── Finance_Email_Sync.js     # Livin' by Mandiri & Bank Jago Gmail polling, parsing & transaction dedup
-    │   │   ├── Finance_Helpers.js        # Currency normalizer, date parsers & lightweight AI merchant categorizer
-    │   │   ├── Finance_Ledger.js         # Core double-entry ledger, transaction writes & search queries
+    │   │   ├── Finance_Helpers.js        # Currency normalizer, composite date/time parser & AI merchant categorizer
+    │   │   ├── Finance_Ledger.js         # Core double-entry ledger, dual-leg transfer pairs & search queries
     │   │   └── Finance_State.js          # Shared in-memory state & lock sets (single source of truth)
     │   ├── Inference_Engine.js           # Psychological trait & user pattern inferrer
     │   ├── Intelligence_Brief.js         # Morning Briefing, Midnight & Evening brief synthesizer
     │   ├── Intention_Engine.js           # Short & long-term commitments tracker
-    │   ├── Location_Orchestrator.js      # Presence context, spatial reasoning & location queries
-    │   ├── Memory_Hygiene_Engine.js      # Step 1 hard expiry for EPHEMERAL, Step 2 Dynamic Ebbinghaus Decay for PHASE, CORE time-immunity
+    │   ├── Location_Orchestrator.js      # Presence context, hyperlocal spatial reasoning & location queries
+    │   ├── Memory_Hygiene_Engine.js      # Step 1 hard expiry (EPHEMERAL), Step 2 Dynamic Ebbinghaus Decay (PHASE)
     │   ├── Micro_Reviewer.js             # Micro-reviewer cognitive reflection, output quality critic & guardrails
     │   ├── Playbook_Engine.js            # Behavioral playbooks, conditional execution & contextual SOPs
     │   ├── Presence_Model.js             # User physical presence, device state & focus mode estimator
     │   ├── Signal_Detector.js            # Real-time behavioral signal detector & emotional state cue parser
+    │   ├── Situational_Synthesizer.js    # Emotional inertia & cross-turn situational state synthesizer
     │   ├── Split_Engine.js               # Shared expense calculation & debt settlement ledger
     │   └── Task_Manager.js               # Google Tasks integration, task prioritization & overdue detector
     │
@@ -224,13 +277,13 @@ nexa-server/
     │   ├── Google_Master_Client.js       # Centralized Google API OAuth2 client
     │   ├── Google_Tasks.js               # Google Tasks REST API client
     │   ├── Google_Workspace.js           # Google Calendar & Workspace integration
-    │   ├── Location_Engine.js            # Reverse geocoding & coordinates resolver
+    │   ├── Location_Engine.js            # Reverse geocoding, Overpass OSM & coordinates resolver
     │   ├── Notion_Client.js              # Notion workspace sync (notes & database)
     │   ├── Supabase_Finance.js           # Public Facade (30 lines, re-exporting 25 finance DB APIs)
-    │   ├── finance_db/                   # Modular Financial Database Subsystem (6 Modules)
+    │   ├── finance_db/                   # Modular Financial Database Subsystem (7 Modules)
     │   │   ├── client.js                 # Supabase client init & connection configuration
     │   │   ├── reference_data.js         # In-memory accounts/categories cache (30m TTL) & fuzzy resolvers
-    │   │   ├── transactions.js           # Dual-write CRUD transactions & split group tracking
+    │   │   ├── transactions.js           # Dual-write CRUD transactions, dual-leg transfer & split group tracking
     │   │   ├── analytics.js              # Financial metrics, savings rate, periods, trends & full pagination
     │   │   ├── budgets.js                # Budget groups, active limits & category expense summation
     │   │   ├── recurring.js              # Recurring expenses, subscription detection rules & status updates
@@ -238,8 +291,8 @@ nexa-server/
     │   ├── Supabase_Memories.js          # Public Facade (90 lines, re-exporting 69 memory APIs)
     │   ├── memories/                     # Modular Memory & Living Persistence Subsystem (10 Modules)
     │   │   ├── Memory_Client.js          # Supabase client init, table allowlist & ID matching helpers
-    │   │   ├── Memory_Living.js          # Living memory metadata, bi-temporal superseding (superseded_by), chapter closing & active fetch
-    │   │   ├── Memory_Chat.js            # Chat memory persistence, temporal buffers (today/yesterday) & FTS
+    │   │   ├── Memory_Living.js          # Living memory metadata, bi-temporal superseding & chapter closing
+    │   │   ├── Memory_Chat.js            # Chat memory persistence, temporal buffers & platform tagging ('mobile', 'telegram')
     │   │   ├── Memory_Finance_Dedup.js   # Transaction deduplication keys, 7-day hygiene & pending transactions
     │   │   ├── Memory_Vault.js           # 2nd Brain Vault (ideas, thoughts, notes & multi-keyword fuzzy match)
     │   │   ├── Memory_Identity.js        # User profile, core identity facts, proposals & trait commitments
@@ -249,43 +302,42 @@ nexa-server/
     │   │   └── Memory_Db_Browser.js      # Generic database schema overview, table inspection & CRUD operations
     │   └── Web_Search.js                 # Real-time web search crawler
     │
-    ├── interfaces/                       # Ingress & Egress Channels (Modular Ingress Architecture v3.4.4)
-    │   ├── cron.js                       # Autonomous cron scheduler (Briefings, Night check-ins, Habits)
+    ├── interfaces/                       # Ingress & Egress Channels
+    │   ├── cron.js                       # Autonomous cron scheduler (Briefings, Night check-ins, Habits, Sync)
     │   ├── webhook.js                    # Inbound webhook router & Telegram dispatcher
     │   │
-    │   ├── common/                       # Shared Cross-Channel Ingress Subsystem
-    │   │   ├── domain_dispatcher.js      # Unified intent dispatcher orchestrating domain handlers
-    │   │   ├── follow_up_resolver.js     # Unified multi-turn follow-up resolver & clarification validator
-    │   │   ├── helpers.js                # Multi-format currency parser, HTML escaping & formatters
-    │   │   └── handlers/                 # Extracted Common Domain Intent Handlers
-    │   │       ├── calendar_handler.js   # Agenda/Calendar intent orchestration & state retention
-    │   │       ├── database_handler.js   # Dynamic database query, write & safe delete handlers
-    │   │       ├── email_handler.js      # Gmail search, send, trash & platform-safe HTML escaping
-    │   │       ├── finance_handler.js    # Financial tracking, splitting & account balances
-    │   │       ├── memory_handler.js     # Episodic memory, 2nd brain vault & semantic recall
-    │   │       ├── system_handler.js     # Core system diagnostics, presence, discipline & location
-    │   │       └── task_handler.js       # Google Tasks CRUD & status synchronization
-    │   │
-    │   ├── bridge/                       # Multi-Device Peripheral Bridge Gateway
-    │   │   ├── gateway.js                # Unified WebSocket gateway (/ws, /ws/windows) with device discrimination
-    │   │   ├── windows_bridge/           # Windows Desktop Companion Client & Adapter
-    │   │   │   ├── client.js             # Serialized command dispatcher & request-response tracker
-    │   │   │   └── adapter.js            # Desktop telemetry, screen capture frames & power event router
-    │   │   └── mobile_bridge/            # Android Smartphone Hardware Gateway
-    │   │       ├── client.js             # Mobile command dispatcher & result router
-    │   │       └── adapter.js            # Android sensor telemetry, battery & notification forwarder
+    │   ├── bridge/                       # Multi-Device Peripheral & Control Center Gateway
+    │   │   ├── index.js                  # Bridge module barrel exports
+    │   │   ├── gateway.js                # Unified WebSocket gateway (/ws, /ws/windows), IP resolver & ticket hooks
+    │   │   ├── mobile_bridge/            # Android Control Center Gateway (v4.0.0)
+    │   │   │   ├── adapter.js            # Neural-Peripheral event router, notifications & voice call relay
+    │   │   │   ├── card_handler.js       # 12 native interactive card builders & CARD_ACTION -> CARD_UPDATE engine
+    │   │   │   ├── chat_handler.js       # Native Mobile Chat engine (delta streaming, 10m CHAT_RESUME, OGG/Opus voice notes, slash commands)
+    │   │   │   └── client.js             # Mobile command dispatcher & result router
+    │   │   └── windows_bridge/           # Windows Desktop Companion Client & Adapter
+    │   │       ├── adapter.js            # Desktop telemetry, screen capture frames & power event router
+    │   │       └── client.js             # Serialized command dispatcher & request-response tracker
     │   │
     │   ├── cli/                          # Command Line Interface (Debug & Terminal Channel)
     │   │   ├── adapter.js                # CLI WebSocket/terminal communication adapter
     │   │   ├── intent_dispatcher.js      # CLI-specific intent routing & context binding
     │   │   └── interceptors.js           # CLI interceptors (Database confirmation & multi-turn flows)
     │   │
+    │   ├── common/                       # Shared Cross-Channel Ingress Subsystem
+    │   │   ├── domain_dispatcher.js      # Unified intent dispatcher orchestrating domain handlers
+    │   │   ├── follow_up_resolver.js     # Unified multi-turn follow-up resolver & clarification validator
+    │   │   ├── helpers.js                # Multi-format currency parser, HTML escaping & formatters
+    │   │   └── handlers/                 # Extracted Common Domain Intent Handlers (7 Modules)
+    │   │       ├── calendar_handler.js   # Agenda/Calendar intent orchestration & state retention
+    │   │       ├── database_handler.js   # Dynamic database query, write & safe delete handlers
+    │   │       ├── email_handler.js      # Gmail search, send, trash & platform-safe HTML escaping
+    │   │       ├── finance_handler.js    # Financial tracking, dual-leg transfer, splitting & account balances
+    │   │       ├── memory_handler.js     # Episodic memory, 2nd brain vault & semantic recall
+    │   │       ├── system_handler.js     # Core system diagnostics, presence, discipline & location
+    │   │       └── task_handler.js       # Google Tasks CRUD & status synchronization
+    │   │
     │   ├── gmail/                        # Email Webhook & Polling Channel
     │   │   └── adapter.js                # Automated Gmail synchronization & transaction trigger
-    │   │
-    │   ├── mobile_bridge/                # Android Smartphone Hardware Gateway
-    │   │   ├── adapter.js                # Master Neural-Peripheral Adapter & event handler
-    │   │   └── MobileBridge_WS.js        # High-resilience WebSocket server (/ws), auth & ping watchdog
     │   │
     │   ├── telegram/                     # Telegram Bot User Interface Channel
     │   │   ├── actions.js                # Interactive keyboard callback actions & safe HTML builders
@@ -303,186 +355,58 @@ nexa-server/
     │       ├── formatter.js              # Markdown-to-WhatsApp text formatter
     │       └── README.md                 # Setup & pairing documentation
     │
+    ├── monitor/                          # N.E.X.A Pulse Monitor Subsystem (/monitor, Phases 5A-5E)
+    │   ├── alert_engine.js               # Sustained threshold detector dispatching alerts to Mobile Bridge
+    │   ├── auth_service.js               # scrypt auth, HttpOnly SameSite=Strict cookie sessions, CSRF & lockout
+    │   ├── history_store.js              # Fixed 7-day binary ring (10,080 samples ~709 KB, 72B records) & heatmap
+    │   ├── index.js                      # Pulse Monitor facade & wiring
+    │   ├── issue_tracker.js              # Deduplicated error collector with FR-SEC-04 secret redaction
+    │   ├── metrics_collector.js          # perf_hooks event loop lag, V8/OS RAM, HTTP RPM & Git/version probe
+    │   ├── router.js                     # Express API router (/monitor/api/*) + Polkit restart endpoint
+    │   ├── systemd_inspector.js          # Read-only allowlisted unit inspector (nexa-server, nexa-log, nexa-term, caddy)
+    │   └── ws_metrics.js                 # Live WebSocket metric stream (/monitor/ws/metrics)
+    │
     └── utils/                            # Shared Utilities & Network Security
+        ├── cors_config.js                # Strict origin allowlist normalization & validation
         ├── directive_utils.js            # Directive parsing, counter increment & dynamic prompt injector
-        ├── gemini_vector_cache.js        # In-memory vector embedding cache with Tier 1 capability on-demand matching (~0.05ms)
-        ├── logger.js                     # Structured colored asynchronous logger
-        ├── security.js                   # Identity lock (Single Chat ID: 6798861902) & rate-limiting
+        ├── gemini_vector_cache.js        # In-memory vector embedding cache with Tier 1 capability matching (~0.05ms)
+        ├── logger.js                     # Structured logger, [cat=...] auto-tagging & secret/PII redaction
+        ├── security.js                   # Identity lock, webhook secret & token guards
         ├── telegram_network.js           # Resilient HTTP client with retry logic
         └── telegram_proxy.js             # Relay fallback & proxy route resolver
 ```
 
 ---
 
-## 2. N.E.X.A FINANCE WEB ARCHITECTURE (Next.js 16 / React 19 / Tailwind / Supabase)
-* **Local Path:** `C:\workspace\nexa-server\nexa-finance-web`
+## 2. N.E.X.A FINANCE WEB ARCHITECTURE (Standalone Repository: `Knightrelaxed/nexa-finance`)
+* **Repository:** [`Knightrelaxed/nexa-finance`](https://github.com/Knightrelaxed/nexa-finance) *(diektraksi keluar dari monorepo `nexa-server` agar rilis web berjalan independen)*
 * **Target Runtime:** Node.js >= 18.0.0 (Next.js App Router)
-* **Tech Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, Lucide React, Radix UI Primitives, Recharts, Supabase JS v2
+* **Tech Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, Lucide React, Radix UI / shadcn Primitives, Recharts, Supabase JS v2
 * **Role:** Sovereign Financial Web Portal, Realtime Cashflow Dashboard, PWA Mobile Ledger & Analytics
 
 ```text
-nexa-finance-web/
-├── package.json                          # Next.js project manifest & dependencies (React 19, Supabase, Lucide)
-├── package-lock.json                     # Deterministic lockfile
-├── next.config.mjs                       # Next.js configuration (Webpack, optimization & security headers)
-├── tsconfig.json                         # TypeScript compiler options & module resolution paths (@/*)
-├── postcss.config.mjs                    # PostCSS plugin pipeline (@tailwindcss/postcss)
-├── components.json                       # shadcn/ui design system configuration & tailwind prefix
-├── middleware.ts                         # Edge routing middleware & authentication session guards
-├── .npmrc                                # NPM package management flags
-│
-├── app/                                  # Next.js App Router (Routes & Server Components)
-│   ├── layout.tsx                        # Root layout (Theme provider, Supabase provider, global toast)
-│   ├── page.tsx                          # Root landing page & entry redirection logic
-│   ├── globals.css                       # Global CSS variables, dark theme palette & base utilities
-│   ├── icon.png                          # App favicon & browser tab branding icon
-│   │
-│   ├── accounts/                         # Financial Accounts Management Route
-│   │   └── page.tsx                      # Bank accounts, e-wallets, cash balances & account detail drawer
-│   │
-│   ├── analytics/                        # Spending Analytics & Financial Intelligence Route
-│   │   └── page.tsx                      # Cash flow charts, spending trends, category breakdown & monthly comparison
-│   │
-│   ├── budget/                           # Budget Planning & Limit Enforcement Route
-│   │   └── page.tsx                      # Monthly budget allocations, group budgets & threshold progress bars
-│   │
-│   ├── dashboard/                        # Sovereign Executive Dashboard Route
-│   │   └── page.tsx                      # Net worth overview, monthly velocity, quick transaction entry & summary cards
-│   │
-│   ├── login/                            # Authentication & Sovereign Access Route
-│   │   └── page.tsx                      # Secure login portal & Supabase Auth session initialization
-│   │
-│   ├── records/                          # Complete Transaction Ledger Route
-│   │   └── page.tsx                      # Full transaction history table, multi-parameter filtering & search
-│   │
-│   └── settings/                         # Configuration & Master Data Management Route
-│       └── page.tsx                      # Account profiles, category hierarchies, wallet preferences & display settings
-│
-├── components/                           # Modular UI Component Library
-│   ├── theme-provider.tsx                # NextThemes dark/light mode context provider
-│   │
-│   ├── providers/                        # Global Application State Providers
-│   │   └── supabase-provider.tsx         # Supabase client context & real-time auth state listener
-│   │
-│   ├── settings/                         # Settings & Configuration Subcomponents
-│   │   ├── settings-account-profile.tsx  # User profile & credentials management panel
-│   │   ├── settings-accounts.tsx         # Master account catalog editor & account balance overrides
-│   │   └── settings-categories.tsx       # Expense & income category hierarchy editor
-│   │
-│   ├── ui/                               # Atomic shadcn/ui Design Primitives (42 Components)
-│   │   ├── accordion.tsx                 # Expandable collapsible panel
-│   │   ├── alert-dialog.tsx              # Confirmation & destructive action modal
-│   │   ├── alert.tsx                     # Inline contextual notification alert
-│   │   ├── aspect-ratio.tsx              # Responsive media container
-│   │   ├── avatar.tsx                    # User & account thumbnail avatar
-│   │   ├── badge.tsx                     # Category status pill & intent label
-│   │   ├── breadcrumb.tsx                # Hierarchical navigation breadcrumbs
-│   │   ├── button-group.tsx              # Segmented action buttons container
-│   │   ├── button.tsx                    # Primary, secondary, outline & ghost buttons
-│   │   ├── calendar.tsx                  # Date picker & interactive monthly calendar
-│   │   ├── card.tsx                      # Metric card & bordered panel container
-│   │   ├── carousel.tsx                  # Swipeable horizontal card carousel
-│   │   ├── chart.tsx                     # Recharts chart container & tooltip styling
-│   │   ├── checkbox.tsx                  # Form checkbox toggle
-│   │   ├── collapsible.tsx               # Minimalist accordion collapse
-│   │   ├── command.tsx                   # Fast command palette & quick search dialog
-│   │   ├── context-menu.tsx              # Right-click contextual action popup
-│   │   ├── dialog.tsx                    # Centered modal dialog wrapper
-│   │   ├── drawer.tsx                    # Mobile-friendly slide-over drawer (Vaul)
-│   │   ├── dropdown-menu.tsx             # Action trigger dropdown menu
-│   │   ├── empty.tsx                     # Zero-state placeholder illustration
-│   │   ├── field.tsx                     # Form field container & label wrapper
-│   │   ├── form.tsx                      # React Hook Form integration & validation
-│   │   ├── hover-card.tsx                # Hover popover card for previews
-│   │   ├── input-group.tsx               # Input with attached icon/button prefix
-│   │   ├── input-otp.tsx                 # One-time pin & 2FA input boxes
-│   │   ├── input.tsx                     # Text, number & currency input field
-│   │   ├── item.tsx                      # Generic list item layout
-│   │   ├── kbd.tsx                       # Keyboard shortcut indicator badge
-│   │   ├── label.tsx                     # Accessible form field label
-│   │   ├── menubar.tsx                   # Desktop menu bar component
-│   │   ├── navigation-menu.tsx           # Primary top-level navigation bar
-│   │   ├── pagination.tsx                # Ledger pagination controls
-│   │   ├── popover.tsx                   # Floating popover panel
-│   │   ├── progress.tsx                  # Horizontal budget limit progress bar
-│   │   ├── radio-group.tsx               # Mutually exclusive selection group
-│   │   ├── resizable.tsx                 # Resizable split-pane layout
-│   │   ├── scroll-area.tsx               # Custom minimalist scrollbar viewport
-│   │   ├── select.tsx                    # Accessible dropdown select input
-│   │   ├── separator.tsx                 # Horizontal/vertical divider line
-│   │   ├── sheet.tsx                     # Slide-in side drawer panel
-│   │   ├── sidebar.tsx                   # Responsive collapsible sidebar framework
-│   │   ├── skeleton.tsx                  # Data loading shimmer placeholders
-│   │   ├── slider.tsx                    # Range slider for budget adjustments
-│   │   ├── sonner.tsx                    # Modern toast notifications wrapper
-│   │   ├── spinner.tsx                   # Loading state animated spinner
-│   │   ├── switch.tsx                    # Boolean toggle switch
-│   │   ├── table.tsx                     # Structured ledger data table
-│   │   ├── tabs.tsx                      # Tabbed view switcher (e.g. Income vs Expense)
-│   │   ├── textarea.tsx                  # Multi-line text note input
-│   │   ├── toast.tsx                     # Legacy toast notification primitive
-│   │   ├── toaster.tsx                   # Toast notification mount target
-│   │   ├── toggle-group.tsx              # Multi-option toggle group
-│   │   ├── toggle.tsx                    # Single binary toggle button
-│   │   ├── tooltip.tsx                   # Hover tooltip explanation box
-│   │   ├── use-mobile.tsx                # Mobile breakpoint detection hook
-│   │   └── use-toast.ts                  # Toast notification trigger hook
-│   │
-│   └── wallet/                           # Specialized Financial Domain Widgets (17 Modules)
-│       ├── account-detail-view.tsx       # Single account transaction history & balance inspector
-│       ├── accounts-view.tsx             # Visual account balance grid (Bank, E-Wallet, Cash)
-│       ├── add-account-modal.tsx         # Modal for connecting new financial accounts
-│       ├── add-transaction-modal.tsx     # Fast multi-item expense/income recording modal
-│       ├── analytics-view.tsx            # Expense breakdown charts & cashflow velocity
-│       ├── app-shell.tsx                 # Universal responsive shell (Topbar, Sidebar & Mobile Nav)
-│       ├── bottom-nav.tsx                # Mobile PWA bottom navigation tab bar
-│       ├── budget-group-modal.tsx        # Budget group creation & category grouping modal
-│       ├── budget-view.tsx               # Visual budget trackers, alerts & percentage gauges
-│       ├── dashboard-view.tsx            # Executive KPI summary cards & financial highlights
-│       ├── filter-sidebar.tsx            # Advanced transaction filter panel (Date, Account, Category)
-│       ├── month-selector.tsx            # Interactive month/year period switcher
-│       ├── period-selector.tsx           # Daily, weekly, monthly & annual filter switcher
-│       ├── records-view.tsx              # Paginated transaction record stream & row actions
-│       ├── sidebar.tsx                   # Desktop navigation sidebar with collapse support
-│       ├── topbar.tsx                    # Header bar with user profile, sync indicator & quick actions
-│       └── transaction-detail-modal.tsx  # Transaction inspector, category edit & delete confirmation
-│
-├── hooks/                                # Custom React Hooks
-│   ├── use-finance-data.ts               # Core reactive hook: Supabase data fetching, cache & real-time sync
-│   ├── use-mobile.ts                     # Responsive layout detector for mobile viewports
-│   └── use-toast.ts                      # UI notification toaster helper
-│
-├── lib/                                  # Utility Libraries & Database Adaptations
-│   ├── icon-map.ts                       # Dynamic category icon mapping (Lucide icons to category names)
-│   ├── utils.ts                          # Tailwind class merger (clsx + twMerge) & formatting helpers
-│   ├── wallet-data.ts                    # Mock fallback data & financial calculation algorithms
-│   │
-│   └── supabase/                         # Supabase Data Access Layer
-│       ├── client.ts                     # Typed Supabase browser/server client initializer
-│       ├── mutations.ts                  # Database write operations (Insert, update & soft-delete transactions)
-│       ├── queries.ts                    # High-performance data queries (Balances, categories, monthly summaries)
-│       ├── schema.sql                    # SQL schema definitions for finance tables
-│       └── types.ts                      # Strict TypeScript types for Supabase database tables
-│
-├── public/                               # Static Assets & PWA Configuration
-│   ├── manifest.json                     # Progressive Web App (PWA) manifest specification
-│   ├── sw.js                             # Service Worker for offline asset caching & PWA lifecycle
-│   └── icons/                            # High-resolution PWA launcher icons
-│       ├── icon-192x192.png              # Standard mobile home screen icon
-│       ├── icon-512x512.png              # Splash screen & high-density display icon
-│       └── icon-maskable.png             # Android adaptive maskable launcher icon
-│
-└── styles/                               # Global Style Definitions
-    └── globals.css                       # Tailwind v4 theme directives & CSS custom properties
+nexa-finance/ (Standalone Repo -> https://github.com/Knightrelaxed/nexa-finance)
+├── app/
+│   ├── dashboard/page.tsx                # Executive Net Worth KPI, deep-link akun (/accounts?id=...) & cashflow summary
+│   ├── records/page.tsx                  # Full paginated transaction stream, filter & Supabase-style In-Card Refresh
+│   ├── accounts/page.tsx                 # Bank Mandiri, Bank Jago, e-wallets & cash account detail views
+│   ├── budget/page.tsx                   # Monthly/weekly budget envelopes & limit progress gauges
+│   ├── analytics/page.tsx                # Spending velocity, category breakdown & monthly trends
+│   ├── settings/page.tsx                 # Account profiles, category hierarchies & wallet preferences
+│   └── login/page.tsx                    # Supabase Auth portal & middleware session guards
+├── components/wallet/                    # Financial domain views, modals, filters & responsive shell
+├── hooks/use-finance-data.ts             # Core reactive Supabase hook & real-time mutation sync
+├── lib/supabase/                         # Typed queries, mutations, client & schema definitions
+└── public/                               # PWA manifest & Service Worker offline asset caching
 ```
 
 ---
 
 ## 3. N.E.X.A MOBILE BRIDGE ARCHITECTURE (Android 16 / One UI 8 / Kotlin)
 * **Local Path:** `C:\workspace\nexa-mobile-bridge`
-* **Target Hardware:** Samsung Galaxy A33 5G
-* **Package:** `com.nexa.mobilebridge`
-* **Role:** Physical Hardware Peripheral, Sensor Synthesis, UI Automation & Multimodal Live Call Host
+* **Target Hardware:** Samsung Galaxy A33 5G (`arm64-v8a` / API 36)
+* **Package:** `com.nexa.mobilebridge` (`versionName: 1.0`, Control Center v3.1)
+* **Role:** Native Mobile AI Control Center (Chat-First Compose + Room + Paging 3, 12 Interactive Cards, Voice Notes, Slash Commands), Dual-WS Terminal & Journald Logs Client (`/io/term`, `/io/logs`), Hardware Keystore & Biometric Finance Gate, Sensor Synthesis & Multimodal Live Call Host
 
 ```text
 nexa-mobile-bridge/
@@ -493,70 +417,90 @@ nexa-mobile-bridge/
 ├── gradlew                               # Unix Gradle wrapper executable
 ├── gradlew.bat                           # Windows Gradle wrapper executable
 │
-├── docs/                                 # Protocol Specifications & Testing Reports
-│   ├── JSON_PROTOCOL_SPECIFICATION.md    # Full bidirectional JSON payload spec (Nexa Protocol 3.0)
+├── docs/                                 # Protocol Specifications, RAM Audit & Documentation
+│   ├── JSON_PROTOCOL_SPECIFICATION.md    # Full bidirectional JSON payload spec
 │   ├── MOBILE_BRIDGE_TESTING_REPORT.md   # Hardware sensor & latency test results
-│   └── NEXA_MOBILE_BRIDGE_DOCUMENTATION.md # Super-complete technical documentation
+│   ├── NEXA_MOBILE_BRIDGE_DOCUMENTATION.md # Complete Control Center v3.1 technical documentation
+│   └── RAM_USAGE_AUDIT_REPORT.md         # dumpsys meminfo audit (Home Standby ~50.0 MB physical RAM)
 │
-└── app/                                  # Main Android Application Module
-    ├── build.gradle.kts                  # App dependencies (Compose, Hilt, CameraX, OkHttp, Coroutines)
+└── app/                                  # Main Android Application Module (minSdk 36, targetSdk 36)
+    ├── build.gradle.kts                  # Compose, Room, Paging 3, Hilt, Biometric, CameraX, OkHttp
     │
     └── src/main/
-        ├── AndroidManifest.xml           # Permissions, services, receivers & activity manifests
+        ├── AndroidManifest.xml           # Banking-safe permissions (Zero AccessibilityService), services & receivers
         │
         ├── res/                          # Android UI Resources & Configurations
-        │   ├── drawable/                 # Vector drawables & app background assets
+        │   ├── drawable/                 # Vector drawables & notification icons (ic_notif_nexa)
         │   ├── mipmap-*/                 # Application adaptive launcher icons (N.E.X.A Logo)
         │   ├── values/                   # Color palettes, string resources & theme definitions
-        │   └── xml/                      # System integration XMLs:
-        │       ├── accessibility_service_config.xml # Accessibility flags (interactive clicks, UI tree)
-        │       ├── backup_rules.xml      # Android data backup policies
-        │       └── data_extraction_rules.xml # Data extraction security policies
+        │   └── xml/                      # backup_rules.xml & data_extraction_rules.xml
         │
         └── java/com/nexa/mobilebridge/   # Kotlin Source Code
             │
             ├── NexaBridgeApp.kt          # Application entry point (@HiltAndroidApp)
-            ├── MainActivity.kt           # Jetpack Compose Edge-to-Edge root container
-            ├── Navigation.kt             # Jetpack Compose Navigation Graph
+            ├── MainActivity.kt           # Jetpack Compose container with Standby UI Hibernation
+            ├── Navigation.kt             # Top-level Navigation Graph (Chat, Logs, Terminal, HUD, Settings)
             ├── NavigationKeys.kt         # Navigation route destination constants
-            ├── NexaBridgeService.kt      # 24/7 Foreground Service (WakeLock + WifiLock)
-            ├── NexaAccessibilityService.kt # System Accessibility (Click, Scroll, Screenshot, UI Tree)
-            ├── SafeBankingLauncherActivity.kt # Banking launcher with privacy screen shielding
+            ├── NexaBridgeService.kt      # 24/7 Foreground Service with On-Demand Power Locks
             ├── TransparentCameraActivity.kt # Background CameraX photo capture without UI distraction
             │
-            ├── core/                     # Core Engine Components
+            ├── core/                     # Core Engine, Auth, Networking & Power Subsystems
+            │   ├── auth/
+            │   │   └── TicketAuthRepository.kt # Enrollment, challenge-response & Ed25519 ticket cache
             │   ├── context/
             │   │   └── ContextEngine.kt  # Multi-sensor synthesis & situational compound rule engine
             │   ├── di/                   # Dependency Injection (Dagger Hilt)
-            │   │   ├── AppModule.kt      # Context & DataStore dependency provider
-            │   │   └── NetworkModule.kt  # OkHttpClient & JSON serialization provider
+            │   │   ├── AppModule.kt      # Context, Room DB & DataStore dependency provider
+            │   │   └── NetworkModule.kt  # OkHttpClient & WebSocket client provider
             │   ├── network/              # WebSocket & Networking Subsystems
-            │   │   ├── NexaHttpClient.kt # HTTP helper client
-            │   │   ├── NexaWebSocketClient.kt # OkHttp WebSocket client & keepalive ping (20s)
-            │   │   └── ReconnectOrchestrator.kt # 4-Phase Tiered Retry Engine + Voice TTS alerts
+            │   │   ├── NexaWebSocketClient.kt # Connection A (/ws) OkHttp WebSocket client & keepalive
+            │   │   └── ReconnectOrchestrator.kt # Tiered Retry Engine + Voice TTS alerts
+            │   ├── power/
+            │   │   └── BridgePowerLockManager.kt # On-demand Partial WakeLock & WifiLock acquisition
             │   ├── receiver/
             │   │   └── BootCompletedReceiver.kt # Auto-start service on device reboot
             │   ├── security/
-            │   │   ├── HmacVerifier.kt   # HMAC-SHA256 signature verifier (GodMode Privilege >= 3)
-            │   │   └── MBankingShieldManager.kt # Banking app detection & overlay shielding
+            │   │   ├── BiometricAuthHelper.kt # BiometricPrompt CryptoObject authenticator
+            │   │   ├── DeviceKeystoreManager.kt # Android Keystore ECDSA P-256 hardware key pair & signer
+            │   │   ├── HmacVerifier.kt   # HMAC-SHA256 signature verifier (GodMode commands)
+            │   │   ├── SecretKeyStoreCipher.kt # AES-GCM Keystore encryption for DataStore secrets
+            │   │   └── WindowSecureEffect.kt # FLAG_SECURE privacy protection on sensitive UI screens
             │   ├── sensor/               # Physical Hardware Sensor Listeners
             │   │   ├── GeofenceBroadcastReceiver.kt # GPS Geofence background transition receiver
-            │   │   ├── GeofenceManager.kt # Google Play Services Geofencing (Home/Work 100m)
+            │   │   ├── GeofenceManager.kt # Google Play Services Geofencing (Home/Work)
             │   │   ├── GeofenceModel.kt  # Geofence coordinates & radius data model
             │   │   └── SensorObserverManager.kt # Ambient Light, Motion, Step Counter, Pickup Gesture
             │   ├── usage/
-            │   │   └── AppUsageTracker.kt # Foreground application tracker via UsageStatsManager
+            │   │   └── AppUsageTracker.kt # Banking-safe foreground tracker via UsageStatsManager
             │   └── util/
-            │       └── ConnectionState.kt # Sealed class for WebSocket connection state
+            │       └── ConnectionState.kt # Connection A & B reactive state flows
             │
-            ├── data/                     # Data Persistence Layer
-            │   ├── DataRepository.kt     # Reactive DataStore preferences repository
-            │   └── local/
-            │       └── NexaPreferencesDataStore.kt # Encrypted preferences (URL, Bearer Token, HMAC Key)
+            ├── data/                     # Persistence, Chat Streaming, Logs & Terminal Clients
+            │   ├── chat/
+            │   │   ├── ChatCopyText.kt   # Markdown-clean clipboard text formatter
+            │   │   ├── ChatRepository.kt # Single source of truth (Room + WebSocket CHAT_SEND/RESUME + Card Actions)
+            │   │   ├── ChatStreamConsumer.kt # Delta-streaming accumulator & card patch updater
+            │   │   ├── ChatVisibilityTracker.kt # Tracks foreground chat focus vs OS notifications
+            │   │   ├── InteractiveCardModels.kt # Strongly typed models for all 12 Interactive Cards
+            │   │   ├── VoiceNoteMetadata.kt # Voice note duration, peaks & codec metadata
+            │   │   ├── VoiceNotePlayer.kt # In-bubble audio waveform player
+            │   │   └── VoiceNoteRecorder.kt # OGG/Opus MediaRecorder with ceiling & live metering
+            │   ├── local/
+            │   │   ├── chat/             # Room Database (nexa_chat.db) Entities, DAOs & Paging 3 sources
+            │   │   └── NexaPreferencesDataStore.kt # Keystore-encrypted DataStore (URL, device token, Ed25519 keys)
+            │   ├── logs/
+            │   │   ├── CircularLogBuffer.kt # Bounded ring buffer for monospace live logs
+            │   │   ├── LogBinaryProtocol.kt # Connection B 13-byte binary frame parser (0x03 channel)
+            │   │   └── SidecarLogsClient.kt # Dedicated WebSocket client for /io/logs
+            │   └── terminal/
+            │       ├── ModifierState.kt  # Ctrl, Alt & special key sticky modifier state
+            │       ├── SidecarTerminalClient.kt # Dedicated WebSocket client for /io/term
+            │       ├── TerminalBinaryProtocol.kt # Connection B binary framing & PTY resize/resume encoder
+            │       └── Vt100TerminalEmulator.kt # ANSI/VT100 terminal screen buffer & escape parser
             │
             ├── dispatcher/               # Remote Command Execution Layer
-            │   ├── DeviceCommandDispatcher.kt # Master router for incoming server commands (28 Actions)
-            │   └── handler/              # 20 Specialized Hardware & System Handlers
+            │   ├── DeviceCommandDispatcher.kt # Master router for incoming server commands
+            │   └── handler/              # Hardware & System Action Handlers (20 Modules)
             │       ├── AppLauncherHandler.kt   # App launcher by package name
             │       ├── AudioPlayerHandler.kt   # Ringtone, media playback & PCM audio stream player
             │       ├── BatteryHandler.kt       # Battery level & charging state monitor
@@ -571,41 +515,67 @@ nexa-mobile-bridge/
             │       ├── LocationHandler.kt      # GPS / Network location & Geocoder address lookup
             │       ├── NetworkHandler.kt       # Wi-Fi state & signal strength (RSSI dBm)
             │       ├── OverlayHandler.kt       # System Alert Window (Compose overlay dialog)
-            │       ├── ScreenHandler.kt        # Home, Back, Recents & screen lock actions
-            │       ├── ScreenshotHandler.kt    # Full screen capture via Accessibility API
+            │       ├── ScreenHandler.kt        # Home, Back & screen lock actions
+            │       ├── ScreenshotHandler.kt    # MediaProjection screen capture trigger
             │       ├── TtsHandler.kt           # Text-to-Speech (Indonesian voice with auto-sanitization)
             │       ├── VoiceRecorderHandler.kt # Voice note recorder
             │       ├── VoiceStreamHandler.kt   # Continuous PCM audio stream from microphone
             │       └── VolumeHandler.kt        # Multi-stream volume controller & DND interruption filter
             │
-            ├── protocol/                 # Data Models & JSON Schemas (Nexa Protocol 3.0)
-            │   ├── CallEvent.kt          # Call interaction event model (Accepted, Rejected, Reply)
+            ├── notification/             # Native Chat Notifications & OS Direct Reply
+            │   ├── ChatNotificationActionReceiver.kt # Handles Inline Direct Reply without launching Activity
+            │   └── ChatNotificationManager.kt # Bundled chat notifications & sound/vibration alerts
+            │
+            ├── protocol/                 # Data Models & JSON Schemas
+            │   ├── CallEvent.kt          # Call interaction event model
             │   ├── CommandResult.kt      # Command execution return result model
             │   ├── ContextReport.kt      # High-level situational context event model
-            │   ├── NexaActions.kt        # Action name string constants (28 Actions)
+            │   ├── NexaActions.kt        # Action name string constants
             │   ├── NexaCommand.kt        # Incoming server command schema
             │   └── TelemetryReport.kt    # Periodic device telemetry schema (Battery, Wi-Fi, Screen)
             │
-            ├── service/
-            │   └── NexaNotifListenerService.kt # Notification listener (Samsung/Google Clock Alarm Dismiss)
+            ├── service/                  # Android System Services & Overlay Hosts
+            │   ├── FloatingLifecycleOwner.kt # Lifecycle & SavedState owner for WindowManager overlay
+            │   ├── FloatingOverlayManager.kt # Compact non-intrusive system alert overlay window manager
+            │   ├── NexaNotifListenerService.kt # Notification listener (Alarm Dismiss & trigger sync)
+            │   └── ScreenCaptureService.kt # MediaProjection foreground service
             │
             ├── theme/                    # Jetpack Compose Theme & Design System
-            │   ├── Color.kt              # Executive dark palette & neon status accents
+            │   ├── Color.kt              # OLED executive dark palette & LocalNexaColors composition
             │   ├── Theme.kt              # Material3 dark theme setup
             │   └── Type.kt               # Typography & font styling
             │
             └── ui/                       # User Interfaces (Jetpack Compose)
                 ├── call/
-                │   ├── FakeCallActivity.kt   # Interactive Call Screen (6 States: Ringing, Voice, Video)
-                │   └── NexaExpressiveEyes.kt # Dynamic expressive animated digital eyes
+                │   ├── FakeCallActivity.kt   # Interactive Call Screen
+                │   └── NexaExpressiveEyes.kt # Animated digital OLED eyes companion
+                ├── chat/
+                │   ├── ChatMessageActions.kt # Long-press copy, retry & bubble contextual menu
+                │   ├── ChatScreen.kt         # Paging 3 chat timeline, voice input bar & streaming bubbles
+                │   ├── ChatViewModel.kt      # Chat UI state, voice recording & step-up coordination
+                │   ├── FinanceStepUpBottomSheet.kt # Biometric CryptoObject bottom sheet for whitelisted finance ops
+                │   ├── InteractiveCardView.kt # Native Compose renderer for 12 server-driven Interactive Cards
+                │   └── SlashCommandPalette.kt # Inline `/` command picker (/briefing, /budget, /vault, etc.)
+                ├── components/
+                │   └── NexaChrome.kt         # Shared executive header chrome & navigation shell
                 ├── hud/
-                │   ├── HudScreen.kt          # Main Executive Status HUD Dashboard
-                │   └── HudViewModel.kt       # HUD state holder & connection switch
+                │   ├── HudScreen.kt          # Bridge connection & Dual-WS diagnostic HUD
+                │   └── HudViewModel.kt       # HUD telemetry & connection toggle state
+                ├── logs/
+                │   ├── LogViewerScreen.kt    # Real-time Connection B monospace VPS journald viewer
+                │   └── LogViewerViewModel.kt # Ticket acquisition, unit filters & circular buffer state
                 ├── overlay/
-                │   └── OverlayActivity.kt    # Dynamic System Overlay with server-defined buttons
-                └── settings/
-                    ├── SettingsScreen.kt     # Configuration screen (Server URL, Token, HMAC Secret)
-                    └── SettingsViewModel.kt  # Settings DataStore state manager
+                │   └── OverlayActivity.kt    # Dynamic transparent activity dialog host
+                ├── settings/
+                │   ├── SettingsComponents.kt # LazyColumn settings UI building blocks
+                │   ├── SettingsScreen.kt     # Server URL, enrollment, biometrics & bridge controls
+                │   ├── SettingsSheetsAndDialogs.kt # Enrollment, clear cache & diagnostic modal sheets
+                │   └── SettingsViewModel.kt  # Encrypted DataStore & enrollment state manager
+                └── terminal/
+                    ├── TerminalAccessoryBar.kt # Touch Esc, Tab, Ctrl, Alt & arrow keys strip
+                    ├── TerminalInputSink.kt  # Keyboard & IME raw PTY byte bridge
+                    ├── TerminalScreen.kt     # Interactive VT100 sandboxed shell Canvas view
+                    └── TerminalViewModel.kt  # PTY attach, resume ring & resize dispatcher
 ```
 
 ---
@@ -613,10 +583,10 @@ nexa-mobile-bridge/
 ## 4. N.E.X.A WINDOWS BRIDGE ARCHITECTURE (Rust / Slint / Win32 / WASAPI / Direct3D 11)
 * **Local Path:** `C:\workspace\nexa-windows-bridge`
 * **Target Hardware:** Lenovo ThinkPad X380 Yoga (Intel Core i5-8350U, UHD Graphics 620, Realtek HD Audio, Touchscreen / Stylus)
-* **Tech Stack:** Rust 2021 Edition, Slint GUI Framework 1.9, Tokio Multi-threaded Async Runtime, Windows-Capture Direct3D 11, CPAL WASAPI, Sonora DSP WebRTC AEC3, Windows-Sys Win32 API
+* **Tech Stack:** Rust 2021 Edition, Slint GUI Framework 1.18, Tokio Multi-threaded Async Runtime, Windows-Capture Direct3D 11, CPAL WASAPI, Sonora DSP WebRTC AEC3, Windows-Sys Win32 API
 * **Binary Outputs:** `target/release/Nexa Bridge.exe`, `dist/Nexa Bridge.exe` (alias: `nexa-bridge.exe`)
 * **Role:** Sovereign Native Desktop Companion, Hardware Audio Duplex (WASAPI + AEC3 DAC Tap), Direct3D 11 GPU Screen Capture, Native Desktop Automation (SendInput, UIA Magnetic Snap), Transparent AR Overlays & Multi-Tier OS Security Isolation (Armed Guard, 15-Min Lease, Terminal Shield)
-* **Current Version:** v0.2.0 (`Cargo.toml`)
+* **Current Version:** v0.1.0 (`Cargo.toml`)
 
 ```text
 nexa-windows-bridge/
@@ -762,25 +732,19 @@ nexa-cli/
 
 | Jalur Aliran Data | Protokol / Saluran | Komponen Asal | Komponen Tujuan | Deskripsi / Fungsi |
 |---|---|---|---|---|
-| **Modular Intent Ingress** | Inter-process / Pipeline | Adapter Kanal (`telegram/`, `cli/`) | Common Dispatcher (`common/`) | Normalisasi payload intent lintas-kanal ke 7 handler domain bersama dengan platform-aware escaping & state retention. |
-| **Cognitive AI Routing** | Pipeline / Fallback Engine | Server (`AI_Router.js` Facade & `router/`) | Fallback Engine & LLM Providers | Klasifikasi 13 domain intent, gating dinamis skema tool, injeksi persona, RAM cache TTL, dan eksekusi multi-provider dengan Token Budget Guard. |
-| **Mobile Hardware Commands** | WebSocket (`EXECUTE_COMMAND`) | Server (`MobileBridge_WS.js`) | Android (`DeviceCommandDispatcher.kt`) | Eksekusi 28 aksi fisik HP (kamera, screenshot, klik layar, volume, senter, dll.). |
-| **Mobile Command Results** | WebSocket (`COMMAND_RESULT`) | Android (`DeviceCommandDispatcher.kt`) | Server (`MobileBridge_WS.js`) | Pengembalian data eksekusi HP (Base64 foto, hierarki UI, status). |
-| **Mobile Situational Context** | WebSocket (`CONTEXT_UPDATE`) | Android (`ContextEngine.kt`) | Server (`adapter.js`) | Laporan sensor real-time (`ROOM_DARK_NIGHT`, `PHONE_PICKUP_MORNING`, dll.). |
-| **Mobile Live Call & Video** | WebSocket (`CALL_AUDIO_STREAM`) | Android (`VoiceStreamHandler.kt`) | Server (`Live_Voice_Engine.js`) | Streaming audio PCM & frame video kamera HP ke Google Gemini Live API. |
-| **Mobile Audio Output** | WebSocket (`CALL_REPLY_PCM`) | Server (`Live_Voice_Engine.js`) | Android (`AudioPlayerHandler.kt`) | Pemutaran respon suara instan (*sub-second TTFA*) ke speaker HP. |
-| **Windows Desktop Automation** | WebSocket (`EXECUTE_COMMAND`) | Server (`Live_Tool_Registry.js` / `MobileBridge_WS.js`) | Windows (`automation/mod.rs`) | Eksekusi 16 aksi native Windows (klik mouse, ketik Unicode, scroll, peluncuran aplikasi whitelist, lock screen, volume, dsb.) dengan perlindungan Armed Guard 15-menit dan perisai terminal aktif. |
-| **Windows Command Results** | WebSocket (`COMMAND_RESULT`) | Windows (`automation/mod.rs`) | Server (`MobileBridge_WS.js`) | Pengembalian status eksekusi perintah desktop ber-epoch generasi sesi. |
-| **Windows Desktop Vision** | WebSocket (`CALL_VIDEO_FRAME`) | Windows (`capture/screen_capture.rs`) | Server (`Live_Voice_Engine.js`) | Streaming cuplikan layar desktop Direct3D 11 GPU (1 FPS JPEG) untuk kapabilitas AI Multimodal Vision Gemini. |
-| **Windows Duplex Voice Stream** | WebSocket (`CALL_AUDIO_STREAM`) | Windows (`audio/microphone.rs`) | Server (`Live_Voice_Engine.js`) | Streaming audio mikrofon 16 kHz mono terfilter WebRTC AEC3 (DSP Sonora) tanpa gema speaker. |
-| **Windows Voice Output** | WebSocket (`CALL_AUDIO_PLAY` / Binary) | Server (`Live_Voice_Engine.js`) | Windows (`audio/speaker.rs`) | Pemutaran suara respons AI instan via WASAPI output stream terisolasi dari antrean kendali. |
-| **Windows Desktop Telemetry** | WebSocket (`DESKTOP_TELEMETRY`) | Windows (`platform/telemetry.rs`) | Server (`Device_Control_Engine.js`) | Pelaporan beban CPU, utilisasi RAM fisik, dan nama aplikasi aktif ke peladen. |
-| **Windows Power & Lifecycle** | WebSocket (`POWER_EVENT`) | Windows (`platform/power.rs`) | Server (`adapter.js`) | Notifikasi penutupan engsel laptop (`PBT_APMSUSPEND`) dan pembukaan kembali (`PBT_APMRESUME`). |
-| **Financial Ledger** | REST / Realtime Database | Server (`Finance_Engine.js`) | Supabase PostgreSQL (`Supabase_Finance.js`) | Buku besar kas, sinkronisasi Bank Mandiri & pelacakan pengeluaran. |
-| **User Memory RAG** | Vector Similarity (pgvector) | Server (`Episodic_Recall.js`) | Supabase PostgreSQL (`Supabase_Memories.js`) | Penarikan memori percakapan jangka panjang & fakta kepribadian Tuan. |
-| **Financial Web Portal** | HTTPS / Server-Side Rendering | Web Browser (`nexa-finance-web`) | Supabase PostgreSQL & Server API | Dashboard visual analitik keuangan, grafik pengeluaran & anggaran realtime PWA. |
-| **Self-Knowledge Progressive Disclosure** | In-Memory / Router Prompts | Master Registry (`capabilities_registry.js`) | Router (`Router_Prompts.js` & `gemini_vector_cache.js`) | Injeksi Tier 0 Manifes (~265 token) ke prompt dengan Anti-False-Denial Rule dan penarikan Tier 1 Kartu detail secara on-demand di RAM (~0.05ms) saat ada pertanyaan arsitektur/kapabilitas. |
-| **5-Tier Cognitive Memory Routing** | Database / Contingency Classifier | Classifier (`Memory_Classifier.js`) | Living Memory (`Memory_Living.js`) & Supabase | Klasifikasi 5 tingkat (CORE, PHASE, PREFERENCE, RULE, EPHEMERAL) dengan penalaran kontingensi, bi-temporal superseding, dan peluruhan dinamis Ebbinghaus di Hygiene Engine. |
+| **Modular Intent Ingress** | Inter-process / Pipeline | Adapter Kanal (`telegram/`, `cli/`, `mobile_bridge/`) | Common Dispatcher (`common/`) | Normalisasi payload intent lintas-kanal ke 7 handler domain bersama dengan platform-aware escaping & state retention. |
+| **Cognitive AI Routing** | Pipeline / Fallback Engine | Server (`AI_Router.js` Facade & `router/`) | Fallback Engine & LLM Providers | Klasifikasi domain intent, gating dinamis skema tool, injeksi persona, RAM cache TTL, dan eksekusi multi-provider dengan Token Budget Guard. |
+| **Mobile Native Chat & Voice Notes** | Connection A WebSocket (`CHAT_SEND`, `CHAT_DELTA`, `CHAT_RESUME`, `CHAT_VOICE_NOTE`) | Android (`ChatRepository.kt`, `VoiceNoteRecorder.kt`) | Server (`chat_handler.js`) | Streaming teks real-time per delta token, buffer replay 10 menit anti-putus, slash commands & voice note OGG/Opus. |
+| **Mobile 12 Interactive Cards & Step-Up** | Connection A WebSocket (`CARD_RENDER`, `CARD_ACTION`, `CARD_UPDATE`) | Server (`card_handler.js`, `finance_stepup_service.js`) | Android (`InteractiveCardView.kt`, `FinanceStepUpBottomSheet.kt`) | Kartu interaktif native (`FINANCE_TX`, `BRIEFING_SUMMARY`, `BUDGET_RECAP`, dll.) & tanda tangan biometrik Keystore ECDSA P-256 untuk aksi finansial sensitif. |
+| **Device Auth & Ed25519 Tickets** | Connection A (`ENROLL_SUBMIT`, `TICKET_REQ`, `CHALLENGE_RESP`) | Android (`DeviceKeystoreManager.kt`, `TicketAuthRepository.kt`) | Server (`ws_auth_handler.js`, `ticket_service.js`) | Enrollment perangkat keras ECDSA P-256 dan penerbitan tiket Ed25519 berjangka pendek bagi Connection B sidecars. |
+| **Go Sidecar Logs & Terminal PTY** | Connection B Binary 13-Byte (`wss://.../io/logs`, `wss://.../io/term`) | Android (`SidecarLogsClient.kt`, `SidecarTerminalClient.kt`) | Go Sidecar (`nexa-io`, `nexa-log.socket`, `nexa-term.socket`) | Streaming journald real-time berredaksi rahasia (`redactSecrets`) dan sesi shell VT100 sandboxed dengan 64 KB replay ring. |
+| **Mobile Hardware Commands & Context** | Connection A (`EXECUTE_COMMAND`, `COMMAND_RESULT`, `CONTEXT_UPDATE`) | Server (`mobile_bridge/client.js` & `adapter.js`) | Android (`DeviceCommandDispatcher.kt`, `ContextEngine.kt`) | Eksekusi aksi fisik HP, laporan sensor & App Discipline (`UsageStatsManager`, zero AccessibilityService). |
+| **Mobile & Windows Live Call / Vision** | WebSocket (`CALL_AUDIO_STREAM`, `CALL_VIDEO_FRAME`, `CALL_REPLY_PCM`) | Android & Windows Companion | Server (`Live_Voice_Engine.js`) | Audio PCM dupleks 16kHz + frame layar/kamera ke Gemini Live API beserta respon suara instan. |
+| **Windows Desktop Automation** | WebSocket (`EXECUTE_COMMAND` / `/ws/windows`) | Server (`Live_Tool_Registry.js`, `windows_bridge/client.js`) | Windows (`automation/mod.rs`) | Eksekusi aksi native Windows (klik mouse, Ketik Unicode, scroll, kelola window, lock screen) dengan Armed Guard 15-menit. |
+| **Pulse Monitor Observability** | HTTPS + WSS (`/monitor/api/*`, `/monitor/ws/metrics`) | VPS Systemd / Node `metrics_collector.js` | Browser Admin (`Caddy` -> `src/monitor/router.js`) | Metrik VPS real-time, histori biner 7-hari (~709 KB), issue tracker terdeduplikasi, dan restart `nexa-server.service` via Polkit. |
+| **Financial Ledger & Portal** | REST / Supabase PostgreSQL | Server (`Finance_Engine.js`) & `Knightrelaxed/nexa-finance` | Supabase PostgreSQL (`finance_db/`) | Buku besar kas, transfer dual-leg, auto-sync Bank Mandiri & Bank Jago, serta dashboard web Next.js terpisah. |
+| **User Memory & 5-Tier Living RAG** | Vector Similarity & Contingency Classifier | Classifier (`Memory_Classifier.js`) | Living Memory (`Memory_Living.js`) & `facts_vectors.json` | Klasifikasi 5 tingkat (`CORE`, `PHASE`, `PREFERENCE`, `RULE`, `EPHEMERAL`), bi-temporal superseding & peluruhan Ebbinghaus. |
+| **Self-Knowledge Progressive Disclosure** | In-Memory / Router Prompts | Registry (`capabilities_registry.js`) | `Router_Prompts.js` & `gemini_vector_cache.js` | Injeksi Tier 0 Manifes v4.0.0 (~265 token) dengan Anti-False-Denial Rule dan penarikan Tier 1 Kartu (~0.05ms) di RAM. |
 | **Gemini AI Studio US Relay** | HTTPS Proxy (`iad1` Edge) | Server (`Fallback_Engine.js`) | Vercel Edge (`nexa-gemini-proxy`) -> Google | Akses API Gemini via US Washington D.C. gateway untuk latensi optimal dan bypass batasan regional. |
-| **Terminal Console CLI** | HTTPS / JSON Webhook | Standalone Terminal (`nexa-cli`) | Server (`interfaces/cli/adapter.js`) | Akses kontrol konsol eksekutif N.E.X.A bergaya HUD Cyberpunk dari laptop manapun di dunia. |
+| **Terminal Console CLI** | HTTPS / JSON Webhook & SSE | Standalone Terminal (`nexa-cli`) | Server (`interfaces/cli/adapter.js`) | Akses kontrol konsol eksekutif N.E.X.A bergaya HUD Cyberpunk dari terminal remote. |
 
