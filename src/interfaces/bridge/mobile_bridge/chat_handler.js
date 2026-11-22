@@ -456,6 +456,91 @@ function createMobileChatHandler(deps = {}) {
       };
     }
 
+    // 5. /briefing (/morning, /evening) -> Rich Executive Briefing Card + full briefing narrative
+    if (/^(\/briefing|\/morning|\/evening)\b/i.test(trimmed)) {
+      const intelligenceBrief = deps.intelligenceBrief || require('../../../domain/Intelligence_Brief');
+      const cardHandlerMod = deps.cardHandler || require('./card_handler');
+      const isEvening = /^\/evening\b/i.test(trimmed) || /\bevening\b|\bmalam\b/i.test(trimmed);
+      if (isEvening) {
+        const res = typeof intelligenceBrief.generateEveningBriefingStructured === 'function'
+          ? await intelligenceBrief.generateEveningBriefingStructured()
+          : { text: await intelligenceBrief.generateEveningBriefing(), summary: {} };
+        const card = cardHandlerMod.buildBriefingCard('EVENING', res.summary || {});
+        return {
+          intent: 'COMMAND_BRIEFING',
+          reply: stripHtmlForMobile(res.text || 'Refleksi malam siap, Tuan.'),
+          card
+        };
+      }
+      const res = typeof intelligenceBrief.generateMorningBriefingStructured === 'function'
+        ? await intelligenceBrief.generateMorningBriefingStructured()
+        : { text: await intelligenceBrief.generateMorningBriefing(), summary: {} };
+      const card = cardHandlerMod.buildBriefingCard('MORNING', res.summary || {});
+      return {
+        intent: 'COMMAND_BRIEFING',
+        reply: stripHtmlForMobile(res.text || 'Executive Morning Briefing siap, Tuan.'),
+        card
+      };
+    }
+
+    // 6. /budget [weekly|monthly] (/anggaran, /rekap) -> Rich Budget Recap Card with progress bars
+    if (/^(\/budget|\/anggaran|\/rekap)\b/i.test(trimmed)) {
+      const budgetEngine = deps.budgetEngine || require('../../../domain/Budget_Engine');
+      const cardHandlerMod = deps.cardHandler || require('./card_handler');
+      const wantWeekly = /\b(week|weekly|minggu|mingguan)\b/i.test(trimmed);
+      const period = wantWeekly ? 'weekly' : 'monthly';
+      const structured = typeof budgetEngine.generatePeriodicRecapStructured === 'function'
+        ? await budgetEngine.generatePeriodicRecapStructured(period)
+        : null;
+      if (!structured) {
+        const fallbackPeriod = wantWeekly ? 'monthly' : 'weekly';
+        const alt = typeof budgetEngine.generatePeriodicRecapStructured === 'function'
+          ? await budgetEngine.generatePeriodicRecapStructured(fallbackPeriod)
+          : null;
+        if (!alt) {
+          return {
+            intent: 'COMMAND_BUDGET',
+            reply: 'Belum ada anggaran aktif yang diatur di sistem saat ini, Tuan.'
+          };
+        }
+        return {
+          intent: 'COMMAND_BUDGET',
+          reply: stripHtmlForMobile(alt.text),
+          card: cardHandlerMod.buildBudgetRecapCard(alt)
+        };
+      }
+      return {
+        intent: 'COMMAND_BUDGET',
+        reply: stripHtmlForMobile(structured.text),
+        card: cardHandlerMod.buildBudgetRecapCard(structured)
+      };
+    }
+
+    // 7. /vault -> Latest DRAFT (or latest Vault item) as native editable VAULT_METADATA card
+    if (/^\/vault\b/i.test(trimmed)) {
+      const memoryVault = deps.memoryVault || require('../../../infrastructure/memories/Memory_Vault');
+      const cardHandlerMod = deps.cardHandler || require('./card_handler');
+      const items = typeof memoryVault.getLatestVaultItems === 'function'
+        ? await memoryVault.getLatestVaultItems(8)
+        : [];
+      if (!items || items.length === 0) {
+        return {
+          intent: 'COMMAND_VAULT',
+          reply: 'Belum ada dokumen di Arsip Vault saat ini, Tuan.'
+        };
+      }
+      const target = items.find(i => String(i.status || '').toUpperCase() === 'DRAFT') || items[0];
+      const card = cardHandlerMod.buildVaultMetadataCard(target);
+      const isDraft = String(target.status || '').toUpperCase() !== 'CONFIRMED';
+      return {
+        intent: 'COMMAND_VAULT',
+        reply: isDraft
+          ? `Draft dokumen Vault menunggu konfirmasi. Tuan bisa langsung tap Edit Fields atau Confirm & Save pada kartu di bawah.`
+          : `Menampilkan arsip Vault terbaru (${card.title}). Tuan dapat meninjau atau menyunting field metadata langsung lewat kartu di bawah.`,
+        card
+      };
+    }
+
     return null;
   }
 
@@ -474,11 +559,11 @@ function createMobileChatHandler(deps = {}) {
       console.warn('[BRIDGE-CHAT] Failed saving user chat memory:', err.message);
     });
 
-    // Direct Slash Commands (/search, /playbook, /capabilities, /trigger_weekly) with zero LLM overhead
+    // Direct Slash Commands (/briefing, /budget, /vault, /search, /playbook, /capabilities, /trigger_weekly)
     try {
       const slashRes = await tryHandleDirectSlashCommand(content);
       if (slashRes) {
-        await streamFinalReply(clientMsgId, entry, content, slashRes.reply, slashRes.intent, saveChatMemory);
+        await streamFinalReply(clientMsgId, entry, content, slashRes.reply, slashRes.intent, saveChatMemory, slashRes.card || null);
         return;
       }
     } catch (cmdErr) {

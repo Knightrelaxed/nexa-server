@@ -30,11 +30,12 @@ function _formatTimeWib(isoString) {
 // ============================================================
 // [PHASE 6] MORNING BRIEFING — Format Ringkas + Check-In 3 Pertanyaan
 // ============================================================
-async function generateMorningBriefing() {
+async function generateMorningBriefingStructured() {
   console.log('[INTELLIGENCE] Generating Executive Morning Briefing (4-Pillar Multi-Table Fusion)...');
 
   // ── 1. Cuaca Yogyakarta ─────────────────────────────────────
   let weatherStr = null;
+  let weatherShort = null;
   let weatherEmoji = '🌤️';
   try {
     if (env.WEATHER_API_KEY) {
@@ -46,7 +47,8 @@ async function generateMorningBriefing() {
       if (/rain|hujan/.test(condText)) weatherEmoji = '🌧️';
       else if (/cloud|berawan/.test(condText)) weatherEmoji = '☁️';
       else if (/storm|petir/.test(condText)) weatherEmoji = '⛈️';
-      weatherStr = `${weatherEmoji} Yogyakarta ${Math.round(cond.temp_c)}°C — ${cond.condition.text}`;
+      weatherShort = `Yogyakarta ${Math.round(cond.temp_c)}°C, ${cond.condition.text}`;
+      weatherStr = `${weatherEmoji} Yogyakarta ${Math.round(cond.temp_c)}°C - ${cond.condition.text}`;
     }
   } catch (err) {
     console.warn('[INTELLIGENCE] Failed to get weather:', err.message);
@@ -63,7 +65,7 @@ async function generateMorningBriefing() {
         const timeLabel = startRaw
           ? (e.start.dateTime ? _formatTimeWib(startRaw) : 'Sepanjang hari')
           : '?';
-        return `• ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
+        return `• ${timeLabel} - ${e.summary || '(Tanpa judul)'}`;
       });
       agendaStr = `📅 *${agendaLines.length} agenda hari ini:*\n${agendaLines.join('\n')}`;
     }
@@ -73,15 +75,19 @@ async function generateMorningBriefing() {
 
   // ── 3. Tugas Prioritas Utama (Overdue + Due Today) ─────────
   let taskWarning = null;
+  let overdueCount = 0;
+  let dueTodayCount = 0;
   try {
     const overdue = await googleTasks.getOverdueTasks();
     const dueToday = await googleTasks.getTasksDueToday();
+    overdueCount = Array.isArray(overdue) ? overdue.length : 0;
+    dueTodayCount = Array.isArray(dueToday) ? dueToday.length : 0;
     const parts = [];
-    if (overdue.length > 0) {
-      parts.push(`⚠️ *TERLAMBAT (${overdue.length}):* ${overdue.map(t => t.title).join(', ')}`);
+    if (overdueCount > 0) {
+      parts.push(`⚠️ *TERLAMBAT (${overdueCount}):* ${overdue.map(t => t.title).join(', ')}`);
     }
-    if (dueToday.length > 0) {
-      parts.push(`📌 *Jatuh tempo hari ini (${dueToday.length}):* ${dueToday.map(t => t.title).join(', ')}`);
+    if (dueTodayCount > 0) {
+      parts.push(`📌 *Jatuh tempo hari ini (${dueTodayCount}):* ${dueToday.map(t => t.title).join(', ')}`);
     }
     if (parts.length > 0) taskWarning = parts.join('\n');
   } catch (err) {
@@ -90,6 +96,7 @@ async function generateMorningBriefing() {
 
   // ── 4. Komitmen & Target Intensi Aktif (nexa_intentions) ───
   let activeIntentionsStr = '';
+  let intentionsCount = 0;
   try {
     const { supabase } = supabaseMemories;
     if (supabase) {
@@ -100,6 +107,7 @@ async function generateMorningBriefing() {
         .order('target_date', { ascending: true })
         .limit(3);
       if (intentions && intentions.length > 0) {
+        intentionsCount = intentions.length;
         activeIntentionsStr = intentions.map(i => `• ${i.title}${i.target_date ? ` (Target: ${i.target_date})` : ''}`).join('\n');
       }
     }
@@ -129,6 +137,9 @@ async function generateMorningBriefing() {
 
   // ── 6. Ringkasan Keuangan Terkini & Alokasi Belanja Aman ───
   let financeContextStr = '';
+  let safeToSpendToday = null;
+  let billsDueTotal = 0;
+  let daysLeftInMonth = null;
   try {
     const financeEngine = require('./Finance_Engine');
     const recentTx = await financeEngine.getRecentTransactions(3);
@@ -140,7 +151,6 @@ async function generateMorningBriefing() {
     const financeIntel = require('./Finance_Intel');
     const supabaseFinance = require('../infrastructure/Supabase_Finance');
     const balances = await supabaseFinance.getAccountBalances();
-    // Exclude explicit savings, deposits, and investment accounts from liquid discretionary balance
     const operationalBalances = (balances || []).filter(b => {
       const name = (b.name || '').toLowerCase();
       const type = (b.type || '').toLowerCase();
@@ -156,10 +166,12 @@ async function generateMorningBriefing() {
     const todayDate = nowWib.getUTCDate();
     const totalDaysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
     const daysLeft = Math.max(1, totalDaysInMonth - todayDate + 1);
+    daysLeftInMonth = daysLeft;
 
     const endOfMonthIso = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59)).toISOString();
     const upcoming = financeIntel.upcomingBills(recurringRules, new Date().toISOString(), endOfMonthIso);
     const billsDue = upcoming.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+    billsDueTotal = billsDue;
 
     const safeToday = financeIntel.safeToSpendToday({
       budgetRemainingBeforeToday: totalBalance,
@@ -170,6 +182,7 @@ async function generateMorningBriefing() {
     });
 
     if (safeToday && safeToday.status !== 'INSUFFICIENT_DATA' && typeof safeToday.remainingToday === 'number' && !isNaN(safeToday.remainingToday)) {
+      safeToSpendToday = Math.round(safeToday.remainingToday);
       const safeSpendNotice = `Alokasi Belanja Aman Hari Ini: Rp ${safeToday.remainingToday.toLocaleString('id-ID')} (Sisa ${daysLeft} hari bulan ini, Tagihan Tertunda: Rp ${billsDue.toLocaleString('id-ID')})`;
       financeContextStr = financeContextStr ? `${financeContextStr}\n• ${safeSpendNotice}` : safeSpendNotice;
     }
@@ -246,7 +259,29 @@ PEDOMAN FORMAT:
     console.warn('[INTELLIGENCE] Warning saving MORNING_BRIEFING_SENT to behavior log:', logErr.message);
   }
 
-  return finalMessage.substring(0, 4000);
+  const dateLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta'
+  });
+
+  return {
+    text: finalMessage.substring(0, 4000),
+    summary: {
+      dateLabel,
+      weather: weatherShort,
+      agendaCount: agendaLines.length,
+      overdueCount,
+      dueTodayCount,
+      intentionsCount,
+      safeToSpendToday,
+      billsDue: billsDueTotal,
+      daysLeftInMonth
+    }
+  };
+}
+
+async function generateMorningBriefing() {
+  const res = await generateMorningBriefingStructured();
+  return res ? res.text : '';
 }
 
 // ============================================================
@@ -321,28 +356,30 @@ Output: teks naratif langsung, BUKAN JSON.
 // [PHASE 6] EVENING BRIEFING — Reflective Diary
 // Menggantikan format lama yang hanya laporan agenda esok
 // ============================================================
-async function generateEveningBriefing() {
+async function generateEveningBriefingStructured() {
   console.log('[INTELLIGENCE] Generating Evening Briefing (Reflective Diary)...');
 
-  // Ambil agenda esok
-  // [BUG FIX #3] Sebelumnya memanggil getTodaysEvents() — data hari INI yang sudah berlalu.
-  // Diganti dengan getTomorrowEvents() yang benar agar Evening Briefing menampilkan
-  // persiapan esok hari yang relevan.
   let tomorrowAgenda = 'Tidak ada agenda terjadwal esok.';
+  let tomorrowAgendaCount = 0;
+  let tomorrowFirstEvent = '';
   try {
     const events = await googleWorkspace.getTomorrowEvents();
     if (events && events.length > 0) {
+      tomorrowAgendaCount = events.length;
+      const first = events[0];
+      const firstStart = first.start?.dateTime ? _formatTimeWib(first.start.dateTime) : 'All day';
+      tomorrowFirstEvent = `${firstStart} ${first.summary || '(Untitled)'}`.trim();
       tomorrowAgenda = events.map(e => {
         const startRaw = e.start?.dateTime || e.start?.date;
         const timeLabel = startRaw ? _formatTimeWib(startRaw) : '?';
-        return `• ${timeLabel} — ${e.summary || '(Tanpa judul)'}`;
+        return `• ${timeLabel} - ${e.summary || '(Tanpa judul)'}`;
       }).slice(0, 5).join('\n');
     }
   } catch (err) {
     console.warn('[INTELLIGENCE] Failed to get tomorrow events:', err.message);
   }
 
-  // Susun pesan Evening Briefing — Reflective Diary
+  // Susun pesan Evening Briefing - Reflective Diary
   const message = [
     '🌙 <b>Refleksi Malam, Tuan Faqih.</b>',
     '',
@@ -364,7 +401,7 @@ async function generateEveningBriefing() {
       const nowWib = new Date(new Date().getTime() + 7 * 60 * 60 * 1000);
       await supabase.from('nexa_behavior_log').insert([{
         event_type: 'EVENING_BRIEFING_SENT',
-        event_data: { has_tomorrow_agenda: tomorrowAgenda !== 'Tidak ada agenda terjadwal esok.' },
+        event_data: { has_tomorrow_agenda: tomorrowAgendaCount > 0 },
         day_of_week: nowWib.getUTCDay(),
         hour_of_day: nowWib.getUTCHours(),
         created_at: new Date().toISOString()
@@ -372,7 +409,23 @@ async function generateEveningBriefing() {
     }
   } catch (_) { /* Fire-and-forget */ }
 
-  return message.substring(0, 4000);
+  const dateLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta'
+  });
+
+  return {
+    text: message.substring(0, 4000),
+    summary: {
+      dateLabel,
+      tomorrowAgendaCount,
+      tomorrowFirstEvent
+    }
+  };
+}
+
+async function generateEveningBriefing() {
+  const res = await generateEveningBriefingStructured();
+  return res ? res.text : '';
 }
 
 // ============================================================
@@ -599,8 +652,10 @@ Penting: Output murni teks naratif (jangan JSON), tanpa awalan kaku.
 
 module.exports = {
   generateMorningBriefing,
+  generateMorningBriefingStructured,
   generateMorningBriefingDetail,
   generateEveningBriefing,
+  generateEveningBriefingStructured,
   generateMidnightCheckin,
   parseMorningCheckIn,
   parseMorningCheckInWithAI,

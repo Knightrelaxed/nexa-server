@@ -152,13 +152,18 @@ async function sendEveningBriefing() {
   try {
     const intelligenceBrief = require('../../domain/Intelligence_Brief');
     const { notifyProactive } = require('../../core/Notifier');
-    const briefText = await intelligenceBrief.generateEveningBriefing();
+    const { buildBriefingCard } = require('../bridge/mobile_bridge/card_handler');
+    const briefRes = typeof intelligenceBrief.generateEveningBriefingStructured === 'function'
+      ? await intelligenceBrief.generateEveningBriefingStructured()
+      : { text: await intelligenceBrief.generateEveningBriefing(), summary: {} };
     const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+    const card = buildBriefingCard('EVENING', briefRes.summary || {});
     await notifyProactive({
       kind: 'SCHEDULED_EVENING_BRIEFING',
       priority: 'P1',
       dedupeKey: `evening:${todayKey}`,
-      text: briefText,
+      text: briefRes.text,
+      card,
       isScheduled: true
     });
     console.log('[INTELLIGENCE] Evening Briefing sent successfully via Notifier.');

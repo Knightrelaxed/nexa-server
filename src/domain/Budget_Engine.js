@@ -205,9 +205,9 @@ async function checkAndAlertBudget(newTransactionData) {
 }
 
 /**
- * Generate recap of budgets matching targetPeriod
+ * Generate structured periodic budget recap (text + per-group metrics for Rich Budget Recap Card)
  */
-async function generatePeriodicRecap(targetPeriod) {
+async function generatePeriodicRecapStructured(targetPeriod) {
   try {
     const txDate = new Date();
     const budgets = await supabaseFinance.getBudgets();
@@ -219,7 +219,8 @@ async function generatePeriodicRecap(targetPeriod) {
 
     let totalSaved = 0;
     let totalOver = 0;
-    let lines = [];
+    const lines = [];
+    const items = [];
 
     for (const budget of applicableBudgets) {
       const budgetAmount = Number(budget.amount);
@@ -240,7 +241,15 @@ async function generatePeriodicRecap(targetPeriod) {
       const statusIcon = isOver ? '❌' : (isWarning ? '⚠️' : '✅');
       const safeStr = isOver ? 'Over' : 'Aman';
 
-      lines.push(`${statusIcon} ${name.toUpperCase()}: ${safeStr} (${formatRp(spent)} / ${formatRp(budgetAmount)} — ${Math.round(percentage)}%)`);
+      lines.push(`${statusIcon} ${name.toUpperCase()}: ${safeStr} (${formatRp(spent)} / ${formatRp(budgetAmount)} - ${Math.round(percentage)}%)`);
+      items.push({
+        name: name.toUpperCase(),
+        spent: Math.round(spent),
+        amount: Math.round(budgetAmount),
+        percentage: Math.round(percentage),
+        isOver,
+        isWarning
+      });
 
       if (isOver) {
         totalOver += (spent - budgetAmount);
@@ -262,14 +271,29 @@ async function generatePeriodicRecap(targetPeriod) {
       msg += `⚖️ Pengeluaran Anda pas sesuai anggaran.`;
     }
 
-    return msg;
+    return {
+      text: msg,
+      period: targetPeriod,
+      totalSaved: Math.round(totalSaved),
+      totalOver: Math.round(totalOver),
+      items
+    };
   } catch (error) {
     console.error('[BUDGET_ENGINE] generatePeriodicRecap error:', error);
     return null;
   }
 }
 
+/**
+ * Generate recap of budgets matching targetPeriod (string facade preserved for legacy callers)
+ */
+async function generatePeriodicRecap(targetPeriod) {
+  const res = await generatePeriodicRecapStructured(targetPeriod);
+  return res ? res.text : null;
+}
+
 module.exports = {
   checkAndAlertBudget,
-  generatePeriodicRecap
+  generatePeriodicRecap,
+  generatePeriodicRecapStructured
 };

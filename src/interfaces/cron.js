@@ -260,15 +260,20 @@ function initCronJobs() {
         console.warn('[CRON] Flush deferred error:', flushErr.message);
       }
 
-      // B. Generate dan kirim Morning Briefing via Notifier Gate
+      // B. Generate dan kirim Morning Briefing via Notifier Gate (with Rich Executive Brief Card)
       try {
-        const briefingText = await intelligenceBrief.generateMorningBriefing();
-        if (briefingText) {
+        const { buildBriefingCard } = require('./bridge/mobile_bridge/card_handler');
+        const briefRes = typeof intelligenceBrief.generateMorningBriefingStructured === 'function'
+          ? await intelligenceBrief.generateMorningBriefingStructured()
+          : { text: await intelligenceBrief.generateMorningBriefing(), summary: {} };
+        if (briefRes && briefRes.text) {
+          const card = buildBriefingCard('MORNING', briefRes.summary || {});
           await notifyProactive({
             kind: 'SCHEDULED_MORNING_BRIEFING',
             priority: 'P1',
             dedupeKey: `briefing:${todayKey}`,
-            text: briefingText,
+            text: briefRes.text,
+            card,
             isScheduled: true
           });
         }
@@ -1027,7 +1032,11 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
       console.log('[CRON-BUDGET] Executing Weekly Budget Recap...');
       try {
         const budgetEngine = require('../domain/Budget_Engine');
-        const msg = await budgetEngine.generatePeriodicRecap('weekly');
+        const { buildBudgetRecapCard } = require('./bridge/mobile_bridge/card_handler');
+        const recap = typeof budgetEngine.generatePeriodicRecapStructured === 'function'
+          ? await budgetEngine.generatePeriodicRecapStructured('weekly')
+          : null;
+        const msg = recap ? recap.text : await budgetEngine.generatePeriodicRecap('weekly');
         if (msg) {
           await notifyProactive({
             kind: 'SCHEDULED_WEEKLY_BUDGET',
@@ -1035,7 +1044,8 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
             isScheduled: true,
             bypassQuietHours: true,
             dedupeKey: `budget_weekly:${weekKey}`,
-            text: msg
+            text: msg,
+            card: recap ? buildBudgetRecapCard(recap) : null
           });
           console.log('[CRON-BUDGET] Weekly Recap sent via Notifier.');
         }
@@ -1057,7 +1067,11 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
         console.log('[CRON-BUDGET] Executing Monthly Budget Recap...');
         try {
           const budgetEngine = require('../domain/Budget_Engine');
-          const msg = await budgetEngine.generatePeriodicRecap('monthly');
+          const { buildBudgetRecapCard } = require('./bridge/mobile_bridge/card_handler');
+          const recap = typeof budgetEngine.generatePeriodicRecapStructured === 'function'
+            ? await budgetEngine.generatePeriodicRecapStructured('monthly')
+            : null;
+          const msg = recap ? recap.text : await budgetEngine.generatePeriodicRecap('monthly');
           if (msg) {
             await notifyProactive({
               kind: 'SCHEDULED_MONTHLY_BUDGET',
@@ -1065,7 +1079,8 @@ Kembalikan hasil dalam bentuk JSON Array of Strings MURNI. Jangan gunakan backti
               isScheduled: true,
               bypassQuietHours: true,
               dedupeKey: `budget_monthly:${monthKey}`,
-              text: msg
+              text: msg,
+              card: recap ? buildBudgetRecapCard(recap) : null
             });
             console.log('[CRON-BUDGET] Monthly Recap sent via Notifier.');
           }

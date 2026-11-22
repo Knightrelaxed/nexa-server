@@ -556,6 +556,26 @@ async function handleVaultUpload(message, vaultTriggerText, { respondToTelegram 
         `Balas salah satu:\n- <b>KONFIRM</b>\n- <b>EKSTRAK ULANG</b>\n- <b>EDIT key: value; key2: value2</b>`
       );
 
+      // Phase 3: Also push native editable VAULT_METADATA card to Mobile Bridge when saved
+      if (saved && saved.row && saved.row.id) {
+        try {
+          const mobileClient = require('../bridge/mobile_bridge/client');
+          const { buildVaultMetadataCard } = require('../bridge/mobile_bridge/card_handler');
+          if (mobileClient && typeof mobileClient.sendProactiveMessage === 'function') {
+            const vaultCard = buildVaultMetadataCard(saved.row);
+            mobileClient.sendProactiveMessage({
+              text: `Dokumen Vault baru (${finalFileName}) tersimpan sebagai DRAFT. Tap Edit Fields atau Confirm & Save langsung pada kartu.`,
+              kind: 'VAULT_DRAFT',
+              priority: 'P1',
+              clientMsgId: `vault_draft_${saved.row.id}`,
+              card: vaultCard
+            });
+          }
+        } catch (bridgeErr) {
+          console.warn('[VAULT] Mobile Bridge Vault card push warning:', bridgeErr.message);
+        }
+      }
+
       return { handled: true, newContext };
     } finally {
       try { if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath); } catch (_) { }

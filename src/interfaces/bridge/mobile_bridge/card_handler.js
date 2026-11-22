@@ -1061,6 +1061,371 @@ async function _handleProactiveTasksAction(cardId, actionId, payload, ws, deps) 
   return { ok: false, error: 'UNKNOWN_ACTION' };
 }
 
+function _humanizeVaultKey(rawKey) {
+  return String(rawKey || '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+/**
+ * Phase 3: Native Vault Metadata Card (tap Edit Fields to modify key-value fields directly without typing EDIT key: value;).
+ */
+function buildVaultMetadataCard(vaultItem = {}) {
+  const rowId = vaultItem.id || vaultItem.vaultRowId || Date.now();
+  const cardId = `vault_${rowId}`;
+  const rawMeta = (vaultItem.metadata_json && typeof vaultItem.metadata_json === 'object')
+    ? vaultItem.metadata_json
+    : (vaultItem.metadata && typeof vaultItem.metadata === 'object' ? vaultItem.metadata : {});
+  const fileName = String(vaultItem.file_name || vaultItem.fileName || rawMeta.judul || 'Vault Document').trim();
+  const title = String(rawMeta.judul || fileName).trim().slice(0, 72);
+  const category = String(vaultItem.category || rawMeta.kategori_gambar || 'ARSIP').trim().toUpperCase();
+  const rawStatus = String(vaultItem.status || 'DRAFT').trim().toUpperCase();
+  const isDraft = rawStatus !== 'CONFIRMED';
+
+  const cleanMeta = {};
+  const fields = [];
+  for (const [k, v] of Object.entries(rawMeta)) {
+    if (k === 'source' || v === null || v === undefined) continue;
+    const valStr = String(v).trim();
+    if (!valStr) continue;
+    cleanMeta[k] = valStr;
+    fields.push({
+      key: k,
+      label: _humanizeVaultKey(k),
+      value: valStr.slice(0, 140)
+    });
+  }
+  if (fields.length === 0) {
+    cleanMeta.judul = title;
+    fields.push({ key: 'judul', label: 'Judul', value: title });
+  }
+
+  const actions = [];
+  if (isDraft) {
+    actions.push({ id: 'confirm', label: 'Confirm & Save', style: 'PRIMARY' });
+  }
+  actions.push({ id: 'edit_fields', label: 'Edit Fields', style: 'SECONDARY', kind: 'EDIT_VAULT' });
+  if (vaultItem.telegram_file_id || vaultItem.telegramFileId) {
+    actions.push({ id: 'reextract', label: 'Re-extract', style: 'SECONDARY' });
+  }
+
+  return {
+    version: CARD_VERSION,
+    card_id: cardId,
+    card_type: 'VAULT_METADATA',
+    presentation: 'CARD',
+    status: 'PENDING',
+    title,
+    subtitle: `${category} · ${fileName}`,
+    badge: isDraft ? 'Draft' : 'Confirmed',
+    accent: isDraft ? 'AMBER' : 'EMERALD',
+    fields: fields.slice(0, 12),
+    meta: {
+      vault_row_id: Number(rowId) || 0,
+      category,
+      file_name: fileName,
+      drive_link: String(vaultItem.drive_web_view_link || vaultItem.driveLink || ''),
+      telegram_file_id: String(vaultItem.telegram_file_id || vaultItem.telegramFileId || ''),
+      vault_status: rawStatus,
+      metadata: cleanMeta
+    },
+    actions
+  };
+}
+
+/**
+ * Phase 3: Rich Executive Briefing Card (Morning & Evening Briefing header dashboard).
+ */
+function buildBriefingCard(kind = 'MORNING', summary = {}) {
+  const normKind = String(kind || 'MORNING').toUpperCase();
+  const isEvening = normKind === 'EVENING';
+  const dateLabel = String(summary.dateLabel || '').trim() || new Date().toLocaleDateString('en-US', {
+    weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta'
+  });
+
+  if (isEvening) {
+    const count = Number(summary.tomorrowAgendaCount) || 0;
+    const firstEv = String(summary.tomorrowFirstEvent || '').trim();
+    const metrics = [
+      {
+        label: "Tomorrow's Events",
+        value: count > 0 ? `${count} scheduled` : 'Clear schedule',
+        tone: count > 0 ? 'PRIMARY' : 'EMERALD'
+      },
+      {
+        label: 'First Up',
+        value: firstEv ? firstEv.slice(0, 38) : 'No meetings',
+        tone: 'NEUTRAL'
+      }
+    ];
+    return {
+      version: CARD_VERSION,
+      card_id: `brief_eve_${Date.now()}`,
+      card_type: 'BRIEFING_SUMMARY',
+      presentation: 'SUMMARY_CARD',
+      status: 'INFO',
+      title: 'Evening Reflection',
+      subtitle: `${dateLabel} · Daily wrap-up`,
+      badge: 'Evening',
+      accent: 'PRIMARY',
+      metrics,
+      actions: [
+        { id: 'prompt_tomorrow', label: "Tomorrow's Schedule", style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'cek jadwal besok' },
+        { id: 'prompt_skip', label: 'Skip Reflection', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'Tidak ada' }
+      ]
+    };
+  }
+
+  const agendaCount = Number(summary.agendaCount) || 0;
+  const overdueCount = Number(summary.overdueCount) || 0;
+  const dueTodayCount = Number(summary.dueTodayCount) || 0;
+  const billsDue = Number(summary.billsDue) || 0;
+  const safeSpend = typeof summary.safeToSpendToday === 'number' && Number.isFinite(summary.safeToSpendToday)
+    ? summary.safeToSpendToday
+    : null;
+  const subtitleParts = [dateLabel, summary.weather ? String(summary.weather) : ''].filter(Boolean);
+
+  const metrics = [
+    {
+      label: 'Agenda Today',
+      value: agendaCount > 0 ? `${agendaCount} event${agendaCount > 1 ? 's' : ''}` : 'Clear',
+      tone: agendaCount > 0 ? 'PRIMARY' : 'EMERALD'
+    },
+    {
+      label: 'Tasks Due',
+      value: overdueCount > 0
+        ? `${dueTodayCount} today · ${overdueCount} late`
+        : (dueTodayCount > 0 ? `${dueTodayCount} due today` : 'All caught up'),
+      tone: overdueCount > 0 ? 'CRIMSON' : (dueTodayCount > 0 ? 'AMBER' : 'EMERALD')
+    }
+  ];
+  if (billsDue > 0) {
+    metrics.push({
+      label: 'Upcoming Bills',
+      value: formatIdr(billsDue),
+      tone: 'AMBER'
+    });
+  }
+  if (Number(summary.intentionsCount) > 0) {
+    metrics.push({
+      label: 'Active Goals',
+      value: `${summary.intentionsCount} active`,
+      tone: 'PRIMARY'
+    });
+  }
+
+  return {
+    version: CARD_VERSION,
+    card_id: `brief_morn_${Date.now()}`,
+    card_type: 'BRIEFING_SUMMARY',
+    presentation: 'SUMMARY_CARD',
+    status: 'INFO',
+    title: 'Morning Executive Brief',
+    subtitle: subtitleParts.join(' · '),
+    badge: safeSpend !== null ? 'Safe to Spend' : 'Briefing',
+    accent: 'PRIMARY',
+    hero_value: safeSpend !== null ? formatIdr(safeSpend) : '',
+    hero_tone: safeSpend !== null ? (safeSpend >= 0 ? 'INCOME' : 'EXPENSE') : 'NEUTRAL',
+    metrics,
+    actions: [
+      { id: 'prompt_detail', label: 'Full Detail', style: 'PRIMARY', kind: 'SEND_PROMPT', prompt: 'Detail' },
+      { id: 'prompt_tasks', label: "Today's Tasks", style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'cek tugas hari ini' },
+      { id: 'prompt_budget', label: 'Budget Recap', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: '/budget' }
+    ]
+  };
+}
+
+/**
+ * Phase 3: Rich Budget Recap Card with color-coded progress bars per budget group.
+ */
+function buildBudgetRecapCard(recap = {}) {
+  const period = String(recap.period || 'monthly').toLowerCase();
+  const isWeekly = period === 'weekly';
+  const totalSaved = Number(recap.totalSaved) || 0;
+  const totalOver = Number(recap.totalOver) || 0;
+  const netDelta = totalSaved - totalOver;
+  const isOverallOver = netDelta < 0;
+  const items = Array.isArray(recap.items) ? recap.items : [];
+
+  const metrics = items.slice(0, 8).map((item) => {
+    const pct = Math.max(0, Math.round(Number(item.percentage) || 0));
+    const tone = item.isOver || pct >= 100
+      ? 'CRIMSON'
+      : (item.isWarning || pct >= 80 ? 'AMBER' : 'EMERALD');
+    return {
+      label: String(item.name || 'GLOBAL'),
+      value: `${formatIdr(item.spent || 0)} / ${formatIdr(item.amount || 0)} (${pct}%)`,
+      progress: Math.min(100, pct),
+      tone
+    };
+  });
+
+  return {
+    version: CARD_VERSION,
+    card_id: `budget_${period}_${Date.now()}`,
+    card_type: 'BUDGET_RECAP',
+    presentation: 'SUMMARY_CARD',
+    status: 'INFO',
+    title: isWeekly ? 'Weekly Budget Recap' : 'Monthly Budget Recap',
+    subtitle: isOverallOver ? 'Over allocated budget' : 'Within budget target',
+    badge: isOverallOver ? 'Over Limit' : 'On Track',
+    accent: isOverallOver ? 'CRIMSON' : 'EMERALD',
+    hero_value: `${netDelta >= 0 ? '+' : '-'}${formatIdr(Math.abs(netDelta))}`,
+    hero_tone: netDelta >= 0 ? 'INCOME' : 'EXPENSE',
+    metrics,
+    actions: [
+      { id: 'prompt_recent', label: 'Recent Transactions', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'cek 10 transaksi terakhir' },
+      { id: 'prompt_analytics', label: 'Monthly Analytics', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'analisa keuangan bulan ini' }
+    ]
+  };
+}
+
+async function _handleVaultMetadataAction(cardId, actionId, payload, ws, deps) {
+  const memoryVault = deps.memoryVault || require('../../../infrastructure/memories/Memory_Vault');
+  const supabaseMemories = deps.supabaseMemories || require('../../../infrastructure/Supabase_Memories');
+  const aiRouter = deps.aiRouter || (() => { try { return require('../../../core/AI_Router'); } catch (_) { return null; } })();
+  const vaultRowId = Number(payload && payload.vault_row_id) || Number(String(cardId).replace(/^vault_/, ''));
+
+  if (!vaultRowId || !Number.isFinite(vaultRowId)) {
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'PENDING',
+      error: 'Invalid Vault document ID.'
+    }, deps);
+    return { ok: false, error: 'INVALID_VAULT_ID' };
+  }
+
+  let existingRow = null;
+  if (memoryVault && typeof memoryVault.getVaultItemById === 'function') {
+    existingRow = await memoryVault.getVaultItemById(vaultRowId);
+  }
+  const currentMeta = (existingRow && existingRow.metadata_json && typeof existingRow.metadata_json === 'object')
+    ? { ...existingRow.metadata_json }
+    : ((payload && payload.metadata && typeof payload.metadata === 'object') ? { ...payload.metadata } : {});
+  const currentCategory = String(
+    (payload && payload.category) || (existingRow && existingRow.category) || 'ARSIP'
+  ).trim().toUpperCase();
+
+  if (actionId === 'confirm') {
+    const upd = await supabaseMemories.updateVaultItemById(vaultRowId, {
+      status: 'CONFIRMED',
+      category: currentCategory,
+      metadata_json: currentMeta,
+      confirmed_at: new Date().toISOString()
+    });
+    if (upd && upd.success === false) {
+      _sendCardUpdate(ws, {
+        card_id: cardId,
+        status: 'PENDING',
+        error: upd.error || 'Failed to confirm Vault item.'
+      }, deps);
+      return { ok: false, error: upd.error || 'CONFIRM_FAILED' };
+    }
+    if (aiRouter && typeof aiRouter.invalidatePersonalFactsCache === 'function') {
+      aiRouter.invalidatePersonalFactsCache();
+    }
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: 'Confirmed',
+      resolved_detail: `${currentMeta.judul || (existingRow && existingRow.file_name) || 'Vault document'} saved to Vault (${currentCategory}).`
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  if (actionId === 'update_fields') {
+    const edits = (payload && payload.edits && typeof payload.edits === 'object') ? payload.edits : {};
+    const mergedMeta = { ...currentMeta };
+    for (const [rawK, rawV] of Object.entries(edits)) {
+      const k = String(rawK || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+      if (!k || k === 'source') continue;
+      const v = String(rawV ?? '').trim();
+      if (v) mergedMeta[k] = v;
+      else delete mergedMeta[k];
+    }
+    mergedMeta.source = 'MOBILE_EDIT';
+
+    const upd = await supabaseMemories.updateVaultItemById(vaultRowId, {
+      category: currentCategory,
+      metadata_json: mergedMeta
+    });
+    if (upd && upd.success === false) {
+      _sendCardUpdate(ws, {
+        card_id: cardId,
+        status: 'PENDING',
+        error: upd.error || 'Failed to update Vault fields.'
+      }, deps);
+      return { ok: false, error: upd.error || 'UPDATE_FAILED' };
+    }
+    if (aiRouter && typeof aiRouter.invalidatePersonalFactsCache === 'function') {
+      aiRouter.invalidatePersonalFactsCache();
+    }
+    const refreshedRow = (upd && upd.row) || {
+      ...(existingRow || {}),
+      id: vaultRowId,
+      category: currentCategory,
+      status: (existingRow && existingRow.status) || String(payload.vault_status || 'DRAFT'),
+      metadata_json: mergedMeta
+    };
+    const updatedCard = buildVaultMetadataCard(refreshedRow);
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'PENDING',
+      updated_card: updatedCard,
+      resolved_detail: 'Vault metadata updated.'
+    }, deps);
+    return { ok: true, status: 'PENDING', updatedCard };
+  }
+
+  if (actionId === 'reextract') {
+    const telegramFileId = String(
+      (existingRow && existingRow.telegram_file_id) || (payload && payload.telegram_file_id) || ''
+    ).trim();
+    if (!telegramFileId) {
+      _sendCardUpdate(ws, {
+        card_id: cardId,
+        status: 'PENDING',
+        error: 'Source image is not available for re-extraction.'
+      }, deps);
+      return { ok: false, error: 'NO_SOURCE_FILE' };
+    }
+    const vaultHandler = deps.vaultHandler || require('../../telegram/vault_handler');
+    const reExtracted = await vaultHandler.extractVaultMetadataFromVision({
+      fileId: telegramFileId,
+      fileName: (existingRow && existingRow.file_name) || (payload && payload.file_name) || 'document.jpg',
+      promptHint: 'Ekstrak ulang metadata dokumen ini. Fokus pada key-value yang paling akurat, lengkap, dan tidak redundan.'
+    });
+    const mergedMeta = {
+      ...currentMeta,
+      ...(reExtracted || {}),
+      source: 'VISION_REEXTRACT'
+    };
+    const upd = await supabaseMemories.updateVaultItemById(vaultRowId, {
+      category: String(mergedMeta.kategori_gambar || currentCategory).toUpperCase(),
+      metadata_json: mergedMeta
+    });
+    const refreshedRow = (upd && upd.row) || {
+      ...(existingRow || {}),
+      id: vaultRowId,
+      category: String(mergedMeta.kategori_gambar || currentCategory).toUpperCase(),
+      status: (existingRow && existingRow.status) || 'DRAFT',
+      metadata_json: mergedMeta
+    };
+    const updatedCard = buildVaultMetadataCard(refreshedRow);
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'PENDING',
+      updated_card: updatedCard,
+      resolved_detail: 'Metadata re-extracted from document.'
+    }, deps);
+    return { ok: true, status: 'PENDING', updatedCard };
+  }
+
+  return { ok: false, error: 'UNKNOWN_ACTION' };
+}
+
 function _cleanSingleLineDetail(htmlText) {
   return String(htmlText || '')
     .replace(/<[^>]+>/g, '')
@@ -1115,6 +1480,8 @@ async function handleCardAction(frame, ws, deps = {}) {
         return await _handleTaskConfirmAction(cardId, actionId, payload, ws, deps);
       case 'PROACTIVE_TASKS':
         return await _handleProactiveTasksAction(cardId, actionId, payload, ws, deps);
+      case 'VAULT_METADATA':
+        return await _handleVaultMetadataAction(cardId, actionId, payload, ws, deps);
       default:
         _sendCardUpdate(ws, {
           card_id: cardId,
@@ -1145,6 +1512,9 @@ module.exports = {
   buildFinanceDeleteCard,
   buildTaskConfirmCard,
   buildProactiveTasksCard,
+  buildVaultMetadataCard,
+  buildBriefingCard,
+  buildBudgetRecapCard,
   registerSessionHooks,
   handleCardAction
 };

@@ -133,10 +133,37 @@ async function updateVaultItemById(id, patch = {}) {
   return { success: true, row: data?.[0] || null };
 }
 
+async function getVaultItemById(id) {
+  if (!supabase) return null;
+  const idNum = parseInt(id, 10);
+  if (isNaN(idNum) || idNum <= 0) return null;
+  const { data, error } = await supabase
+    .from('nexa_vault_items')
+    .select('*')
+    .eq('id', idNum)
+    .limit(1);
+  if (error || !data || data.length === 0) return null;
+  return data[0];
+}
+
+async function getLatestVaultItems(limit = 5) {
+  if (!supabase) return [];
+  const safeLimit = Math.max(1, Math.min(20, parseInt(limit, 10) || 5));
+  const { data, error } = await supabase
+    .from('nexa_vault_items')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
+  if (error || !Array.isArray(data)) return [];
+  return data;
+}
+
 module.exports = {
   saveIdeaToVault,
   deleteIdeaFromVault,
   editIdeaInVault,
   saveVaultItem,
-  updateVaultItemById
+  updateVaultItemById,
+  getVaultItemById,
+  getLatestVaultItems
 };

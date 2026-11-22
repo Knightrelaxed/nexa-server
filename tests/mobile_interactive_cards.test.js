@@ -13,6 +13,9 @@ const {
   buildFinanceDeleteCard,
   buildTaskConfirmCard,
   buildProactiveTasksCard,
+  buildVaultMetadataCard,
+  buildBriefingCard,
+  buildBudgetRecapCard,
   handleCardAction
 } = require('../src/interfaces/bridge/mobile_bridge/card_handler');
 
@@ -662,6 +665,170 @@ describe('Mobile Bridge Phase 2: Quick Action Chips & Conversational Interceptor
 
     const proactiveMsg = sentFrames.find(f => f.type === 'CHAT_PROACTIVE' && f.kind === 'TASK_AUTOSAVE');
     assert.ok(proactiveMsg, 'Background timer must emit CHAT_PROACTIVE instead of stale CHAT_ACK');
+    handler.destroy();
+  });
+});
+
+describe('Mobile Bridge Phase 3: Vault Metadata Card, Rich Briefing/Budget Cards & Slash Commands', () => {
+  it('builds VAULT_METADATA card and supports update_fields and confirm actions', async () => {
+    let storedRow = {
+      id: 42,
+      file_name: 'KTP_Tuan.jpg',
+      category: 'IDENTITAS',
+      status: 'DRAFT',
+      telegram_file_id: 'tg-file-123',
+      metadata_json: {
+        judul: 'KTP Tuan Faqih',
+        nik: '3404000000000001',
+        alamat: 'Yogyakarta',
+        source: 'VISION_DIRECT'
+      }
+    };
+
+    const card = buildVaultMetadataCard(storedRow);
+    assert.equal(card.card_id, 'vault_42');
+    assert.equal(card.card_type, 'VAULT_METADATA');
+    assert.equal(card.presentation, 'CARD');
+    assert.equal(card.badge, 'Draft');
+    assert.ok(card.fields.some(f => f.key === 'nik' && f.value === '3404000000000001'));
+    assert.ok(!card.fields.some(f => f.key === 'source'));
+    assert.ok(card.actions.some(a => a.kind === 'EDIT_VAULT'));
+
+    const frames = [];
+    let cacheInvalidated = 0;
+    const deps = {
+      sendFrame: (f) => frames.push(f),
+      notifier: { markEngaged: async () => true },
+      aiRouter: { invalidatePersonalFactsCache: () => { cacheInvalidated += 1; } },
+      memoryVault: { getVaultItemById: async () => storedRow },
+      supabaseMemories: {
+        updateVaultItemById: async (_id, patch) => {
+          storedRow = { ...storedRow, ...patch };
+          return { success: true, row: storedRow };
+        }
+      }
+    };
+
+    // 1. Tap Edit Fields -> update_fields updates Supabase and returns refreshed card
+    await handleCardAction({
+      card_id: card.card_id,
+      card_type: 'VAULT_METADATA',
+      action_id: 'update_fields',
+      payload: {
+        vault_row_id: 42,
+        category: 'IDENTITAS',
+        edits: { alamat: 'Sleman, DI Yogyakarta', golongan_darah: 'O' }
+      }
+    }, null, deps);
+
+    assert.equal(frames.length, 1);
+    assert.equal(frames[0].status, 'PENDING');
+    assert.ok(frames[0].updated_card);
+    assert.ok(frames[0].updated_card.fields.some(f => f.key === 'alamat' && f.value === 'Sleman, DI Yogyakarta'));
+    assert.ok(frames[0].updated_card.fields.some(f => f.key === 'golongan_darah' && f.value === 'O'));
+
+    // 2. Tap Confirm & Save -> locks card as Confirmed
+    await handleCardAction({
+      card_id: card.card_id,
+      card_type: 'VAULT_METADATA',
+      action_id: 'confirm',
+      payload: { vault_row_id: 42, category: 'IDENTITAS' }
+    }, null, deps);
+
+    assert.equal(frames.length, 2);
+    assert.equal(frames[1].status, 'RESOLVED');
+    assert.equal(frames[1].resolved_badge, 'Confirmed');
+    assert.equal(storedRow.status, 'CONFIRMED');
+    assert.equal(cacheInvalidated, 2);
+  });
+
+  it('builds BRIEFING_SUMMARY (Morning & Evening) and BUDGET_RECAP SUMMARY_CARD with metrics & progress bars', () => {
+    const morningCard = buildBriefingCard('MORNING', {
+      dateLabel: 'Sun, 22 Nov',
+      weather: 'Yogyakarta 28°C, Clear',
+      agendaCount: 3,
+      overdueCount: 1,
+      dueTodayCount: 2,
+      billsDue: 350000,
+      safeToSpendToday: 185000,
+      intentionsCount: 2
+    });
+    assert.equal(morningCard.card_type, 'BRIEFING_SUMMARY');
+    assert.equal(morningCard.presentation, 'SUMMARY_CARD');
+    assert.equal(morningCard.status, 'INFO');
+    assert.equal(morningCard.hero_value, 'Rp 185.000');
+    assert.equal(morningCard.metrics.length, 4);
+    assert.ok(morningCard.actions.some(a => a.kind === 'SEND_PROMPT' && a.prompt === 'Detail'));
+
+    const eveningCard = buildBriefingCard('EVENING', {
+      dateLabel: 'Sun, 22 Nov',
+      tomorrowAgendaCount: 2,
+      tomorrowFirstEvent: '09:00 Standup'
+    });
+    assert.equal(eveningCard.card_type, 'BRIEFING_SUMMARY');
+    assert.equal(eveningCard.metrics.length, 2);
+
+    const budgetCard = buildBudgetRecapCard({
+      period: 'monthly',
+      totalSaved: 450000,
+      totalOver: 50000,
+      items: [
+        { name: 'GLOBAL', spent: 1800000, amount: 2250000, percentage: 80, isOver: false, isWarning: true },
+        { name: 'MAKAN', spent: 650000, amount: 600000, percentage: 108, isOver: true, isWarning: false }
+      ]
+    });
+    assert.equal(budgetCard.card_type, 'BUDGET_RECAP');
+    assert.equal(budgetCard.presentation, 'SUMMARY_CARD');
+    assert.equal(budgetCard.hero_value, '+Rp 400.000');
+    assert.equal(budgetCard.metrics[0].progress, 80);
+    assert.equal(budgetCard.metrics[0].tone, 'AMBER');
+    assert.equal(budgetCard.metrics[1].progress, 100);
+    assert.equal(budgetCard.metrics[1].tone, 'CRIMSON');
+  });
+
+  it('handles /briefing, /budget, and /vault direct slash commands with attached Phase 3 cards', async () => {
+    const sentFrames = [];
+    const fakeWs = { readyState: 1, send: (raw) => sentFrames.push(JSON.parse(raw)) };
+
+    const handler = createMobileChatHandler({
+      chunkDelayMs: 0,
+      saveChatMemory: async () => {},
+      intelligenceBrief: {
+        generateMorningBriefingStructured: async () => ({
+          text: 'Selamat pagi Tuan Faqih. Agenda hari ini 2 meeting.',
+          summary: { dateLabel: 'Sun, 22 Nov', agendaCount: 2, dueTodayCount: 1, overdueCount: 0, safeToSpendToday: 200000 }
+        })
+      },
+      budgetEngine: {
+        generatePeriodicRecapStructured: async (period) => ({
+          text: 'Rekap Anggaran Bulan Ini: GLOBAL Aman (60%).',
+          period,
+          totalSaved: 800000,
+          totalOver: 0,
+          items: [{ name: 'GLOBAL', spent: 1200000, amount: 2000000, percentage: 60, isOver: false, isWarning: false }]
+        })
+      },
+      memoryVault: {
+        getLatestVaultItems: async () => ([
+          { id: 99, file_name: 'NPWP.jpg', category: 'IDENTITAS', status: 'DRAFT', metadata_json: { judul: 'NPWP Tuan', nomor: '09.123.456' } }
+        ])
+      }
+    });
+
+    for (const [id, cmd, expectedType] of [
+      ['s-brief', '/briefing', 'BRIEFING_SUMMARY'],
+      ['s-budget', '/budget', 'BUDGET_RECAP'],
+      ['s-vault', '/vault', 'VAULT_METADATA']
+    ]) {
+      await handler.handleMessage({ type: 'CHAT_SEND', client_msg_id: id, content: cmd }, fakeWs);
+      for (let i = 0; i < 40 && !sentFrames.some(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === id && f.status === 'STREAM_FINAL'); i++) {
+        await new Promise(r => setTimeout(r, 20));
+      }
+      const fin = sentFrames.find(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === id && f.status === 'STREAM_FINAL');
+      assert.ok(fin && fin.card, `Slash command ${cmd} must attach a card`);
+      assert.equal(fin.card.card_type, expectedType);
+    }
+
     handler.destroy();
   });
 });
