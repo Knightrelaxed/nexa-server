@@ -1061,10 +1061,11 @@ async function getPendingConfirmationsContext() {
       if (!pendingConfirmations.has(key)) {
         const ageMs = Date.now() - new Date(row.created_at).getTime();
         const remaining = Math.max(1000, (5 * 60 * 1000) - ageMs); // Guard: never negative/zero
+        const expiresAtMs = Date.now() + remaining;
         const timeoutId = setTimeout(async () => {
           if (pendingConfirmations.has(key)) await _autoSavePending(key, tx);
         }, remaining);
-        pendingConfirmations.set(key, { tx, timeoutId });
+        pendingConfirmations.set(key, { tx, timeoutId, expiresAtMs });
         console.log(`[FINANCE] Re-registered pending tx from Supabase (post-restart): ${key}`);
       }
     }
@@ -1110,6 +1111,7 @@ module.exports = {
   _autoSavePending,
   requestTransactionConfirmation,
   getPendingTransactionByKey,
+  getPendingTransactionsMap: () => pendingConfirmations,
   autoSaveFromWatchdog,
   resolveTargetKeyFromSnippet,
   getPendingConfirmationsContext,

@@ -485,4 +485,183 @@ describe('Mobile Bridge Phase 2: Quick Action Chips & Conversational Interceptor
     assert.equal(cardUpdate.resolved_badge, 'Cancelled');
     handler.destroy();
   });
+
+  it('Audit Fixes #1 & #3: attaches FINANCE_TX card on manual chat record and emits CARD_UPDATE on text edit & confirm', async () => {
+    const sentFrames = [];
+    const fakeWs = { readyState: 1, send: (raw) => sentFrames.push(JSON.parse(raw)) };
+    const pendingConfirmations = new Map();
+
+    const handler = createMobileChatHandler({
+      chunkDelayMs: 0,
+      saveChatMemory: async () => {},
+      supabaseFinance: {
+        getCategoriesList: async () => [{ name: 'Makan & Minum' }, { name: 'Transportasi' }]
+      },
+      financeEngine: {
+        getPendingDeletionsContext: () => null,
+        getPendingConfirmationsCount: () => pendingConfirmations.size,
+        getPendingConfirmationsMap: () => pendingConfirmations
+      },
+      taskManager: { pendingTaskCategories: new Map() },
+      splitEngine: { hasPendingRemainder: () => false },
+      aiRouter: {
+        routeUserMessage: async () => ({
+          intent: 'FINANCE',
+          extracted_data: {
+            action: 'RECORD',
+            type: 'EXPENSE',
+            nominal: 25000,
+            destination: 'Kopi Kenangan'
+          }
+        })
+      },
+      executeDomainIntent: async () => {
+        pendingConfirmations.set('25000_kopikenangan', {
+          tx: {
+            nominal: 25000,
+            type: 'EXPENSE',
+            destination: 'Kopi Kenangan',
+            category: 'Makan & Minum',
+            description: '[Menunggu Detail User]',
+            account: 'Bank Mandiri',
+            payment_method: 'QRIS'
+          },
+          expiresAtMs: Date.now() + 300_000
+        });
+        return 'Konfirmasi pencatatan pengeluaran Rp25.000 ke Kopi Kenangan.';
+      },
+      interceptors: {
+        handleMorningCheckIn: async () => false,
+        handlePendingFinanceConfirmation: async (_msgShim, text, _sk, { respondToTelegram }) => {
+          if (text.startsWith('ubah catatan')) {
+            const entry = pendingConfirmations.get('25000_kopikenangan');
+            entry.tx = { ...entry.tx, description: 'Es Kopi Susu Tetangga' };
+            await respondToTelegram('Catatan diperbarui menjadi Es Kopi Susu Tetangga.');
+            return true;
+          }
+          if (text === 'ya') {
+            pendingConfirmations.delete('25000_kopikenangan');
+            await respondToTelegram('Transaksi Rp25.000 berhasil dicatat.');
+            return true;
+          }
+          return false;
+        }
+      }
+    });
+
+    // Turn 1: Manual chat "beli kopi 25rb" -> attaches FINANCE_TX card on STREAM_FINAL
+    await handler.handleMessage({ type: 'CHAT_SEND', client_msg_id: 'f-1', content: 'beli kopi 25rb' }, fakeWs);
+    for (let i = 0; i < 40 && !sentFrames.some(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === 'f-1' && f.status === 'STREAM_FINAL'); i++) {
+      await new Promise(r => setTimeout(r, 20));
+    }
+    const finalFrame1 = sentFrames.find(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === 'f-1' && f.status === 'STREAM_FINAL');
+    assert.ok(finalFrame1 && finalFrame1.card, 'Manual finance tx must attach FINANCE_TX card');
+    assert.equal(finalFrame1.card.card_type, 'FINANCE_TX');
+    assert.equal(finalFrame1.card.card_id, 'fin_25000_kopikenangan');
+
+    // Turn 2: Text edit "ubah catatan jadi Es Kopi Susu Tetangga" -> emits CARD_UPDATE (status=PENDING, updated_card)
+    await handler.handleMessage({ type: 'CHAT_SEND', client_msg_id: 'f-2', content: 'ubah catatan jadi Es Kopi Susu Tetangga' }, fakeWs);
+    for (let i = 0; i < 40 && !sentFrames.some(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === 'f-2' && f.status === 'STREAM_FINAL'); i++) {
+      await new Promise(r => setTimeout(r, 20));
+    }
+    const pendingUpdate = sentFrames.find(f => f.type === 'CARD_UPDATE' && f.card_id === 'fin_25000_kopikenangan' && f.status === 'PENDING');
+    assert.ok(pendingUpdate && pendingUpdate.updated_card, 'Text edit must emit CARD_UPDATE with updated_card');
+    const noteField = pendingUpdate.updated_card.fields.find(fl => fl.key === 'note');
+    assert.equal(noteField.value, 'Es Kopi Susu Tetangga');
+
+    // Turn 3: Text confirm "ya" -> emits CARD_UPDATE (status=RESOLVED, resolved_badge=Recorded)
+    await handler.handleMessage({ type: 'CHAT_SEND', client_msg_id: 'f-3', content: 'ya' }, fakeWs);
+    for (let i = 0; i < 40 && !sentFrames.some(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === 'f-3' && f.status === 'STREAM_FINAL'); i++) {
+      await new Promise(r => setTimeout(r, 20));
+    }
+    const resolvedUpdate = sentFrames.find(f => f.type === 'CARD_UPDATE' && f.card_id === 'fin_25000_kopikenangan' && f.status === 'RESOLVED');
+    assert.ok(resolvedUpdate, 'Text confirm must emit CARD_UPDATE RESOLVED');
+    assert.equal(resolvedUpdate.resolved_badge, 'Recorded');
+    handler.destroy();
+  });
+
+  it('Audit Fix #2 & #4: finance_handler allows mobile DELETE/UNDO_DELETE and background task auto-save emits CARD_UPDATE + CHAT_PROACTIVE', async (t) => {
+    const { handleFinanceIntent } = require('../src/interfaces/common/handlers/finance_handler');
+    const financeEngine = require('../src/domain/Finance_Engine');
+    const origDel = financeEngine.deleteTransaction;
+    const origUndo = financeEngine.undoDeleteTransaction;
+    financeEngine.deleteTransaction = async (kw) => ({ message: `MOCK_DELETE_PROMPT:${kw}` });
+    financeEngine.undoDeleteTransaction = async () => ({ message: 'MOCK_UNDO_OK' });
+    t.after(() => {
+      financeEngine.deleteTransaction = origDel;
+      financeEngine.undoDeleteTransaction = origUndo;
+    });
+
+    const delRes = await handleFinanceIntent({
+      intent: 'FINANCE',
+      extracted_data: { action: 'DELETE', search_keyword: 'kopi' }
+    }, { source: 'mobile' });
+    assert.equal(delRes, 'MOCK_DELETE_PROMPT:kopi');
+
+    const undoRes = await handleFinanceIntent({
+      intent: 'FINANCE',
+      extracted_data: { action: 'UNDO_DELETE' }
+    }, { source: 'mobile' });
+    assert.equal(undoRes, 'MOCK_UNDO_OK');
+
+    // Audit Fix #4: Background timer firing notifyClient after turn finalized emits CARD_UPDATE (Auto-saved) + CHAT_PROACTIVE
+    const sentFrames = [];
+    const fakeWs = { readyState: 1, send: (raw) => sentFrames.push(JSON.parse(raw)) };
+    const pendingTaskMap = new Map();
+    let capturedNotifyClient = null;
+
+    const handler = createMobileChatHandler({
+      chunkDelayMs: 0,
+      saveChatMemory: async () => {},
+      financeEngine: {
+        getPendingDeletionsContext: () => null,
+        getPendingConfirmationsCount: () => 0,
+        getPendingConfirmationsMap: () => new Map()
+      },
+      taskManager: { pendingTaskCategories: pendingTaskMap },
+      splitEngine: { hasPendingRemainder: () => false },
+      aiRouter: {
+        routeUserMessage: async () => ({
+          intent: 'TASK',
+          extracted_data: { action: 'CREATE', title: 'Review PR' }
+        })
+      },
+      executeDomainIntent: async (_intent, _rd, ctx) => {
+        capturedNotifyClient = ctx.notifyClient;
+        pendingTaskMap.set(ctx.sessionKey, {
+          type: 'CONFIRM_SYNC',
+          title: 'Review PR',
+          listName: 'Kerja',
+          dueDate: '2026-11-23',
+          durationMins: 60
+        });
+        return 'Sinkronkan tugas Review PR ke kalender?';
+      },
+      interceptors: {
+        handleMorningCheckIn: async () => false
+      }
+    });
+
+    await handler.handleMessage({ type: 'CHAT_SEND', client_msg_id: 't-1', content: 'buat tugas review PR besok' }, fakeWs);
+    for (let i = 0; i < 40 && !sentFrames.some(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === 't-1' && f.status === 'STREAM_FINAL'); i++) {
+      await new Promise(r => setTimeout(r, 20));
+    }
+    const finalFrame = sentFrames.find(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === 't-1' && f.status === 'STREAM_FINAL');
+    assert.ok(finalFrame && finalFrame.card);
+    assert.equal(finalFrame.card.card_type, 'TASK_CONFIRM');
+    const taskCardId = finalFrame.card.card_id;
+
+    // Simulate 5-minute background timer firing after turn is FINAL
+    pendingTaskMap.clear();
+    capturedNotifyClient('Tugas Review PR disimpan otomatis tanpa sinkronisasi kalender.');
+
+    const autoCardUpdate = sentFrames.find(f => f.type === 'CARD_UPDATE' && f.card_id === taskCardId);
+    assert.ok(autoCardUpdate, 'Background timer must emit CARD_UPDATE for taskConfirm');
+    assert.equal(autoCardUpdate.status, 'RESOLVED');
+    assert.equal(autoCardUpdate.resolved_badge, 'Auto-saved');
+
+    const proactiveMsg = sentFrames.find(f => f.type === 'CHAT_PROACTIVE' && f.kind === 'TASK_AUTOSAVE');
+    assert.ok(proactiveMsg, 'Background timer must emit CHAT_PROACTIVE instead of stale CHAT_ACK');
+    handler.destroy();
+  });
 });

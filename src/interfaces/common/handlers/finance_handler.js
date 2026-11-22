@@ -233,17 +233,11 @@ async function handleFinanceIntent(routingData, context = {}) {
   }
 
   if (action === 'DELETE') {
-    if (context.source === 'mobile' && !context.stepUpAuthorized) {
-      return '❌ Penghapusan transaksi keuangan melalui mobile memerlukan otorisasi langsung di Telegram atau sesi terverifikasi demi keamanan ledger Tuan.';
-    }
     const result = await financeEngine.deleteTransaction(ed.search_keyword);
     return result.message;
   }
 
   if (action === 'UNDO_DELETE' || action === 'UNDO') {
-    if (context.source === 'mobile' && !context.stepUpAuthorized) {
-      return '❌ Pembatalan penghapusan / undo transaksi dari mobile memerlukan sesi terverifikasi atau Telegram demi keamanan ledger Tuan.';
-    }
     const result = await financeEngine.undoDeleteTransaction();
     return result.message;
   }

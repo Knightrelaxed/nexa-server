@@ -501,6 +501,84 @@ function createMobileChatHandler(deps = {}) {
     const financeEngine = deps.financeEngine || require('../../../domain/Finance_Engine');
     const taskManager = deps.taskManager || require('../../../domain/Task_Manager');
     const splitEngine = deps.splitEngine || require('../../../domain/Split_Engine');
+    const supabaseFinance = deps.supabaseFinance || require('../../../infrastructure/Supabase_Finance');
+
+    const getPendingFinMap = () => {
+      if (deps.pendingConfirmations && typeof deps.pendingConfirmations.entries === 'function') {
+        return deps.pendingConfirmations;
+      }
+      if (typeof financeEngine.getPendingConfirmationsMap === 'function') {
+        return financeEngine.getPendingConfirmationsMap();
+      }
+      try {
+        return require('../../../domain/finance/Finance_State').pendingConfirmations;
+      } catch (_) {
+        return null;
+      }
+    };
+
+    const snapshotPendingFin = () => {
+      const snap = new Map();
+      const m = getPendingFinMap();
+      if (m && typeof m.entries === 'function') {
+        for (const [k, v] of m.entries()) {
+          try {
+            snap.set(k, JSON.stringify((v && v.tx) || {}));
+          } catch (_) {
+            snap.set(k, '');
+          }
+        }
+      }
+      return snap;
+    };
+
+    const loadFinanceCategories = async () => {
+      try {
+        if (supabaseFinance && typeof supabaseFinance.getCategoriesList === 'function') {
+          const cats = await supabaseFinance.getCategoriesList();
+          if (Array.isArray(cats)) return cats;
+        }
+      } catch (_) {}
+      return [];
+    };
+
+    const syncFinanceCardsAfterMutation = async (ws, prevSnap, replyText) => {
+      if (!prevSnap || prevSnap.size === 0) return;
+      const currMap = getPendingFinMap();
+      const cleanDetail = String(replyText || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      for (const [oldKey, oldTxJson] of prevSnap.entries()) {
+        if (!currMap || !currMap.has(oldKey)) {
+          const wasCancelled = /dibatalkan/i.test(replyText);
+          safeSend(ws, {
+            type: 'CARD_UPDATE',
+            card_id: `fin_${oldKey}`,
+            status: 'RESOLVED',
+            resolved_badge: wasCancelled ? 'Cancelled' : 'Recorded',
+            resolved_detail: cleanDetail,
+            ts: nowFn()
+          });
+        } else {
+          const currEntry = currMap.get(oldKey);
+          let currJson = '';
+          try { currJson = JSON.stringify((currEntry && currEntry.tx) || {}); } catch (_) {}
+          if (currEntry && currEntry.tx && currJson !== oldTxJson) {
+            const categories = await loadFinanceCategories();
+            const updatedCard = cardHandler.buildFinanceTxCard(currEntry.tx, oldKey, {
+              categories,
+              expiresAtMs: currEntry.expiresAtMs
+            });
+            safeSend(ws, {
+              type: 'CARD_UPDATE',
+              card_id: `fin_${oldKey}`,
+              status: 'PENDING',
+              updated_card: updatedCard,
+              resolved_detail: cleanDetail,
+              ts: nowFn()
+            });
+          }
+        }
+      }
+    };
 
     let interceptedReplies = [];
     const collectInterceptorReply = async (msg) => {
@@ -600,6 +678,7 @@ function createMobileChatHandler(deps = {}) {
       : 0;
     if (pendingFinCount > 0) {
       interceptedReplies = [];
+      const prevFinSnap = snapshotPendingFin();
       try {
         const msgShim = replyCtx ? { reply_to_message: { text: replyCtx.preview } } : {};
         const finHandled = await interceptors.handlePendingFinanceConfirmation(msgShim, content, sessionKey, {
@@ -607,6 +686,7 @@ function createMobileChatHandler(deps = {}) {
         });
         if (finHandled) {
           const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Konfirmasi transaksi diproses.');
+          await syncFinanceCardsAfterMutation(entry.ws, prevFinSnap, replyText);
           await streamFinalReply(clientMsgId, entry, content, replyText, 'FINANCE', saveChatMemory);
           return;
         }
@@ -717,6 +797,7 @@ function createMobileChatHandler(deps = {}) {
     // Snapshot pending state before domain execution so we attach Quick Action Chips / Cards cleanly
     const prevConflictRef = pendingConflictEvent;
     const prevProactiveRef = pendingProactiveTasks;
+    const prevFinSnap = snapshotPendingFin();
     const prevDelKeys = new Set(
       (typeof financeEngine.getPendingDeletionsContext === 'function' && financeEngine.getPendingDeletionsContext())
         ? Array.from(financeEngine.getPendingDeletionsContext().keys())
@@ -762,12 +843,36 @@ function createMobileChatHandler(deps = {}) {
           },
           notifyClient: (msg) => {
             const clean = stripHtmlForMobile(msg);
-            if (clean) {
+            if (!clean) return;
+            if (entry.state === 'RUNNING') {
               safeSend(entry.ws, {
                 type: 'CHAT_ACK',
                 client_msg_id: clientMsgId,
                 status: 'THINKING',
                 stage: clean.slice(0, 120),
+                ts: nowFn()
+              });
+            } else {
+              // Background 5-minute auto-confirm timer fired after the turn already finalized
+              emitCardResolvedFromText(entry.ws, 'taskConfirm', 'Auto-saved', clean);
+              try {
+                const mobileClient = require('./client');
+                if (mobileClient && typeof mobileClient.sendProactiveMessage === 'function' && mobileClient.getClient()) {
+                  mobileClient.sendProactiveMessage({
+                    text: clean,
+                    kind: 'TASK_AUTOSAVE',
+                    priority: 'P1'
+                  });
+                  return;
+                }
+              } catch (_) {}
+              safeSend(entry.ws, {
+                type: 'CHAT_PROACTIVE',
+                client_msg_id: `proactive_task_auto_${nowFn()}`,
+                content: clean,
+                kind: 'TASK_AUTOSAVE',
+                priority: 'P1',
+                caught_up: false,
                 ts: nowFn()
               });
             }
@@ -787,7 +892,16 @@ function createMobileChatHandler(deps = {}) {
       }
     }
 
-    // Auto-attach Phase 2 Quick Action Chips / Checklist Card if domain execution created a new pending confirmation
+    const rawReply = replyParts.length > 0
+      ? replyParts.join('\n\n')
+      : (routingData?.reply_message || 'Baik Tuan, pesan sudah saya terima.');
+
+    const cleanReply = stripHtmlForMobile(rawReply);
+
+    // Sync any existing FINANCE_TX cards that were confirmed, cancelled, or updated during domain execution
+    await syncFinanceCardsAfterMutation(entry.ws, prevFinSnap, cleanReply);
+
+    // Auto-attach Interactive Cards / Quick Action Chips if domain execution created a new pending confirmation
     let attachedCard = null;
     if (pendingConflictEvent && pendingConflictEvent !== prevConflictRef) {
       attachedCard = cardHandler.buildCalendarConflictCard(pendingConflictEvent);
@@ -797,15 +911,31 @@ function createMobileChatHandler(deps = {}) {
       attachedCard = cardHandler.buildProactiveTasksCard(pendingProactiveTasks);
       activeCardIds.proactiveTasks = attachedCard.card_id;
     } else {
-      const currDelMap = typeof financeEngine.getPendingDeletionsContext === 'function'
-        ? financeEngine.getPendingDeletionsContext()
-        : null;
-      if (currDelMap && currDelMap.size > 0) {
-        for (const [delKey, delEntry] of currDelMap.entries()) {
-          if (!prevDelKeys.has(delKey)) {
-            attachedCard = cardHandler.buildFinanceDeleteCard(delKey, delEntry && delEntry.txData);
-            activeCardIds.financeDelete = attachedCard.card_id;
+      // Check if a new manual FINANCE_TX confirmation was registered in pendingConfirmations
+      const currFinMap = getPendingFinMap();
+      if (currFinMap && currFinMap.size > 0) {
+        for (const [finKey, finEntry] of currFinMap.entries()) {
+          if (!prevFinSnap.has(finKey) && finEntry && finEntry.tx) {
+            const categories = await loadFinanceCategories();
+            attachedCard = cardHandler.buildFinanceTxCard(finEntry.tx, finKey, {
+              categories,
+              expiresAtMs: finEntry.expiresAtMs
+            });
             break;
+          }
+        }
+      }
+      if (!attachedCard) {
+        const currDelMap = typeof financeEngine.getPendingDeletionsContext === 'function'
+          ? financeEngine.getPendingDeletionsContext()
+          : null;
+        if (currDelMap && currDelMap.size > 0) {
+          for (const [delKey, delEntry] of currDelMap.entries()) {
+            if (!prevDelKeys.has(delKey)) {
+              attachedCard = cardHandler.buildFinanceDeleteCard(delKey, delEntry && delEntry.txData);
+              activeCardIds.financeDelete = attachedCard.card_id;
+              break;
+            }
           }
         }
       }
@@ -817,12 +947,6 @@ function createMobileChatHandler(deps = {}) {
         }
       }
     }
-
-    const rawReply = replyParts.length > 0
-      ? replyParts.join('\n\n')
-      : (routingData?.reply_message || 'Baik Tuan, pesan sudah saya terima.');
-
-    const cleanReply = stripHtmlForMobile(rawReply);
 
     // N-H2 / R-03: Align conversationContext keys with Router_Dispatcher.js + follow_up_resolver.js (askedAt)
     const nowTs = nowFn();
