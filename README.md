@@ -37,9 +37,9 @@ Proyek ini terdiri dari dua komponen utama:
 - **Backend / Core Engine (`/src`):**
   - Berjalan di Node.js dengan arsitektur modular (*domain-driven*).
   - Mengorkestrasikan LLM routing (Gemini, Groq), database Supabase, integrasi Telegram bot, dan cron job otonom.
-- **Frontend Dashboard (`/nexa-finance-web`):**
-  - Web dashboard berbasis Next.js (App Router), React, dan Tailwind CSS.
-  - Berfungsi sebagai GUI untuk visualisasi portofolio akun, riwayat transaksi, dan manajemen anggaran.
+- **Frontend Dashboard (`nexa-finance-web` — Repositori Terpisah):**
+  - Kini dikelola di repositori mandiri: [`Knightrelaxed/nexa-finance`](https://github.com/Knightrelaxed/nexa-finance).
+  - Web dashboard berbasis Next.js (App Router), React, dan Tailwind CSS yang terhubung langsung ke Supabase untuk visualisasi portofolio akun, riwayat transaksi, dan manajemen anggaran.
 
 ---
 
