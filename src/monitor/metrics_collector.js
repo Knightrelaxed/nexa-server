@@ -659,7 +659,9 @@ class MetricsCollector {
     if (snap.domain && snap.domain.windows && snap.domain.windows.connected) flags |= FLAG_WINDOWS_ONLINE;
     if (snap.domain && snap.domain.activeLiveCalls > 0) flags |= FLAG_LIVE_CALL_ACTIVE;
     if (!this._bootMarked) {
-      flags |= FLAG_RESTARTED;
+      // Only mark FLAG_RESTARTED when systemd reports NRestarts > 0 (unexpected crash/restart),
+      // not on a clean initial boot with 0 errors.
+      if (issuesDelta > 0) flags |= FLAG_RESTARTED;
       this._bootMarked = true;
     }
 
