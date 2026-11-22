@@ -1573,6 +1573,165 @@ function _cleanSingleLineDetail(htmlText) {
     .slice(0, 180);
 }
 
+function _stripEmojisPreserveNewlines(text) {
+  return String(text || '')
+    .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .trim();
+}
+
+function _hasValidMobileAccount(tx) {
+  if (!tx || typeof tx !== 'object') return false;
+  if (tx.awaitingAccount) return false;
+  const acc = String(tx.account || tx.suggestedAccount || '').trim();
+  if (tx.isSelfTransfer) {
+    return Boolean(tx.fromAccount && acc);
+  }
+  return Boolean(acc) && !/^(unassigned|belum dipilih|-)$/i.test(acc);
+}
+
+/**
+ * Option A mobile-native finance mutation reply formatter:
+ * When the user updates/confirms/cancels a pending FINANCE_TX card via text or voice,
+ * the existing card above updates live via CARD_UPDATE, so the chat reply stays a crisp
+ * 1-2 sentence Indonesian confirmation without Telegram's 12-line emoji template.
+ */
+function formatMobileFinanceMutationReply(prevSnap, currMap, rawReply) {
+  const rawText = String(rawReply || '').trim();
+  if (!prevSnap || prevSnap.size === 0) {
+    return _stripEmojisPreserveNewlines(rawText);
+  }
+
+  // Keep itemized split replies intact (just strip raw emojis)
+  if (/(split|dipecah|sisa nominal|rincian item)/i.test(rawText)) {
+    return _stripEmojisPreserveNewlines(rawText);
+  }
+
+  const parseSnap = (entry) => {
+    if (entry && typeof entry === 'object' && typeof entry.json === 'string') {
+      return { json: entry.json, tx: entry.tx || {} };
+    }
+    const json = typeof entry === 'string' ? entry : '';
+    let tx = {};
+    try { tx = json ? JSON.parse(json) : {}; } catch (_) {}
+    return { json, tx };
+  };
+
+  const removed = [];
+  const updated = [];
+  for (const [oldKey, snapVal] of prevSnap.entries()) {
+    const { json: oldJson, tx: oldTx } = parseSnap(snapVal);
+    if (!currMap || !currMap.has(oldKey)) {
+      removed.push({ key: oldKey, oldTx });
+    } else {
+      const currEntry = currMap.get(oldKey);
+      let currJson = '';
+      try { currJson = JSON.stringify((currEntry && currEntry.tx) || {}); } catch (_) {}
+      if (currEntry && currEntry.tx && currJson !== oldJson) {
+        updated.push({ key: oldKey, oldTx, currTx: currEntry.tx });
+      }
+    }
+  }
+
+  if (removed.length > 0) {
+    if (/dibatalkan/i.test(rawText)) {
+      return removed.length === 1
+        ? 'Baik Tuan, transaksi dibatalkan.'
+        : `Baik Tuan, ${removed.length} transaksi dibatalkan.`;
+    }
+    if (removed.length === 1) {
+      const tx = removed[0].oldTx || {};
+      const typeLabel = tx.isSelfTransfer
+        ? 'Transfer'
+        : (String(tx.type || '').toUpperCase() === 'INCOME' ? 'Pemasukan' : 'Pengeluaran');
+      const nom = Number(tx.nominal || 0);
+      const nomPart = Number.isFinite(nom) && nom > 0 ? ` Rp${nom.toLocaleString('id-ID')}` : '';
+      const acc = String(tx.account || tx.suggestedAccount || '').trim();
+      const accPart = tx.isSelfTransfer && tx.fromAccount && acc
+        ? ` (${tx.fromAccount} ke ${acc})`
+        : (acc && !/^(unassigned|belum dipilih|-)$/i.test(acc) ? ` (${acc})` : '');
+      return `Tercatat, Tuan. ${typeLabel}${nomPart}${accPart} sudah disimpan.`;
+    }
+    return `Tercatat, Tuan. ${removed.length} transaksi sudah disimpan.`;
+  }
+
+  if (updated.length > 0) {
+    const { oldTx, currTx } = updated[0];
+    const oldAcc = String(oldTx.account || oldTx.suggestedAccount || '').trim();
+    const newAcc = String(currTx.account || currTx.suggestedAccount || '').trim();
+    const oldMethod = String(oldTx.payment_method || oldTx.paymentMethod || '').trim();
+    const newMethod = String(currTx.payment_method || currTx.paymentMethod || '').trim();
+    const oldCat = String(oldTx.category || '').trim();
+    const newCat = String(currTx.category || '').trim();
+    const oldDesc = String(oldTx.description || '').trim();
+    const newDesc = String(currTx.description || '').trim();
+    const oldNom = Number(oldTx.nominal || 0);
+    const newNom = Number(currTx.nominal || 0);
+    const oldTime = String(oldTx.time || '');
+    const newTime = String(currTx.time || '');
+
+    const changes = [];
+    const accChanged = Boolean(newAcc) && newAcc !== oldAcc && !/^(unassigned|belum dipilih|-)$/i.test(newAcc);
+    const methodChanged = Boolean(newMethod) && newMethod !== oldMethod && newMethod !== '-';
+    if (accChanged) {
+      changes.push(methodChanged ? `${newAcc} (${newMethod})` : newAcc);
+    } else if (methodChanged) {
+      changes.push(`metode ${newMethod}`);
+    }
+    if (Number.isFinite(newNom) && newNom > 0 && newNom !== oldNom) {
+      changes.push(`nominal Rp${newNom.toLocaleString('id-ID')}`);
+    }
+    if (newCat && newCat !== oldCat) {
+      changes.push(`kategori ${newCat}`);
+    }
+    if (newDesc && newDesc !== oldDesc) {
+      changes.push(`catatan "${newDesc}"`);
+    }
+    if (newTime && newTime !== oldTime) {
+      try {
+        const d = new Date(newTime);
+        if (!isNaN(d.getTime())) {
+          const tShort = d.toLocaleString('id-ID', {
+            timeZone: 'Asia/Jakarta',
+            day: 'numeric',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+          changes.push(`waktu ${tShort}`);
+        }
+      } catch (_) {}
+    }
+
+    let base;
+    if (changes.length === 1 && accChanged) {
+      base = `Siap Tuan, kartu diperbarui ke ${changes[0]}.`;
+    } else if (changes.length > 0) {
+      base = `Siap Tuan, kartu diperbarui (${changes.join(', ')}).`;
+    } else {
+      base = 'Siap Tuan, kartu sudah diperbarui.';
+    }
+
+    if (_hasValidMobileAccount(currTx)) {
+      const balMatch = rawText.match(/Saldo[^:]*:\s*(Rp[\d.,]+)/i);
+      const balPart = balMatch && newAcc ? ` Saldo ${newAcc} saat ini ${balMatch[1]}.` : '';
+      return `${base}${balPart} Otomatis tersimpan dalam 5 menit, atau balas 'ya' / tap Confirm di atas.`;
+    }
+    return `${base} Tinggal pilih atau sebutkan akunnya dulu supaya bisa disimpan.`;
+  }
+
+  if (/akun belum dipilih/i.test(rawText)) {
+    return 'Akun belum dipilih, Tuan. Sebutkan akunnya dulu (misal Bank Jago, Bank Mandiri, Dana, atau Tunai) atau tap Account pada kartu di atas.';
+  }
+
+  if (/menunggu konfirmasi/i.test(rawText)) {
+    return "Masih ada transaksi menunggu konfirmasi pada kartu di atas, Tuan. Balas 'ya' untuk simpan, 'batal' untuk batalkan, atau sebutkan koreksinya.";
+  }
+
+  return _stripEmojisPreserveNewlines(rawText);
+}
+
 /**
  * Master dispatcher for incoming Mobile Bridge CARD_ACTION frames.
  */
@@ -1654,6 +1813,7 @@ module.exports = {
   buildVaultMetadataCard,
   buildBriefingCard,
   buildBudgetRecapCard,
+  formatMobileFinanceMutationReply,
   registerSessionHooks,
   handleCardAction
 };

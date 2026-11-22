@@ -938,4 +938,77 @@ describe('Mobile Bridge Phase 3: Vault Metadata Card, Rich Briefing/Budget Cards
     assert.equal(frames.length, 3);
     assert.equal(frames[2].updated_card.prompt_text, '', 'Once both account and method are set, missing-info prompt must clear');
   });
+
+  it('Option A: formats concise zero-emoji mobile replies when updating/confirming/cancelling FINANCE_TX via text/voice', () => {
+    const { formatMobileFinanceMutationReply } = require('../src/interfaces/bridge/mobile_bridge/card_handler');
+
+    // 1. Update Account + Method (Telegram 12-line template -> 1 crisp reply with balance)
+    const oldTx = {
+      type: 'EXPENSE',
+      nominal: 13500,
+      description: 'membeli nasi padang',
+      category: 'Makan Berat / Makan Luar',
+      account: '',
+      payment_method: '',
+      awaitingAccount: true
+    };
+    const prevSnap = new Map([['13500_nasipadang', JSON.stringify(oldTx)]]);
+    const updatedTx = {
+      ...oldTx,
+      account: 'Bank Jago',
+      payment_method: 'Direct Debit',
+      awaitingAccount: false
+    };
+    const currMap = new Map([['13500_nasipadang', { tx: updatedTx }]]);
+    const telegramWall = [
+      '💸 DETAIL TRANSAKSI DIPERBARUI ✏️',
+      'No: [Auto]',
+      'Tanggal: 22 November 2026',
+      'Akun: Bank Jago',
+      'Metode: Direct Debit',
+      'Saldo (Rp) Saat Ini: Rp1.006.592',
+      '💡 Transaksi ini siap dikunci.'
+    ].join('\n');
+
+    const updReply = formatMobileFinanceMutationReply(prevSnap, currMap, telegramWall);
+    assert.ok(!updReply.includes('No: [Auto]'), 'Must not leak Telegram receipt template');
+    assert.ok(!/[\p{Extended_Pictographic}]/u.test(updReply), 'Must contain zero emojis');
+    assert.ok(updReply.includes('Bank Jago (Direct Debit)'), 'Must summarize updated account & method');
+    assert.ok(updReply.includes('Rp1.006.592'), 'Must preserve current account balance');
+    assert.ok(updReply.includes('5 menit'), 'Must mention 5-minute auto-save');
+
+    // 2. Update nominal while account is still missing
+    const stillMissingTx = { ...oldTx, nominal: 15000 };
+    const stillMissingMap = new Map([['13500_nasipadang', { tx: stillMissingTx }]]);
+    const missingReply = formatMobileFinanceMutationReply(prevSnap, stillMissingMap, telegramWall);
+    assert.ok(missingReply.includes('Rp15.000'));
+    assert.ok(missingReply.includes('akunnya dulu'));
+
+    // 3. Confirm via text/voice ("ya")
+    const readySnap = new Map([['13500_nasipadang', JSON.stringify(updatedTx)]]);
+    const emptyMap = new Map();
+    const confirmReply = formatMobileFinanceMutationReply(
+      readySnap,
+      emptyMap,
+      '✅ Transaksi Pengeluaran sebesar Rp13.500 berhasil dicatat ke database Supabase'
+    );
+    assert.equal(confirmReply, 'Tercatat, Tuan. Pengeluaran Rp13.500 (Bank Jago) sudah disimpan.');
+
+    // 4. Cancel via text/voice ("batal")
+    const cancelReply = formatMobileFinanceMutationReply(
+      readySnap,
+      emptyMap,
+      '❌ Dibatalkan. 1 transaksi diabaikan.'
+    );
+    assert.equal(cancelReply, 'Baik Tuan, transaksi dibatalkan.');
+
+    // 5. Blocked confirm while account missing
+    const blockedReply = formatMobileFinanceMutationReply(
+      prevSnap,
+      new Map([['13500_nasipadang', { tx: oldTx }]]),
+      '⚠️ Akun belum dipilih untuk transaksi Rp13.500.'
+    );
+    assert.ok(blockedReply.includes('Akun belum dipilih, Tuan.'));
+    assert.ok(!/[\p{Extended_Pictographic}]/u.test(blockedReply));
+  });
 });

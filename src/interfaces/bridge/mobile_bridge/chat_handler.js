@@ -640,7 +640,12 @@ function createMobileChatHandler(deps = {}) {
     const syncFinanceCardsAfterMutation = async (ws, prevSnap, replyText) => {
       if (!prevSnap || prevSnap.size === 0) return;
       const currMap = getPendingFinMap();
-      const cleanDetail = String(replyText || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      const cleanDetail = String(replyText || '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 160);
       for (const [oldKey, oldTxJson] of prevSnap.entries()) {
         if (!currMap || !currMap.has(oldKey)) {
           const wasCancelled = /dibatalkan/i.test(replyText);
@@ -649,7 +654,7 @@ function createMobileChatHandler(deps = {}) {
             card_id: `fin_${oldKey}`,
             status: 'RESOLVED',
             resolved_badge: wasCancelled ? 'Cancelled' : 'Recorded',
-            resolved_detail: cleanDetail,
+            resolved_detail: wasCancelled ? '' : cleanDetail,
             ts: nowFn()
           });
         } else {
@@ -781,7 +786,10 @@ function createMobileChatHandler(deps = {}) {
           respondToTelegram: collectInterceptorReply
         });
         if (finHandled) {
-          const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Konfirmasi transaksi diproses.');
+          const rawReplyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Konfirmasi transaksi diproses.');
+          const replyText = typeof cardHandler.formatMobileFinanceMutationReply === 'function'
+            ? cardHandler.formatMobileFinanceMutationReply(prevFinSnap, getPendingFinMap(), rawReplyText)
+            : rawReplyText;
           await syncFinanceCardsAfterMutation(entry.ws, prevFinSnap, replyText);
           await streamFinalReply(clientMsgId, entry, content, replyText, 'FINANCE', saveChatMemory);
           return;
