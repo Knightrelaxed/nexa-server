@@ -873,16 +873,18 @@ describe('Mobile Bridge Phase 3: Vault Metadata Card, Rich Briefing/Budget Cards
       accounts: [{ name: 'Bank Mandiri' }, { name: 'Bank Jago' }, { name: 'Tunai' }]
     });
 
-    assert.ok(card.prompt_text.includes('akun bank/dompet') && card.prompt_text.includes('metode pembayarannya'));
+    assert.ok(/akun bank\/dompet/i.test(card.prompt_text) && /metode pembayarannya/i.test(card.prompt_text));
+    assert.equal(card.expires_at, 0, 'Auto-save countdown must be paused (0) while account is missing');
+    assert.equal(card.subtitle, 'Waiting for account · Auto-save paused');
     assert.ok(!card.fields.some(f => f.key === 'merchant'), 'Must omit Merchant: Unknown');
     assert.ok(card.fields.some(f => f.key === 'time' && f.value.includes('09:01 WIB')));
     assert.ok(card.fields.some(f => f.key === 'account' && f.tone === 'AMBER'));
     assert.ok(card.fields.some(f => f.key === 'payment_method' && f.tone === 'AMBER'));
     assert.deepEqual(card.accounts, ['Bank Mandiri', 'Bank Jago', 'Tunai']);
-    assert.ok(card.actions.some(a => a.kind === 'PICK_ACCOUNT'));
+    assert.ok(card.actions.some(a => a.kind === 'PICK_ACCOUNT' && a.style === 'PRIMARY'));
     assert.ok(card.actions.some(a => a.kind === 'PICK_METHOD'));
 
-    // Test update_account and update_payment_method via handleCardAction
+    // Test confirm blocked while account is missing, then update_account arms countdown & update_payment_method clears prompt
     const frames = [];
     const deps = {
       sendFrame: (f) => frames.push(f),
@@ -892,14 +894,30 @@ describe('Mobile Bridge Phase 3: Vault Metadata Card, Rich Briefing/Budget Cards
         getAccountsList: async () => [{ name: 'Bank Mandiri' }, { name: 'Tunai' }]
       },
       financeConfirmations: {
+        confirmPendingTransactions: async () => 'SHOULD_NOT_BE_CALLED',
         updatePendingTransaction: async (_n, _c, _nom, acc, pm) => {
           if (acc) currentTx = { ...currentTx, account: acc };
           if (pm) currentTx = { ...currentTx, payment_method: pm };
           return 'UPDATED_OK';
         },
-        getPendingTransactionByKey: () => ({ tx: currentTx, expiresAtMs: Date.now() + 300_000 })
+        getPendingTransactionByKey: () => ({
+          tx: currentTx,
+          expiresAtMs: currentTx.account ? (Date.now() + 300_000) : 0
+        })
       }
     };
+
+    // Confirm while account missing must stay PENDING with error
+    const blockedRes = await handleCardAction({
+      card_id: card.card_id,
+      card_type: 'FINANCE_TX',
+      action_id: 'confirm',
+      payload: { composite_key: '9000_unknown' }
+    }, null, deps);
+    assert.equal(blockedRes.ok, false);
+    assert.equal(blockedRes.error, 'ACCOUNT_REQUIRED');
+    assert.equal(frames[0].status, 'PENDING');
+    assert.match(frames[0].error, /account/i);
 
     await handleCardAction({
       card_id: card.card_id,
@@ -907,8 +925,9 @@ describe('Mobile Bridge Phase 3: Vault Metadata Card, Rich Briefing/Budget Cards
       action_id: 'update_account',
       payload: { composite_key: '9000_unknown', account: 'Bank Mandiri' }
     }, null, deps);
-    assert.equal(frames.length, 1);
-    assert.ok(frames[0].updated_card.prompt_text.includes('metode pembayarannya'), 'After setting account, prompt should ask only for payment method');
+    assert.equal(frames.length, 2);
+    assert.ok(frames[1].updated_card.expires_at > Date.now(), 'Selecting account must arm 5-minute auto-save countdown');
+    assert.ok(frames[1].updated_card.prompt_text.includes('metode pembayarannya'), 'After setting account, prompt should ask only for payment method');
 
     await handleCardAction({
       card_id: card.card_id,
@@ -916,7 +935,7 @@ describe('Mobile Bridge Phase 3: Vault Metadata Card, Rich Briefing/Budget Cards
       action_id: 'update_payment_method',
       payload: { composite_key: '9000_unknown', payment_method: 'QRIS' }
     }, null, deps);
-    assert.equal(frames.length, 2);
-    assert.equal(frames[1].updated_card.prompt_text, '', 'Once both account and method are set, missing-info prompt must clear');
+    assert.equal(frames.length, 3);
+    assert.equal(frames[2].updated_card.prompt_text, '', 'Once both account and method are set, missing-info prompt must clear');
   });
 });

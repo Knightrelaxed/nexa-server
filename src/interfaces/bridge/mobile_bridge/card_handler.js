@@ -87,17 +87,19 @@ function buildFinanceTxCard(tx = {}, compositeKey = '', opts = {}) {
     fields.push({ key: 'admin_fee', label: 'Admin Fee', value: formatIdr(adminFeeNum) });
   }
 
+  const awaitingAccount = !isTransfer && !tx.isAutoSyncEmail && !hasAccount;
+
   // Telegram-parity proactive question when key details (note, account, or payment method) are missing
   let promptText = '';
   if (!isTransfer) {
-    if (isMissingNote) {
+    if (awaitingAccount && !hasPaymentMethod) {
+      promptText = 'Akun bank/dompet dan metode pembayarannya belum dipilih. Auto-save ditahan sampai akun dipilih - tap Set Account di bawah atau balas lewat suara/teks.';
+    } else if (awaitingAccount) {
+      promptText = 'Akun bank/dompet belum dipilih. Auto-save ditahan sampai akun dipilih - tap Set Account di bawah atau balas lewat suara/teks.';
+    } else if (isMissingNote) {
       promptText = isIncome
         ? 'Dana masuk ini dalam rangka apa, Tuan? Balas lewat suara/teks atau tap Edit untuk melengkapi.'
         : 'Pengeluaran ini untuk keperluan apa, Tuan? Balas lewat suara/teks atau tap Edit untuk melengkapi.';
-    } else if (!hasAccount && !hasPaymentMethod) {
-      promptText = 'Satu hal lagi Tuan, akun bank/dompet dan metode pembayarannya (QRIS/Transfer/Tunai/Debit) belum dipilih. Pilih di bawah atau balas lewat suara/teks.';
-    } else if (!hasAccount) {
-      promptText = 'Satu hal lagi Tuan, akun bank/dompet mana yang digunakan? Pilih Account di bawah atau balas lewat suara/teks.';
     } else if (!hasPaymentMethod) {
       promptText = 'Satu hal lagi Tuan, metode pembayarannya apa? (QRIS/Direct Debit/Transfer/Tunai). Pilih Method di bawah atau balas lewat suara/teks.';
     }
@@ -113,15 +115,16 @@ function buildFinanceTxCard(tx = {}, compositeKey = '', opts = {}) {
     ? opts.paymentMethods
     : STANDARD_PAYMENT_METHODS;
 
-  const expiresAtMs = Number(opts.expiresAtMs) > 0
-    ? Number(opts.expiresAtMs)
-    : (Date.now() + 5 * 60 * 1000);
+  // Never show an auto-save countdown when awaiting required account selection
+  const expiresAtMs = awaitingAccount
+    ? 0
+    : (Number(opts.expiresAtMs) > 0 ? Number(opts.expiresAtMs) : (Date.now() + 5 * 60 * 1000));
 
   const actions = [
-    { id: 'confirm', label: 'Confirm', style: 'PRIMARY' }
+    { id: 'confirm', label: 'Confirm', style: awaitingAccount ? 'SECONDARY' : 'PRIMARY' }
   ];
   if (!isTransfer) {
-    actions.push({ id: 'account', label: hasAccount ? 'Account' : 'Set Account', style: 'SECONDARY', kind: 'PICK_ACCOUNT' });
+    actions.push({ id: 'account', label: hasAccount ? 'Account' : 'Set Account', style: awaitingAccount ? 'PRIMARY' : 'SECONDARY', kind: 'PICK_ACCOUNT' });
     actions.push({ id: 'payment_method', label: hasPaymentMethod ? 'Method' : 'Set Method', style: 'SECONDARY', kind: 'PICK_METHOD' });
   }
   actions.push({ id: 'category', label: 'Category', style: 'SECONDARY', kind: 'PICK_CATEGORY' });
@@ -134,13 +137,13 @@ function buildFinanceTxCard(tx = {}, compositeKey = '', opts = {}) {
     card_type: 'FINANCE_TX',
     status: 'PENDING',
     title: isTransfer ? 'Self-Transfer Detected' : 'New Transaction Detected',
-    subtitle: subtitleParts.join(' · ') || (isMissingNote || !hasAccount || !hasPaymentMethod ? 'Details needed' : 'Ready to record'),
+    subtitle: subtitleParts.join(' · ') || (awaitingAccount ? 'Waiting for account · Auto-save paused' : (isMissingNote || !hasPaymentMethod ? 'Details needed' : 'Ready to record')),
     badge: isTransfer ? 'Transfer' : (isIncome ? 'Income' : 'Expense'),
     accent: isIncome ? 'EMERALD' : (isTransfer ? 'PRIMARY' : 'AMBER'),
     hero_value: heroValue,
     hero_tone: heroTone,
     expires_at: expiresAtMs,
-    expires_label: 'Auto-saves in',
+    expires_label: awaitingAccount ? '' : 'Auto-saves in',
     prompt_text: promptText,
     fields,
     categories,
@@ -350,6 +353,25 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
   }
 
   if (actionId === 'confirm') {
+    const pendingEntry = typeof financeConfirm.getPendingTransactionByKey === 'function'
+      ? financeConfirm.getPendingTransactionByKey(compositeKey)
+      : null;
+    const txToCheck = pendingEntry && pendingEntry.tx;
+    if (txToCheck && !txToCheck.isAutoSyncEmail) {
+      const rawAcc = String(txToCheck.account || txToCheck.suggestedAccount || '').trim();
+      const missingAcc = txToCheck.isSelfTransfer
+        ? (!txToCheck.fromAccount || !rawAcc)
+        : (!rawAcc || /^(unassigned|belum dipilih|-)$/i.test(rawAcc));
+      if (missingAcc) {
+        _sendCardUpdate(ws, {
+          card_id: cardId,
+          status: 'PENDING',
+          error: 'Please select an account first before confirming.'
+        }, deps);
+        return { ok: false, error: 'ACCOUNT_REQUIRED' };
+      }
+    }
+
     const reply = await financeConfirm.confirmPendingTransactions(true, null, null, null, null, compositeKey);
     const notFound = !reply;
     _sendCardUpdate(ws, {
@@ -433,7 +455,7 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
       ? buildFinanceTxCard(updatedTx.tx, compositeKey, {
           categories,
           accounts,
-          expiresAtMs: updatedTx.expiresAtMs || (Date.now() + 5 * 60 * 1000)
+          expiresAtMs: typeof updatedTx.expiresAtMs === 'number' ? updatedTx.expiresAtMs : 0
         })
       : null;
 

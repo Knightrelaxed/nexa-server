@@ -9,6 +9,20 @@ const { _autoCategorizeMerchant, _normalizePaymentMethod, _parseFlexibleCurrency
 const { processTransaction } = require('./Finance_Ledger');
 const { pendingConfirmations, processingKeys } = require('./Finance_State');
 
+const AWAITING_ACCOUNT_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours safety cleanup for abandoned drafts without account
+
+function _hasValidAccount(tx) {
+  if (!tx || typeof tx !== 'object') return false;
+  if (tx.isAutoSyncEmail) return true;
+  if (tx.isSelfTransfer) {
+    const fromOk = Boolean(tx.fromAccount && String(tx.fromAccount).trim());
+    const toOk = Boolean((tx.account || tx.suggestedAccount) && String(tx.account || tx.suggestedAccount).trim());
+    return fromOk && toOk;
+  }
+  const raw = String(tx.account || tx.suggestedAccount || '').trim();
+  return raw.length > 0 && !/^(unassigned|belum dipilih|-)$/i.test(raw);
+}
+
 /**
  * On startup: recover any pending transactions from Supabase that were
  * never sent to Telegram (e.g. server crashed mid-send).
@@ -26,6 +40,19 @@ async function recoverPendingTransactions() {
       const createdAt = new Date(row.created_at);
       const ageMs = Date.now() - createdAt.getTime();
       const TIMEOUT_MS = 5 * 60 * 1000;
+
+      // Never auto-save manual transactions that are still missing an account
+      if (!_hasValidAccount(tx)) {
+        if (ageMs >= AWAITING_ACCOUNT_MAX_AGE_MS) {
+          console.log(`[FINANCE] Recovery: ${compositeKey} has no account for >24h. Cleaning up abandoned draft.`);
+          try { await supabase.deletePendingTransaction(compositeKey); } catch (_) {}
+          continue;
+        }
+        tx.awaitingAccount = true;
+        pendingConfirmations.set(compositeKey, { tx, timeoutId: null, expiresAtMs: 0, awaitingAccount: true });
+        console.log(`[FINANCE] Recovery: ${compositeKey} still awaiting account selection (auto-save paused).`);
+        continue;
+      }
 
       // If already older than 5 minutes — auto-save immediately
       if (ageMs >= TIMEOUT_MS) {
@@ -225,6 +252,20 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
         if (customCategory) pending.tx.category = customCategory;
         if (customAccount) pending.tx.account = customAccount;
         if (customPaymentMethod) pending.tx.payment_method = customPaymentMethod;
+
+        // Hard minimum gate: never commit a transaction without a valid account
+        if (!_hasValidAccount(pending.tx)) {
+          pending.tx.awaitingAccount = true;
+          pending.timeoutId = null;
+          pending.expiresAtMs = 0;
+          pending.awaitingAccount = true;
+          const nomNum = typeof pending.tx.nominal === 'number'
+            ? pending.tx.nominal
+            : _parseFlexibleCurrency(String(pending.tx.nominal));
+          const nomFmt = isNaN(nomNum) ? String(pending.tx.nominal) : `Rp${nomNum.toLocaleString('id-ID')}`;
+          successMessages.push(`⚠️ <b>Akun belum dipilih</b> untuk transaksi <b>${nomFmt}</b>.\n\nTransaksi ditahan dan belum disimpan agar saldo akun Tuan tetap akurat. Silakan pilih akun terlebih dahulu (misal Bank Mandiri, Bank Jago, Dana, Shopee Pay, atau Tunai).`);
+          continue;
+        }
 
         if (pending.tx.isSelfTransfer) {
           const fromAcc = pending.tx.fromAccount || 'Dana';
@@ -474,26 +515,33 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
       });
 
       if (matched) {
-        // Akun ditemukan — gunakan nama resmi dari database
+        // Akun ditemukan - gunakan nama resmi dari database
         pending.tx.account = matched.name;
+        if (!pending.tx.payment_method && /^(tunai|cash)$/i.test(matched.name.trim())) {
+          pending.tx.payment_method = 'Tunai';
+        }
         if (pending.tx.isSelfTransfer) {
           pending.tx.description = `Transfer dari ${pending.tx.fromAccount} ke ${pending.tx.account}`;
         }
       } else {
-        // Akun TIDAK ditemukan — jangan update, dan balas dengan konfirmasi
+        // Akun TIDAK ditemukan - jangan update, dan balas dengan konfirmasi
         const accountList = accounts.map(a => `• ${a.name} (${a.type})`).join('\n');
         const unknownAccountMsg =
           `⚠️ <b>Akun "${newAccount}" tidak ditemukan</b> di daftar akun aktif Tuan.\n\n` +
           `Berikut akun yang terdaftar:\n${accountList}\n\n` +
-          `❓ Silakan pilih salah satu dari daftar di atas, atau abaikan agar disimpan ke akun default dalam 5 menit.`;
+          `❓ Silakan pilih salah satu dari daftar di atas. Transaksi tidak akan disimpan otomatis sebelum akun valid dipilih.`;
 
-        // Reset timeout karena user sudah berinteraksi
-        clearTimeout(pending.timeoutId);
-        pending.expiresAtMs = Date.now() + 5 * 60 * 1000;
-        const newTimeoutId = setTimeout(async () => {
-          if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
-        }, 5 * 60 * 1000);
-        pending.timeoutId = newTimeoutId;
+        if (pending.timeoutId) clearTimeout(pending.timeoutId);
+        if (_hasValidAccount(pending.tx)) {
+          pending.expiresAtMs = Date.now() + 5 * 60 * 1000;
+          pending.timeoutId = setTimeout(async () => {
+            if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
+          }, 5 * 60 * 1000);
+        } else {
+          pending.timeoutId = null;
+          pending.expiresAtMs = 0;
+          pending.awaitingAccount = true;
+        }
 
         return unknownAccountMsg;
       }
@@ -525,17 +573,25 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
     pending.tx.time = `${dStr}T${tStr}:00+07:00`;
   }
 
-  // Reset the 5-minute timeout because user interacted
-  clearTimeout(pending.timeoutId);
+  // Reset or pause the 5-minute timeout based on whether an account is now selected
+  if (pending.timeoutId) clearTimeout(pending.timeoutId);
+  const accountReady = _hasValidAccount(pending.tx);
+  pending.tx.awaitingAccount = !accountReady;
+  pending.awaitingAccount = !accountReady;
 
   // Update Supabase
   await supabase.savePendingTransaction(key, pending.tx, true);
 
-  pending.expiresAtMs = Date.now() + 5 * 60 * 1000;
-  const newTimeoutId = setTimeout(async () => {
-    if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
-  }, 5 * 60 * 1000);
-  pending.timeoutId = newTimeoutId;
+  if (accountReady) {
+    pending.expiresAtMs = Date.now() + 5 * 60 * 1000;
+    const newTimeoutId = setTimeout(async () => {
+      if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
+    }, 5 * 60 * 1000);
+    pending.timeoutId = newTimeoutId;
+  } else {
+    pending.timeoutId = null;
+    pending.expiresAtMs = 0;
+  }
 
   // Notify about remaining pending transactions
   const remainingCount = pendingConfirmations.size - 1;
@@ -680,11 +736,16 @@ async function _buildConfirmationMessage(tx, sourceLabel = 'SINKRONISASI KEUANGA
     const missingItems = [];
     if (!tx.account) missingItems.push("akun yang digunakan");
     if (!tx.payment_method) missingItems.push("metode pembayarannya (QRIS/Transfer/Tunai/Kredit)");
+    const autoSaveHint = !_hasValidAccount(tx)
+      ? '<i>(Auto-save ditahan sampai akun dipilih agar saldo tetap akurat.)</i>'
+      : '<i>(Atau abaikan jika ingin disimpan otomatis dalam 5 menit.)</i>';
     
     if (sourceLabel.includes('DIPERBARUI')) {
-      proactiveQuestion = `✏️ <b>Detail catatan diperbarui!</b>\n\nSatu hal lagi Tuan, mohon informasikan ${missingItems.join(" dan ")} untuk transaksi ini.`;
+      proactiveQuestion = !_hasValidAccount(tx)
+        ? `✏️ <b>Detail catatan diperbarui!</b>\n\nSatu hal lagi Tuan, mohon informasikan ${missingItems.join(" dan ")} untuk transaksi ini. ${autoSaveHint}`
+        : `✏️ <b>Detail catatan diperbarui!</b>\n\nSatu hal lagi Tuan, mohon informasikan ${missingItems.join(" dan ")} untuk transaksi ini.`;
     } else {
-      proactiveQuestion = `❓ <b>Satu hal lagi Tuan.</b>\n\nMohon informasikan ${missingItems.join(" dan ")} untuk transaksi ini. <i>(Atau abaikan jika ingin disimpan otomatis ke akun default dalam 5 menit).</i>`;
+      proactiveQuestion = `❓ <b>Satu hal lagi Tuan.</b>\n\nMohon informasikan ${missingItems.join(" dan ")} untuk transaksi ini. ${autoSaveHint}`;
     }
   } else {
     proactiveQuestion = `💡 Transaksi ini siap dikunci. Jika ada koreksi tambahan, silakan balas pesan ini. Jika tidak, N.E.X.A akan meresmikannya dalam 5 menit.`;
@@ -758,6 +819,13 @@ async function _autoSavePending(compositeKey, tx) {
   // Watchdog recovers transactions that are not in the map!
   if (processingKeys.has(compositeKey)) {
     return; // Already handled by another concurrent process
+  }
+  if (tx && tx.awaitingAccount === true && !_hasValidAccount(tx)) {
+    console.log(`[FINANCE] _autoSavePending skipped for ${compositeKey}: awaiting account selection.`);
+    if (!pendingConfirmations.has(compositeKey)) {
+      pendingConfirmations.set(compositeKey, { tx, timeoutId: null, expiresAtMs: 0, awaitingAccount: true });
+    }
+    return;
   }
   processingKeys.add(compositeKey);
   
@@ -989,23 +1057,33 @@ async function requestTransactionConfirmation(txData, sourceLabel = 'PENCATATAN 
     } catch (_) {}
   }
 
-  // 2. Persist to Supabase FIRST
+  // 2. Determine whether account is ready for auto-save
+  const accountReady = _hasValidAccount(tx);
+  if (!accountReady) {
+    tx.awaitingAccount = true;
+  }
+
+  // 3. Persist to Supabase FIRST
   await supabase.savePendingTransaction(compositeKey, tx, isTelegramSent);
 
-  // 3. Build message
+  // 4. Build message
   const msg = await _buildConfirmationMessage(tx, sourceLabel);
 
-  // 3. Auto-save timeout
-  const expiresAtMs = Date.now() + 5 * 60 * 1000;
-  const timeoutId = setTimeout(async () => {
-    if (pendingConfirmations.has(compositeKey)) {
-      await _autoSavePending(compositeKey, tx);
-    }
-  }, 5 * 60 * 1000);
+  // 5. Auto-save timeout ONLY when a valid account is present (never auto-save to a guessed account!)
+  let expiresAtMs = 0;
+  let timeoutId = null;
+  if (accountReady) {
+    expiresAtMs = Date.now() + 5 * 60 * 1000;
+    timeoutId = setTimeout(async () => {
+      if (pendingConfirmations.has(compositeKey)) {
+        await _autoSavePending(compositeKey, tx);
+      }
+    }, 5 * 60 * 1000);
+  }
 
-  pendingConfirmations.set(compositeKey, { tx, timeoutId, expiresAtMs });
+  pendingConfirmations.set(compositeKey, { tx, timeoutId, expiresAtMs, awaitingAccount: !accountReady });
 
-  // 4. Return message - caller handles delivery and calls markPendingTransactionSent().
+  // 6. Return message - caller handles delivery and calls markPendingTransactionSent().
   return msg;
 }
 
@@ -1117,6 +1195,7 @@ module.exports = {
   requestTransactionConfirmation,
   getPendingTransactionByKey,
   getPendingTransactionsMap: () => pendingConfirmations,
+  hasValidAccount: _hasValidAccount,
   autoSaveFromWatchdog,
   resolveTargetKeyFromSnippet,
   getPendingConfirmationsContext,

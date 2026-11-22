@@ -576,6 +576,30 @@ function initCronJobs() {
             continue;
           }
           const ageMs = Date.now() - new Date(row.created_at).getTime();
+          const hasAcc = Boolean(
+            tx.isAutoSyncEmail ||
+            (tx.isSelfTransfer
+              ? (tx.fromAccount && (tx.account || tx.suggestedAccount))
+              : ((tx.account || tx.suggestedAccount) && !/^(unassigned|belum dipilih|-)$/i.test(String(tx.account || tx.suggestedAccount).trim())))
+          );
+
+          if (!hasAcc && ageMs >= 5 * 60 * 1000) {
+            // Hard minimum gate: NEVER auto-save manual transactions missing an account
+            if (ageMs >= 24 * 60 * 60 * 1000) {
+              console.log(`[WATCHDOG] Abandoned draft ${compositeKey} (no account >24h). Cleaning up.`);
+              try {
+                const mobileClient = require('./bridge/mobile_bridge/client');
+                mobileClient.sendCardUpdate({
+                  card_id: `fin_${compositeKey}`,
+                  status: 'EXPIRED',
+                  resolved_badge: 'Expired',
+                  resolved_detail: 'Draft discarded after 24h without account selection.'
+                });
+              } catch (_) {}
+              await supabase.deletePendingTransaction(compositeKey);
+            }
+            continue;
+          }
 
           if (ageMs >= 5 * 60 * 1000) {
             // Expired — auto-save without asking user
