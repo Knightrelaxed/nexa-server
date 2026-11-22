@@ -46,7 +46,7 @@ describe('Mobile Bridge Phase 1: Interactive Card Builders & Actions', () => {
     assert.equal(card.hero_value, '-Rp 45.000');
     assert.equal(card.expires_at, 1800000000000);
     assert.deepEqual(card.categories, ['Makan Berat / Makan Luar', 'Jajan / Ngopi / Kafe']);
-    assert.equal(card.actions.length, 4);
+    assert.equal(card.actions.length, 6);
   });
 
   it('handles FINANCE_TX confirm, cancel, and update_category live refresh', async () => {
@@ -830,5 +830,93 @@ describe('Mobile Bridge Phase 3: Vault Metadata Card, Rich Briefing/Budget Cards
     }
 
     handler.destroy();
+  });
+
+  it('Telegram-parity FINANCE_TX: asks for missing account/method, omits Merchant Unknown, handles account/method pickers & Indonesian time expressions', async () => {
+    const { _parseDateTimeExpression, _resolveTransactionTimeISO } = require('../src/domain/finance/Finance_Helpers');
+
+    // Morning reference: 2026-11-22 09:01 WIB (02:01 UTC)
+    const morningRef = new Date('2026-11-22T02:01:00.000Z');
+    assert.deepEqual(_parseDateTimeExpression('beli es teh 2 9rb tadi pagi', morningRef), { dateISO: '2026-11-22', timeHHMM: '08:00' });
+    assert.deepEqual(_parseDateTimeExpression('beli kopi tadi siang', morningRef), { dateISO: '2026-11-22', timeHHMM: '12:30' });
+    assert.deepEqual(_parseDateTimeExpression('beli snack tadi sore', morningRef), { dateISO: '2026-11-22', timeHHMM: '16:30' });
+    assert.deepEqual(_parseDateTimeExpression('beli nasgor tadi malam', morningRef), { dateISO: '2026-11-21', timeHHMM: '20:30' });
+    assert.deepEqual(_parseDateTimeExpression('beli nasgor tadi malam jam 9', morningRef), { dateISO: '2026-11-21', timeHHMM: '21:00' });
+    assert.deepEqual(_parseDateTimeExpression('kemarin sore jam 5', morningRef), { dateISO: '2026-11-21', timeHHMM: '17:00' });
+    assert.deepEqual(_parseDateTimeExpression('jam 12 malam', morningRef), { dateISO: null, timeHHMM: '00:00' });
+    assert.deepEqual(_parseDateTimeExpression('beli es teh 2 9rb', morningRef), { dateISO: null, timeHHMM: null });
+
+    // Night reference: 2026-11-22 22:00 WIB (15:00 UTC) -> "tadi malam jam 8" is TODAY 20:00, "kemarin malam" is YESTERDAY
+    const nightRef = new Date('2026-11-22T15:00:00.000Z');
+    assert.deepEqual(_parseDateTimeExpression('tadi malam jam 8', nightRef), { dateISO: '2026-11-22', timeHHMM: '20:00' });
+    assert.deepEqual(_parseDateTimeExpression('kemarin malam', nightRef), { dateISO: '2026-11-21', timeHHMM: '20:30' });
+
+    // _resolveTransactionTimeISO: uses exact current time when no time mentioned, or resolved +07:00 ISO when mentioned
+    assert.equal(_resolveTransactionTimeISO(null, 'beli es teh 2 9rb', morningRef), morningRef.toISOString());
+    assert.equal(_resolveTransactionTimeISO(null, 'beli es teh 2 9rb tadi malam', morningRef), '2026-11-21T20:30:00+07:00');
+    assert.equal(_resolveTransactionTimeISO('tadi pagi', 'beli es teh', morningRef), '2026-11-22T08:00:00+07:00');
+
+    // FINANCE_TX card with missing account & payment_method
+    let currentTx = {
+      nominal: 9000,
+      type: 'EXPENSE',
+      destination: 'Unknown',
+      category: 'Jajan / Ngopi / Kafe',
+      description: 'beli es teh 2',
+      account: null,
+      payment_method: null,
+      time: '2026-11-22T09:01:00+07:00'
+    };
+
+    const card = buildFinanceTxCard(currentTx, '9000_unknown', {
+      categories: ['Jajan / Ngopi / Kafe'],
+      accounts: [{ name: 'Bank Mandiri' }, { name: 'Bank Jago' }, { name: 'Tunai' }]
+    });
+
+    assert.ok(card.prompt_text.includes('akun bank/dompet') && card.prompt_text.includes('metode pembayarannya'));
+    assert.ok(!card.fields.some(f => f.key === 'merchant'), 'Must omit Merchant: Unknown');
+    assert.ok(card.fields.some(f => f.key === 'time' && f.value.includes('09:01 WIB')));
+    assert.ok(card.fields.some(f => f.key === 'account' && f.tone === 'AMBER'));
+    assert.ok(card.fields.some(f => f.key === 'payment_method' && f.tone === 'AMBER'));
+    assert.deepEqual(card.accounts, ['Bank Mandiri', 'Bank Jago', 'Tunai']);
+    assert.ok(card.actions.some(a => a.kind === 'PICK_ACCOUNT'));
+    assert.ok(card.actions.some(a => a.kind === 'PICK_METHOD'));
+
+    // Test update_account and update_payment_method via handleCardAction
+    const frames = [];
+    const deps = {
+      sendFrame: (f) => frames.push(f),
+      notifier: { markEngaged: async () => true },
+      supabaseFinance: {
+        getCategoriesList: async () => [{ name: 'Jajan / Ngopi / Kafe' }],
+        getAccountsList: async () => [{ name: 'Bank Mandiri' }, { name: 'Tunai' }]
+      },
+      financeConfirmations: {
+        updatePendingTransaction: async (_n, _c, _nom, acc, pm) => {
+          if (acc) currentTx = { ...currentTx, account: acc };
+          if (pm) currentTx = { ...currentTx, payment_method: pm };
+          return 'UPDATED_OK';
+        },
+        getPendingTransactionByKey: () => ({ tx: currentTx, expiresAtMs: Date.now() + 300_000 })
+      }
+    };
+
+    await handleCardAction({
+      card_id: card.card_id,
+      card_type: 'FINANCE_TX',
+      action_id: 'update_account',
+      payload: { composite_key: '9000_unknown', account: 'Bank Mandiri' }
+    }, null, deps);
+    assert.equal(frames.length, 1);
+    assert.ok(frames[0].updated_card.prompt_text.includes('metode pembayarannya'), 'After setting account, prompt should ask only for payment method');
+
+    await handleCardAction({
+      card_id: card.card_id,
+      card_type: 'FINANCE_TX',
+      action_id: 'update_payment_method',
+      payload: { composite_key: '9000_unknown', payment_method: 'QRIS' }
+    }, null, deps);
+    assert.equal(frames.length, 2);
+    assert.equal(frames[1].updated_card.prompt_text, '', 'Once both account and method are set, missing-info prompt must clear');
   });
 });

@@ -18,6 +18,25 @@ function formatIdr(amount) {
   return `Rp ${Math.abs(Math.round(n)).toLocaleString('id-ID')}`;
 }
 
+const STANDARD_PAYMENT_METHODS = ['QRIS', 'Direct Debit', 'Transfer bank', 'Kartu Kredit', 'Tunai'];
+
+function _formatTxTimeWib(rawTime) {
+  const d = rawTime ? new Date(rawTime) : new Date();
+  const safe = isNaN(d.getTime()) ? new Date() : d;
+  const datePart = safe.toLocaleDateString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    day: 'numeric',
+    month: 'short'
+  });
+  const timePart = safe.toLocaleTimeString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).replace('.', ':');
+  return `${datePart} · ${timePart} WIB`;
+}
+
 function buildFinanceTxCard(tx = {}, compositeKey = '', opts = {}) {
   const key = String(compositeKey || tx.compositeKey || '').trim();
   const cardId = `fin_${key || Date.now()}`;
@@ -27,29 +46,87 @@ function buildFinanceTxCard(tx = {}, compositeKey = '', opts = {}) {
   const heroTone = isTransfer ? 'TRANSFER' : (isIncome ? 'INCOME' : 'EXPENSE');
   const heroValue = `${heroPrefix}${formatIdr(tx.nominal)}`;
 
-  const account = isTransfer
+  const rawAccount = isTransfer
     ? `${tx.fromAccount || 'Source'} -> ${tx.account || tx.suggestedAccount || 'Target'}`
-    : (tx.account || tx.suggestedAccount || 'Unassigned');
-  const paymentMethod = tx.payment_method || tx.paymentMethod || '';
-  const subtitleParts = [account, paymentMethod].filter(Boolean);
+    : String(tx.account || tx.suggestedAccount || '').trim();
+  const hasAccount = isTransfer || (rawAccount.length > 0 && !/^(unassigned|belum dipilih|-)$/i.test(rawAccount));
+  const accountDisplay = hasAccount ? rawAccount : 'Not selected';
+
+  const rawPaymentMethod = String(tx.payment_method || tx.paymentMethod || '').trim();
+  const hasPaymentMethod = rawPaymentMethod.length > 0 && rawPaymentMethod !== '-';
+  const paymentMethodDisplay = hasPaymentMethod ? rawPaymentMethod : 'Not selected';
+
+  const subtitleParts = [];
+  if (hasAccount) subtitleParts.push(accountDisplay);
+  if (hasPaymentMethod) subtitleParts.push(paymentMethodDisplay);
+
   const noteRaw = String(tx.description || '').trim();
-  const cleanNote = (!noteRaw || noteRaw === '[Menunggu Detail User]') ? 'Pending note' : noteRaw;
+  const isMissingNote = !noteRaw || noteRaw === '[Menunggu Detail User]' || noteRaw === '-';
+  const cleanNote = isMissingNote ? 'Pending note' : noteRaw;
   const category = String(tx.category || 'Lainnya').trim();
+  const timeDisplay = _formatTxTimeWib(tx.time);
+
+  const destRaw = String(tx.destination || '').trim();
+  const hasKnownDest = isTransfer || (destRaw.length > 0 && !/^(unknown|-)$/i.test(destRaw));
 
   const fields = [
-    { key: 'merchant', label: isTransfer ? 'Route' : 'Merchant', value: String(tx.destination || account || '-') },
-    { key: 'category', label: 'Category', value: category },
-    { key: 'account', label: 'Account', value: account },
-    { key: 'note', label: 'Note', value: cleanNote }
+    { key: 'time', label: 'Time', value: timeDisplay }
   ];
+  if (hasKnownDest) {
+    fields.push({ key: 'merchant', label: isTransfer ? 'Route' : 'Merchant', value: isTransfer ? accountDisplay : destRaw });
+  }
+  fields.push({ key: 'category', label: 'Category', value: category });
+  if (!isTransfer) {
+    fields.push({ key: 'account', label: 'Account', value: accountDisplay, tone: hasAccount ? 'NEUTRAL' : 'AMBER' });
+    fields.push({ key: 'payment_method', label: 'Method', value: paymentMethodDisplay, tone: hasPaymentMethod ? 'NEUTRAL' : 'AMBER' });
+  }
+  fields.push({ key: 'note', label: 'Note', value: cleanNote, tone: isMissingNote ? 'AMBER' : 'NEUTRAL' });
+
+  const adminFeeNum = Number(tx.adminFee || tx.admin_fee || 0);
+  if (Number.isFinite(adminFeeNum) && adminFeeNum > 0) {
+    fields.push({ key: 'admin_fee', label: 'Admin Fee', value: formatIdr(adminFeeNum) });
+  }
+
+  // Telegram-parity proactive question when key details (note, account, or payment method) are missing
+  let promptText = '';
+  if (!isTransfer) {
+    if (isMissingNote) {
+      promptText = isIncome
+        ? 'Dana masuk ini dalam rangka apa, Tuan? Balas lewat suara/teks atau tap Edit untuk melengkapi.'
+        : 'Pengeluaran ini untuk keperluan apa, Tuan? Balas lewat suara/teks atau tap Edit untuk melengkapi.';
+    } else if (!hasAccount && !hasPaymentMethod) {
+      promptText = 'Satu hal lagi Tuan, akun bank/dompet dan metode pembayarannya (QRIS/Transfer/Tunai/Debit) belum dipilih. Pilih di bawah atau balas lewat suara/teks.';
+    } else if (!hasAccount) {
+      promptText = 'Satu hal lagi Tuan, akun bank/dompet mana yang digunakan? Pilih Account di bawah atau balas lewat suara/teks.';
+    } else if (!hasPaymentMethod) {
+      promptText = 'Satu hal lagi Tuan, metode pembayarannya apa? (QRIS/Direct Debit/Transfer/Tunai). Pilih Method di bawah atau balas lewat suara/teks.';
+    }
+  }
 
   const categories = Array.isArray(opts.categories)
     ? opts.categories.map(c => (typeof c === 'string' ? c : c && c.name)).filter(Boolean)
     : [];
+  const accounts = Array.isArray(opts.accounts)
+    ? opts.accounts.map(a => (typeof a === 'string' ? a : a && a.name)).filter(Boolean)
+    : [];
+  const paymentMethods = Array.isArray(opts.paymentMethods) && opts.paymentMethods.length > 0
+    ? opts.paymentMethods
+    : STANDARD_PAYMENT_METHODS;
 
   const expiresAtMs = Number(opts.expiresAtMs) > 0
     ? Number(opts.expiresAtMs)
     : (Date.now() + 5 * 60 * 1000);
+
+  const actions = [
+    { id: 'confirm', label: 'Confirm', style: 'PRIMARY' }
+  ];
+  if (!isTransfer) {
+    actions.push({ id: 'account', label: hasAccount ? 'Account' : 'Set Account', style: 'SECONDARY', kind: 'PICK_ACCOUNT' });
+    actions.push({ id: 'payment_method', label: hasPaymentMethod ? 'Method' : 'Set Method', style: 'SECONDARY', kind: 'PICK_METHOD' });
+  }
+  actions.push({ id: 'category', label: 'Category', style: 'SECONDARY', kind: 'PICK_CATEGORY' });
+  actions.push({ id: 'edit', label: 'Edit', style: 'SECONDARY', kind: 'EDIT_FINANCE' });
+  actions.push({ id: 'cancel', label: 'Cancel', style: 'DESTRUCTIVE' });
 
   return {
     version: CARD_VERSION,
@@ -57,27 +134,28 @@ function buildFinanceTxCard(tx = {}, compositeKey = '', opts = {}) {
     card_type: 'FINANCE_TX',
     status: 'PENDING',
     title: isTransfer ? 'Self-Transfer Detected' : 'New Transaction Detected',
-    subtitle: subtitleParts.join(' · ') || 'Finance Auto-Sync',
+    subtitle: subtitleParts.join(' · ') || (isMissingNote || !hasAccount || !hasPaymentMethod ? 'Details needed' : 'Ready to record'),
     badge: isTransfer ? 'Transfer' : (isIncome ? 'Income' : 'Expense'),
     accent: isIncome ? 'EMERALD' : (isTransfer ? 'PRIMARY' : 'AMBER'),
     hero_value: heroValue,
     hero_tone: heroTone,
     expires_at: expiresAtMs,
     expires_label: 'Auto-saves in',
+    prompt_text: promptText,
     fields,
     categories,
+    accounts,
+    payment_methods: paymentMethods,
     meta: {
       composite_key: key,
       nominal: Number(tx.nominal) || 0,
-      note: noteRaw === '[Menunggu Detail User]' ? '' : noteRaw,
-      category
+      note: isMissingNote ? '' : noteRaw,
+      category,
+      account: hasAccount ? accountDisplay : '',
+      payment_method: hasPaymentMethod ? paymentMethodDisplay : '',
+      time_display: timeDisplay
     },
-    actions: [
-      { id: 'confirm', label: 'Confirm', style: 'PRIMARY' },
-      { id: 'category', label: 'Category', style: 'SECONDARY', kind: 'PICK_CATEGORY' },
-      { id: 'edit', label: 'Edit', style: 'SECONDARY', kind: 'EDIT_FINANCE' },
-      { id: 'cancel', label: 'Cancel', style: 'DESTRUCTIVE' }
-    ]
+    actions
   };
 }
 
@@ -296,20 +374,34 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
     return { ok: true, status: 'RESOLVED' };
   }
 
-  if (actionId === 'update_category' || actionId === 'update_fields') {
+  if (actionId === 'update_category' || actionId === 'update_account' || actionId === 'update_payment_method' || actionId === 'update_fields') {
     const newCat = payload && payload.category ? String(payload.category).trim() : null;
+    const newAccount = payload && payload.account ? String(payload.account).trim() : null;
+    const newPaymentMethod = payload && payload.payment_method ? String(payload.payment_method).trim() : null;
     const newNote = payload && typeof payload.note === 'string' ? payload.note.trim() : null;
     const newNominal = payload && payload.nominal !== undefined && payload.nominal !== null && String(payload.nominal).trim() !== ''
       ? payload.nominal
       : null;
 
+    let newDate = null;
+    let newTime = null;
+    const rawDateText = payload && typeof payload.date_text === 'string' ? payload.date_text.trim() : '';
+    if (rawDateText) {
+      const { _parseDateTimeExpression } = require('../../../domain/finance/Finance_Helpers');
+      const parsedDt = _parseDateTimeExpression(rawDateText);
+      newDate = parsedDt.dateISO || null;
+      newTime = parsedDt.timeHHMM || null;
+    }
+
     const updatedReply = await financeConfirm.updatePendingTransaction(
       newNote || null,
       newCat || null,
       newNominal,
-      null,
-      null,
-      compositeKey
+      newAccount || null,
+      newPaymentMethod || null,
+      compositeKey,
+      newDate,
+      newTime
     );
 
     if (!updatedReply) {
@@ -327,24 +419,37 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
       : null;
 
     let categories = [];
+    let accounts = [];
     try {
       categories = await supabaseFinance.getCategoriesList();
+    } catch (_) {}
+    try {
+      if (typeof supabaseFinance.getAccountsList === 'function') {
+        accounts = await supabaseFinance.getAccountsList();
+      }
     } catch (_) {}
 
     const refreshedCard = updatedTx
       ? buildFinanceTxCard(updatedTx.tx, compositeKey, {
           categories,
-          expiresAtMs: updatedTx.expiresAtMs || (Date.now() + 4 * 60 * 1000)
+          accounts,
+          expiresAtMs: updatedTx.expiresAtMs || (Date.now() + 5 * 60 * 1000)
         })
       : null;
+
+    const detailLabel = newAccount
+      ? `Account set to ${newAccount}`
+      : (newPaymentMethod
+        ? `Method set to ${newPaymentMethod}`
+        : (newCat ? `Category updated to ${newCat}` : 'Transaction details updated.'));
 
     _sendCardUpdate(ws, {
       card_id: cardId,
       status: 'PENDING',
       updated_card: refreshedCard,
-      resolved_detail: newCat ? `Category updated to ${newCat}` : 'Transaction details updated.'
+      resolved_detail: detailLabel
     }, deps);
-    return { ok: true, status: 'PENDING' };
+    return { ok: true, status: 'PENDING', updatedCard: refreshedCard };
   }
 
   _sendCardUpdate(ws, { card_id: cardId, status: 'PENDING', error: `Unknown action: ${actionId}` }, deps);

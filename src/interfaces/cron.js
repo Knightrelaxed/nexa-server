@@ -595,9 +595,11 @@ function initCronJobs() {
             const { buildFinanceTxCard } = require('./bridge/mobile_bridge/card_handler');
             const supabaseFinance = require('../infrastructure/Supabase_Finance');
             let categories = [];
+            let accounts = [];
             try { categories = await supabaseFinance.getCategoriesList(); } catch (_) {}
+            try { accounts = await supabaseFinance.getAccountsList(); } catch (_) {}
             const expiresAtMs = new Date(row.created_at).getTime() + 5 * 60 * 1000;
-            const card = buildFinanceTxCard(tx, compositeKey, { categories, expiresAtMs });
+            const card = buildFinanceTxCard(tx, compositeKey, { categories, accounts, expiresAtMs });
             await notifyProactive({
               kind: 'pending_transaction_alert',
               priority: 'P0',

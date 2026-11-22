@@ -108,8 +108,10 @@ async function recoverPendingTransactions() {
           const { notifyProactive } = require('../../core/Notifier');
           const { buildFinanceTxCard } = require('../../interfaces/bridge/mobile_bridge/card_handler');
           let categories = [];
+          let accounts = [];
           try { categories = await supabaseFinance.getCategoriesList(); } catch (_) {}
-          const card = buildFinanceTxCard(tx, compositeKey, { categories, expiresAtMs });
+          try { accounts = await supabaseFinance.getAccountsList(); } catch (_) {}
+          const card = buildFinanceTxCard(tx, compositeKey, { categories, accounts, expiresAtMs });
           await notifyProactive({
             kind: 'finance_tx_confirm',
             priority: 'P0',
@@ -487,6 +489,7 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
 
         // Reset timeout karena user sudah berinteraksi
         clearTimeout(pending.timeoutId);
+        pending.expiresAtMs = Date.now() + 5 * 60 * 1000;
         const newTimeoutId = setTimeout(async () => {
           if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
         }, 5 * 60 * 1000);
@@ -504,6 +507,7 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
     } else {
       // Metode tidak dikenali — beritahu user dan JANGAN simpan nilai acak
       clearTimeout(pending.timeoutId);
+      pending.expiresAtMs = Date.now() + 5 * 60 * 1000;
       const newTimeoutId = setTimeout(async () => {
         if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
       }, 5 * 60 * 1000);
@@ -527,6 +531,7 @@ async function updatePendingTransaction(newDescription = null, newCategory = nul
   // Update Supabase
   await supabase.savePendingTransaction(key, pending.tx, true);
 
+  pending.expiresAtMs = Date.now() + 5 * 60 * 1000;
   const newTimeoutId = setTimeout(async () => {
     if (pendingConfirmations.has(key)) await _autoSavePending(key, pending.tx);
   }, 5 * 60 * 1000);

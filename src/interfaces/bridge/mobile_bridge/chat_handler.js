@@ -627,6 +627,16 @@ function createMobileChatHandler(deps = {}) {
       return [];
     };
 
+    const loadFinanceAccounts = async () => {
+      try {
+        if (supabaseFinance && typeof supabaseFinance.getAccountsList === 'function') {
+          const accs = await supabaseFinance.getAccountsList();
+          if (Array.isArray(accs)) return accs;
+        }
+      } catch (_) {}
+      return [];
+    };
+
     const syncFinanceCardsAfterMutation = async (ws, prevSnap, replyText) => {
       if (!prevSnap || prevSnap.size === 0) return;
       const currMap = getPendingFinMap();
@@ -647,9 +657,10 @@ function createMobileChatHandler(deps = {}) {
           let currJson = '';
           try { currJson = JSON.stringify((currEntry && currEntry.tx) || {}); } catch (_) {}
           if (currEntry && currEntry.tx && currJson !== oldTxJson) {
-            const categories = await loadFinanceCategories();
+            const [categories, accounts] = await Promise.all([loadFinanceCategories(), loadFinanceAccounts()]);
             const updatedCard = cardHandler.buildFinanceTxCard(currEntry.tx, oldKey, {
               categories,
+              accounts,
               expiresAtMs: currEntry.expiresAtMs
             });
             safeSend(ws, {
@@ -1001,9 +1012,10 @@ function createMobileChatHandler(deps = {}) {
       if (currFinMap && currFinMap.size > 0) {
         for (const [finKey, finEntry] of currFinMap.entries()) {
           if (!prevFinSnap.has(finKey) && finEntry && finEntry.tx) {
-            const categories = await loadFinanceCategories();
+            const [categories, accounts] = await Promise.all([loadFinanceCategories(), loadFinanceAccounts()]);
             attachedCard = cardHandler.buildFinanceTxCard(finEntry.tx, finKey, {
               categories,
+              accounts,
               expiresAtMs: finEntry.expiresAtMs
             });
             break;

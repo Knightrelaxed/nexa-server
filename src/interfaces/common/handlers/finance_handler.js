@@ -6,6 +6,7 @@
 
 const financeEngine        = require('../../../domain/Finance_Engine');
 const financeConfirmations = require('../../../domain/finance/Finance_Confirmations');
+const { _resolveTransactionTimeISO } = require('../../../domain/finance/Finance_Helpers');
 const supabaseMemories     = require('../../../infrastructure/Supabase_Memories');
 const helpers              = require('../helpers');
 
@@ -459,7 +460,7 @@ async function handleFinanceIntent(routingData, context = {}) {
         destination: tx.destination || tx.merchant || 'Unknown',
         category: tx.category || 'Uncategorized',
         description: tx.description || '-',
-        time: tx.time || new Date().toISOString(),
+        time: _resolveTransactionTimeISO(tx.time || tx.date_text || ed.time || ed.date_text, textInput),
         account: tx.account || null,
         fromAccount: tx.from_account || tx.fromAccount || null,
         isSelfTransfer: Boolean(tx.is_self_transfer || tx.isSelfTransfer),
@@ -631,6 +632,8 @@ async function handleFinanceIntent(routingData, context = {}) {
     let txData;
     let cardTitle;
 
+    const resolvedTxTime = _resolveTransactionTimeISO(ed.time || ed.date_text, textInput);
+
     if (isSelfTransfer) {
       txData = {
         nominal: parsedNominal,
@@ -641,7 +644,7 @@ async function handleFinanceIntent(routingData, context = {}) {
         description: ed.description && ed.description !== '-'
           ? ed.description
           : `Transfer dari ${fromAccountResolved || 'Akun'} ke ${toAccountResolved || 'Tujuan'}`,
-        time: ed.time || new Date().toISOString(),
+        time: resolvedTxTime,
         account: toAccountResolved || null,
         suggestedAccount: toAccountResolved || null,
         fromAccount: fromAccountResolved || null,
@@ -664,7 +667,7 @@ async function handleFinanceIntent(routingData, context = {}) {
         destination: externalDest,
         category: ed.category || 'Uncategorized',
         description: desc,
-        time: ed.time || new Date().toISOString(),
+        time: resolvedTxTime,
         account: sourceAccount,
         suggestedAccount: null,
         fromAccount: sourceAccount,
@@ -681,7 +684,7 @@ async function handleFinanceIntent(routingData, context = {}) {
         destination: ed.destination || ed.merchant || 'Unknown',
         category: ed.category || 'Uncategorized',
         description: ed.description && ed.description !== '-' ? ed.description : '-',
-        time: ed.time || new Date().toISOString(),
+        time: resolvedTxTime,
         account: ed.account || null,
         suggestedAccount: null,
         fromAccount: null,
