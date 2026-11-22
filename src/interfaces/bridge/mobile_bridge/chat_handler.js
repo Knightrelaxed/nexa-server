@@ -165,6 +165,42 @@ function createMobileChatHandler(deps = {}) {
   const pendingVault = new Map();
   let pendingConflictEvent = null;
   let pendingProactiveTasks = null;
+  const activeCardIds = {
+    conflict: null,
+    financeDelete: null,
+    taskConfirm: null,
+    proactiveTasks: null
+  };
+
+  try {
+    const cardHandler = deps.cardHandler || require('./card_handler');
+    if (typeof cardHandler.registerSessionHooks === 'function') {
+      cardHandler.registerSessionHooks({
+        clearPendingConflict: () => {
+          pendingConflictEvent = null;
+          activeCardIds.conflict = null;
+        },
+        clearPendingProactiveTasks: () => {
+          pendingProactiveTasks = null;
+          activeCardIds.proactiveTasks = null;
+        }
+      });
+    }
+  } catch (_) {}
+
+  function emitCardResolvedFromText(ws, slot, badge, detail) {
+    const cid = activeCardIds[slot];
+    if (!cid) return;
+    activeCardIds[slot] = null;
+    safeSend(ws, {
+      type: 'CARD_UPDATE',
+      card_id: cid,
+      status: 'RESOLVED',
+      resolved_badge: badge,
+      resolved_detail: String(detail || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 160),
+      ts: nowFn()
+    });
+  }
 
   function getFreshMapEntry(map) {
     const entry = map.get(sessionKey);
@@ -459,30 +495,191 @@ function createMobileChatHandler(deps = {}) {
       } catch (_) {}
     }
 
-    // F-03: Check lightweight pending calendar conflict confirmation before invoking LLM router
-    if (pendingConflictEvent && (nowFn() - (pendingConflictEvent.createdAt || 0)) <= CONTEXT_TTL_MS) {
-      const lowerTrim = content.trim().toLowerCase();
-      if (/^(?:ya|iya|ok|oke|lanjut|tetap\s+buat|setuju|gas)$/i.test(lowerTrim)) {
-        const conflictData = pendingConflictEvent;
-        pendingConflictEvent = null;
-        try {
-          const agendaManager = require('../../../domain/Agenda_Manager');
-          if (typeof agendaManager.forceCreateEvent === 'function') {
-            const forced = await agendaManager.forceCreateEvent(conflictData.eventData || conflictData);
-            const replyText = stripHtmlForMobile(typeof forced === 'string' ? forced : (forced?.message || '✅ Jadwal berhasil dibuat.'));
-            await streamFinalReply(clientMsgId, entry, content, replyText, 'CALENDAR', saveChatMemory);
-            return;
-          }
-        } catch (confErr) {
-          console.warn('[BRIDGE-CHAT] Calendar conflict confirm error:', confErr.message);
-        }
-      } else if (/^(?:batal|tidak|jangan|cancel|gak)$/i.test(lowerTrim)) {
-        pendingConflictEvent = null;
-        await streamFinalReply(clientMsgId, entry, content, '❌ Pembuatan jadwal yang bentrok telah dibatalkan.', 'CALENDAR', saveChatMemory);
+    // Phase 2: Full conversational interceptor parity (text/voice fallback alongside native Quick Action Chips)
+    const interceptors = deps.interceptors || require('../../telegram/interceptors');
+    const cardHandler = deps.cardHandler || require('./card_handler');
+    const financeEngine = deps.financeEngine || require('../../../domain/Finance_Engine');
+    const taskManager = deps.taskManager || require('../../../domain/Task_Manager');
+    const splitEngine = deps.splitEngine || require('../../../domain/Split_Engine');
+
+    let interceptedReplies = [];
+    const collectInterceptorReply = async (msg) => {
+      if (msg) interceptedReplies.push(String(msg));
+    };
+    const noopDeliver = async () => {};
+
+    // 1. Morning Check-in & Detail Drill-down (O(1) in-memory check)
+    try {
+      const checkInHandled = await interceptors.handleMorningCheckIn(content, {
+        respondToTelegram: collectInterceptorReply,
+        deliverWebhookReply: noopDeliver
+      });
+      if (checkInHandled && interceptedReplies.length > 0) {
+        const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n'));
+        await streamFinalReply(clientMsgId, entry, content, replyText, 'MORNING_CHECKIN', saveChatMemory);
         return;
+      }
+    } catch (e) {
+      console.warn('[BRIDGE-CHAT] Morning check-in interceptor warning:', e.message);
+    }
+
+    // 2. Pending Calendar Duration (O(1) map check)
+    const activePendingCal = getFreshMapEntry(pendingCalendar);
+    if (activePendingCal) {
+      interceptedReplies = [];
+      try {
+        const calPendingRes = await interceptors.handlePendingCalendar(content, activePendingCal, {
+          respondToTelegram: collectInterceptorReply
+        });
+        if (calPendingRes.handled) {
+          if (calPendingRes.updatedPendingCalendar) {
+            pendingCalendar.set(sessionKey, calPendingRes.updatedPendingCalendar);
+          } else {
+            pendingCalendar.delete(sessionKey);
+          }
+          let conflictCard = null;
+          if (calPendingRes.newConflict) {
+            pendingConflictEvent = { ...calPendingRes.newConflict, createdAt: nowFn() };
+            conflictCard = cardHandler.buildCalendarConflictCard(pendingConflictEvent);
+            activeCardIds.conflict = conflictCard.card_id;
+          }
+          const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Jadwal diperbarui.');
+          await streamFinalReply(clientMsgId, entry, content, replyText, 'CALENDAR', saveChatMemory, conflictCard);
+          return;
+        }
+      } catch (e) {
+        console.warn('[BRIDGE-CHAT] Pending calendar interceptor warning:', e.message);
+      }
+    }
+
+    // 3. Pending Finance Deletion Confirmation (O(1) in-memory map check)
+    const pendingDelMap = typeof financeEngine.getPendingDeletionsContext === 'function'
+      ? financeEngine.getPendingDeletionsContext()
+      : null;
+    if (pendingDelMap && pendingDelMap.size > 0) {
+      interceptedReplies = [];
+      try {
+        const delHandled = await interceptors.handlePendingDeletions(content, {
+          respondToTelegram: collectInterceptorReply
+        });
+        if (delHandled) {
+          const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Status penghapusan diperbarui.');
+          const stillPending = financeEngine.getPendingDeletionsContext();
+          if (!stillPending || stillPending.size === 0) {
+            const wasDeleted = /DIHAPUS/i.test(replyText);
+            emitCardResolvedFromText(entry.ws, 'financeDelete', wasDeleted ? 'Deleted' : 'Kept', replyText);
+          }
+          await streamFinalReply(clientMsgId, entry, content, replyText, 'FINANCE', saveChatMemory);
+          return;
+        }
+      } catch (e) {
+        console.warn('[BRIDGE-CHAT] Pending deletion interceptor warning:', e.message);
+      }
+    }
+
+    // 4. Pending Split Remainder (O(1) in-memory map check)
+    if (typeof splitEngine.hasPendingRemainder === 'function' && splitEngine.hasPendingRemainder(sessionKey)) {
+      interceptedReplies = [];
+      try {
+        const splitHandled = await interceptors.handlePendingSplitRemainder(sessionKey, content, {
+          respondToTelegram: collectInterceptorReply
+        });
+        if (splitHandled) {
+          const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Split diperbarui.');
+          await streamFinalReply(clientMsgId, entry, content, replyText, 'FINANCE', saveChatMemory);
+          return;
+        }
+      } catch (e) {
+        console.warn('[BRIDGE-CHAT] Split remainder interceptor warning:', e.message);
+      }
+    }
+
+    // 5. Pending Finance Confirmation (O(1) in-memory count check -> supports text "ya"/"batal"/edit/split alongside card buttons)
+    const pendingFinCount = typeof financeEngine.getPendingConfirmationsCount === 'function'
+      ? financeEngine.getPendingConfirmationsCount()
+      : 0;
+    if (pendingFinCount > 0) {
+      interceptedReplies = [];
+      try {
+        const msgShim = replyCtx ? { reply_to_message: { text: replyCtx.preview } } : {};
+        const finHandled = await interceptors.handlePendingFinanceConfirmation(msgShim, content, sessionKey, {
+          respondToTelegram: collectInterceptorReply
+        });
+        if (finHandled) {
+          const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Konfirmasi transaksi diproses.');
+          await streamFinalReply(clientMsgId, entry, content, replyText, 'FINANCE', saveChatMemory);
+          return;
+        }
+      } catch (e) {
+        console.warn('[BRIDGE-CHAT] Pending finance interceptor warning:', e.message);
+      }
+    }
+
+    // 6. Pending Task Confirmation (CONFIRM_SYNC / CONFIRM_DURATION / CONFIRM_LIST)
+    if (taskManager.pendingTaskCategories && taskManager.pendingTaskCategories.has(sessionKey)) {
+      interceptedReplies = [];
+      try {
+        const taskHandled = await interceptors.handlePendingTasks(sessionKey, content, {
+          respondToTelegram: collectInterceptorReply
+        });
+        if (taskHandled) {
+          const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Tugas diperbarui.');
+          if (!taskManager.pendingTaskCategories.has(sessionKey)) {
+            const wasCancelled = /dibatalkan/i.test(replyText);
+            emitCardResolvedFromText(entry.ws, 'taskConfirm', wasCancelled ? 'Cancelled' : 'Saved', replyText);
+          }
+          await streamFinalReply(clientMsgId, entry, content, replyText, 'TASK', saveChatMemory);
+          return;
+        }
+      } catch (e) {
+        console.warn('[BRIDGE-CHAT] Pending task interceptor warning:', e.message);
+      }
+    }
+
+    // 7. Pending Calendar Conflict Confirmation (uses googleWorkspace.createCalendarEvent via shared interceptor)
+    if (pendingConflictEvent && (nowFn() - (pendingConflictEvent.createdAt || pendingConflictEvent.askedAt || 0)) <= CONTEXT_TTL_MS) {
+      interceptedReplies = [];
+      try {
+        const conflictObj = { ...pendingConflictEvent, askedAt: pendingConflictEvent.askedAt || pendingConflictEvent.createdAt || nowFn() };
+        const confRes = await interceptors.handlePendingConflict(content, conflictObj, {
+          respondToTelegram: collectInterceptorReply
+        });
+        if (confRes.handled) {
+          pendingConflictEvent = confRes.updatedConflict;
+          const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Konfirmasi jadwal selesai.');
+          const wasCancelled = /dibatalkan/i.test(replyText);
+          emitCardResolvedFromText(entry.ws, 'conflict', wasCancelled ? 'Cancelled' : 'Added to Calendar', replyText);
+          await streamFinalReply(clientMsgId, entry, content, replyText, 'CALENDAR', saveChatMemory);
+          return;
+        }
+      } catch (confErr) {
+        console.warn('[BRIDGE-CHAT] Calendar conflict confirm error:', confErr.message);
       }
     } else {
       pendingConflictEvent = null;
+    }
+
+    // 8. Pending Proactive Prep Tasks Confirmation (now fully wired for text + native checklist card)
+    if (pendingProactiveTasks && (nowFn() - (pendingProactiveTasks.createdAt || pendingProactiveTasks.askedAt || 0)) <= 15 * 60 * 1000) {
+      interceptedReplies = [];
+      try {
+        const proObj = { ...pendingProactiveTasks, askedAt: pendingProactiveTasks.askedAt || pendingProactiveTasks.createdAt || nowFn() };
+        const proRes = await interceptors.handlePendingProactiveTasks(content, proObj, sessionKey, {
+          respondToTelegram: collectInterceptorReply
+        });
+        if (proRes.handled) {
+          pendingProactiveTasks = proRes.updatedProactiveTasks;
+          const replyText = stripHtmlForMobile(interceptedReplies.join('\n\n') || 'Tugas persiapan diproses.');
+          const wasSkipped = /dilewatkan/i.test(replyText);
+          emitCardResolvedFromText(entry.ws, 'proactiveTasks', wasSkipped ? 'Skipped' : 'Tasks Added', replyText);
+          await streamFinalReply(clientMsgId, entry, content, replyText, 'TASK', saveChatMemory);
+          return;
+        }
+      } catch (proErr) {
+        console.warn('[BRIDGE-CHAT] Proactive tasks confirm error:', proErr.message);
+      }
+    } else {
+      pendingProactiveTasks = null;
     }
 
     const aiRouter = getAiRouter();
@@ -516,6 +713,16 @@ function createMobileChatHandler(deps = {}) {
     const actions = Array.isArray(routingData?.actions) && routingData.actions.length > 0
       ? routingData.actions
       : [{ intent: normIntent, extracted_data: routingData?.extracted_data || {} }];
+
+    // Snapshot pending state before domain execution so we attach Quick Action Chips / Cards cleanly
+    const prevConflictRef = pendingConflictEvent;
+    const prevProactiveRef = pendingProactiveTasks;
+    const prevDelKeys = new Set(
+      (typeof financeEngine.getPendingDeletionsContext === 'function' && financeEngine.getPendingDeletionsContext())
+        ? Array.from(financeEngine.getPendingDeletionsContext().keys())
+        : []
+    );
+    const prevTaskRef = (taskManager.pendingTaskCategories && taskManager.pendingTaskCategories.get(sessionKey)) || null;
 
     const executeDomainIntent = getDomainDispatcher();
     const replyParts = [];
@@ -580,6 +787,37 @@ function createMobileChatHandler(deps = {}) {
       }
     }
 
+    // Auto-attach Phase 2 Quick Action Chips / Checklist Card if domain execution created a new pending confirmation
+    let attachedCard = null;
+    if (pendingConflictEvent && pendingConflictEvent !== prevConflictRef) {
+      attachedCard = cardHandler.buildCalendarConflictCard(pendingConflictEvent);
+      activeCardIds.conflict = attachedCard.card_id;
+    } else if (pendingProactiveTasks && pendingProactiveTasks !== prevProactiveRef &&
+        Array.isArray(pendingProactiveTasks.tasks) && pendingProactiveTasks.tasks.length > 0) {
+      attachedCard = cardHandler.buildProactiveTasksCard(pendingProactiveTasks);
+      activeCardIds.proactiveTasks = attachedCard.card_id;
+    } else {
+      const currDelMap = typeof financeEngine.getPendingDeletionsContext === 'function'
+        ? financeEngine.getPendingDeletionsContext()
+        : null;
+      if (currDelMap && currDelMap.size > 0) {
+        for (const [delKey, delEntry] of currDelMap.entries()) {
+          if (!prevDelKeys.has(delKey)) {
+            attachedCard = cardHandler.buildFinanceDeleteCard(delKey, delEntry && delEntry.txData);
+            activeCardIds.financeDelete = attachedCard.card_id;
+            break;
+          }
+        }
+      }
+      if (!attachedCard && taskManager.pendingTaskCategories) {
+        const currTaskRef = taskManager.pendingTaskCategories.get(sessionKey) || null;
+        if (currTaskRef && currTaskRef !== prevTaskRef) {
+          attachedCard = cardHandler.buildTaskConfirmCard(currTaskRef, sessionKey);
+          activeCardIds.taskConfirm = attachedCard.card_id;
+        }
+      }
+    }
+
     const rawReply = replyParts.length > 0
       ? replyParts.join('\n\n')
       : (routingData?.reply_message || 'Baik Tuan, pesan sudah saya terima.');
@@ -597,7 +835,7 @@ function createMobileChatHandler(deps = {}) {
       updatedAt: nowTs
     };
 
-    await streamFinalReply(clientMsgId, entry, content, cleanReply, normIntent, saveChatMemory);
+    await streamFinalReply(clientMsgId, entry, content, cleanReply, normIntent, saveChatMemory, attachedCard);
   }
 
   async function streamFinalReply(clientMsgId, entry, _userContent, cleanReply, normIntent, saveChatMemory, card = null) {

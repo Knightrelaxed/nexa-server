@@ -642,6 +642,425 @@ async function _handleDisciplineCardAction(cardId, actionId, payload, ws, deps) 
   return { ok: false, error: 'UNKNOWN_ACTION' };
 }
 
+function buildCalendarConflictCard(conflictEvent = {}) {
+  const ev = conflictEvent && typeof conflictEvent === 'object' ? conflictEvent : {};
+  const summary = String(ev.summary || 'Calendar Event');
+  return {
+    version: CARD_VERSION,
+    card_id: `calconf_${Date.now()}`,
+    card_type: 'CALENDAR_CONFLICT',
+    presentation: 'CHIPS',
+    status: 'PENDING',
+    title: 'Calendar Conflict',
+    subtitle: summary,
+    accent: 'AMBER',
+    expires_at: Date.now() + 10 * 60 * 1000,
+    expires_label: 'Expires in',
+    fields: [],
+    meta: {
+      summary,
+      start: String(ev.start || ''),
+      end: String(ev.end || ''),
+      description: String(ev.description || ''),
+      location: String(ev.location || ''),
+      reminder_minutes: Array.isArray(ev.reminder_minutes) ? ev.reminder_minutes : [],
+      recurrence: String(ev.recurrence || '')
+    },
+    actions: [
+      { id: 'force_create', label: 'Create Anyway', style: 'PRIMARY' },
+      { id: 'cancel', label: 'Cancel', style: 'DESTRUCTIVE' }
+    ]
+  };
+}
+
+function buildFinanceDeleteCard(delKey = '', txData = {}) {
+  const key = String(delKey || Date.now());
+  const desc = String(txData && txData.description || 'Transaction');
+  return {
+    version: CARD_VERSION,
+    card_id: `findel_${key}`,
+    card_type: 'FINANCE_DELETE',
+    presentation: 'CHIPS',
+    status: 'PENDING',
+    title: 'Confirm Deletion',
+    subtitle: desc,
+    accent: 'CRIMSON',
+    expires_at: Date.now() + 3 * 60 * 1000,
+    expires_label: 'Expires in',
+    fields: [],
+    meta: {
+      del_key: key,
+      tx_id: String(txData && txData.id || '')
+    },
+    actions: [
+      { id: 'confirm_delete', label: 'Confirm Delete', style: 'DESTRUCTIVE' },
+      { id: 'keep', label: 'Keep', style: 'SECONDARY' }
+    ]
+  };
+}
+
+function buildTaskConfirmCard(pendingTask = {}, sessionKey = 'mobile-primary') {
+  const taskType = String(pendingTask && pendingTask.type || 'CONFIRM_LIST').toUpperCase();
+  const title = String(pendingTask && pendingTask.title || 'New Task');
+  const listName = String(pendingTask && pendingTask.listName || 'Tugas Saya');
+
+  let actions;
+  if (taskType === 'CONFIRM_SYNC') {
+    actions = [
+      { id: 'sync_yes', label: 'Sync to Calendar', style: 'PRIMARY' },
+      { id: 'sync_no', label: 'Task Only', style: 'SECONDARY' },
+      { id: 'cancel', label: 'Cancel', style: 'DESTRUCTIVE' }
+    ];
+  } else if (taskType === 'CONFIRM_DURATION') {
+    actions = [
+      { id: 'dur_15', label: '15m', style: 'SECONDARY' },
+      { id: 'dur_30', label: '30m', style: 'PRIMARY' },
+      { id: 'dur_60', label: '1h', style: 'SECONDARY' },
+      { id: 'dur_120', label: '2h', style: 'SECONDARY' },
+      { id: 'cancel', label: 'Cancel', style: 'DESTRUCTIVE' }
+    ];
+  } else {
+    actions = [
+      { id: 'list_yes', label: `Use ${listName}`, style: 'PRIMARY' },
+      { id: 'list_default', label: 'Tugas Saya', style: 'SECONDARY' },
+      { id: 'cancel', label: 'Cancel', style: 'DESTRUCTIVE' }
+    ];
+  }
+
+  return {
+    version: CARD_VERSION,
+    card_id: `taskconf_${Date.now()}`,
+    card_type: 'TASK_CONFIRM',
+    presentation: 'CHIPS',
+    status: 'PENDING',
+    title: 'Confirm Task',
+    subtitle: title,
+    accent: 'PRIMARY',
+    expires_at: Date.now() + 5 * 60 * 1000,
+    expires_label: 'Auto-saves in',
+    fields: [],
+    meta: {
+      session_key: String(sessionKey || 'mobile-primary'),
+      task_type: taskType,
+      title,
+      list_name: listName
+    },
+    actions
+  };
+}
+
+function buildProactiveTasksCard(proactiveTasks = {}) {
+  const summary = String(proactiveTasks && proactiveTasks.summary || 'Upcoming Event');
+  const start = String(proactiveTasks && proactiveTasks.start || '');
+  const tasks = Array.isArray(proactiveTasks && proactiveTasks.tasks) ? proactiveTasks.tasks : [];
+  const targetDue = start ? start.split('T')[0] : '';
+
+  const selectableItems = tasks.map((taskTitle, idx) => ({
+    id: `idx_${idx}`,
+    label: String(taskTitle || '').trim(),
+    meta: targetDue ? `Due ${targetDue}` : 'Prep task',
+    selected: true
+  })).filter(it => it.label.length > 0);
+
+  return {
+    version: CARD_VERSION,
+    card_id: `protask_${Date.now()}`,
+    card_type: 'PROACTIVE_TASKS',
+    presentation: 'INLINE_CARD',
+    status: 'PENDING',
+    title: 'Suggested Prep Tasks',
+    subtitle: summary,
+    badge: `${selectableItems.length} tasks`,
+    accent: 'PRIMARY',
+    expires_at: Date.now() + 15 * 60 * 1000,
+    expires_label: 'Expires in',
+    selectable_items: selectableItems,
+    fields: [],
+    meta: {
+      summary,
+      start,
+      tasks: selectableItems.map(it => it.label)
+    },
+    actions: [
+      { id: 'create_selected', label: 'Add Tasks', style: 'PRIMARY', kind: 'MULTI_SELECT_SUBMIT' },
+      { id: 'skip', label: 'Skip', style: 'SECONDARY' }
+    ]
+  };
+}
+
+// Optional session cleanup callbacks registered by mobile_bridge/chat_handler.js
+const _sessionHooks = {
+  clearPendingConflict: null,
+  clearPendingProactiveTasks: null
+};
+
+function registerSessionHooks(hooks = {}) {
+  if (typeof hooks.clearPendingConflict === 'function') {
+    _sessionHooks.clearPendingConflict = hooks.clearPendingConflict;
+  }
+  if (typeof hooks.clearPendingProactiveTasks === 'function') {
+    _sessionHooks.clearPendingProactiveTasks = hooks.clearPendingProactiveTasks;
+  }
+}
+
+async function _handleCalendarConflictAction(cardId, actionId, payload, ws, deps) {
+  const googleWorkspace = deps.googleWorkspace || require('../../../infrastructure/Google_Workspace');
+  const clearConflict = deps.clearPendingConflict || _sessionHooks.clearPendingConflict;
+
+  if (actionId === 'cancel') {
+    if (typeof clearConflict === 'function') clearConflict();
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: 'Cancelled',
+      resolved_detail: 'Conflicting event was not created.'
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  if (actionId === 'force_create') {
+    const summary = String(payload && payload.summary || '').trim();
+    const start = String(payload && payload.start || '').trim();
+    const end = String(payload && payload.end || '').trim();
+    if (!summary || !start || !end) {
+      _sendCardUpdate(ws, {
+        card_id: cardId,
+        status: 'EXPIRED',
+        resolved_badge: 'Expired',
+        resolved_detail: 'Event details are no longer available.'
+      }, deps);
+      return { ok: false, status: 'EXPIRED' };
+    }
+
+    await googleWorkspace.createCalendarEvent(
+      summary,
+      start,
+      end,
+      String(payload.description || ''),
+      String(payload.location || ''),
+      Array.isArray(payload.reminder_minutes) ? payload.reminder_minutes : [],
+      String(payload.recurrence || '')
+    );
+    if (typeof clearConflict === 'function') clearConflict();
+
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: 'Added to Calendar',
+      resolved_detail: `"${summary}" created despite overlap.`
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  return { ok: false, error: 'UNKNOWN_ACTION' };
+}
+
+async function _handleFinanceDeleteAction(cardId, actionId, _payload, ws, deps) {
+  const financeEngine = deps.financeEngine || require('../../../domain/Finance_Engine');
+
+  if (actionId === 'confirm_delete') {
+    const reply = await financeEngine.confirmDeleteTransaction(true);
+    if (!reply) {
+      _sendCardUpdate(ws, {
+        card_id: cardId,
+        status: 'EXPIRED',
+        resolved_badge: 'Expired',
+        resolved_detail: 'Deletion request expired or already handled.'
+      }, deps);
+      return { ok: true, status: 'EXPIRED' };
+    }
+    const isFailed = reply.includes('❌');
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: isFailed ? 'Delete Failed' : 'Deleted',
+      resolved_detail: _cleanSingleLineDetail(reply)
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  if (actionId === 'keep') {
+    await financeEngine.confirmDeleteTransaction(false);
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: 'Kept',
+      resolved_detail: 'Transaction was kept in your ledger.'
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  return { ok: false, error: 'UNKNOWN_ACTION' };
+}
+
+async function _handleTaskConfirmAction(cardId, actionId, payload, ws, deps) {
+  const taskManager = deps.taskManager || require('../../../domain/Task_Manager');
+  const googleWorkspace = deps.googleWorkspace || require('../../../infrastructure/Google_Workspace');
+  const sessionKey = String(payload && payload.session_key || 'mobile-primary');
+
+  const pendingTask = taskManager.pendingTaskCategories && taskManager.pendingTaskCategories.get(sessionKey);
+  if (!pendingTask) {
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'EXPIRED',
+      resolved_badge: 'Expired',
+      resolved_detail: 'Task confirmation already completed or expired.'
+    }, deps);
+    return { ok: true, status: 'EXPIRED' };
+  }
+
+  if (actionId === 'cancel') {
+    taskManager.cancelPendingTask(sessionKey);
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: 'Cancelled',
+      resolved_detail: `Task "${pendingTask.title || 'New Task'}" was not created.`
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  if (pendingTask.type === 'CONFIRM_SYNC' && (actionId === 'sync_yes' || actionId === 'sync_no')) {
+    const shouldSync = actionId === 'sync_yes';
+    if (pendingTask.timerId) clearTimeout(pendingTask.timerId);
+    taskManager.pendingTaskCategories.delete(sessionKey);
+
+    const res = await taskManager.handleTaskIntent({
+      action: 'CREATE',
+      title: pendingTask.title,
+      notes: pendingTask.notes,
+      due_date: pendingTask.dueDate,
+      list_name: pendingTask.listName,
+      duration_minutes: pendingTask.durationMins || 60,
+      sync_calendar: shouldSync,
+      calendar_start_time: null
+    }, null);
+
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: shouldSync ? 'Synced to Calendar' : 'Task Saved',
+      resolved_detail: _cleanSingleLineDetail((res && res.message) || `Saved "${pendingTask.title}".`)
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  if (pendingTask.type === 'CONFIRM_DURATION' && actionId.startsWith('dur_')) {
+    const mins = parseInt(actionId.slice(4), 10);
+    const durationMins = Number.isFinite(mins) && mins > 0 ? mins : 30;
+    pendingTask.durationMins = durationMins;
+
+    if (pendingTask.dueDate && typeof googleWorkspace.findEmptySlot === 'function') {
+      try {
+        const targetDateMs = new Date(pendingTask.dueDate.split('T')[0] + 'T00:00:00+07:00').getTime();
+        const nowMs = Date.now();
+        const timeMinIso = new Date(nowMs).toISOString();
+        const timeMaxIso = new Date(Math.max(nowMs + 24 * 3600000, targetDateMs + 24 * 3600000 - 1)).toISOString();
+        const slot = await googleWorkspace.findEmptySlot(durationMins, timeMinIso, timeMaxIso);
+        if (slot && slot.start) {
+          pendingTask.dueDate = slot.start;
+          const dueMs = new Date(slot.start);
+          const h = dueMs.toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false });
+          const timeLabel = `${h} WIB (Auto-Blocked)`;
+          pendingTask.notes = pendingTask.notes ? `⏰ Jam: ${timeLabel}\n${pendingTask.notes}` : `⏰ Jam: ${timeLabel}`;
+          pendingTask.hasAutonomousBlock = true;
+        }
+      } catch (e) {
+        console.warn('[BRIDGE-CARD] Task duration findEmptySlot warning:', e.message);
+      }
+    }
+
+    const resTask = await taskManager.executePendingTask(sessionKey, pendingTask.listName);
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: `Scheduled (${durationMins}m)`,
+      resolved_detail: _cleanSingleLineDetail((resTask && resTask.message) || `Task saved (${durationMins}m).`)
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  if (actionId === 'list_yes' || actionId === 'list_default') {
+    const overrideList = actionId === 'list_default' ? 'Tugas Saya' : null;
+    const targetLabel = overrideList || pendingTask.listName || 'Tugas Saya';
+    const resTask = await taskManager.executePendingTask(sessionKey, overrideList);
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: `Added to ${targetLabel}`,
+      resolved_detail: _cleanSingleLineDetail((resTask && resTask.message) || `Saved to ${targetLabel}.`)
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  return { ok: false, error: 'UNKNOWN_ACTION' };
+}
+
+async function _handleProactiveTasksAction(cardId, actionId, payload, ws, deps) {
+  const taskManager = deps.taskManager || require('../../../domain/Task_Manager');
+  const clearProactive = deps.clearPendingProactiveTasks || _sessionHooks.clearPendingProactiveTasks;
+
+  if (actionId === 'skip') {
+    if (typeof clearProactive === 'function') clearProactive();
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: 'Skipped',
+      resolved_detail: 'Suggested prep tasks were skipped.'
+    }, deps);
+    return { ok: true, status: 'RESOLVED' };
+  }
+
+  if (actionId === 'create_selected') {
+    const selectedIds = Array.isArray(payload && payload.selected_ids) ? payload.selected_ids : [];
+    const allTasks = Array.isArray(payload && payload.tasks) ? payload.tasks : [];
+    const summary = String(payload && payload.summary || 'Agenda');
+    const start = String(payload && payload.start || '');
+    const targetDue = start ? start.split('T')[0] : new Date(Date.now() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+
+    const chosenTitles = [];
+    for (const id of selectedIds) {
+      const m = String(id).match(/^idx_(\d+)$/);
+      if (m) {
+        const idx = parseInt(m[1], 10);
+        if (allTasks[idx]) chosenTitles.push(allTasks[idx]);
+      }
+    }
+
+    if (chosenTitles.length === 0) {
+      _sendCardUpdate(ws, {
+        card_id: cardId,
+        status: 'PENDING',
+        error: 'Select at least one task or tap Skip.'
+      }, deps);
+      return { ok: false, error: 'NO_TASKS_SELECTED' };
+    }
+
+    for (const taskTitle of chosenTitles) {
+      await taskManager.handleTaskIntent({
+        action: 'CREATE',
+        title: taskTitle,
+        due_date: targetDue,
+        notes: `Tugas persiapan proaktif untuk agenda: ${summary}`,
+        sync_calendar: false,
+        calendar_start_time: null
+      }, 'mobile-primary');
+    }
+
+    if (typeof clearProactive === 'function') clearProactive();
+
+    _sendCardUpdate(ws, {
+      card_id: cardId,
+      status: 'RESOLVED',
+      resolved_badge: `Added ${chosenTitles.length} Task${chosenTitles.length > 1 ? 's' : ''}`,
+      resolved_detail: chosenTitles.join(' · ').slice(0, 160)
+    }, deps);
+    return { ok: true, status: 'RESOLVED', createdCount: chosenTitles.length };
+  }
+
+  return { ok: false, error: 'UNKNOWN_ACTION' };
+}
+
 function _cleanSingleLineDetail(htmlText) {
   return String(htmlText || '')
     .replace(/<[^>]+>/g, '')
@@ -688,6 +1107,14 @@ async function handleCardAction(frame, ws, deps = {}) {
         return await _handleMemoryHygieneAction(cardId, actionId, payload, ws, deps);
       case 'DISCIPLINE_CHECK':
         return await _handleDisciplineCardAction(cardId, actionId, payload, ws, deps);
+      case 'CALENDAR_CONFLICT':
+        return await _handleCalendarConflictAction(cardId, actionId, payload, ws, deps);
+      case 'FINANCE_DELETE':
+        return await _handleFinanceDeleteAction(cardId, actionId, payload, ws, deps);
+      case 'TASK_CONFIRM':
+        return await _handleTaskConfirmAction(cardId, actionId, payload, ws, deps);
+      case 'PROACTIVE_TASKS':
+        return await _handleProactiveTasksAction(cardId, actionId, payload, ws, deps);
       default:
         _sendCardUpdate(ws, {
           card_id: cardId,
@@ -714,5 +1141,10 @@ module.exports = {
   buildIdentityProposalCard,
   buildMemoryHygieneCard,
   buildDisciplineCheckCard,
+  buildCalendarConflictCard,
+  buildFinanceDeleteCard,
+  buildTaskConfirmCard,
+  buildProactiveTasksCard,
+  registerSessionHooks,
   handleCardAction
 };

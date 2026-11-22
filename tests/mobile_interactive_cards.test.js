@@ -9,6 +9,10 @@ const {
   buildIdentityProposalCard,
   buildMemoryHygieneCard,
   buildDisciplineCheckCard,
+  buildCalendarConflictCard,
+  buildFinanceDeleteCard,
+  buildTaskConfirmCard,
+  buildProactiveTasksCard,
   handleCardAction
 } = require('../src/interfaces/bridge/mobile_bridge/card_handler');
 
@@ -261,6 +265,224 @@ describe('Mobile Bridge Phase 1: Interactive Card Builders & Actions', () => {
     const chunks = sentFrames.filter(f => f.type === 'CHAT_CHUNK' && f.status === 'STREAMING_CHUNK').map(f => f.chunk).join('');
     assert.match(chunks, /Hasil Pencarian Riwayat/);
     assert.match(chunks, /Cek VPS kemarin/);
+    handler.destroy();
+  });
+});
+
+describe('Mobile Bridge Phase 2: Quick Action Chips & Conversational Interceptor Parity', () => {
+  it('handles CALENDAR_CONFLICT force_create and cancel', async () => {
+    const card = buildCalendarConflictCard({
+      summary: 'Meeting Tim',
+      start: '2026-11-23T09:00:00+07:00',
+      end: '2026-11-23T10:00:00+07:00',
+      location: 'Zoom'
+    });
+    assert.equal(card.presentation, 'CHIPS');
+    assert.equal(card.card_type, 'CALENDAR_CONFLICT');
+
+    const created = [];
+    const frames = [];
+    let cleared = false;
+    const deps = {
+      sendFrame: (f) => frames.push(f),
+      notifier: { markEngaged: async () => true },
+      clearPendingConflict: () => { cleared = true; },
+      googleWorkspace: {
+        createCalendarEvent: async (summary, start, end, _desc, loc) => {
+          created.push({ summary, start, end, loc });
+          return { id: 'ev-1' };
+        }
+      }
+    };
+
+    await handleCardAction({
+      card_id: card.card_id,
+      card_type: 'CALENDAR_CONFLICT',
+      action_id: 'force_create',
+      payload: card.meta
+    }, null, deps);
+
+    assert.equal(created.length, 1);
+    assert.equal(created[0].summary, 'Meeting Tim');
+    assert.equal(cleared, true);
+    assert.equal(frames[0].status, 'RESOLVED');
+    assert.equal(frames[0].resolved_badge, 'Added to Calendar');
+  });
+
+  it('handles FINANCE_DELETE confirm_delete and keep', async () => {
+    const card = buildFinanceDeleteCard('del_123', { id: 'tx-99', description: 'Kopi' });
+    assert.equal(card.presentation, 'CHIPS');
+
+    const calls = [];
+    const frames = [];
+    const deps = {
+      sendFrame: (f) => frames.push(f),
+      notifier: { markEngaged: async () => true },
+      financeEngine: {
+        confirmDeleteTransaction: async (isYes) => {
+          calls.push(isYes);
+          return isYes ? '🗑️ TRANSAKSI DIHAPUS DARI DATABASE' : 'Dibatalkan';
+        }
+      }
+    };
+
+    await handleCardAction({
+      card_id: card.card_id,
+      card_type: 'FINANCE_DELETE',
+      action_id: 'confirm_delete',
+      payload: card.meta
+    }, null, deps);
+
+    assert.deepEqual(calls, [true]);
+    assert.equal(frames[0].resolved_badge, 'Deleted');
+  });
+
+  it('handles TASK_CONFIRM across CONFIRM_SYNC, CONFIRM_DURATION, and CONFIRM_LIST', async () => {
+    const syncCard = buildTaskConfirmCard({ type: 'CONFIRM_SYNC', title: 'Review PR', listName: 'Kerja' }, 'mobile-primary');
+    assert.equal(syncCard.presentation, 'CHIPS');
+    assert.equal(syncCard.actions[0].id, 'sync_yes');
+
+    const durCard = buildTaskConfirmCard({ type: 'CONFIRM_DURATION', title: 'Baca Buku', listName: 'Pribadi' }, 'mobile-primary');
+    assert.equal(durCard.actions.some(a => a.id === 'dur_30'), true);
+
+    const pendingMap = new Map();
+    pendingMap.set('mobile-primary', {
+      type: 'CONFIRM_DURATION',
+      title: 'Baca Buku',
+      notes: '',
+      dueDate: '2026-11-23',
+      listName: 'Pribadi',
+      durationMins: 0
+    });
+
+    const executed = [];
+    const frames = [];
+    const deps = {
+      sendFrame: (f) => frames.push(f),
+      notifier: { markEngaged: async () => true },
+      googleWorkspace: {
+        findEmptySlot: async () => ({ start: '2026-11-23T14:00:00+07:00' })
+      },
+      taskManager: {
+        pendingTaskCategories: pendingMap,
+        executePendingTask: async (sk, listName) => {
+          const item = pendingMap.get(sk);
+          pendingMap.delete(sk);
+          executed.push({ durationMins: item.durationMins, listName });
+          return { message: 'Tugas Baca Buku terjadwal.' };
+        },
+        cancelPendingTask: (sk) => pendingMap.delete(sk)
+      }
+    };
+
+    await handleCardAction({
+      card_id: durCard.card_id,
+      card_type: 'TASK_CONFIRM',
+      action_id: 'dur_30',
+      payload: durCard.meta
+    }, null, deps);
+
+    assert.equal(executed.length, 1);
+    assert.equal(executed[0].durationMins, 30);
+    assert.equal(frames[0].resolved_badge, 'Scheduled (30m)');
+  });
+
+  it('handles PROACTIVE_TASKS selective checklist create_selected', async () => {
+    const card = buildProactiveTasksCard({
+      summary: 'Presentasi Klien',
+      start: '2026-11-24T10:00:00+07:00',
+      tasks: ['Siapkan slide', 'Cek proyektor', 'Print handout']
+    });
+    assert.equal(card.presentation, 'INLINE_CARD');
+    assert.equal(card.selectable_items.length, 3);
+
+    const createdTasks = [];
+    const frames = [];
+    const deps = {
+      sendFrame: (f) => frames.push(f),
+      notifier: { markEngaged: async () => true },
+      taskManager: {
+        handleTaskIntent: async (ed) => {
+          createdTasks.push(ed.title);
+          return { status: 'SUCCESS' };
+        }
+      }
+    };
+
+    await handleCardAction({
+      card_id: card.card_id,
+      card_type: 'PROACTIVE_TASKS',
+      action_id: 'create_selected',
+      payload: { ...card.meta, selected_ids: ['idx_0', 'idx_2'] }
+    }, null, deps);
+
+    assert.deepEqual(createdTasks, ['Siapkan slide', 'Print handout']);
+    assert.equal(frames[0].resolved_badge, 'Added 2 Tasks');
+  });
+
+  it('auto-attaches CALENDAR_CONFLICT CHIPS on STREAM_FINAL and locks card on text reply parity', async () => {
+    const sentFrames = [];
+    const fakeWs = { readyState: 1, send: (raw) => sentFrames.push(JSON.parse(raw)) };
+
+    const handler = createMobileChatHandler({
+      chunkDelayMs: 0,
+      saveChatMemory: async () => {},
+      financeEngine: {
+        getPendingDeletionsContext: () => null,
+        getPendingConfirmationsCount: () => 0
+      },
+      taskManager: { pendingTaskCategories: new Map() },
+      splitEngine: { hasPendingRemainder: () => false },
+      aiRouter: {
+        routeUserMessage: async () => ({
+          intent: 'CALENDAR',
+          extracted_data: {
+            action: 'CREATE',
+            summary: 'Standup',
+            start: '2026-11-23T09:00:00+07:00',
+            end: '2026-11-23T09:30:00+07:00'
+          }
+        })
+      },
+      executeDomainIntent: async (_intent, _rd, ctx) => {
+        ctx.setPendingConflictEvent({
+          summary: 'Standup',
+          start: '2026-11-23T09:00:00+07:00',
+          end: '2026-11-23T09:30:00+07:00'
+        });
+        return 'Jadwal Standup bentrok dengan Rapat Pagi. Tetap buat?';
+      },
+      interceptors: {
+        handleMorningCheckIn: async () => false,
+        handlePendingConflict: async (_text, _ev, { respondToTelegram }) => {
+          await respondToTelegram('Baik Tuan, penambahan jadwal dibatalkan karena ada bentrok.');
+          return { handled: true, updatedConflict: null };
+        }
+      }
+    });
+
+    // Turn 1: domain sets conflict -> STREAM_FINAL includes CALENDAR_CONFLICT CHIPS card
+    await handler.handleMessage({ type: 'CHAT_SEND', client_msg_id: 'c-1', content: 'Jadwalkan standup jam 9' }, fakeWs);
+    for (let i = 0; i < 40 && !sentFrames.some(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === 'c-1' && f.status === 'STREAM_FINAL'); i++) {
+      await new Promise(r => setTimeout(r, 25));
+    }
+
+    const finalFrame1 = sentFrames.find(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === 'c-1' && f.status === 'STREAM_FINAL');
+    assert.ok(finalFrame1 && finalFrame1.card);
+    assert.equal(finalFrame1.card.card_type, 'CALENDAR_CONFLICT');
+    assert.equal(finalFrame1.card.presentation, 'CHIPS');
+    const attachedCardId = finalFrame1.card.card_id;
+
+    // Turn 2: user replies "batal" by text -> interceptor handles it AND emits CARD_UPDATE locking the chips!
+    await handler.handleMessage({ type: 'CHAT_SEND', client_msg_id: 'c-2', content: 'batal' }, fakeWs);
+    for (let i = 0; i < 40 && !sentFrames.some(f => f.type === 'CHAT_CHUNK' && f.client_msg_id === 'c-2' && f.status === 'STREAM_FINAL'); i++) {
+      await new Promise(r => setTimeout(r, 25));
+    }
+
+    const cardUpdate = sentFrames.find(f => f.type === 'CARD_UPDATE' && f.card_id === attachedCardId);
+    assert.ok(cardUpdate);
+    assert.equal(cardUpdate.status, 'RESOLVED');
+    assert.equal(cardUpdate.resolved_badge, 'Cancelled');
     handler.destroy();
   });
 });
