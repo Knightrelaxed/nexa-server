@@ -276,6 +276,7 @@ function orderKeys(group, count) {
  * Non-blocking telemetry logger to Supabase nexa_llm_calls
  */
 function logLlmCall({ task = 'general', tier, tokensIn = 0, tokensOut = 0, latencyMs, ok, validationOk = true, errorClass = null }) {
+  try { require('../monitor').recordAiCall(latencyMs, { ok: Boolean(ok), tier }); } catch (_) {}
   setImmediate(async () => {
     try {
       const supabaseMemories = require('../infrastructure/Supabase_Memories');
@@ -485,11 +486,23 @@ async function executeWithFallback(prompt, systemInstruction = "", temperature =
       return validated;
     } catch (e) {
       asyncWarn(`[CIRCUIT BREAKER] Probe pemulihan ${probeTier.name} gagal.`);
+      try {
+        require('../monitor').recordIssue('AI-FALLBACK', `Recovery probe failed (${probeTier.name}): ${e && e.message || e}`, {
+          severity: 'error',
+          route: options.task || (heavy ? 'heavy_reasoning' : 'fast_inference')
+        });
+      } catch (_) {}
     }
   }
 
   // Fallback Final
   asyncError(`[FALLBACK] ⚠️ All ${tiers.length} AI layers exhausted. Entering Dumb Mode.`);
+  try {
+    require('../monitor').recordIssue('AI-FALLBACK', `All ${tiers.length} AI fallback tiers exhausted (Dumb Mode triggered)`, {
+      severity: 'fatal',
+      route: options.task || (heavy ? 'heavy_reasoning' : 'fast_inference')
+    });
+  } catch (_) {}
   return JSON.stringify({
     intent: 'DUMB_MODE',
     extracted_data: null,

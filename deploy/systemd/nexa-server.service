@@ -1,0 +1,43 @@
+# /etc/systemd/system/nexa-server.service
+# N.E.X.A Core Server — systemd unit replacing PM2 (Phase 5E Cutover)
+# Preserves exact PM2 memory ceiling (--max-old-space-size=320, MemoryMax=420M)
+# while reclaiming ~47 MiB RAM previously used by PM2 God Daemon + PM2+ agent.
+# Note: .env is loaded directly by Node's dotenv in src/config/env.js (preserving
+# exact $-literal scrypt hashes and multiline PEM keys without systemd expansion).
+[Unit]
+Description=N.E.X.A Core Server (Node.js)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nexa
+Group=nexa
+WorkingDirectory=/home/nexa/nexa-server
+Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--max-old-space-size=320
+ExecStart=/usr/bin/node /home/nexa/nexa-server/src/app.js
+
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+KillSignal=SIGTERM
+KillMode=mixed
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexa-server
+
+# Resource budgets (892 MiB Azure B1s VPS)
+MemoryHigh=320M
+MemoryMax=420M
+LimitNOFILE=4096
+
+# Hardening (compatible with /home/nexa/nexa-server, /var/lib/nexa, /etc/nexa, /var/log/nexa)
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ReadWritePaths=/home/nexa/nexa-server /var/lib/nexa /etc/nexa -/var/log/nexa
+
+[Install]
+WantedBy=multi-user.target

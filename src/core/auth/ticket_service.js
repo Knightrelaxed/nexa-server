@@ -477,6 +477,72 @@ class TicketService {
     };
   }
 
+  /**
+   * Mint a short-lived (45s), single-use Ed25519 ticket strictly scoped to 'logs'
+   * for an already-authenticated N.E.X.A Pulse Monitor operator session.
+   * NEVER mints 'term' or 'finance' tickets.
+   * @param {string} operatorId
+   * @param {{ clientIp?: string }} [meta]
+   */
+  issueInternalLogsTicket(operatorId, meta = {}) {
+    this.sweepExpired();
+    const safeOp = sanitizeLogToken(operatorId || 'web-monitor', 64);
+    const clientIp = sanitizeLogToken(meta.clientIp || 'unknown', 64);
+
+    if (!this._consumeRateLimit(`internal:${safeOp}`, 10, this.requestBuckets)) {
+      console.warn(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeOp} scope=logs jti=- result=RATE_LIMITED`);
+      return {
+        ok: false,
+        code: 'RATE_LIMITED',
+        message: 'Too many log ticket requests. Wait a moment and retry.'
+      };
+    }
+
+    let serverPriv;
+    try {
+      serverPriv = this._getServerPrivateKey();
+    } catch (keyErr) {
+      console.error(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeOp} scope=logs jti=- result=SERVER_KEY_UNAVAILABLE err=${keyErr.message}`);
+      return {
+        ok: false,
+        code: 'SERVER_KEY_UNAVAILABLE',
+        message: 'Server Ed25519 ticket signing key is unavailable.'
+      };
+    }
+
+    const expSec = Math.floor(this.nowFn() / 1000) + TICKET_TTL_SEC;
+    const jti = crypto.randomBytes(12).toString('base64url');
+    const payloadObj = {
+      scope: 'logs',
+      sid: '',
+      exp: expSec,
+      jti,
+      dev: safeOp
+    };
+    const payloadBuf = Buffer.from(JSON.stringify(payloadObj), 'utf8');
+    let ticketSig;
+    try {
+      ticketSig = crypto.sign(null, payloadBuf, serverPriv);
+    } catch (signErr) {
+      console.error(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeOp} scope=logs jti=${jti} result=SIGN_ERROR err=${signErr.message}`);
+      return {
+        ok: false,
+        code: 'TICKET_SIGN_ERROR',
+        message: 'Failed to sign log stream ticket.'
+      };
+    }
+
+    const ticket = `${payloadBuf.toString('base64url')}.${ticketSig.toString('base64url')}`;
+    console.log(`[NEXA-AUTH] TICKET_AUDIT ip=${clientIp} device=${safeOp} scope=logs jti=${jti} result=ISSUED ttl=${TICKET_TTL_SEC}s`);
+    return {
+      ok: true,
+      ticket,
+      scope: 'logs',
+      sid: '',
+      exp: expSec
+    };
+  }
+
   destroy() {
     if (this._sweepTimer) {
       clearInterval(this._sweepTimer);

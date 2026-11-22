@@ -194,6 +194,14 @@ function snapshot() {
   };
 }
 
+function resetBreakers() {
+  const clearedGroups = groups.size;
+  const clearedKeys = keyCooldown.size;
+  groups.clear();
+  keyCooldown.clear();
+  return { clearedGroups, clearedKeys };
+}
+
 function _setClock(fn) { clock = fn; }
 function _reset() { groups.clear(); keyCooldown.clear(); cursors.clear(); cfg = { ...DEFAULTS }; clock = () => Date.now(); }
 
@@ -206,6 +214,7 @@ module.exports = {
   retryAfterMs,
   orderKeys,
   snapshot,
+  resetBreakers,
   _setClock,
   _reset
 };

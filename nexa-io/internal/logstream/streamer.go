@@ -228,6 +228,37 @@ func ExtractBearerToken(r *http.Request) string {
 	return strings.TrimSpace(auth[7:])
 }
 
+const (
+	BrowserSubprotocol     = "nexa-io-v1"
+	SubprotocolTicketPrefx = "nexa-ticket."
+)
+
+// ExtractSubprotocolTicket extracts a browser WebSocket ticket from
+// "Sec-WebSocket-Protocol: nexa-io-v1, nexa-ticket.<ticket>" when Authorization
+// header is unavailable in browser WebSocket APIs. Always requires "nexa-io-v1"
+// to be offered so the server echoes ONLY "nexa-io-v1" and never echoes the ticket.
+func ExtractSubprotocolTicket(r *http.Request) (string, string) {
+	hasBaseProto := false
+	ticketToken := ""
+	for _, hdrVal := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for _, rawPart := range strings.Split(hdrVal, ",") {
+			part := strings.TrimSpace(rawPart)
+			if part == BrowserSubprotocol {
+				hasBaseProto = true
+			} else if strings.HasPrefix(part, SubprotocolTicketPrefx) && ticketToken == "" {
+				candidate := strings.TrimSpace(part[len(SubprotocolTicketPrefx):])
+				if candidate != "" {
+					ticketToken = candidate
+				}
+			}
+		}
+	}
+	if !hasBaseProto || ticketToken == "" {
+		return "", ""
+	}
+	return ticketToken, BrowserSubprotocol
+}
+
 // ExtractClientIP extracts the validated client IP from the rightmost X-Forwarded-For entry
 // ONLY when received over a trusted local proxy (Unix domain socket or loopback), otherwise
 // falls back to RemoteAddr (M4). Always validated via netip.ParseAddr.
@@ -352,9 +383,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := ExtractBearerToken(r)
+	selectedProto := ""
+	if token == "" {
+		token, selectedProto = ExtractSubprotocolTicket(r)
+	}
 	if token == "" {
 		fmt.Fprintf(os.Stderr, "[NEXA-LOG] auth_reject ip=%s reason=missing_bearer\n", safeIP)
-		http.Error(w, "missing Authorization Bearer ticket", http.StatusUnauthorized)
+		http.Error(w, "missing Authorization Bearer or Sec-WebSocket-Protocol ticket", http.StatusUnauthorized)
 		return
 	}
 
@@ -365,7 +400,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := ws.UpgradeHTTP(w, r)
+	conn, err := ws.UpgradeHTTPWithProtocol(w, r, selectedProto)
 	if err != nil {
 		return
 	}

@@ -25,10 +25,14 @@ axios.defaults.httpsAgent = new https.Agent({ family: 4 });
 
 const env = require('./config/env');
 const { VERSION, SYSTEM_TAG } = require('./config/version');
+const pulseMonitor = require('./monitor');
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1); // Trust first reverse proxy (Caddy) for accurate client IP in rate limiting
+
+// Lightweight HTTP latency & concurrency telemetry (N.E.X.A Pulse Monitor)
+app.use(pulseMonitor.httpMetricsMiddleware());
 
 // ============================================================
 // MIDDLEWARES & SECURITY HARDENING
@@ -58,7 +62,8 @@ app.use(cors({
     return callback(new Error('CORS policy violation'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Telegram-Bot-Api-Secret-Token']
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Telegram-Bot-Api-Secret-Token', 'X-Nexa-Monitor']
 }));
 
 // 3. Rate Limiting (Security Defense against DDoS & Brute-force)
@@ -85,6 +90,10 @@ app.use(morgan(':method :safe-url :status :response-time ms - :res[content-lengt
   skip: (req, res) => {
     // Skip noisy automated web scanner hits (404s like .env, .git, config)
     if (res.statusCode === 404) return true;
+    // Skip routine <400 N.E.X.A Pulse Monitor API/status calls so /io/logs shows pure app activity
+    // (4xx/5xx auth/CSRF/rate-limit errors on /monitor/* remain logged for security visibility)
+    const rawUrl = req.originalUrl || req.url || '';
+    if (rawUrl.startsWith('/monitor/') && res.statusCode < 400) return true;
     // Skip noisy GET/HEAD hits to root path (/) and its query variations (/?__theme=dark)
     // Only /health and /webhook will be logged normally
     if (req.path === '/' && (req.method === 'GET' || req.method === 'HEAD')) return true;
@@ -137,10 +146,26 @@ app.get('/health', (req, res) => {
 const webhookRouter = require('./interfaces/webhook');
 app.use('/webhook', webhookRouter);
 
+// ============================================================
+// N.E.X.A PULSE MONITOR API - All /monitor/api/* routes
+// ============================================================
+app.use('/monitor/api', pulseMonitor.getMonitor().createRouter());
+
 // N-M7: Return HTTP 403 on CORS violations instead of HTTP 500
 app.use((err, req, res, next) => {
   if (err && err.message === 'CORS policy violation') {
     return res.status(403).json({ error: 'Forbidden: CORS policy violation' });
+  }
+  const statusCode = Number(err && (err.status || err.statusCode)) || 500;
+  if (statusCode >= 500) {
+    try {
+      pulseMonitor.recordIssue('HTTP-5XX', err || 'Internal Server Error', {
+        severity: 'error',
+        method: req.method,
+        route: req.originalUrl || req.url,
+        statusCode
+      });
+    } catch (_) {}
   }
   return next(err);
 });
@@ -157,8 +182,14 @@ if (require.main === module) {
   
   const server = http.createServer(app);
   bridge.initWebSocket(server);
+  pulseMonitor.getMonitor().attachMetricsWebSocket(server);
 
   server.listen(port, '127.0.0.1', () => {
+    try {
+      pulseMonitor.getMonitor().start();
+    } catch (e) {
+      console.warn('[MONITOR] Failed to start Pulse Monitor collector:', e.message);
+    }
     console.log(`${SYSTEM_TAG} ✅ Server running on port ${port} (${process.env.NODE_ENV || 'development'} mode)`);
     console.log(`${SYSTEM_TAG} 🔒 Bound to 127.0.0.1 (Loopback only - Protected by Caddy Reverse Proxy)`);
     console.log(`${SYSTEM_TAG} 📱 Mobile Bridge WebSocket Endpoint: /ws`);
@@ -210,6 +241,9 @@ if (require.main === module) {
       try {
         require('./interfaces/bridge/mobile_bridge/chat_handler').getMobileChatHandler().destroy();
       } catch (_) {}
+      try {
+        pulseMonitor.destroyMonitor();
+      } catch (_) {}
       server.close(() => {
         console.log('[LIFECYCLE] ✅ Server HTTP/WS closed cleanly.');
         process.exit(0);
@@ -236,13 +270,32 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('[SAFETY NET] Unhandled Promise Rejection:');
   console.error('  Promise:', promise);
   console.error('  Reason:', reason instanceof Error ? reason.message : reason);
+  try {
+    pulseMonitor.recordIssue('SAFETY-NET', reason instanceof Error ? reason : String(reason || 'Unhandled Promise Rejection'), {
+      severity: 'error',
+      source: 'unhandledRejection'
+    });
+  } catch (_) {}
   // Server stays alive — no process.exit()
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('[SAFETY NET] Fatal Uncaught Exception — Initiating clean reboot via PM2:');
+  console.error('[SAFETY NET] Fatal Uncaught Exception — Initiating clean reboot:');
   console.error('  Error:', error.message);
   console.error('  Stack:', error.stack);
+  try {
+    pulseMonitor.recordIssue('SAFETY-NET', error, {
+      severity: 'fatal',
+      source: 'uncaughtException',
+      syncFlush: true
+    });
+    pulseMonitor.getMonitor().historyStore.flush();
+    pulseMonitor.getMonitor().alertEngine.notifyImmediate(
+      'fatal_exception',
+      `[N.E.X.A Pulse Alert] Fatal Uncaught Exception: ${String(error?.message || 'Unknown error')}`,
+      'P0'
+    ).catch(() => {});
+  } catch (_) {}
 
   // Send emergency alert to Telegram if configured (with FR-SEC-04 secret redaction)
   try {

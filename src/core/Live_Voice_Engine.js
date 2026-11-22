@@ -2198,11 +2198,20 @@ function getActiveDeviceType() {
   return 'desktop';
 }
 
+function getActiveSessionCount() {
+  let count = 0;
+  for (const session of activeSessions.values()) {
+    if (session && session.isActive) count += 1;
+  }
+  return count;
+}
+
 module.exports = {
   LiveVoiceSession,
   startLiveSession,
   getLiveSession,
   getActiveSession,
+  getActiveSessionCount,
   getActiveDeviceType,
   getActiveSessionForClient,
   closeLiveSession,

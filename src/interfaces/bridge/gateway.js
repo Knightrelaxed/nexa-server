@@ -15,6 +15,8 @@ const windowsClient = require('./windows_bridge/client');
 
 let wss = null;
 let heartbeatInterval = null;
+let attachedServer = null;
+let upgradeListener = null;
 
 const WS_UPGRADE_RATE_WINDOW_MS = 60_000;
 const WS_UPGRADE_MAX_PER_MIN = 30;
@@ -113,8 +115,7 @@ function initWebSocket(server) {
   const validSecrets = [deviceSecret, bridgeSecret].filter(Boolean);
 
   wss = new WebSocket.Server({
-    server,
-    path: '/ws',
+    noServer: true,
     maxPayload: 2 * 1024 * 1024, // 2MB payload ceiling (accommodates up to 3-min OGG Opus voice note base64)
     verifyClient: (info, cb) => {
       const clientIp = resolveTrustedClientIp(info.req);
@@ -154,6 +155,23 @@ function initWebSocket(server) {
       cb(true);
     }
   });
+
+  // Route ONLY /ws upgrades here so /monitor/ws/metrics coexists on the same http.Server without 400 conflicts
+  attachedServer = server;
+  upgradeListener = (req, socket, head) => {
+    let pathname = '';
+    try {
+      pathname = new URL(req.url || '/', 'http://localhost').pathname;
+    } catch (_) {
+      return;
+    }
+    if (pathname !== '/ws') return;
+    if (!wss) return;
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  };
+  server.on('upgrade', upgradeListener);
 
   // H-11 & N-M6 / M-1: Adaptive Keepalive Watchdog aligned with NFR-BAT-01 (60s screen-on / up to 300s screen-off)
   const rawWatchdog = Number(env.NEXA_WS_WATCHDOG_MS);
@@ -200,13 +218,19 @@ function initWebSocket(server) {
   wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws._pingSentAt = 0;
-    ws.lastActivityAt = Date.now();
+    ws.connectedAt = Date.now();
+    ws.lastRttMs = null;
+    ws.lastActivityAt = ws.connectedAt;
     ws.clientIp = resolveTrustedClientIp(req);
 
     ws.on('pong', () => {
+      const now = Date.now();
+      if (ws._pingSentAt > 0) {
+        ws.lastRttMs = Math.max(1, now - ws._pingSentAt);
+      }
       ws.isAlive = true;
       ws._pingSentAt = 0;
-      ws.lastActivityAt = Date.now();
+      ws.lastActivityAt = now;
     });
 
     // M-1: Refresh activity on client-initiated RFC 6455 protocol PING frames (OkHttp)
@@ -299,6 +323,12 @@ function initWebSocket(server) {
 
     ws.on('error', (err) => {
       console.error(`[BRIDGE-GATEWAY] Socket error on [${ws.deviceType}]:`, err.message);
+      try {
+        require('../../monitor').recordIssue('BRIDGE', err, {
+          severity: 'error',
+          route: `WSS /ws (${ws.deviceType || 'unknown'})`
+        });
+      } catch (_) {}
     });
   });
 
@@ -310,6 +340,11 @@ function initWebSocket(server) {
  * Terminate WebSocket server and cleanup intervals.
  */
 function closeWebSocket() {
+  if (attachedServer && upgradeListener) {
+    attachedServer.removeListener('upgrade', upgradeListener);
+    attachedServer = null;
+    upgradeListener = null;
+  }
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);
     heartbeatInterval = null;

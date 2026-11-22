@@ -1,0 +1,52 @@
+# /etc/caddy/Caddyfile — N.E.X.A Server + N.E.X.A Pulse Monitor (/monitor)
+{
+	admin off
+}
+
+nexa-server.indonesiacentral.cloudapp.azure.com {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	redir /monitor /monitor/ 308
+
+	handle /monitor/api/* {
+		header Cache-Control "no-store"
+		header X-Robots-Tag "noindex, nofollow"
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle /monitor/ws/metrics {
+		header X-Robots-Tag "noindex, nofollow"
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle_path /monitor/* {
+		root * /opt/nexa/nexa-pulse-monitor
+		header Content-Security-Policy "default-src 'self'; connect-src 'self' wss://nexa-server.indonesiacentral.cloudapp.azure.com; style-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'"
+		header X-Robots-Tag "noindex, nofollow"
+		header Cache-Control "no-cache"
+		file_server
+	}
+
+	handle /io/logs {
+		reverse_proxy unix//run/nexa-log.sock
+	}
+
+	handle /io/term {
+		reverse_proxy unix//run/nexa-term.sock
+	}
+
+	handle /ws {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}

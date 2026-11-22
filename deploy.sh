@@ -58,9 +58,16 @@ if [ -n "$OLD_HEAD" ] && [ "$OLD_HEAD" != "$NEW_HEAD" ]; then
   fi
 fi
 
-echo "[DEPLOY] Restarting PM2 process cleanly (fork_mode)..."
-pm2 restart nexa-server --update-env
-echo "  [OK] PM2 restart completed."
-
-echo "[OK] N.E.X.A Server successfully deployed and running!"
-pm2 status nexa-server
+if systemctl is-enabled --quiet nexa-server.service 2>/dev/null; then
+  echo "[DEPLOY] Restarting nexa-server.service cleanly via systemd (Polkit)..."
+  systemctl restart nexa-server.service
+  echo "  [OK] systemd restart completed."
+  echo "[OK] N.E.X.A Server successfully deployed and running under systemd!"
+  systemctl status nexa-server.service --no-pager -n 10
+else
+  echo "[DEPLOY] Restarting PM2 process cleanly (fork_mode)..."
+  pm2 restart nexa-server --update-env
+  echo "  [OK] PM2 restart completed."
+  echo "[OK] N.E.X.A Server successfully deployed and running!"
+  pm2 status nexa-server
+fi

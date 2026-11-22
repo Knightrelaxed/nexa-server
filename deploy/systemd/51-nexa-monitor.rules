@@ -1,0 +1,10 @@
+// /etc/polkit-1/rules.d/51-nexa-monitor.rules
+// N.E.X.A Pulse Monitor (Phase 5D/5E): Allow ONLY user "nexa" to restart nexa-server.service without sudo.
+polkit.addRule(function(action, subject) {
+  if (action.id === "org.freedesktop.systemd1.manage-units" &&
+      subject.user === "nexa" &&
+      action.lookup("unit") === "nexa-server.service" &&
+      action.lookup("verb") === "restart") {
+    return polkit.Result.YES;
+  }
+});

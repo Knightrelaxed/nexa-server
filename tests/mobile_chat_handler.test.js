@@ -492,3 +492,108 @@ test('CHAT_VOICE_SEND rejects invalid base64 and invalid MP4/WebM/WAV magic head
     handler.destroy();
   }
 });
+
+test('Telegram-parity brain pipeline runs Passive Learning, Behavior, Intention, Anticipatory, Signal Detector & Micro-Reviewer on Mobile Chat', async () => {
+  const calls = {
+    chatActivity: [],
+    interactions: [],
+    moods: [],
+    userFacts: [],
+    selfFacts: [],
+    invalidatedPersonal: 0,
+    invalidatedSelf: 0,
+    intentions: [],
+    decisions: [],
+    anticipatory: [],
+    signals: [],
+    microReviews: []
+  };
+
+  let turnIdx = 0;
+  const handler = createMobileChatHandler({
+    interceptors: {
+      recordChatActivity: (sk) => calls.chatActivity.push(sk),
+      handleMorningCheckIn: async () => false
+    },
+    aiRouter: {
+      routeUserMessage: async () => {
+        turnIdx += 1;
+        return {
+          intent: 'ADVICE',
+          mood: 'STRESSED',
+          detected_mood: 'STRESSED',
+          reply_message: `Saran terstruktur turn ${turnIdx} untuk Tuan.`,
+          _topicContext: 'CAREER',
+          _injectedTraits: ['T1'],
+          _injectedPlaybook: 'PB_ADVICE',
+          learned_user_facts: ['Tuan lebih suka belajar malam hari'],
+          learned_core_identities: ['N.E.X.A harus selalu ringkas dan jujur']
+        };
+      },
+      deduplicateAndSaveFact: async (fact, cat) => { calls.userFacts.push({ fact, cat }); },
+      deduplicateAndSaveSelfFact: async (fact, layer) => { calls.selfFacts.push({ fact, layer }); },
+      invalidatePersonalFactsCache: () => { calls.invalidatedPersonal += 1; },
+      invalidateSelfModelCache: () => { calls.invalidatedSelf += 1; }
+    },
+    behaviorEngine: {
+      logUserInteraction: async (intent, text, mood) => { calls.interactions.push({ intent, text, mood }); },
+      logMood: async (mood, text) => { calls.moods.push({ mood, text }); },
+      logPassiveLearning: async () => {}
+    },
+    intentionEngine: {
+      detectAndSaveIntention: async (text) => { calls.intentions.push(text); },
+      autoReconcileIntentions: async () => {},
+      detectAndSaveDecision: async (text, _rd, mood) => { calls.decisions.push({ text, mood }); }
+    },
+    anticipatoryEngine: {
+      getLatestMoodContext: async () => ({ mood_7d_trend: 'DECLINING', mood_7d_variance: 0.4 }),
+      runAnticipationPass: async (ctx) => { calls.anticipatory.push(ctx); }
+    },
+    signalDetector: {
+      evaluateTurn: async (payload) => { calls.signals.push(payload); }
+    },
+    microReviewer: {
+      handlePostTurn: (payload) => { calls.microReviews.push(payload); }
+    },
+    executeDomainIntent: async () => null,
+    saveChatMemory: async () => {},
+    chunkDelayMs: 0
+  });
+
+  try {
+    const mockWs = { send: () => {} };
+    await handler.handleChatSend({
+      type: 'CHAT_SEND',
+      client_msg_id: 'parity-turn-1',
+      content: 'Aku bingung mau pilih fokus riset malam ini atau tidur dulu'
+    }, mockWs);
+    await new Promise(r => setImmediate(r));
+
+    await handler.handleChatSend({
+      type: 'CHAT_SEND',
+      client_msg_id: 'parity-turn-2',
+      content: 'Oke kalau gitu bantu susun prioritas untuk besok pagi'
+    }, mockWs);
+    await new Promise(r => setImmediate(r));
+
+    assert.equal(calls.chatActivity.length, 2);
+    assert.equal(calls.interactions.length, 2);
+    assert.equal(calls.moods.length, 2);
+    assert.equal(calls.userFacts.length, 2);
+    assert.equal(calls.selfFacts.length, 2);
+    assert.equal(calls.invalidatedPersonal, 2);
+    assert.equal(calls.invalidatedSelf, 2);
+    assert.equal(calls.intentions.length, 2);
+    assert.equal(calls.decisions.length, 2);
+    assert.equal(calls.anticipatory.length, 2);
+    assert.equal(calls.anticipatory[0].sessionAdviceCount, 1);
+    assert.equal(calls.anticipatory[1].sessionAdviceCount, 2);
+    assert.equal(calls.signals.length, 2);
+    assert.equal(calls.signals[0].previousContext, null);
+    assert.equal(calls.signals[1].previousContext.intent, 'ADVICE');
+    assert.equal(calls.signals[1].previousContext.topic, 'CAREER');
+    assert.equal(calls.microReviews.length, 2);
+  } finally {
+    handler.destroy();
+  }
+});

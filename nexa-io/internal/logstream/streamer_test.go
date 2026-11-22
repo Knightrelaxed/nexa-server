@@ -528,3 +528,133 @@ func TestAllFilterInitialTailPreservesInfoAndErrorsDeterministically(t *testing.
 		t.Fatalf("expected newest tail record to be latest out.log INFO (#119), got prio=%d msg=%q", last.Prio, last.Message)
 	}
 }
+
+func TestBrowserSubprotocolTicketAuthAndReplayRejection(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := ticket.NewVerifier(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := NewServer(Config{
+		Verifier:      v,
+		BatchInterval: 20 * time.Millisecond,
+		Producer: func(ctx context.Context, params proto.LogOpenParams, out chan<- proto.LogRecord) error {
+			out <- proto.LogRecord{
+				TimestampMs: uint64(time.Now().UnixMilli()),
+				UnitID:      proto.UnitNexaServer,
+				Prio:        proto.PrioInfo,
+				CatFlags:    proto.CatCore,
+				Message:     "browser subprotocol stream ok",
+			}
+			<-ctx.Done()
+			return nil
+		},
+	})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	validTicket := issueTestTicket(t, priv, "logs", "jti-browser-subproto-1")
+
+	// 1. Valid Sec-WebSocket-Protocol: nexa-io-v1, nexa-ticket.<ticket> upgrades and echoes ONLY nexa-io-v1
+	dialAndHandshake := func(path string, subprotoHeader string) (net.Conn, *bufio.Reader, string, error) {
+		rawConn, err := net.Dial("tcp", strings.TrimPrefix(ts.URL, "http://"))
+		if err != nil {
+			return nil, nil, "", err
+		}
+		req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n", path)
+		if subprotoHeader != "" {
+			req += "Sec-WebSocket-Protocol: " + subprotoHeader + "\r\n"
+		}
+		req += "\r\n"
+		if _, err := rawConn.Write([]byte(req)); err != nil {
+			_ = rawConn.Close()
+			return nil, nil, "", err
+		}
+		br := bufio.NewReader(rawConn)
+		var hdrs strings.Builder
+		for {
+			line, err := br.ReadString('\n')
+			if err != nil {
+				_ = rawConn.Close()
+				return nil, nil, hdrs.String(), err
+			}
+			hdrs.WriteString(line)
+			if line == "\r\n" {
+				break
+			}
+		}
+		return rawConn, br, hdrs.String(), nil
+	}
+
+	c1, br1, respHdrs, err := dialAndHandshake("/io/logs", BrowserSubprotocol+", "+SubprotocolTicketPrefx+validTicket)
+	if err != nil {
+		t.Fatalf("browser subprotocol handshake failed: %v", err)
+	}
+	defer c1.Close()
+
+	if !strings.Contains(respHdrs, "101 Switching Protocols") {
+		t.Fatalf("expected 101 Switching Protocols, got:\n%s", respHdrs)
+	}
+	if !strings.Contains(respHdrs, "Sec-WebSocket-Protocol: nexa-io-v1\r\n") {
+		t.Fatalf("expected Sec-WebSocket-Protocol: nexa-io-v1 echoed, got:\n%s", respHdrs)
+	}
+	if strings.Contains(respHdrs, validTicket) || strings.Contains(respHdrs, SubprotocolTicketPrefx) {
+		t.Fatalf("ticket must NEVER be echoed back in response headers:\n%s", respHdrs)
+	}
+
+	// Send OPEN frame and confirm log record streams through
+	openFrame, _ := proto.EncodeFrame(proto.ChLogs, proto.OpOpen, proto.EncodeLogOpen(proto.LogOpenParams{
+		UnitMask:  0x0F,
+		MinPrio:   proto.PrioDebug,
+		CatMask:   0x00,
+		TailLines: 10,
+	}))
+	if err := writeMaskedClientFrame(c1, openFrame); err != nil {
+		t.Fatal(err)
+	}
+	_ = c1.SetReadDeadline(time.Now().Add(2 * time.Second))
+	rawFrame, err := readUnmaskedServerFrame(br1)
+	if err != nil {
+		t.Fatalf("failed reading streamed log frame: %v", err)
+	}
+	_, op, payload, err := proto.DecodeFrame(rawFrame)
+	if err != nil || op != proto.OpData {
+		t.Fatalf("expected OpData frame, got op=%d err=%v", op, err)
+	}
+	recs, err := proto.DecodeLogRecords(payload)
+	if err != nil || len(recs) != 1 || recs[0].Message != "browser subprotocol stream ok" {
+		t.Fatalf("unexpected decoded records: %+v err=%v", recs, err)
+	}
+
+	// 2. Replaying the same subprotocol ticket JTI MUST be rejected with 401
+	c2, _, replayHdrs, err := dialAndHandshake("/io/logs", BrowserSubprotocol+", "+SubprotocolTicketPrefx+validTicket)
+	if err == nil {
+		c2.Close()
+	}
+	if !strings.Contains(replayHdrs, "401 Unauthorized") {
+		t.Fatalf("expected 401 on replayed JTI, got:\n%s", replayHdrs)
+	}
+
+	// 3. Query string ?ticket= MUST still be rejected even when subprotocol is also sent (FR-SEC-01)
+	freshTicket := issueTestTicket(t, priv, "logs", "jti-browser-subproto-2")
+	c3, _, queryHdrs, err := dialAndHandshake("/io/logs?ticket="+freshTicket, BrowserSubprotocol+", "+SubprotocolTicketPrefx+freshTicket)
+	if err == nil {
+		c3.Close()
+	}
+	if !strings.Contains(queryHdrs, "401 Unauthorized") {
+		t.Fatalf("expected 401 when query ticket is present (FR-SEC-01), got:\n%s", queryHdrs)
+	}
+
+	// 4. Missing nexa-io-v1 base protocol MUST be rejected (prevents echoing ticket)
+	c4, _, missingBaseHdrs, err := dialAndHandshake("/io/logs", SubprotocolTicketPrefx+freshTicket)
+	if err == nil {
+		c4.Close()
+	}
+	if !strings.Contains(missingBaseHdrs, "401 Unauthorized") {
+		t.Fatalf("expected 401 when nexa-io-v1 base subprotocol is missing, got:\n%s", missingBaseHdrs)
+	}
+}

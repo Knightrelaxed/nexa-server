@@ -10,6 +10,7 @@ const { notifyProactive, getNotifier } = require('../core/Notifier');
 async function trackJobRun(jobName, runKey, jobFn) {
   const supabaseMemories = require('../infrastructure/Supabase_Memories');
   const sb = supabaseMemories.supabase;
+  const startedMs = Date.now();
   let jobRecordId = null;
 
   if (sb) {
@@ -30,6 +31,7 @@ async function trackJobRun(jobName, runKey, jobFn) {
 
   try {
     const res = await jobFn();
+    try { require('../monitor').recordCronRun(jobName, 'ok', Date.now() - startedMs); } catch (_) {}
     if (sb && jobRecordId) {
       try {
         await sb
@@ -43,6 +45,11 @@ async function trackJobRun(jobName, runKey, jobFn) {
     }
     return res;
   } catch (err) {
+    try {
+      const mon = require('../monitor');
+      mon.recordCronRun(jobName, 'error', Date.now() - startedMs, err && err.message || String(err));
+      mon.recordIssue('CRON', err, { severity: 'error', route: jobName });
+    } catch (_) {}
     if (sb && jobRecordId) {
       try {
         await sb
@@ -128,6 +135,29 @@ async function executeMidnightCheckin(options = {}) {
 
 function initCronJobs() {
   console.log('[CRON] Initializing N.E.X.A background jobs...');
+
+  // Pre-register key schedules in Pulse Monitor registry (in-memory, zero DB cost)
+  try {
+    const mon = require('../monitor');
+    const knownSchedules = [
+      ['finance_auto_sync', '*/3 * * * * (3m)'],
+      ['telegram_watchdog', '90s interval'],
+      ['morning_briefing', '05:30 WIB daily'],
+      ['midday_pulse', '12:00 WIB daily'],
+      ['evening_debrief', '17:00 WIB daily'],
+      ['evening_briefing', '20:00 WIB daily'],
+      ['tomorrow_prep', '21:00 WIB Mon-Sat'],
+      ['daily_memory_consolidation', '23:50 WIB daily'],
+      ['midnight_checkin', '01:00 WIB daily'],
+      ['chrono_consolidation', '03:30 WIB daily'],
+      ['detect_recurring_bills', '03:40 WIB daily'],
+      ['memory_hygiene', '02:00 WIB Sun'],
+      ['weekly_budget_recap', '23:55 WIB Sun']
+    ];
+    for (const [jName, sched] of knownSchedules) {
+      mon.registerCronJob(jName, sched);
+    }
+  } catch (_) {}
 
   // 0. The Recurring Subscription & Bill Detector (03:40 WIB)
   // Menganalisis riwayat transaksi 180 hari terakhir, mendeteksi langganan rutin secara deterministik,
@@ -539,14 +569,21 @@ function initCronJobs() {
   // 3. Finance Auto-Sync (Every 3 minutes)
   cron.schedule('*/3 * * * *', async () => {
     console.log('[CRON] Executing Finance Auto-Sync...');
+    const t0 = Date.now();
     try {
       const financeEngine = require('../domain/Finance_Engine');
       const count = await financeEngine.pollFinanceEmails();
+      try { require('../monitor').recordCronRun('finance_auto_sync', 'ok', Date.now() - t0, '', '*/3 * * * * (3m)'); } catch (_) {}
       if (count > 0) {
         console.log(`[CRON] Finance Auto-Sync processed ${count} new transactions.`);
       }
     } catch (e) {
       console.error('[CRON] Finance Auto-Sync failed:', e.message);
+      try {
+        const mon = require('../monitor');
+        mon.recordCronRun('finance_auto_sync', 'error', Date.now() - t0, e.message, '*/3 * * * * (3m)');
+        mon.recordIssue('FINANCE-SYNC', e, { severity: 'error', route: 'finance_auto_sync' });
+      } catch (_) {}
     }
   }, { scheduled: true, timezone: 'Asia/Jakarta' });
 

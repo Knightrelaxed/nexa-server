@@ -156,7 +156,34 @@ function createMobileChatHandler(deps = {}) {
   // client_msg_id -> { state: 'RUNNING'|'FINAL'|'ABORTED', chunks: [{seq, chunk}], intent, error, updatedAt, aborted, abortController, pendingFrame }
   const replayStore = new Map();
   let lastConversationContext = null;
+  let lastTurnMeta = null;
+  let adviceSession = { count: 0, lastAt: 0 };
+  const ADVICE_SESSION_TTL_MS = 60 * 60 * 1000;
   let activeVoiceInFlight = 0;
+
+  function trackAdviceSession() {
+    const now = nowFn();
+    if (!adviceSession.lastAt || (now - adviceSession.lastAt) > ADVICE_SESSION_TTL_MS) {
+      adviceSession = { count: 1, lastAt: now };
+      return 1;
+    }
+    adviceSession = { count: adviceSession.count + 1, lastAt: now };
+    return adviceSession.count;
+  }
+
+  function getAdviceSessionCount() {
+    const now = nowFn();
+    if (!adviceSession.lastAt || (now - adviceSession.lastAt) > ADVICE_SESSION_TTL_MS) return 0;
+    return adviceSession.count;
+  }
+
+  // Only auto-load real network-backed background engines in production (or when explicitly injected/enabled in tests)
+  const allowRealBackgroundEngines = !deps.aiRouter || Boolean(deps.enableBackgroundEngines);
+  const resolveBgEngine = (depKey, modPath) => {
+    if (deps[depKey]) return deps[depKey];
+    if (!allowRealBackgroundEngines) return null;
+    try { return require(modPath); } catch (_) { return null; }
+  };
   let sessionTurnQueue = Promise.resolve();
   const sessionKey = 'mobile-primary';
   const pendingEmail = new Map();
@@ -456,7 +483,7 @@ function createMobileChatHandler(deps = {}) {
       };
     }
 
-    // 5. /briefing (/morning, /evening) -> Rich Executive Briefing Card + full briefing narrative
+    // 5. /briefing (/morning, /evening) -> Rich Executive Briefing Card + clean narrative
     if (/^(\/briefing|\/morning|\/evening)\b/i.test(trimmed)) {
       const intelligenceBrief = deps.intelligenceBrief || require('../../../domain/Intelligence_Brief');
       const cardHandlerMod = deps.cardHandler || require('./card_handler');
@@ -558,6 +585,22 @@ function createMobileChatHandler(deps = {}) {
     const replyCtx = extractSanitizedReplyContext(payload);
     const routedInput = buildReplyContextPrompt(content, replyCtx);
 
+    // Snapshot Turn N-1 metadata before processing (parity with telegram/adapter.js for Signal_Detector)
+    const nowAtStart = nowFn();
+    const previousTurnContext = (lastTurnMeta && (nowAtStart - lastTurnMeta.at < CONTEXT_TTL_MS))
+      ? {
+          intent: lastTurnMeta.intent,
+          topic: lastTurnMeta.topic,
+          injectedPlaybook: lastTurnMeta.injectedPlaybook,
+          injectedTraits: lastTurnMeta.injectedTraits,
+          lastAssistantReply: lastTurnMeta.reply,
+          askedAt: lastTurnMeta.at
+        }
+      : null;
+    lastTurnMeta = null;
+
+    console.log('[BRIDGE-CHAT] Received message:', String(content || '').replace(/\s+/g, ' ').substring(0, 100));
+
     // N-01: Record user engagement on Mobile Chat so Notifier closed-loop engagement stays accurate
     try {
       const { getNotifier } = require('../../../core/Notifier');
@@ -592,6 +635,9 @@ function createMobileChatHandler(deps = {}) {
 
     // Phase 2: Full conversational interceptor parity (text/voice fallback alongside native Quick Action Chips)
     const interceptors = deps.interceptors || require('../../telegram/interceptors');
+    if (typeof interceptors.recordChatActivity === 'function') {
+      try { interceptors.recordChatActivity(sessionKey); } catch (_) {}
+    }
     const cardHandler = deps.cardHandler || require('./card_handler');
     const financeEngine = deps.financeEngine || require('../../../domain/Finance_Engine');
     const taskManager = deps.taskManager || require('../../../domain/Task_Manager');
@@ -877,15 +923,55 @@ function createMobileChatHandler(deps = {}) {
     }
 
     const aiRouter = getAiRouter();
-    const routingData = await aiRouter.routeUserMessage(routedInput, {
-      conversationContext: getFreshConversationContext(),
-      source: 'mobile',
-      deviceContext: telemetry || undefined,
-      pendingEmailContext: getFreshMapEntry(pendingEmail),
-      pendingCalendarContext: getFreshMapEntry(pendingCalendar),
-      pendingDatabaseContext: getFreshMapEntry(pendingDatabase),
-      pendingVaultContext: getFreshMapEntry(pendingVault)
-    });
+    const followUpResolver = require('../../common/follow_up_resolver');
+    const commonHelpers = require('../../common/helpers');
+
+    // Step 14: Email & Global Follow-Up Context Override (parity with telegram/adapter.js)
+    const activePendingEmail = getFreshMapEntry(pendingEmail);
+    const activeConvCtx = getFreshConversationContext();
+    let routingData = null;
+
+    if (activePendingEmail && typeof followUpResolver.isEmailHistoryFollowUp === 'function' && followUpResolver.isEmailHistoryFollowUp(content)) {
+      routingData = {
+        intent: 'EMAIL',
+        extracted_data: { action: 'READ', search_keyword: activePendingEmail.searchKeyword || '', max_results: 1, before_current: true },
+        reply_message: '',
+        god_mode_trigger: false
+      };
+      console.log('[ROUTER] Email follow-up context override activated.');
+    } else if (
+      activePendingEmail &&
+      typeof followUpResolver.isGenericContinuation === 'function' &&
+      followUpResolver.isGenericContinuation(content) &&
+      (nowFn() - (activePendingEmail.askedAt || activePendingEmail.updatedAt || 0)) < 10 * 60 * 1000
+    ) {
+      routingData = {
+        intent: 'EMAIL',
+        extracted_data: { action: 'READ', search_keyword: activePendingEmail.searchKeyword || '', max_results: 1, before_current: true },
+        reply_message: '',
+        god_mode_trigger: false
+      };
+      console.log('[ROUTER] Generic continuation mapped to EMAIL follow-up.');
+    } else {
+      if (activeConvCtx && typeof followUpResolver.buildGlobalFollowUpRouting === 'function') {
+        const globalFollowUp = followUpResolver.buildGlobalFollowUpRouting(content, activeConvCtx);
+        if (globalFollowUp) {
+          routingData = globalFollowUp;
+          console.log('[ROUTER] Global follow-up context override activated for intent:', routingData.intent);
+        }
+      }
+      if (!routingData) {
+        routingData = await aiRouter.routeUserMessage(routedInput, {
+          conversationContext: activeConvCtx,
+          source: 'mobile',
+          deviceContext: telemetry || undefined,
+          pendingEmailContext: activePendingEmail,
+          pendingCalendarContext: getFreshMapEntry(pendingCalendar),
+          pendingDatabaseContext: getFreshMapEntry(pendingDatabase),
+          pendingVaultContext: getFreshMapEntry(pendingVault)
+        });
+      }
+    }
 
     if (entry.aborted) {
       finalizeAborted(clientMsgId, entry, 'Dibatalkan oleh pengguna.');
@@ -894,11 +980,123 @@ function createMobileChatHandler(deps = {}) {
 
     const normIntent = String(routingData?.intent || 'NORMAL_CHAT').toUpperCase();
     entry.intent = normIntent;
+    console.log('[ROUTER] Intent identified:', normIntent);
+    if (Array.isArray(routingData?.actions) && routingData.actions.length > 1) {
+      console.log('[ROUTER] ⚡ Multi-action detected (' + routingData.actions.length + ' actions):', routingData.actions.map(a => a.intent).join(', '));
+    }
+
+    // Step 15: Background Passive Learning, Behavior/Mood, Intention/Decision & Anticipatory Engine (parity with telegram/adapter.js)
+    const behaviorEngine = resolveBgEngine('behaviorEngine', '../../../domain/Behavior_Engine');
+    if (behaviorEngine) {
+      if (typeof behaviorEngine.logUserInteraction === 'function') {
+        Promise.resolve(behaviorEngine.logUserInteraction(normIntent, content, routingData?.mood || 'NEUTRAL')).catch(err => {
+          console.warn('[BRIDGE-CHAT] Behavior logUserInteraction warning:', err.message);
+        });
+      }
+      if (routingData?.mood && routingData.mood !== 'NEUTRAL' && typeof behaviorEngine.logMood === 'function') {
+        Promise.resolve(behaviorEngine.logMood(routingData.mood, content)).catch(err => {
+          console.warn('[BRIDGE-CHAT] Behavior logMood warning:', err.message);
+        });
+      }
+    }
+
+    if (Array.isArray(routingData?.learned_user_facts) && routingData.learned_user_facts.length > 0) {
+      let savedUserFact = false;
+      for (const fact of routingData.learned_user_facts) {
+        if (typeof fact !== 'string' || fact.trim().length === 0) continue;
+        if (typeof commonHelpers.isFactAboutNexa === 'function' && commonHelpers.isFactAboutNexa(fact)) {
+          console.log('[SELF-MODEL] Passive Learning → Self-Model (rerouted):', fact.substring(0, 80));
+          const selfLayer = typeof commonHelpers.classifySelfModelLayer === 'function'
+            ? commonHelpers.classifySelfModelLayer(fact)
+            : 'IDENTITY';
+          if (typeof aiRouter.deduplicateAndSaveSelfFact === 'function') {
+            Promise.resolve(aiRouter.deduplicateAndSaveSelfFact(fact, selfLayer, 'PASSIVE_LEARNING', fact)).catch(err => {
+              console.warn('[SELF-MODEL] Passive self-fact save warning:', err.message);
+            });
+          }
+        } else {
+          console.log('[ROUTER] Passive Learning - User Fact:', fact);
+          if (typeof aiRouter.deduplicateAndSaveFact === 'function') {
+            try {
+              await aiRouter.deduplicateAndSaveFact(fact, 'USER_PROFILE');
+              savedUserFact = true;
+            } catch (err) {
+              console.warn('[ROUTER] Passive user-fact save warning:', err.message);
+            }
+          }
+          if (behaviorEngine && typeof behaviorEngine.logPassiveLearning === 'function') {
+            Promise.resolve(behaviorEngine.logPassiveLearning(fact, 'USER_PROFILE')).catch(() => {});
+          }
+        }
+      }
+      if (savedUserFact && typeof aiRouter.invalidatePersonalFactsCache === 'function') {
+        aiRouter.invalidatePersonalFactsCache();
+      }
+    }
+
+    if (Array.isArray(routingData?.learned_core_identities) && routingData.learned_core_identities.length > 0) {
+      for (const fact of routingData.learned_core_identities) {
+        if (typeof fact !== 'string' || fact.trim().length === 0) continue;
+        console.log('[SELF-MODEL] Passive Learning → Self-Model (core):', fact.substring(0, 80));
+        const selfLayer = typeof commonHelpers.classifySelfModelLayer === 'function'
+          ? commonHelpers.classifySelfModelLayer(fact)
+          : 'IDENTITY';
+        if (typeof aiRouter.deduplicateAndSaveSelfFact === 'function') {
+          Promise.resolve(aiRouter.deduplicateAndSaveSelfFact(fact, selfLayer, 'PASSIVE_LEARNING', fact)).catch(err => {
+            console.warn('[SELF-MODEL] Core self-fact save warning:', err.message);
+          });
+        }
+      }
+      if (typeof aiRouter.invalidateSelfModelCache === 'function') {
+        aiRouter.invalidateSelfModelCache();
+      }
+    }
+
+    if (content && content.length >= 10) {
+      const intentionEngine = resolveBgEngine('intentionEngine', '../../../domain/Intention_Engine');
+      if (intentionEngine) {
+        if (typeof intentionEngine.detectAndSaveIntention === 'function') {
+          Promise.resolve(intentionEngine.detectAndSaveIntention(content, routingData)).catch(err => {
+            console.warn('[BRIDGE-CHAT] Intention detect warning:', err.message);
+          });
+        }
+        if (typeof intentionEngine.autoReconcileIntentions === 'function') {
+          Promise.resolve(intentionEngine.autoReconcileIntentions(content)).catch(() => {});
+        }
+        const DECISION_INTENTS = new Set(['DISCIPLINE', 'CALENDAR', 'ADVICE', 'NORMAL_CHAT']);
+        if (DECISION_INTENTS.has(normIntent) && typeof intentionEngine.detectAndSaveDecision === 'function') {
+          const detectedMood = routingData?.detected_mood || routingData?.mood || 'NEUTRAL';
+          Promise.resolve(intentionEngine.detectAndSaveDecision(content, routingData, detectedMood)).catch(() => {});
+        }
+      }
+    }
+
+    const anticipatoryEngine = resolveBgEngine('anticipatoryEngine', '../../../domain/Anticipatory_Engine');
+    if (anticipatoryEngine && typeof anticipatoryEngine.runAnticipationPass === 'function') {
+      const jakartaHour = new Date(new Date(nowFn()).toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })).getHours();
+      const sessionAdviceCount = normIntent === 'ADVICE' ? trackAdviceSession() : getAdviceSessionCount();
+      (async () => {
+        try {
+          const moodCtx = typeof anticipatoryEngine.getLatestMoodContext === 'function'
+            ? await anticipatoryEngine.getLatestMoodContext()
+            : { mood_7d_trend: 'STABLE', mood_7d_variance: 0 };
+          await anticipatoryEngine.runAnticipationPass({
+            intent: normIntent,
+            mood: routingData?.detected_mood || routingData?.mood || 'NEUTRAL',
+            hour: jakartaHour,
+            mood_7d_trend: moodCtx.mood_7d_trend,
+            mood_7d_variance: moodCtx.mood_7d_variance,
+            sessionAdviceCount
+          });
+        } catch (antErr) {
+          console.warn('[BRIDGE-CHAT] Anticipatory pass warning:', antErr.message);
+        }
+      })();
+    }
 
     // F-04: Run shared clarification gate before executing destructive actions (e.g. EMAIL DELETE without keyword)
     let clarificationMsg = null;
     try {
-      const followUpResolver = require('../../common/follow_up_resolver');
       if (typeof followUpResolver.getClarificationMessage === 'function') {
         clarificationMsg = followUpResolver.getClarificationMessage(routingData, content);
       }
@@ -922,8 +1120,114 @@ function createMobileChatHandler(deps = {}) {
     const executeDomainIntent = getDomainDispatcher();
     const replyParts = [];
 
+    // Step 16a: Universal Text Split (Titik 3 & 4 parity with telegram/adapter.js)
+    let splitReply = null;
+    if (!clarificationMsg && normIntent === 'FINANCE' && typeof splitEngine.handleSplitWithRemainder === 'function') {
+      const isReplyToReceipt = replyCtx &&
+        replyCtx.role === 'assistant' &&
+        /(?:Nominal|Berhasil mencatat|Pengeluaran|Pemasukan)/i.test(replyCtx.preview || '');
+
+      if (isReplyToReceipt && /\bsplit\b|\bpecah\b|\brincian\b/i.test(content)) {
+        try {
+          const replyTxt = replyCtx.preview || '';
+          let kw = 'latest';
+          const catatanMatch = replyTxt.match(/(?:Deskripsi|Catatan|Tujuan|Merchant)\s*:\s*([^\n\r,]{2,80})/i);
+          const nominalLabelMatch = replyTxt.match(/Nominal\s*\([Rr][Pp]\)\s*:\s*[Rr][Pp][.\s]*([0-9][0-9.,]+)/i);
+          const nominalRpMatch = replyTxt.match(/[Rr][Pp]\.?\s*([0-9][0-9.,]+)/);
+          if (catatanMatch && catatanMatch[1] && catatanMatch[1].trim().length > 1) kw = catatanMatch[1].trim();
+          else if (nominalLabelMatch && nominalLabelMatch[1]) kw = nominalLabelMatch[1].replace(/[^0-9]/g, '');
+          else if (nominalRpMatch && nominalRpMatch[1]) kw = nominalRpMatch[1].replace(/[^0-9]/g, '');
+
+          if (supabaseFinance && typeof supabaseFinance.readTransactions === 'function') {
+            const existingRows = await supabaseFinance.readTransactions({ limit: 50 });
+            const matchIndex = financeEngine._findBestTransactionMatch ? financeEngine._findBestTransactionMatch(existingRows, kw) : -1;
+            if (matchIndex !== -1) {
+              const targetTx = existingRows[matchIndex];
+              const nomMatch = replyTxt.match(/[Rr][Pp][.\s]*([0-9][0-9.,]+)/);
+              const totalNomForSplit = nomMatch ? Number(nomMatch[1].replace(/[^0-9]/g, '')) : Math.abs(targetTx.amount || 0);
+              const splitItems = await splitEngine.parseSplitFromText(content, totalNomForSplit, targetTx.description || '');
+              if (splitItems && splitItems.length >= 2) {
+                const baseTx = {
+                  type: targetTx.type || 'expense',
+                  account: targetTx.accounts?.name || null,
+                  dateISO: targetTx.transaction_date,
+                  timeHHMM: targetTx.transaction_time ? targetTx.transaction_time.slice(0, 5) : null,
+                  paymentMethod: targetTx.payment_method || null
+                };
+                interceptedReplies = [];
+                splitReply = await splitEngine.handleSplitWithRemainder(
+                  sessionKey,
+                  splitItems,
+                  totalNomForSplit,
+                  baseTx,
+                  targetTx.description || '',
+                  targetTx.id,
+                  collectInterceptorReply
+                );
+                if (!splitReply && interceptedReplies.length > 0) splitReply = interceptedReplies.join('\n\n');
+              }
+            }
+          }
+        } catch (splitErr) {
+          console.error('[SPLIT] Error universal priority split existing tx (mobile):', splitErr.message);
+        }
+      }
+
+      if (!splitReply && routingData?.extracted_data && (
+        routingData.extracted_data.is_split === true ||
+        (typeof splitEngine.isSplitIntent === 'function' && splitEngine.isSplitIntent(content))
+      )) {
+        const ed = routingData.extracted_data;
+        const isAiSplit = ed.is_split === true && Array.isArray(ed.items) && ed.items.length >= 2;
+        try {
+          const nowDate = new Date(nowFn());
+          const nowJakarta = nowDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+          const timeNow = nowDate.toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' });
+          const baseTx = {
+            type: ed.type || 'EXPENSE',
+            account: ed.account || null,
+            dateISO: ed.time ? String(ed.time).substring(0, 10) : nowJakarta,
+            timeHHMM: ed.time ? String(ed.time).substring(11, 16) : timeNow,
+            paymentMethod: ed.payment_method || null
+          };
+          const storeName = ed.store_name || ed.destination || '';
+          let itemsToSplit = isAiSplit ? ed.items : null;
+          if ((!itemsToSplit || itemsToSplit.length < 2) && typeof splitEngine.parseSplitFromText === 'function') {
+            itemsToSplit = await splitEngine.parseSplitFromText(content, ed.total_nominal || ed.nominal || null, storeName);
+          }
+          if (itemsToSplit && itemsToSplit.length >= 2) {
+            let totalNom = ed.total_nominal || null;
+            if (!totalNom) {
+              const totMatch = content.match(/([0-9]+[.,]?[0-9]*)\s*(?:rb|ribu|k|000)\b/i);
+              if (totMatch) {
+                const rawNum = parseFloat(totMatch[1].replace(',', '.'));
+                totalNom = rawNum < 1000 ? rawNum * 1000 : rawNum;
+              } else {
+                totalNom = itemsToSplit.reduce((s, i) => s + (i.nominal || 0), 0);
+              }
+            }
+            interceptedReplies = [];
+            splitReply = await splitEngine.handleSplitWithRemainder(
+              sessionKey,
+              itemsToSplit,
+              totalNom,
+              baseTx,
+              storeName,
+              null,
+              collectInterceptorReply
+            );
+            if (!splitReply && interceptedReplies.length > 0) splitReply = interceptedReplies.join('\n\n');
+          }
+        } catch (splitErr) {
+          console.error('[SPLIT] Error universal text split (mobile):', splitErr.message);
+        }
+      }
+    }
+
     if (clarificationMsg) {
       replyParts.push(clarificationMsg);
+    } else if (splitReply) {
+      replyParts.push(splitReply);
     } else {
       for (const act of actions) {
         if (entry.aborted) {
@@ -1063,10 +1367,13 @@ function createMobileChatHandler(deps = {}) {
       }
     }
 
-    // N-H2 / R-03: Align conversationContext keys with Router_Dispatcher.js + follow_up_resolver.js (askedAt)
+    // N-H2 / R-03: Align conversationContext & lastTurnMeta with telegram/adapter.js + Signal_Detector
     const nowTs = nowFn();
     lastConversationContext = {
       intent: normIntent,
+      topic: routingData?._topicContext || 'DEFAULT',
+      injectedTraits: routingData?._injectedTraits || [],
+      injectedPlaybook: routingData?._injectedPlaybook || null,
       extractedData: routingData?.extracted_data || {},
       lastAssistantReply: cleanReply.slice(0, 500),
       lastUserText: content.slice(0, 300),
@@ -1074,7 +1381,50 @@ function createMobileChatHandler(deps = {}) {
       updatedAt: nowTs
     };
 
+    lastTurnMeta = {
+      intent: normIntent,
+      topic: routingData?._topicContext || 'DEFAULT',
+      injectedTraits: routingData?._injectedTraits || [],
+      injectedPlaybook: routingData?._injectedPlaybook || null,
+      reply: cleanReply,
+      at: nowTs
+    };
+
+    console.log(`[BRIDGE-CHAT] Replying with intent: ${normIntent} (${cleanReply.length} chars)`);
     await streamFinalReply(clientMsgId, entry, content, cleanReply, normIntent, saveChatMemory, attachedCard);
+
+    // Post-turn hooks: Signal Detector & Micro-Reviewer (parity with telegram/adapter.js)
+    const signalDetector = resolveBgEngine('signalDetector', '../../../domain/Signal_Detector');
+    const microReviewer = resolveBgEngine('microReviewer', '../../../domain/Micro_Reviewer');
+    if (signalDetector || microReviewer) {
+      setImmediate(() => {
+        try {
+          if (signalDetector && typeof signalDetector.evaluateTurn === 'function') {
+            Promise.resolve(signalDetector.evaluateTurn({
+              userText: content,
+              assistantReply: cleanReply,
+              intent: normIntent,
+              topic: routingData?._topicContext || 'DEFAULT',
+              injectedTraits: routingData?._injectedTraits || [],
+              injectedPlaybook: routingData?._injectedPlaybook || null,
+              previousContext: previousTurnContext,
+              sessionKey: `mobile:${sessionKey}`
+            })).catch(err => {
+              console.warn('[BRIDGE-CHAT] Signal Detector background evaluation error:', err.message);
+            });
+          }
+          if (microReviewer && typeof microReviewer.handlePostTurn === 'function') {
+            microReviewer.handlePostTurn({
+              userText: content,
+              intent: normIntent,
+              sessionKey: `mobile:${sessionKey}`
+            });
+          }
+        } catch (hookErr) {
+          console.warn('[BRIDGE-CHAT] Failed to trigger Signal Detector / Micro-Reviewer hook:', hookErr.message);
+        }
+      });
+    }
   }
 
   async function streamFinalReply(clientMsgId, entry, _userContent, cleanReply, normIntent, saveChatMemory, card = null) {

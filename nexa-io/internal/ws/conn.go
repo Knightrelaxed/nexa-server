@@ -50,6 +50,12 @@ type Conn struct {
 
 // UpgradeHTTP performs the RFC 6455 handshake with permessage-deflate disabled (G-H8).
 func UpgradeHTTP(w http.ResponseWriter, r *http.Request) (*Conn, error) {
+	return UpgradeHTTPWithProtocol(w, r, "")
+}
+
+// UpgradeHTTPWithProtocol performs the RFC 6455 handshake and optionally echoes
+// a validated Sec-WebSocket-Protocol token (e.g. "nexa-io-v1" for browser clients).
+func UpgradeHTTPWithProtocol(w http.ResponseWriter, r *http.Request, selectedSubprotocol string) (*Conn, error) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "GET method required for websocket upgrade", http.StatusMethodNotAllowed)
 		return nil, ErrNotWebSocket
@@ -72,6 +78,16 @@ func UpgradeHTTP(w http.ResponseWriter, r *http.Request) (*Conn, error) {
 		return nil, ErrNotWebSocket
 	}
 
+	protoHeader := ""
+	if selectedSubprotocol != "" {
+		cleanProto := strings.TrimSpace(selectedSubprotocol)
+		if strings.ContainsAny(cleanProto, "\r\n\t ,") {
+			http.Error(w, "invalid subprotocol", http.StatusBadRequest)
+			return nil, ErrNotWebSocket
+		}
+		protoHeader = "Sec-WebSocket-Protocol: " + cleanProto + "\r\n"
+	}
+
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "webserver does not support hijacking", http.StatusInternalServerError)
@@ -87,7 +103,8 @@ func UpgradeHTTP(w http.ResponseWriter, r *http.Request) (*Conn, error) {
 	resp := "HTTP/1.1 101 Switching Protocols\r\n" +
 		"Upgrade: websocket\r\n" +
 		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Accept: " + accept + "\r\n\r\n"
+		"Sec-WebSocket-Accept: " + accept + "\r\n" +
+		protoHeader + "\r\n"
 
 	_ = rawConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if _, err := brw.WriteString(resp); err != nil {

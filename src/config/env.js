@@ -151,4 +151,11 @@ module.exports = {
     const parsed = Number(raw);
     return Number.isFinite(parsed) && parsed >= 15000 ? parsed : 60000;
   })(),
+
+  // ============================================================
+  // 9. N.E.X.A PULSE MONITOR (/monitor)
+  // ============================================================
+  NEXA_MONITOR_DATA_DIR: process.env.NEXA_MONITOR_DATA_DIR || '',
+  NEXA_MONITOR_USER: process.env.NEXA_MONITOR_USER || '',
+  NEXA_MONITOR_PASS_HASH: process.env.NEXA_MONITOR_PASS_HASH || '',
 };
