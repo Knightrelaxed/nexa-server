@@ -1304,14 +1304,14 @@ function buildBriefingCard(kind = 'MORNING', summary = {}) {
       card_type: 'BRIEFING_SUMMARY',
       presentation: 'SUMMARY_CARD',
       status: 'INFO',
-      title: 'Evening Reflection',
-      subtitle: `${dateLabel} · Daily wrap-up`,
-      badge: 'Evening',
+      title: 'Evening Brief',
+      subtitle: 'Daily wrap-up',
+      badge: dateLabel,
       accent: 'PRIMARY',
       metrics,
       actions: [
-        { id: 'prompt_tomorrow', label: "Tomorrow's Schedule", style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'cek jadwal besok' },
-        { id: 'prompt_skip', label: 'Skip Reflection', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'Tidak ada' }
+        { id: 'prompt_tomorrow', label: 'Tomorrow', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'cek jadwal besok' },
+        { id: 'prompt_skip', label: 'Skip', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'Tidak ada' }
       ]
     };
   }
@@ -1323,7 +1323,7 @@ function buildBriefingCard(kind = 'MORNING', summary = {}) {
   const safeSpend = typeof summary.safeToSpendToday === 'number' && Number.isFinite(summary.safeToSpendToday)
     ? summary.safeToSpendToday
     : null;
-  const subtitleParts = [dateLabel, summary.weather ? String(summary.weather) : ''].filter(Boolean);
+  const weatherLine = summary.weather ? String(summary.weather).trim() : '';
 
   const metrics = [
     {
@@ -1360,17 +1360,20 @@ function buildBriefingCard(kind = 'MORNING', summary = {}) {
     card_type: 'BRIEFING_SUMMARY',
     presentation: 'SUMMARY_CARD',
     status: 'INFO',
-    title: 'Morning Executive Brief',
-    subtitle: subtitleParts.join(' · '),
-    badge: safeSpend !== null ? 'Safe to Spend' : 'Briefing',
+    title: 'Morning Brief',
+    subtitle: weatherLine || dateLabel,
+    badge: dateLabel,
     accent: 'PRIMARY',
     hero_value: safeSpend !== null ? formatIdr(safeSpend) : '',
     hero_tone: safeSpend !== null ? (safeSpend >= 0 ? 'INCOME' : 'EXPENSE') : 'NEUTRAL',
     metrics,
+    meta: {
+      hero_label: safeSpend !== null ? 'Safe to spend today' : ''
+    },
     actions: [
-      { id: 'prompt_detail', label: 'Full Detail', style: 'PRIMARY', kind: 'SEND_PROMPT', prompt: 'Detail' },
-      { id: 'prompt_tasks', label: "Today's Tasks", style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'cek tugas hari ini' },
-      { id: 'prompt_budget', label: 'Budget Recap', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: '/budget' }
+      { id: 'prompt_detail', label: 'Detail', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'Detail' },
+      { id: 'prompt_tasks', label: 'Tasks', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'cek tugas hari ini' },
+      { id: 'prompt_budget', label: 'Budget', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: '/budget' }
     ]
   };
 }
@@ -1406,16 +1409,19 @@ function buildBudgetRecapCard(recap = {}) {
     card_type: 'BUDGET_RECAP',
     presentation: 'SUMMARY_CARD',
     status: 'INFO',
-    title: isWeekly ? 'Weekly Budget Recap' : 'Monthly Budget Recap',
+    title: isWeekly ? 'Weekly Budget' : 'Monthly Budget',
     subtitle: isOverallOver ? 'Over allocated budget' : 'Within budget target',
     badge: isOverallOver ? 'Over Limit' : 'On Track',
     accent: isOverallOver ? 'CRIMSON' : 'EMERALD',
     hero_value: `${netDelta >= 0 ? '+' : '-'}${formatIdr(Math.abs(netDelta))}`,
     hero_tone: netDelta >= 0 ? 'INCOME' : 'EXPENSE',
     metrics,
+    meta: {
+      hero_label: isOverallOver ? 'Over budget' : 'Net remaining'
+    },
     actions: [
-      { id: 'prompt_recent', label: 'Recent Transactions', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'cek 10 transaksi terakhir' },
-      { id: 'prompt_analytics', label: 'Monthly Analytics', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'analisa keuangan bulan ini' }
+      { id: 'prompt_recent', label: 'Transactions', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'cek 10 transaksi terakhir' },
+      { id: 'prompt_analytics', label: 'Analytics', style: 'SECONDARY', kind: 'SEND_PROMPT', prompt: 'analisa keuangan bulan ini' }
     ]
   };
 }

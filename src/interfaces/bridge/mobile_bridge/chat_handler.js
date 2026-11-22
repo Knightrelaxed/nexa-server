@@ -461,6 +461,11 @@ function createMobileChatHandler(deps = {}) {
       const intelligenceBrief = deps.intelligenceBrief || require('../../../domain/Intelligence_Brief');
       const cardHandlerMod = deps.cardHandler || require('./card_handler');
       const isEvening = /^\/evening\b/i.test(trimmed) || /\bevening\b|\bmalam\b/i.test(trimmed);
+      const cleanBriefText = (raw) => stripHtmlForMobile(raw)
+        .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/ *\n */g, '\n')
+        .trim();
       if (isEvening) {
         const res = typeof intelligenceBrief.generateEveningBriefingStructured === 'function'
           ? await intelligenceBrief.generateEveningBriefingStructured()
@@ -468,7 +473,7 @@ function createMobileChatHandler(deps = {}) {
         const card = cardHandlerMod.buildBriefingCard('EVENING', res.summary || {});
         return {
           intent: 'COMMAND_BRIEFING',
-          reply: stripHtmlForMobile(res.text || 'Refleksi malam siap, Tuan.'),
+          reply: cleanBriefText(res.text || 'Refleksi malam siap, Tuan.'),
           card
         };
       }
@@ -478,7 +483,7 @@ function createMobileChatHandler(deps = {}) {
       const card = cardHandlerMod.buildBriefingCard('MORNING', res.summary || {});
       return {
         intent: 'COMMAND_BRIEFING',
-        reply: stripHtmlForMobile(res.text || 'Executive Morning Briefing siap, Tuan.'),
+        reply: cleanBriefText(res.text || 'Executive Morning Briefing siap, Tuan.'),
         card
       };
     }
@@ -489,6 +494,11 @@ function createMobileChatHandler(deps = {}) {
       const cardHandlerMod = deps.cardHandler || require('./card_handler');
       const wantWeekly = /\b(week|weekly|minggu|mingguan)\b/i.test(trimmed);
       const period = wantWeekly ? 'weekly' : 'monthly';
+      const cleanBudgetText = (raw) => stripHtmlForMobile(raw)
+        .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/ *\n */g, '\n')
+        .trim();
       const structured = typeof budgetEngine.generatePeriodicRecapStructured === 'function'
         ? await budgetEngine.generatePeriodicRecapStructured(period)
         : null;
@@ -505,13 +515,13 @@ function createMobileChatHandler(deps = {}) {
         }
         return {
           intent: 'COMMAND_BUDGET',
-          reply: stripHtmlForMobile(alt.text),
+          reply: cleanBudgetText(alt.text),
           card: cardHandlerMod.buildBudgetRecapCard(alt)
         };
       }
       return {
         intent: 'COMMAND_BUDGET',
-        reply: stripHtmlForMobile(structured.text),
+        reply: cleanBudgetText(structured.text),
         card: cardHandlerMod.buildBudgetRecapCard(structured)
       };
     }
