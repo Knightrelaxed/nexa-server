@@ -397,12 +397,12 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
   }
 
   if (actionId === 'cancel') {
-    const reply = await financeConfirm.confirmPendingTransactions(false, null, null, null, null, compositeKey);
+    await financeConfirm.confirmPendingTransactions(false, null, null, null, null, compositeKey);
     _sendCardUpdate(ws, {
       card_id: cardId,
       status: 'RESOLVED',
       resolved_badge: 'Cancelled',
-      resolved_detail: reply ? _cleanSingleLineDetail(reply) : 'Transaction discarded.'
+      resolved_detail: ''
     }, deps);
     return { ok: true, status: 'RESOLVED' };
   }
@@ -1567,6 +1567,7 @@ async function _handleVaultMetadataAction(cardId, actionId, payload, ws, deps) {
 function _cleanSingleLineDetail(htmlText) {
   return String(htmlText || '')
     .replace(/<[^>]+>/g, '')
+    .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 180);
