@@ -374,13 +374,24 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
 
     const reply = await financeConfirm.confirmPendingTransactions(true, null, null, null, null, compositeKey);
     const notFound = !reply;
+    let detailSummary = '';
+    if (notFound) {
+      detailSummary = 'Already saved or expired.';
+    } else if (txToCheck) {
+      const parts = [
+        txToCheck.account || txToCheck.suggestedAccount || '',
+        txToCheck.payment_method || txToCheck.paymentMethod || '',
+        txToCheck.category || ''
+      ].map(s => String(s || '').trim()).filter(s => s && s !== '-' && !/^unassigned$/i.test(s));
+      detailSummary = parts.length > 0 ? parts.join(' · ') : _cleanSingleLineDetail(reply);
+    } else {
+      detailSummary = _cleanSingleLineDetail(reply);
+    }
     _sendCardUpdate(ws, {
       card_id: cardId,
       status: 'RESOLVED',
       resolved_badge: notFound ? 'Already Resolved' : 'Recorded',
-      resolved_detail: notFound
-        ? 'This transaction was already saved or expired.'
-        : _cleanSingleLineDetail(reply)
+      resolved_detail: detailSummary
     }, deps);
     return { ok: true, status: 'RESOLVED' };
   }
