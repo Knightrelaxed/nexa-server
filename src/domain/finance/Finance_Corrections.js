@@ -4,7 +4,7 @@
  * Extracted from Finance_Engine.js (finance split). Behaviour is unchanged; Finance_Engine.js remains the public facade.
  */
 const supabaseFinance = require('../../infrastructure/Supabase_Finance');
-const { _autoCategorizeMerchant, _parseFlexibleCurrency } = require('./Finance_Helpers');
+const { _autoCategorizeMerchant, _parseFlexibleCurrency, _formatBalanceRp, _matchAccountBalance } = require('./Finance_Helpers');
 
 // In-memory cache for deletion confirmations
 const pendingDeletions = new Map();
@@ -183,8 +183,22 @@ async function confirmDeleteTransaction(isYes) {
         const catatan = pending.txData.description || '-';
         const nominalFmt = `Rp${Math.abs(pending.txData.amount || 0).toLocaleString('id-ID')}`;
 
+        let balanceLine = '';
+        try {
+          if (typeof supabaseFinance.getAccountBalances === 'function') {
+            const balances = await supabaseFinance.getAccountBalances();
+            const deletedAccName = pending.txData?.accounts?.name || pending.txData?.account || '';
+            const matched = _matchAccountBalance(balances, deletedAccName);
+            if (matched) {
+              balanceLine = `\n🏦 <b>Saldo ${matched.name} Saat Ini:</b> ${_formatBalanceRp(matched.balance)}`;
+            }
+          }
+        } catch (balErr) {
+          console.warn('[FINANCE] getAccountBalances failed in confirmDeleteTransaction:', balErr.message);
+        }
+
         const splitMsg = pending.txData.split_group_id ? ' (beserta seluruh mutasi terkait)' : '';
-        return `🗑️ <b>TRANSAKSI DIHAPUS DARI DATABASE</b>\n\n"${catatan}" sebesar ${nominalFmt}${splitMsg} telah dihapus sepenuhnya.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
+        return `🗑️ <b>TRANSAKSI DIHAPUS DARI DATABASE</b>\n\n"${catatan}" sebesar ${nominalFmt}${splitMsg} telah dihapus sepenuhnya.${balanceLine}\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata "batalkan hapus" atau "undo".</i>`;
       } catch (error) {
         return `❌ Gagal menghapus transaksi dari database: ${error.message}`;
       }
@@ -397,11 +411,30 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
     if (patchData.accountName !== undefined) editedFields.push(`Akun (menjadi "${finalAccount}")`);
     if (patchData.paymentMethod !== undefined) editedFields.push(`Metode Pembayaran (menjadi "${finalPaymentMethod}")`);
 
-      const finalDate = patchData.dateISO !== undefined ? patchData.dateISO : (tx.transaction_date || '-');
+    const finalDate = patchData.dateISO !== undefined ? patchData.dateISO : (tx.transaction_date || '-');
     const finalTime = patchData.timeHHMM !== undefined ? patchData.timeHHMM : (tx.transaction_time ? tx.transaction_time.slice(0,5) : '-');
     const summaryEdit = editedFields.length > 0
       ? `Yang saya edit adalah:\n- ${editedFields.join('\n- ')}`
       : '⚠️ Tidak ada perubahan yang dilakukan karena data yang dimasukkan sama dengan data saat ini.';
+
+    let currentSaldoDisplay = '-';
+    try {
+      if (typeof supabaseFinance.getAccountBalances === 'function') {
+        const balances = await supabaseFinance.getAccountBalances();
+        const newMatched = _matchAccountBalance(balances, finalAccount);
+        const oldAccountName = tx.accounts?.name || '';
+        const oldMatched = (patchData.accountName !== undefined && oldAccountName && oldAccountName.toLowerCase() !== String(finalAccount || '').toLowerCase())
+          ? _matchAccountBalance(balances, oldAccountName)
+          : null;
+        if (newMatched && oldMatched && newMatched.name !== oldMatched.name) {
+          currentSaldoDisplay = `${newMatched.name} (${_formatBalanceRp(newMatched.balance)}) • ${oldMatched.name} (${_formatBalanceRp(oldMatched.balance)})`;
+        } else if (newMatched) {
+          currentSaldoDisplay = _formatBalanceRp(newMatched.balance);
+        }
+      }
+    } catch (balErr) {
+      console.warn('[FINANCE] getAccountBalances failed in editTransaction:', balErr.message);
+    }
 
     const message = `💸 <b>TRANSAKSI DIEDIT</b>\n\n` +
       `<b>No:</b> ${tx.id.substring(0,8)}\n` +
@@ -412,7 +445,7 @@ async function editTransaction(keyword, newNominal, newDescription, newCategory,
       `<b>Akun:</b> ${akunName}\n` +
       `<b>Deskripsi:</b> ${finalDescription}\n` +
       `<b>Nominal (Rp):</b> ${nominalFmt}\n` +
-      `<b>Saldo (Rp) Saat Ini:</b> -\n\n` +
+      `<b>Saldo (Rp) Saat Ini:</b> ${currentSaldoDisplay}\n\n` +
       `${summaryEdit}\n\n` +
       `Apakah ada hal lain yang mau diedit, Tuan?`;
 

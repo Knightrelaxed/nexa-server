@@ -11,6 +11,7 @@
 // ============================================================
 
 const CARD_VERSION = 1;
+const { _resolveTxBalanceSummary } = require('../../../domain/finance/Finance_Helpers');
 
 function formatIdr(amount) {
   const n = Number(amount);
@@ -69,6 +70,13 @@ function buildFinanceTxCard(tx = {}, compositeKey = '', opts = {}) {
   const destRaw = String(tx.destination || '').trim();
   const hasKnownDest = isTransfer || (destRaw.length > 0 && !/^(unknown|-)$/i.test(destRaw));
 
+  const balanceSummary = Array.isArray(opts.accountBalances) && opts.accountBalances.length > 0
+    ? _resolveTxBalanceSummary(tx, opts.accountBalances)
+    : null;
+  const balanceDisplay = (typeof opts.currentBalance === 'string' && opts.currentBalance.trim())
+    ? opts.currentBalance.trim()
+    : (balanceSummary ? balanceSummary.cardValue : '');
+
   const fields = [
     { key: 'time', label: 'Time', value: timeDisplay }
   ];
@@ -78,7 +86,12 @@ function buildFinanceTxCard(tx = {}, compositeKey = '', opts = {}) {
   fields.push({ key: 'category', label: 'Category', value: category });
   if (!isTransfer) {
     fields.push({ key: 'account', label: 'Account', value: accountDisplay, tone: hasAccount ? 'NEUTRAL' : 'AMBER' });
+    if (hasAccount && balanceDisplay) {
+      fields.push({ key: 'balance', label: 'Balance', value: balanceDisplay });
+    }
     fields.push({ key: 'payment_method', label: 'Method', value: paymentMethodDisplay, tone: hasPaymentMethod ? 'NEUTRAL' : 'AMBER' });
+  } else if (balanceDisplay) {
+    fields.push({ key: 'balance', label: 'Balance', value: balanceDisplay });
   }
   fields.push({ key: 'note', label: 'Note', value: cleanNote, tone: isMissingNote ? 'AMBER' : 'NEUTRAL' });
 
@@ -156,6 +169,7 @@ function buildFinanceTxCard(tx = {}, compositeKey = '', opts = {}) {
       category,
       account: hasAccount ? accountDisplay : '',
       payment_method: hasPaymentMethod ? paymentMethodDisplay : '',
+      balance: (hasAccount || isTransfer) ? balanceDisplay : '',
       time_display: timeDisplay
     },
     actions
@@ -374,6 +388,15 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
 
     const reply = await financeConfirm.confirmPendingTransactions(true, null, null, null, null, compositeKey);
     const notFound = !reply;
+    let postBalances = [];
+    let postBalSummary = null;
+    if (!notFound && txToCheck && typeof supabaseFinance.getAccountBalances === 'function') {
+      try {
+        postBalances = await supabaseFinance.getAccountBalances();
+        postBalSummary = _resolveTxBalanceSummary(txToCheck, postBalances);
+      } catch (_) {}
+    }
+
     let detailSummary = '';
     if (notFound) {
       detailSummary = 'Already saved or expired.';
@@ -383,15 +406,24 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
         txToCheck.payment_method || txToCheck.paymentMethod || '',
         txToCheck.category || ''
       ].map(s => String(s || '').trim()).filter(s => s && s !== '-' && !/^unassigned$/i.test(s));
+      if (postBalSummary && postBalSummary.compact) {
+        parts.push(postBalSummary.compact);
+      }
       detailSummary = parts.length > 0 ? parts.join(' · ') : _cleanSingleLineDetail(reply);
     } else {
       detailSummary = _cleanSingleLineDetail(reply);
     }
+
+    const updatedCard = (!notFound && txToCheck && postBalSummary)
+      ? buildFinanceTxCard(txToCheck, compositeKey, { accountBalances: postBalances, expiresAtMs: 0 })
+      : null;
+
     _sendCardUpdate(ws, {
       card_id: cardId,
       status: 'RESOLVED',
       resolved_badge: notFound ? 'Already Resolved' : 'Recorded',
-      resolved_detail: detailSummary
+      resolved_detail: detailSummary,
+      ...(updatedCard ? { updated_card: updatedCard } : {})
     }, deps);
     return { ok: true, status: 'RESOLVED' };
   }
@@ -453,6 +485,7 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
 
     let categories = [];
     let accounts = [];
+    let accountBalances = [];
     try {
       categories = await supabaseFinance.getCategoriesList();
     } catch (_) {}
@@ -461,11 +494,17 @@ async function _handleFinanceCardAction(cardId, actionId, payload, ws, deps) {
         accounts = await supabaseFinance.getAccountsList();
       }
     } catch (_) {}
+    try {
+      if (typeof supabaseFinance.getAccountBalances === 'function') {
+        accountBalances = await supabaseFinance.getAccountBalances();
+      }
+    } catch (_) {}
 
     const refreshedCard = updatedTx
       ? buildFinanceTxCard(updatedTx.tx, compositeKey, {
           categories,
           accounts,
+          accountBalances,
           expiresAtMs: typeof updatedTx.expiresAtMs === 'number' ? updatedTx.expiresAtMs : 0
         })
       : null;
@@ -1657,7 +1696,18 @@ function formatMobileFinanceMutationReply(prevSnap, currMap, rawReply) {
       const accPart = tx.isSelfTransfer && tx.fromAccount && acc
         ? ` (${tx.fromAccount} ke ${acc})`
         : (acc && !/^(unassigned|belum dipilih|-)$/i.test(acc) ? ` (${acc})` : '');
-      return `Tercatat, Tuan. ${typeLabel}${nomPart}${accPart} sudah disimpan.`;
+      const plainRaw = rawText.replace(/<[^>]+>/g, '');
+      const balLineMatch = plainRaw.match(/Saldo(?:\s+[^:\n]+)?\s+Saat Ini:\s*([^\n\r]+)/i);
+      let balSuffix = '';
+      if (balLineMatch && balLineMatch[1]) {
+        const cleanBal = balLineMatch[1].trim();
+        if (cleanBal && cleanBal !== '-') {
+          balSuffix = tx.isSelfTransfer || !acc || /^(unassigned|belum dipilih|-)$/i.test(acc)
+            ? ` Saldo saat ini: ${cleanBal}.`
+            : ` Saldo ${acc} saat ini ${cleanBal}.`;
+        }
+      }
+      return `Tercatat, Tuan. ${typeLabel}${nomPart}${accPart} sudah disimpan.${balSuffix}`;
     }
     return `Tercatat, Tuan. ${removed.length} transaksi sudah disimpan.`;
   }

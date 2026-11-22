@@ -1010,5 +1010,100 @@ describe('Mobile Bridge Phase 3: Vault Metadata Card, Rich Briefing/Budget Cards
     );
     assert.ok(blockedReply.includes('Akun belum dipilih, Tuan.'));
     assert.ok(!/[\p{Extended_Pictographic}]/u.test(blockedReply));
+
+    // 6. Confirm via text/voice with post-commit balance included in rawReply
+    const confirmWithBalReply = formatMobileFinanceMutationReply(
+      readySnap,
+      emptyMap,
+      '✅ Transaksi Pengeluaran sebesar Rp13.500 berhasil dicatat ke database Supabase (Akun: Bank Jago).\n🏦 Saldo Bank Jago Saat Ini: Rp993.092'
+    );
+    assert.equal(
+      confirmWithBalReply,
+      'Tercatat, Tuan. Pengeluaran Rp13.500 (Bank Jago) sudah disimpan. Saldo Bank Jago saat ini Rp993.092.'
+    );
+  });
+
+  it('includes live account balance in FINANCE_TX card (draft, account update & post-confirm RESOLVED)', async () => {
+    const accountBalances = [
+      { id: 'acc-1', name: 'Bank Jago', balance: 1250000 },
+      { id: 'acc-2', name: 'Dana', balance: 350000 }
+    ];
+
+    // 1. Draft card with account selected -> has Balance field & meta.balance
+    const cardWithAcc = buildFinanceTxCard(
+      {
+        type: 'INCOME',
+        nominal: 150000,
+        destination: 'KHANSA QONITA',
+        account: 'Bank Jago',
+        payment_method: 'Transfer bank',
+        category: 'Pendapatan (umum)',
+        description: 'kepanitiaan'
+      },
+      '150000_khansa',
+      { accountBalances }
+    );
+    const balField = cardWithAcc.fields.find(f => f.key === 'balance');
+    assert.ok(balField, 'Card with selected account must include balance field');
+    assert.equal(balField.value, 'Rp1.250.000');
+    assert.equal(cardWithAcc.meta.balance, 'Rp1.250.000');
+
+    // 2. Draft card WITHOUT account selected -> omits balance field cleanly
+    const cardNoAcc = buildFinanceTxCard(
+      { type: 'EXPENSE', nominal: 20000, destination: 'Warung', account: '' },
+      '20000_warung',
+      { accountBalances }
+    );
+    assert.equal(cardNoAcc.fields.find(f => f.key === 'balance'), undefined);
+    assert.equal(cardNoAcc.meta.balance, '');
+
+    // 3. Self-transfer card -> shows both source & destination balances
+    const transferCard = buildFinanceTxCard(
+      { type: 'TRANSFER', isSelfTransfer: true, nominal: 50000, fromAccount: 'Dana', account: 'Bank Jago' },
+      '50000_transfer',
+      { accountBalances }
+    );
+    const trBalField = transferCard.fields.find(f => f.key === 'balance');
+    assert.ok(trBalField);
+    assert.equal(trBalField.value, 'Dana Rp350.000 · Bank Jago Rp1.250.000');
+
+    // 4. Confirm action -> emits RESOLVED CARD_UPDATE with post-commit updated_card balance & resolved_detail
+    const sent = [];
+    const mockWs = { readyState: 1, send: (raw) => sent.push(JSON.parse(raw)) };
+    let currentJagoBal = 1250000;
+    const txObj = {
+      type: 'INCOME',
+      nominal: 150000,
+      destination: 'KHANSA QONITA',
+      account: 'Bank Jago',
+      payment_method: 'Transfer bank',
+      category: 'Pendapatan (umum)',
+      description: 'kepanitiaan'
+    };
+    const deps = {
+      financeConfirmations: {
+        getPendingTransactionByKey: () => ({ tx: txObj, expiresAtMs: Date.now() + 60000 }),
+        confirmPendingTransactions: async () => {
+          currentJagoBal += 150000;
+          return '✅ Transaksi Pemasukan sebesar Rp150.000 berhasil dicatat.\n🏦 Saldo Bank Jago Saat Ini: Rp1.400.000';
+        }
+      },
+      supabaseFinance: {
+        getAccountBalances: async () => [{ id: 'acc-1', name: 'Bank Jago', balance: currentJagoBal }]
+      }
+    };
+
+    const res = await handleCardAction(
+      { card_id: 'fin_150000_khansa', card_type: 'FINANCE_TX', action_id: 'confirm', payload: {} },
+      mockWs,
+      deps
+    );
+    assert.equal(res.ok, true);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].status, 'RESOLVED');
+    assert.equal(sent[0].resolved_badge, 'Recorded');
+    assert.ok(sent[0].resolved_detail.includes('Saldo Rp1.400.000'));
+    assert.ok(sent[0].updated_card, 'Must emit updated_card with post-commit balance');
+    assert.equal(sent[0].updated_card.meta.balance, 'Rp1.400.000');
   });
 });

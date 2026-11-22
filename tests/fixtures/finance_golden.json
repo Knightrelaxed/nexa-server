@@ -67,7 +67,7 @@
       "outcome": {
         "ok": {
           "status": "SUCCESS",
-          "message": "✅ Transaksi <b>Pengeluaran</b> sebesar <b>Rp25.000</b> berhasil dicatat ke database Supabase (Akun: Cash)."
+          "message": "✅ Transaksi <b>Pengeluaran</b> sebesar <b>Rp25.000</b> berhasil dicatat ke database Supabase (Akun: Cash).\n🏦 <b>Saldo Cash Saat Ini:</b> Rp150.000"
         }
       },
       "stubCalls": [
@@ -75,7 +75,8 @@
         "SM.logTransactionKey",
         "Behavior.logFinanceRecord",
         "Budget.checkAndAlertBudget",
-        "webhook.sendTelegramOutbound"
+        "webhook.sendTelegramOutbound",
+        "SF.getAccountBalances"
       ]
     },
     "ledger: processTransaction (invalid nominal)": {
@@ -88,7 +89,7 @@
       "outcome": {
         "ok": {
           "status": "SUCCESS",
-          "message": "✅ Transaksi <b>Pengeluaran</b> sebesar <b>Rp54.000</b> berhasil dicatat ke database Supabase (Akun: Bank Mandiri)."
+          "message": "✅ Transaksi <b>Pengeluaran</b> sebesar <b>Rp54.000</b> berhasil dicatat ke database Supabase (Akun: Bank Mandiri).\n🏦 <b>Saldo Bank Mandiri Saat Ini:</b> Rp2.500.000"
         }
       },
       "stubCalls": [
@@ -99,7 +100,8 @@
         "SM.logTransactionKey",
         "Behavior.logFinanceRecord",
         "Budget.checkAndAlertBudget",
-        "webhook.sendTelegramOutbound"
+        "webhook.sendTelegramOutbound",
+        "SF.getAccountBalances"
       ]
     },
     "ledger: getRecentTransactions": {
@@ -179,7 +181,7 @@
     },
     "confirm: confirmPendingTransactions(true)": {
       "outcome": {
-        "ok": "✅ Transaksi <b>Pengeluaran</b> sebesar <b>Rp20.000</b> berhasil dicatat ke database Supabase (Akun: Cash)."
+        "ok": "✅ Transaksi <b>Pengeluaran</b> sebesar <b>Rp20.000</b> berhasil dicatat ke database Supabase (Akun: Cash).\n🏦 <b>Saldo Cash Saat Ini:</b> Rp150.000"
       },
       "stubCalls": [
         "SF.writeTransaction",
@@ -187,6 +189,7 @@
         "Behavior.logFinanceRecord",
         "Budget.checkAndAlertBudget",
         "webhook.sendTelegramOutbound",
+        "SF.getAccountBalances",
         "SM.deletePendingTransaction"
       ]
     },
@@ -208,7 +211,9 @@
         "SM.logTransactionKey",
         "Behavior.logFinanceRecord",
         "Budget.checkAndAlertBudget",
-        "webhook.sendTelegramOutbound"
+        "webhook.sendTelegramOutbound",
+        "SF.getAccountBalances",
+        "SF.getAccountBalances"
       ]
     },
     "confirm: recoverPendingTransactions": {
@@ -224,6 +229,7 @@
         "Behavior.logFinanceRecord",
         "Budget.checkAndAlertBudget",
         "webhook.sendTelegramOutbound",
+        "SF.getAccountBalances",
         "SM.deletePendingTransaction"
       ]
     },
@@ -278,10 +284,11 @@
     },
     "corrections: confirmDeleteTransaction(true)": {
       "outcome": {
-        "ok": "🗑️ <b>TRANSAKSI DIHAPUS DARI DATABASE</b>\n\n\"Kopi Kenangan\" sebesar Rp25.000 telah dihapus sepenuhnya.\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata \"batalkan hapus\" atau \"undo\".</i>"
+        "ok": "🗑️ <b>TRANSAKSI DIHAPUS DARI DATABASE</b>\n\n\"Kopi Kenangan\" sebesar Rp25.000 telah dihapus sepenuhnya.\n🏦 <b>Saldo Cash Saat Ini:</b> Rp150.000\n\n💡 <i>Anda bisa membatalkan penghapusan ini dalam 10 menit ke depan dengan berkata \"batalkan hapus\" atau \"undo\".</i>"
       },
       "stubCalls": [
-        "SF.deleteTransaction"
+        "SF.deleteTransaction",
+        "SF.getAccountBalances"
       ]
     },
     "corrections: undoDeleteTransaction (after delete)": {
@@ -299,12 +306,13 @@
       "outcome": {
         "ok": {
           "status": "SUCCESS",
-          "message": "💸 <b>TRANSAKSI DIEDIT</b>\n\n<b>No:</b> t1\n<b>Tanggal:</b> 2026-10-14\n<b>Waktu:</b> 09:30\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe\n<b>Akun:</b> Cash\n<b>Deskripsi:</b> Kopi Kenangan\n<b>Nominal (Rp):</b> Rp30.000\n<b>Saldo (Rp) Saat Ini:</b> -\n\nYang saya edit adalah:\n- Nominal (dari Rp25.000 menjadi Rp30.000)\n\nApakah ada hal lain yang mau diedit, Tuan?"
+          "message": "💸 <b>TRANSAKSI DIEDIT</b>\n\n<b>No:</b> t1\n<b>Tanggal:</b> 2026-10-14\n<b>Waktu:</b> 09:30\n<b>Tipe:</b> Pengeluaran\n<b>Kategori:</b> Jajan / Ngopi / Kafe\n<b>Akun:</b> Cash\n<b>Deskripsi:</b> Kopi Kenangan\n<b>Nominal (Rp):</b> Rp30.000\n<b>Saldo (Rp) Saat Ini:</b> Rp150.000\n\nYang saya edit adalah:\n- Nominal (dari Rp25.000 menjadi Rp30.000)\n\nApakah ada hal lain yang mau diedit, Tuan?"
         }
       },
       "stubCalls": [
         "SF.readTransactions",
-        "SF.updateTransaction"
+        "SF.updateTransaction",
+        "SF.getAccountBalances"
       ]
     },
     "corrections: editTransaction (no match)": {
@@ -339,6 +347,8 @@
         "SM.savePendingTransaction",
         "SF.getAccountBalances",
         "SF.getCategoriesList",
+        "SF.getAccountsList",
+        "SF.getAccountBalances",
         "SM.saveChatMemory",
         "net.sendTelegramMessage",
         "SM.markPendingTransactionSent",

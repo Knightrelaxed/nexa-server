@@ -400,9 +400,23 @@ async function pollFinanceEmails() {
           const { notifyProactive } = require('../../core/Notifier');
           const { buildFinanceTxCard } = require('../../interfaces/bridge/mobile_bridge/card_handler');
           let categories = [];
+          let accounts = [];
+          let accountBalances = [];
           try { categories = await supabaseFinance.getCategoriesList(); } catch (_) {}
+          try {
+            if (typeof supabaseFinance.getAccountsList === 'function') {
+              accounts = await supabaseFinance.getAccountsList();
+            }
+          } catch (_) {}
+          try {
+            if (typeof supabaseFinance.getAccountBalances === 'function') {
+              accountBalances = await supabaseFinance.getAccountBalances();
+            }
+          } catch (_) {}
           const card = buildFinanceTxCard(tx, compositeKey, {
             categories,
+            accounts,
+            accountBalances,
             expiresAtMs: Date.now() + 5 * 60 * 1000
           });
           await notifyProactive({

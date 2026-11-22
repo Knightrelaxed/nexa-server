@@ -5,7 +5,7 @@
  */
 const supabase = require('../../infrastructure/Supabase_Memories');
 const supabaseFinance = require('../../infrastructure/Supabase_Finance');
-const { _autoCategorizeMerchant, _normalizePaymentMethod, _parseFlexibleCurrency } = require('./Finance_Helpers');
+const { _autoCategorizeMerchant, _normalizePaymentMethod, _parseFlexibleCurrency, _formatBalanceRp, _matchAccountBalance, _resolveTxBalanceSummary } = require('./Finance_Helpers');
 const { processTransaction } = require('./Finance_Ledger');
 const { pendingConfirmations, processingKeys } = require('./Finance_State');
 
@@ -136,9 +136,15 @@ async function recoverPendingTransactions() {
           const { buildFinanceTxCard } = require('../../interfaces/bridge/mobile_bridge/card_handler');
           let categories = [];
           let accounts = [];
+          let accountBalances = [];
           try { categories = await supabaseFinance.getCategoriesList(); } catch (_) {}
           try { accounts = await supabaseFinance.getAccountsList(); } catch (_) {}
-          const card = buildFinanceTxCard(tx, compositeKey, { categories, accounts, expiresAtMs });
+          try {
+            if (typeof supabaseFinance.getAccountBalances === 'function') {
+              accountBalances = await supabaseFinance.getAccountBalances();
+            }
+          } catch (_) {}
+          const card = buildFinanceTxCard(tx, compositeKey, { categories, accounts, accountBalances, expiresAtMs });
           await notifyProactive({
             kind: 'finance_tx_confirm',
             priority: 'P0',
@@ -303,12 +309,25 @@ async function confirmPendingTransactions(isYes, customDescription = null, custo
           await supabase.logTransactionKey(key, txTime, source);
 
           const nominalFmt = isNaN(nominalNum) ? String(pending.tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
+          let transferBalLine = '';
+          try {
+            if (typeof supabaseFinance.getAccountBalances === 'function') {
+              const balances = await supabaseFinance.getAccountBalances();
+              const fromMatched = _matchAccountBalance(balances, fromAcc);
+              const toMatched = _matchAccountBalance(balances, toAcc);
+              if (fromMatched || toMatched) {
+                const fromBal = fromMatched ? _formatBalanceRp(fromMatched.balance) : '-';
+                const toBal = toMatched ? _formatBalanceRp(toMatched.balance) : '-';
+                transferBalLine = `\n• Saldo Saat Ini: <b>${fromAcc}</b> (${fromBal}) • <b>${toAcc}</b> (${toBal})`;
+              }
+            }
+          } catch (_) {}
           if (adminFeeNum > 0) {
             const adminFmt = `Rp${adminFeeNum.toLocaleString('id-ID')}`;
             const totalOutFmt = `Rp${(nominalNum + adminFeeNum).toLocaleString('id-ID')}`;
-            successMessages.push(`✅ <b>Transfer Antar-Akun Berhasil Dicatat!</b>\n\n• Sumber: <b>${fromAcc}</b> (-${totalOutFmt} termasuk admin ${adminFmt})\n• Tujuan: <b>${toAcc}</b> (+${nominalFmt})\n• Biaya Admin: <b>${adminFmt}</b> (Biaya Admin / Layanan)\n• Keterangan: ${desc}`);
+            successMessages.push(`✅ <b>Transfer Antar-Akun Berhasil Dicatat!</b>\n\n• Sumber: <b>${fromAcc}</b> (-${totalOutFmt} termasuk admin ${adminFmt})\n• Tujuan: <b>${toAcc}</b> (+${nominalFmt})\n• Biaya Admin: <b>${adminFmt}</b> (Biaya Admin / Layanan)\n• Keterangan: ${desc}${transferBalLine}`);
           } else {
-            successMessages.push(`✅ <b>Transfer Antar-Akun Berhasil Dicatat!</b>\n\n• Sumber: <b>${fromAcc}</b> (-${nominalFmt})\n• Tujuan: <b>${toAcc}</b> (+${nominalFmt})\n• Keterangan: ${desc}`);
+            successMessages.push(`✅ <b>Transfer Antar-Akun Berhasil Dicatat!</b>\n\n• Sumber: <b>${fromAcc}</b> (-${nominalFmt})\n• Tujuan: <b>${toAcc}</b> (+${nominalFmt})\n• Keterangan: ${desc}${transferBalLine}`);
           }
           processedCount++;
           pendingConfirmations.delete(key);
@@ -902,21 +921,38 @@ async function _autoSavePending(compositeKey, tx) {
       await supabase.logTransactionKey(compositeKey, txTime, tx.isAutoSyncEmail ? 'GMAIL_POLLING' : 'TELEGRAM_MANUAL');
 
       const nominalFmt = isNaN(nominalNum) ? String(tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
+      let autoTransferBalances = [];
+      let autoTransferSummary = null;
+      try {
+        if (typeof supabaseFinance.getAccountBalances === 'function') {
+          autoTransferBalances = await supabaseFinance.getAccountBalances();
+          autoTransferSummary = _resolveTxBalanceSummary(tx, autoTransferBalances);
+        }
+      } catch (_) {}
+      const transferBalSuffix = autoTransferSummary
+        ? `\n• Saldo Saat Ini: ${autoTransferSummary.display}`
+        : '';
       let timeoutMsg;
       if (adminFeeNum > 0) {
         const adminFmt = `Rp${adminFeeNum.toLocaleString('id-ID')}`;
         const totalOutFmt = `Rp${(nominalNum + adminFeeNum).toLocaleString('id-ID')}`;
-        timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransfer <b>${nominalFmt}</b> dari <b>${fromAcc}</b> ke <b>${toAcc}</b> (admin: ${adminFmt}) telah disimpan otomatis.\n\n• Saldo ${fromAcc}: -${totalOutFmt}\n• Saldo ${toAcc}: +${nominalFmt}\n• Biaya Admin: ${adminFmt} (Biaya Admin / Layanan)`;
+        timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransfer <b>${nominalFmt}</b> dari <b>${fromAcc}</b> ke <b>${toAcc}</b> (admin: ${adminFmt}) telah disimpan otomatis.\n\n• Saldo ${fromAcc}: -${totalOutFmt}\n• Saldo ${toAcc}: +${nominalFmt}\n• Biaya Admin: ${adminFmt} (Biaya Admin / Layanan)${transferBalSuffix}`;
       } else {
-        timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransfer <b>${nominalFmt}</b> dari <b>${fromAcc}</b> ke <b>${toAcc}</b> telah disimpan otomatis.\n\n• Saldo ${fromAcc}: -${nominalFmt}\n• Saldo ${toAcc}: +${nominalFmt}`;
+        timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransfer <b>${nominalFmt}</b> dari <b>${fromAcc}</b> ke <b>${toAcc}</b> telah disimpan otomatis.\n\n• Saldo ${fromAcc}: -${nominalFmt}\n• Saldo ${toAcc}: +${nominalFmt}${transferBalSuffix}`;
       }
       try {
         const mobileClient = require('../../interfaces/bridge/mobile_bridge/client');
+        const { buildFinanceTxCard } = require('../../interfaces/bridge/mobile_bridge/card_handler');
+        const updatedCard = autoTransferSummary
+          ? buildFinanceTxCard(tx, compositeKey, { accountBalances: autoTransferBalances, expiresAtMs: 0 })
+          : null;
+        const detailBalTail = autoTransferSummary ? ` · ${autoTransferSummary.compact}` : '';
         mobileClient.sendCardUpdate({
           card_id: `fin_${compositeKey}`,
           status: 'RESOLVED',
           resolved_badge: 'Auto-saved',
-          resolved_detail: `Transfer ${nominalFmt} (${fromAcc} -> ${toAcc}) saved automatically.`
+          resolved_detail: `Transfer ${nominalFmt} (${fromAcc} -> ${toAcc}) saved automatically.${detailBalTail}`,
+          ...(updatedCard ? { updated_card: updatedCard } : {})
         });
       } catch (_) {}
       try {
@@ -973,14 +1009,31 @@ async function _autoSavePending(compositeKey, tx) {
     // the decimal point, so "50000.50" became 5000050. _parseFlexibleCurrency handles all formats.
     const nominalNum = typeof tx.nominal === 'number' ? tx.nominal : _parseFlexibleCurrency(String(tx.nominal));
     const nominalFmt = isNaN(nominalNum) ? String(tx.nominal) : `Rp${nominalNum.toLocaleString('id-ID')}`;
-    const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>`;
+    let autoSaveBalances = [];
+    let autoSaveBalSummary = null;
+    try {
+      if (typeof supabaseFinance.getAccountBalances === 'function') {
+        autoSaveBalances = await supabaseFinance.getAccountBalances();
+        autoSaveBalSummary = _resolveTxBalanceSummary(tx, autoSaveBalances);
+      }
+    } catch (_) {}
+    const balMsgLine = autoSaveBalSummary
+      ? `\nSaldo ${autoSaveBalSummary.accountName || (tx.account || 'Akun')} Saat Ini: <b>${autoSaveBalSummary.display}</b>`
+      : '';
+    const timeoutMsg = `⏳ <i>Waktu habis.</i>\nTransaksi <b>${nominalFmt}</b> telah disimpan otomatis.\n\nKategori AI: <b>${tx.category}</b>\nCatatan: <b>${tx.description}</b>${balMsgLine}`;
     try {
       const mobileClient = require('../../interfaces/bridge/mobile_bridge/client');
+      const { buildFinanceTxCard } = require('../../interfaces/bridge/mobile_bridge/card_handler');
+      const updatedCard = autoSaveBalSummary
+        ? buildFinanceTxCard(tx, compositeKey, { accountBalances: autoSaveBalances, expiresAtMs: 0 })
+        : null;
+      const detailTail = autoSaveBalSummary ? ` · ${autoSaveBalSummary.compact}` : '';
       mobileClient.sendCardUpdate({
         card_id: `fin_${compositeKey}`,
         status: 'RESOLVED',
         resolved_badge: 'Auto-saved',
-        resolved_detail: `${nominalFmt} saved automatically · ${tx.category}`
+        resolved_detail: `${nominalFmt} saved automatically · ${tx.category}${detailTail}`,
+        ...(updatedCard ? { updated_card: updatedCard } : {})
       });
     } catch (_) {}
     try {

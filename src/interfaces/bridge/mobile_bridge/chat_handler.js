@@ -693,6 +693,16 @@ function createMobileChatHandler(deps = {}) {
       return [];
     };
 
+    const loadFinanceBalances = async () => {
+      try {
+        if (supabaseFinance && typeof supabaseFinance.getAccountBalances === 'function') {
+          const bals = await supabaseFinance.getAccountBalances();
+          if (Array.isArray(bals)) return bals;
+        }
+      } catch (_) {}
+      return [];
+    };
+
     const syncFinanceCardsAfterMutation = async (ws, prevSnap, replyText) => {
       if (!prevSnap || prevSnap.size === 0) return;
       const currMap = getPendingFinMap();
@@ -705,12 +715,28 @@ function createMobileChatHandler(deps = {}) {
       for (const [oldKey, oldTxJson] of prevSnap.entries()) {
         if (!currMap || !currMap.has(oldKey)) {
           const wasCancelled = /dibatalkan/i.test(replyText);
+          let updatedCard = null;
+          if (!wasCancelled) {
+            try {
+              const oldTx = typeof oldTxJson === 'string' && oldTxJson ? JSON.parse(oldTxJson) : null;
+              if (oldTx && typeof oldTx === 'object') {
+                const accountBalances = await loadFinanceBalances();
+                if (accountBalances.length > 0) {
+                  updatedCard = cardHandler.buildFinanceTxCard(oldTx, oldKey, {
+                    accountBalances,
+                    expiresAtMs: 0
+                  });
+                }
+              }
+            } catch (_) {}
+          }
           safeSend(ws, {
             type: 'CARD_UPDATE',
             card_id: `fin_${oldKey}`,
             status: 'RESOLVED',
             resolved_badge: wasCancelled ? 'Cancelled' : 'Recorded',
             resolved_detail: wasCancelled ? '' : cleanDetail,
+            ...(updatedCard ? { updated_card: updatedCard } : {}),
             ts: nowFn()
           });
         } else {
@@ -718,10 +744,15 @@ function createMobileChatHandler(deps = {}) {
           let currJson = '';
           try { currJson = JSON.stringify((currEntry && currEntry.tx) || {}); } catch (_) {}
           if (currEntry && currEntry.tx && currJson !== oldTxJson) {
-            const [categories, accounts] = await Promise.all([loadFinanceCategories(), loadFinanceAccounts()]);
+            const [categories, accounts, accountBalances] = await Promise.all([
+              loadFinanceCategories(),
+              loadFinanceAccounts(),
+              loadFinanceBalances()
+            ]);
             const updatedCard = cardHandler.buildFinanceTxCard(currEntry.tx, oldKey, {
               categories,
               accounts,
+              accountBalances,
               expiresAtMs: currEntry.expiresAtMs
             });
             safeSend(ws, {
@@ -1334,10 +1365,15 @@ function createMobileChatHandler(deps = {}) {
       if (currFinMap && currFinMap.size > 0) {
         for (const [finKey, finEntry] of currFinMap.entries()) {
           if (!prevFinSnap.has(finKey) && finEntry && finEntry.tx) {
-            const [categories, accounts] = await Promise.all([loadFinanceCategories(), loadFinanceAccounts()]);
+            const [categories, accounts, accountBalances] = await Promise.all([
+              loadFinanceCategories(),
+              loadFinanceAccounts(),
+              loadFinanceBalances()
+            ]);
             attachedCard = cardHandler.buildFinanceTxCard(finEntry.tx, finKey, {
               categories,
               accounts,
+              accountBalances,
               expiresAtMs: finEntry.expiresAtMs
             });
             break;

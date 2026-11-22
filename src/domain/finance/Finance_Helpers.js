@@ -483,6 +483,68 @@ function _resolveTransactionTimeISO(edTime, textInput = '', baseDate = null) {
   return safeRef.toISOString();
 }
 
+/**
+ * Format numeric account balance into canonical IDR string (e.g. "Rp1.250.000", "-Rp50.000").
+ */
+function _formatBalanceRp(num) {
+  if (num === null || num === undefined || num === '' || isNaN(Number(num))) return '-';
+  const n = Math.round(Number(num));
+  const prefix = n < 0 ? '-Rp' : 'Rp';
+  return `${prefix}${Math.abs(n).toLocaleString('id-ID')}`;
+}
+
+/**
+ * Match an account name against the array returned by supabaseFinance.getAccountBalances().
+ */
+function _matchAccountBalance(accountBalances, accName) {
+  if (!accName || !Array.isArray(accountBalances) || accountBalances.length === 0) return null;
+  const target = String(accName).toLowerCase().replace(/^(bank|dompet)\s+/i, '').replace(/\s+/g, '');
+  if (!target || /^(unassigned|belumdipilih|-)$/i.test(target)) return null;
+  return accountBalances.find((a) => {
+    const aName = String((a && a.name) || '').toLowerCase().replace(/^(bank|dompet)\s+/i, '').replace(/\s+/g, '');
+    return aName && (aName === target || aName.includes(target) || target.includes(aName));
+  }) || null;
+}
+
+/**
+ * Resolve balance display strings for a single-account or self-transfer transaction.
+ * Returns null if no matching account balance is available.
+ */
+function _resolveTxBalanceSummary(tx = {}, accountBalances = []) {
+  if (!Array.isArray(accountBalances) || accountBalances.length === 0) return null;
+  const isTransfer = Boolean(tx.isSelfTransfer || String(tx.type || '').toUpperCase() === 'TRANSFER');
+  if (isTransfer) {
+    const fromAcc = String(tx.fromAccount || '').trim();
+    const toAcc = String(tx.account || tx.suggestedAccount || '').trim();
+    const fromMatched = _matchAccountBalance(accountBalances, fromAcc);
+    const toMatched = _matchAccountBalance(accountBalances, toAcc);
+    if (!fromMatched && !toMatched) return null;
+    const fromLabel = fromMatched ? fromMatched.name : (fromAcc || 'Sumber');
+    const toLabel = toMatched ? toMatched.name : (toAcc || 'Tujuan');
+    const fromStr = fromMatched ? _formatBalanceRp(fromMatched.balance) : '-';
+    const toStr = toMatched ? _formatBalanceRp(toMatched.balance) : '-';
+    return {
+      isTransfer: true,
+      display: `${fromLabel} (${fromStr}) • ${toLabel} (${toStr})`,
+      cardValue: `${fromLabel} ${fromStr} · ${toLabel} ${toStr}`,
+      compact: `${fromLabel} ${fromStr} · ${toLabel} ${toStr}`
+    };
+  }
+
+  const accName = String(tx.account || tx.suggestedAccount || '').trim();
+  const matched = _matchAccountBalance(accountBalances, accName);
+  if (!matched) return null;
+  const balStr = _formatBalanceRp(matched.balance);
+  return {
+    isTransfer: false,
+    accountName: matched.name,
+    balance: matched.balance,
+    display: balStr,
+    cardValue: balStr,
+    compact: `Saldo ${balStr}`
+  };
+}
+
 module.exports = {
   _normalizePaymentMethod,
   _autoCategorizeMerchant,
@@ -492,4 +554,7 @@ module.exports = {
   _parseDateTimeExpression,
   _resolveTransactionTimeISO,
   _formatTxAsCard,
+  _formatBalanceRp,
+  _matchAccountBalance,
+  _resolveTxBalanceSummary,
 };

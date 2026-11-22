@@ -657,10 +657,16 @@ function initCronJobs() {
             const supabaseFinance = require('../infrastructure/Supabase_Finance');
             let categories = [];
             let accounts = [];
+            let accountBalances = [];
             try { categories = await supabaseFinance.getCategoriesList(); } catch (_) {}
             try { accounts = await supabaseFinance.getAccountsList(); } catch (_) {}
+            try {
+              if (typeof supabaseFinance.getAccountBalances === 'function') {
+                accountBalances = await supabaseFinance.getAccountBalances();
+              }
+            } catch (_) {}
             const expiresAtMs = new Date(row.created_at).getTime() + 5 * 60 * 1000;
-            const card = buildFinanceTxCard(tx, compositeKey, { categories, accounts, expiresAtMs });
+            const card = buildFinanceTxCard(tx, compositeKey, { categories, accounts, accountBalances, expiresAtMs });
             await notifyProactive({
               kind: 'pending_transaction_alert',
               priority: 'P0',

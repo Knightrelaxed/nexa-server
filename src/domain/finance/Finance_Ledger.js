@@ -6,7 +6,7 @@
 const crypto = require('crypto');
 const supabase = require('../../infrastructure/Supabase_Memories');
 const supabaseFinance = require('../../infrastructure/Supabase_Finance');
-const { _autoCategorizeMerchant, _formatTxAsCard, _normalizePaymentMethod, _parseFlexibleCurrency, _parseRelativeDateFilter } = require('./Finance_Helpers');
+const { _autoCategorizeMerchant, _formatTxAsCard, _normalizePaymentMethod, _parseFlexibleCurrency, _parseRelativeDateFilter, _formatBalanceRp, _matchAccountBalance } = require('./Finance_Helpers');
 const { recordCommittedTransaction } = require('./Finance_Corrections');
 
 /**
@@ -98,9 +98,24 @@ async function processTransaction(data, source) {
 
         await supabase.logTransactionKey(compositeKey, transactionTime, source);
         console.log(`[FINANCE] ✅ Transfer Pair Supabase berhasil disimpan (Pair ID: ${pairResult.pairId})`);
+        let transferBalLine = '';
+        try {
+          if (typeof supabaseFinance.getAccountBalances === 'function') {
+            const balances = await supabaseFinance.getAccountBalances();
+            const fromMatched = _matchAccountBalance(balances, fromAcc);
+            const toMatched = _matchAccountBalance(balances, toAcc);
+            if (fromMatched || toMatched) {
+              const fromBal = fromMatched ? _formatBalanceRp(fromMatched.balance) : '-';
+              const toBal = toMatched ? _formatBalanceRp(toMatched.balance) : '-';
+              transferBalLine = `\n🏦 <b>Saldo Saat Ini:</b> ${fromAcc} (${fromBal}) • ${toAcc} (${toBal})`;
+            }
+          }
+        } catch (balErr) {
+          console.warn('[FINANCE] getAccountBalances failed after transfer pair:', balErr.message);
+        }
         const msg = adminFeeNum > 0
-          ? `✅ Transfer Rp${nominal.toLocaleString('id-ID')} dari ${fromAcc} ke ${toAcc} (admin: Rp${adminFeeNum.toLocaleString('id-ID')}) berhasil dicatat.`
-          : `✅ Transfer Rp${nominal.toLocaleString('id-ID')} dari ${fromAcc} ke ${toAcc} berhasil dicatat.`;
+          ? `✅ Transfer Rp${nominal.toLocaleString('id-ID')} dari ${fromAcc} ke ${toAcc} (admin: Rp${adminFeeNum.toLocaleString('id-ID')}) berhasil dicatat.${transferBalLine}`
+          : `✅ Transfer Rp${nominal.toLocaleString('id-ID')} dari ${fromAcc} ke ${toAcc} berhasil dicatat.${transferBalLine}`;
         return {
           status: 'SUCCESS',
           pairId: pairResult.pairId,
@@ -253,9 +268,21 @@ async function processTransaction(data, source) {
     const adminMsgLine = (adminFeeNum > 0 && !isIncome)
       ? `\nℹ️ <i>Biaya admin Rp${adminFeeNum.toLocaleString('id-ID')} dicatat terpisah dan terhubung secara otomatis.</i>`
       : '';
+    let balanceLine = '';
+    try {
+      if (typeof supabaseFinance.getAccountBalances === 'function') {
+        const balances = await supabaseFinance.getAccountBalances();
+        const matched = _matchAccountBalance(balances, akunName);
+        if (matched) {
+          balanceLine = `\n🏦 <b>Saldo ${matched.name} Saat Ini:</b> ${_formatBalanceRp(matched.balance)}`;
+        }
+      }
+    } catch (balErr) {
+      console.warn('[FINANCE] getAccountBalances failed in processTransaction:', balErr.message);
+    }
     return {
       status: 'SUCCESS',
-      message: `✅ Transaksi <b>${tipeLabel}</b> sebesar <b>${nominalFormatted}</b> berhasil dicatat ke database Supabase (Akun: ${akunName}).${paymentMethodLine}${adminMsgLine}`
+      message: `✅ Transaksi <b>${tipeLabel}</b> sebesar <b>${nominalFormatted}</b> berhasil dicatat ke database Supabase (Akun: ${akunName}).${paymentMethodLine}${balanceLine}${adminMsgLine}`
     };
   } catch (error) {
     console.error('[FINANCE] Failed to record transaction:', error.message);
