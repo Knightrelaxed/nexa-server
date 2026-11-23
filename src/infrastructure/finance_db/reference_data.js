@@ -198,10 +198,10 @@ async function resolveAccountId(accountName) {
     return best.id;
   }
 
-  // FALLBACK FIX: Jangan pernah mengembalikan null jika gagal mencocokkan.
-  // Kembalikan akun pertama (default) agar transaksi tidak hangus saat auto-save.
-  console.warn(`[SUPABASE_FINANCE] resolveAccountId: Tidak ada akun yang cocok dengan "${accountName}". Fallback paksa ke akun pertama "${accounts[0].name}"`);
-  return accounts[0].id;
+  // Tidak ada kecocokan — kembalikan null agar upstream bisa menangani (tanya user).
+  // JANGAN fallback ke accounts[0] untuk input manual.
+  console.warn(`[SUPABASE_FINANCE] resolveAccountId: Tidak ada akun yang cocok dengan "${accountName}". Kembalikan null.`);
+  return null;
 }
 
 /**

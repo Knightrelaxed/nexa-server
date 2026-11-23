@@ -138,19 +138,17 @@ async function processTransaction(data, source) {
     const smartCategory = await _autoCategorizeMerchant(combinedContext, data.category);
 
     // Nama akun: gunakan data.account jika ada (dari Telegram manual/AI Router/Email Sync).
-    // Jika otomatis dari email Auto-Sync dan tidak ada account spesifik, fallback ke 'Bank Mandiri'.
-    // Jika manual dan kosong, ambil akun aktif pertama dari database.
+    // Jika dari GMAIL_POLLING dan kosong, fallback ke 'Bank Mandiri' (sumber email).
+    // JANGAN pernah menebak akun untuk input manual — throw agar upstream bisa tanya user.
     let akunName = data.account && String(data.account).trim() ? String(data.account).trim() : null;
     if (!akunName) {
       if (source === 'GMAIL_POLLING') {
         akunName = 'Bank Mandiri';
       } else {
-        const accounts = await supabaseFinance.getAccountsList();
-        if (accounts && accounts.length > 0) {
-          akunName = accounts[0].name;
-        } else {
-          akunName = 'Tunai'; // Failsafe mutlak
-        }
+        // Input manual tanpa akun — TOLAK agar upstream tanya user
+        const err = new Error('MISSING_ACCOUNT');
+        err.code = 'MISSING_ACCOUNT';
+        throw err;
       }
     }
     // ── METODE PEMBAYARAN ───────────────────────────────────────────────────

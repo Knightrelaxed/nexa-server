@@ -331,18 +331,17 @@ async function executeSplit(items, baseTx, existingTxId = null) {
   let successCount = 0;
   let failedCount = 0;
 
-  let accountName = baseTx.account;
-  if (!accountName || String(accountName).trim().toLowerCase() === 'null') {
-    const supabaseFinance = require('../infrastructure/Supabase_Finance');
-    const accounts = await supabaseFinance.getAccountsList();
-    if (accounts && accounts.length > 0) {
-      accountName = accounts[0].name;
-    } else {
-      accountName = 'Tunai';
-    }
+  let accountName = baseTx.account && String(baseTx.account).trim().toLowerCase() !== 'null'
+    ? String(baseTx.account).trim()
+    : null;
+
+  // SAFETY: Jangan pernah menebak akun — caller wajib mengisi baseTx.account sebelum executeSplit.
+  if (!accountName) {
+    console.error('[SPLIT_ENGINE] executeSplit dipanggil tanpa baseTx.account — batalkan dan minta konfirmasi akun dulu.');
+    return { success: 0, failed: 0, splitGroupId: null, missingAccount: true };
   }
 
-  console.log(`[SPLIT_ENGINE] Executing split: ${items.length} items, group=${splitGroupId}, fallbackAccount=${accountName}`);
+  console.log(`[SPLIT_ENGINE] Executing split: ${items.length} items, group=${splitGroupId}, account=${accountName}`);
 
   // Insert setiap item sebagai baris transaksi terpisah
   for (const item of items) {
@@ -502,7 +501,51 @@ async function handleSplitWithRemainder(chatId, splitItems, totalNominal, baseTx
       `<i>(Tanpa balasan dalam 5 menit, N.E.X.A akan membuat baris item dengan kategori Lainnya: "Sisa split ${storeName || 'Belanja'}").</i>`;
   }
 
-  // 2. Cek Kekurangan Metode Pembayaran
+  // 2. Cek Kekurangan Akun (PRIORITAS: tanya akun sebelum payment method)
+  if (!baseTx.account || String(baseTx.account).trim().toLowerCase() === 'null') {
+    const cid = String(chatId);
+    cancelPendingRemainder(cid);
+
+    const supabaseFinance = require('../infrastructure/Supabase_Finance');
+    const accounts = await supabaseFinance.getAccountsList();
+    const accountOptions = accounts.map(a => a.name).join(' / ');
+
+    const timeoutId = setTimeout(async () => {
+      const pending = pendingSplitRemainders.get(cid);
+      if (pending && pending.waitingFor === 'ACCOUNT') {
+        pendingSplitRemainders.delete(cid);
+        // Timeout: default ke Bank Jago (akun harian utama), BUKAN accounts[0]
+        pending.baseTx.account = 'Bank Jago';
+        const res = await executeSplit(pending.items, pending.baseTx, pending.existingTxId);
+        const totalDisplay = pending.totalNominal || pending.items.reduce((s, i) => s + i.nominal, 0);
+        const autoMsg = `⏳ <i>Waktu habis (5 menit).</i>\nTransaksi split otomatis disimpan ke <b>Bank Jago</b> (default).\n\n` +
+          formatSplitMessage(pending.items, totalDisplay, pending.storeName, res.success);
+        if (respondToTelegramFn) {
+          try { await respondToTelegramFn(autoMsg); } catch (_) {}
+        } else {
+          try { await require('../interfaces/webhook').sendTelegramOutbound(autoMsg, true); } catch (_) {}
+        }
+      }
+    }, 5 * 60 * 1000);
+
+    pendingSplitRemainders.set(cid, {
+      baseTx,
+      items: splitItems,
+      totalNominal,
+      storeName,
+      remainder: 0,
+      existingTxId,
+      timeoutId,
+      waitingFor: 'ACCOUNT',
+      respondToTelegramFn
+    });
+
+    const totalDisplay = totalNominal || sumItems;
+    return formatSplitMessage(splitItems, totalDisplay, storeName, null) +
+      `\n\n❓ <b>Satu hal lagi Tuan.</b>\nTransaksi ini dari akun mana?\n<b>${accountOptions}</b>\n<i>(Tanpa balasan dalam 5 menit, N.E.X.A akan menyimpan ke Bank Jago sebagai default.)</i>`;
+  }
+
+  // 3. Cek Kekurangan Metode Pembayaran
   if (!baseTx.paymentMethod) {
     const cid = String(chatId);
     cancelPendingRemainder(cid);
@@ -557,6 +600,40 @@ async function resolveRemainderReply(chatId, userText) {
   if (!pending) return null;
 
   cancelPendingRemainder(cid);
+
+  if (pending.waitingFor === 'ACCOUNT') {
+    // Cocokkan nama akun dari balasan user via fuzzy match
+    const { resolveAccount } = require('../infrastructure/finance_db/reference_data');
+    const matchedAccount = await resolveAccount(userText.trim());
+
+    if (!matchedAccount) {
+      // Tidak bisa cocokkan — tanya ulang
+      const supabaseFinance = require('../infrastructure/Supabase_Finance');
+      const accounts = await supabaseFinance.getAccountsList();
+      const accountOptions = accounts.map(a => a.name).join(' / ');
+      // Re-schedule (buat pending baru dengan timeout baru)
+      const timeoutId = setTimeout(async () => {
+        const p2 = pendingSplitRemainders.get(cid);
+        if (p2 && p2.waitingFor === 'ACCOUNT') {
+          pendingSplitRemainders.delete(cid);
+          p2.baseTx.account = 'Bank Jago';
+          const res = await executeSplit(p2.items, p2.baseTx, p2.existingTxId);
+          const td = p2.totalNominal || p2.items.reduce((s, i) => s + i.nominal, 0);
+          const msg = `⏳ <i>Waktu habis.</i>\nDisimpan ke <b>Bank Jago</b> (default).\n\n` +
+            formatSplitMessage(p2.items, td, p2.storeName, res.success);
+          if (pending.respondToTelegramFn) {
+            try { await pending.respondToTelegramFn(msg); } catch (_) {}
+          }
+        }
+      }, 5 * 60 * 1000);
+      pendingSplitRemainders.set(cid, { ...pending, timeoutId });
+      return `❓ Maaf Tuan, akun "<b>${userText.trim()}</b>" tidak dikenali.\nMohon pilih salah satu: <b>${accountOptions}</b>`;
+    }
+
+    pending.baseTx.account = matchedAccount.name;
+    // Lanjutkan — cek apakah masih butuh payment method atau bisa langsung simpan
+    return handleSplitWithRemainder(chatId, pending.items, pending.totalNominal, pending.baseTx, pending.storeName, pending.existingTxId, pending.respondToTelegramFn);
+  }
 
   if (pending.waitingFor === 'PAYMENT_METHOD') {
     const { _normalizePaymentMethod } = require('../infrastructure/finance_db/transactions');
